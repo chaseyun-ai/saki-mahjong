@@ -48,3 +48,54 @@ export function playChime(): void {
     osc.stop(now + i * 0.08 + 0.55);
   });
 }
+
+function tone(a: AudioContext, f: number, start: number, dur: number, vol: number, type: OscillatorType): void {
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.type = type;
+  osc.frequency.value = f;
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(vol, start + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  osc.connect(gain).connect(a.destination);
+  osc.start(start);
+  osc.stop(start + dur + 0.05);
+}
+
+// 吃碰杠：短促有力的两声
+export function playCall(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  tone(a, 196, now, 0.25, 0.25, 'triangle');
+  tone(a, 392, now + 0.06, 0.3, 0.18, 'square');
+  playClick();
+}
+
+// 立直：低音加上扬的滑音
+export function playRiichi(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(220, now);
+  osc.frequency.exponentialRampToValueAtTime(880, now + 0.35);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.12, now + 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+  osc.connect(gain).connect(a.destination);
+  osc.start(now);
+  osc.stop(now + 0.65);
+  tone(a, 110, now, 0.5, 0.3, 'triangle');
+}
+
+// 和牌：上行琶音
+export function playWin(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  [523, 659, 784, 1047, 1319].forEach((f, i) => tone(a, f, now + i * 0.07, 0.9, 0.14, 'triangle'));
+  tone(a, 131, now, 1.2, 0.25, 'sine');
+}

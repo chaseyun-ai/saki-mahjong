@@ -7,6 +7,7 @@ import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
 import { Avatar } from './avatar';
 import { LOOKS, applyLook } from './looks';
 import { Dice } from './dice';
+import { Effects } from './effects';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
@@ -32,7 +33,7 @@ const CONSOLE_HALF = 2.9;
 
 // 角色：VRoid 的 CC0 示例模型改色（见 looks.ts）。牌宽约 2.6 厘米，按这个比例人放大约 20 倍
 const AVATAR_SCALE = 20;
-const SEAT_Y = -0.3 * AVATAR_SCALE;
+const SEAT_Y = -0.24 * AVATAR_SCALE;
 const SEAT_Z = TABLE_HALF + 0.2 * AVATAR_SCALE;
 
 // 发牌：骰子落定后，每批 4 张（最后每人 1 张）依次发出
@@ -48,9 +49,15 @@ interface HandTiming {
   back: number;
   lift: number; // 移动时抬多高
 }
-const DISCARD_TIMING: HandTiming = { reach: 0.3, carry: 0.34, settle: 0.1, back: 0.4, lift: 1.4 };
-const DRAW_TIMING: HandTiming = { reach: 0.26, carry: 0.3, settle: 0.04, back: 0.32, lift: 0.9 };
+const DISCARD_TIMING: HandTiming = { reach: 0.3, carry: 0.34, settle: 0.1, back: 0.4, lift: 2.2 };
+// 立直：牌抬得更高，拍下去更快，停得更久
+const RIICHI_TIMING: HandTiming = { reach: 0.28, carry: 0.26, settle: 0.3, back: 0.4, lift: 3.4 };
+// 摸牌不用手，牌自己沿弧线从牌山飞进手里
+const DRAW_FLIGHT = 0.38;
 
+// 鸣牌、立直、和牌的特效颜色
+const FX_GOLD = '#ffd36b';
+const FX_RED = '#ff5a4f';
 interface Character {
   seat: number;
   seatRoot: THREE.Group;
@@ -62,6 +69,12 @@ interface DealState {
   dealer: number;
   sum: number;
   order: Map<TileId, { d: number; time: number }>;
+}
+
+interface Flight {
+  tile: TileId;
+  t: number;
+  start: THREE.Vector3;
 }
 
 interface HandAnim {
@@ -120,6 +133,13 @@ export class Table3D {
   private dice = new Dice(0.5);
   private deal: DealState | null = null;
   private handAnims: HandAnim[] = [];
+  private flights: Flight[] = [];
+  private effects: Effects;
+  private riichiSticks: THREE.Mesh[] = [];
+  private shake = 0;
+  // 调试截图时手动摆镜头，不让动画覆盖
+  debugCamera = false;
+  private zoom = { t: -1, target: new THREE.Vector3() };
   private held = new Set<TileId>();
 
   constructor(
@@ -134,14 +154,18 @@ export class Table3D {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     container.appendChild(this.renderer.domElement);
 
-    this.consoleCanvas.width = 512;
-    this.consoleCanvas.height = 512;
+    // 控制台贴图用 2048 像素，画的时候按 512 的坐标放大 4 倍
+    this.consoleCanvas.width = 2048;
+    this.consoleCanvas.height = 2048;
     this.consoleTex = new THREE.CanvasTexture(this.consoleCanvas);
     this.consoleTex.colorSpace = THREE.SRGBColorSpace;
+    this.consoleTex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
 
     this.buildRoom();
     this.buildTiles();
     this.scene.add(this.dice.group);
+    this.effects = new Effects(this.scene);
+    this.buildRiichiSticks();
     void this.atlas.draw();
 
     this.resize();
@@ -317,14 +341,18 @@ export class Table3D {
     const all = this.characters;
     if (e.type === 'roundStart') this.startDeal(g);
     if (e.type === 'draw') {
-      // 发牌动画里庄家的第一张不用另外伸手
+      // 发牌动画里庄家的第一张不用另外飞
       const drawn = g.players[e.seat].drawn;
-      if (!this.deal && drawn !== null) this.startHandAnim(e.seat, drawn, DRAW_TIMING);
+      if (!this.deal && drawn !== null) this.startFlight(drawn);
       const ch = this.characterAt(e.seat);
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
       const pond = this.seatPoint(e.seat, 0, 0, POND_Z + 1.5);
-      this.startHandAnim(e.seat, e.tile, DISCARD_TIMING);
+      this.startHandAnim(e.seat, e.tile, e.riichi ? RIICHI_TIMING : DISCARD_TIMING);
+      if (e.riichi) {
+        // 立直宣言：牌拍下去的那一刻放特效
+        window.setTimeout(() => this.callFx(e.seat, 'riichi'), (RIICHI_TIMING.reach + RIICHI_TIMING.carry) * 1000);
+      }
       for (const ch of all) {
         // 别人出牌时看一眼，反应有先后
         ch.avatar?.lookAtPoint(pond, ch.seat === e.seat ? 1 : 0.9 + Math.random() * 0.8);
@@ -332,9 +360,13 @@ export class Table3D {
       }
     } else if (e.type === 'call') {
       const who = this.seatPoint(e.seat, 0, 8, SEAT_Z);
+      this.callFx(e.seat, e.call.includes('杠') ? 'kan' : 'call');
       for (const ch of all) {
         if (ch.seat === e.seat) ch.avatar?.setMood('happy', 1.2);
-        else ch.avatar?.lookAtPoint(who, 1.5);
+        else {
+          ch.avatar?.lookAtPoint(who, 1.5);
+          if (e.call.includes('杠')) ch.avatar?.setMood('surprised', 1);
+        }
       }
     } else if (e.type === 'ability') {
       for (const ch of all) {
@@ -343,6 +375,11 @@ export class Table3D {
       }
     } else if (e.type === 'roundEnd') {
       const r = e.result;
+      for (const w of r.wins) this.winFx(w.seat, w.from === null);
+      if (r.wins.length) {
+        const who = this.seatPoint(r.wins[0].seat, 0, 8, SEAT_Z);
+        for (const ch of all) if (!r.wins.some((w) => w.seat === ch.seat)) ch.avatar?.lookAtPoint(who, 3);
+      }
       for (const ch of all) {
         if (r.wins.some((w) => w.seat === ch.seat)) ch.avatar?.setMood('happy', 3);
         else if (r.wins.some((w) => w.from === ch.seat)) ch.avatar?.setMood('sad', 3);
@@ -352,6 +389,88 @@ export class Table3D {
       // 掷骰子时大家看桌子中间
       for (const ch of all) ch.avatar?.lookAtPoint(new THREE.Vector3(0, 0.5, 0), DEAL_START);
     }
+  }
+
+  private buildRiichiSticks(): void {
+    const geo = new RoundedBoxGeometry(4.2, 0.18, 0.42, 2, 0.08);
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 32;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#f7f3ea';
+    ctx.fillRect(0, 0, 256, 32);
+    ctx.fillStyle = '#c4212c';
+    ctx.beginPath();
+    ctx.arc(128, 16, 10, 0, Math.PI * 2);
+    ctx.fill();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.4 });
+    for (let s = 0; s < 4; s++) {
+      const m = new THREE.Mesh(geo, mat);
+      m.castShadow = true;
+      m.visible = false;
+      this.scene.add(m);
+      this.riichiSticks.push(m);
+    }
+  }
+
+  // 立直棒：放在立直那家的牌河和控制台之间
+  private placeRiichiSticks(g: Game, me: number): void {
+    for (let s = 0; s < 4; s++) {
+      const stick = this.riichiSticks[s];
+      const on = g.players[s].riichi && g.phase !== 'roundEnd';
+      if (on && !stick.visible) {
+        const p = this.toWorld(s, me, 0, 0.1, POND_Z - 0.35, STANDING);
+        stick.position.copy(p.pos);
+        stick.quaternion.copy(p.quat);
+      }
+      stick.visible = on;
+    }
+  }
+
+  // 鸣牌、立直的特效：在这家前面的桌上放冲击波，角色举手示意
+  private callFx(seat: number, kind: 'call' | 'kan' | 'riichi'): void {
+    const color = kind === 'riichi' ? FX_RED : kind === 'kan' ? '#9fd8ff' : FX_GOLD;
+    const at = this.seatPoint(seat, 0, 0.1, kind === 'riichi' ? POND_Z : HAND_Z - 2);
+    this.effects.ring(at, color, kind === 'kan' ? 9 : 6);
+    this.effects.flash(at.clone().setY(1.5), color, kind === 'riichi' ? 10 : 7);
+    if (kind !== 'call') this.effects.ring(at, color, 12, 1.1);
+    if (kind === 'kan') this.effects.beam(at, color, 10, 1);
+    this.shake = Math.max(this.shake, kind === 'call' ? 0.25 : 0.45);
+    // 举起右手亮一下
+    const av = this.characterAt(seat)?.avatar;
+    if (av && seat !== this.lastSync?.view.me) {
+      this.handAnims = this.handAnims.filter((a) => a.seat !== seat);
+      this.handAnims.push({
+        seat,
+        tile: -1,
+        t: 0,
+        start: this.seatPoint(seat, 1.5, 6, HAND_Z + 1),
+        timing: { reach: 0.22, carry: 0, settle: 0.45, back: 0.35, lift: 0 },
+      });
+    }
+  }
+
+  // 和牌：金色光柱、闪光粒子，镜头往和牌的人那边推一点
+  private winFx(seat: number, tsumo: boolean): void {
+    const at = this.seatPoint(seat, 0, 0.1, HAND_Z - 2.5);
+    this.effects.beam(at, FX_GOLD, 14, 2.2);
+    this.effects.ring(at, FX_GOLD, 14, 1.2);
+    this.effects.ring(at, '#ffffff', 8, 0.8);
+    this.effects.sparkles(at, FX_GOLD, 70, 5, 2.2);
+    this.effects.flash(at.clone().setY(3), '#fff2c4', 18, 0.6);
+    this.shake = 0.6;
+    if (seat !== this.lastSync?.view.me) this.zoom = { t: 0, target: this.seatPoint(seat, 0, 4, SEAT_Z - 2) };
+    // 自摸的人举手，荣和的人身体前倾
+    if (tsumo) this.callFx(seat, 'call');
+  }
+
+  private startFlight(tile: TileId): void {
+    const obj = this.tiles[tile];
+    if (!obj.shown) return;
+    this.flights = this.flights.filter((f) => f.tile !== tile);
+    this.flights.push({ tile, t: 0, start: obj.group.position.clone() });
   }
 
   private startHandAnim(seat: number, tile: TileId, timing: HandTiming): void {
@@ -394,8 +513,10 @@ export class Table3D {
     this.clickable = view.clickable;
     const targets = new Map<TileId, Placement>();
     for (let s = 0; s < 4; s++) this.placeSeat(g, s, view.me, targets);
+    this.placeReveal(g, view.me, targets);
     for (const [t, slot] of wallSlots(g)) targets.set(t, this.wallPlacement(slot, view.me));
     this.applyDeal(g, view.me, targets);
+    this.placeRiichiSticks(g, view.me);
 
     for (let id = 0; id < TILE_COUNT; id++) {
       const t = this.tiles[id];
@@ -486,13 +607,14 @@ export class Table3D {
     // 牌河：六张一行，立直牌横放
     let col = 0;
     let row = 0;
-    let px = -((POND_COLS * step) / 2);
+    const pstep = TILE_W + GAP;
+    let px = -((POND_COLS * pstep) / 2);
     for (const d of p.discards) {
       if (d.called) continue;
       if (col === POND_COLS && row < 2) {
         col = 0;
         row++;
-        px = -((POND_COLS * step) / 2);
+        px = -((POND_COLS * pstep) / 2);
       }
       const w = d.riichi ? TILE_H : TILE_W;
       const z = POND_Z + row * (TILE_H + GAP) + TILE_H / 2;
@@ -507,6 +629,27 @@ export class Table3D {
     if (m.calledTile === undefined || m.from === undefined) return m.tiles.slice(0, m.type === 'kakan' ? 3 : 4);
     const own = m.tiles.filter((t) => t !== m.calledTile).slice(0, m.type === 'kakan' ? 2 : 3);
     return [m.calledTile, ...own];
+  }
+
+  // 一局结束：和牌的人、流局时听牌的人把手牌摊开（倒牌），和的那张放在最右边
+  private placeReveal(g: Game, me: number, out: Map<TileId, Placement>): void {
+    const r = g.phase === 'roundEnd' ? g.roundResult : null;
+    if (!r) return;
+    const shown = new Map<number, TileId | null>();
+    for (const w of r.wins) shown.set(w.seat, w.tile);
+    if (r.kind === 'exhaustive') r.tenpai.forEach((t, s) => t && shown.set(s, null));
+    for (const [s, win] of shown) {
+      const tiles = g.players[s].hand.filter((t) => t !== win).sort((a, b) => a - b);
+      const step = TILE_W + GAP;
+      const width = (tiles.length + (win !== null ? 1 : 0)) * step + (win !== null ? 0.5 : 0);
+      let x = -width / 2 - (g.players[s].melds.length ? 3 : 0) + TILE_W / 2;
+      const z = HAND_Z - 0.3;
+      for (const t of tiles) {
+        out.set(t, this.toWorld(s, me, x, TILE_T / 2, z, FACE_UP));
+        x += step;
+      }
+      if (win !== null) out.set(win, this.toWorld(s, me, x + 0.5, TILE_T / 2, z, FACE_UP));
+    }
   }
 
   private wallPlacement(slot: WallSlot, me: number): Placement {
@@ -539,6 +682,8 @@ export class Table3D {
   private drawConsole(g: Game, view: SyncView): void {
     const c = this.consoleCanvas.getContext('2d')!;
     const S = 512;
+    c.setTransform(4, 0, 0, 4, 0, 0);
+    c.imageSmoothingQuality = 'high';
     c.fillStyle = '#0d2428';
     c.fillRect(0, 0, S, S);
     c.strokeStyle = 'rgba(255,255,255,0.12)';
@@ -628,6 +773,46 @@ export class Table3D {
     return o ? (o.userData.tileId as TileId) : null;
   }
 
+  // 摸牌：沿弧线从牌山飞到手里
+  private animateFlights(dt: number): void {
+    this.flights = this.flights.filter((f) => {
+      f.t += dt;
+      const tile = this.tiles[f.tile];
+      const dest = tile.target;
+      if (!dest || f.t >= DRAW_FLIGHT) return false;
+      const k = f.t / DRAW_FLIGHT;
+      const e = k * k * (3 - 2 * k);
+      tile.group.position.lerpVectors(f.start, dest.pos, e).setY(THREE.MathUtils.lerp(f.start.y, dest.pos.y, e) + Math.sin(k * Math.PI) * 2.2);
+      tile.group.quaternion.slerp(dest.quat, Math.min(1, dt * 10));
+      tile.group.scale.setScalar(THREE.MathUtils.lerp(tile.group.scale.x, dest.scale, Math.min(1, dt * 10)));
+      this.held.add(f.tile);
+      return true;
+    });
+  }
+
+  // 镜头：特效时轻微震动；有人和牌时往那边推近一点再回来
+  private updateCamera(dt: number): void {
+    if (this.debugCamera) return;
+    const base = new THREE.Vector3(0, 18, 28.5);
+    const look = new THREE.Vector3(0, 0.5, -1.5);
+    if (this.zoom.t >= 0) {
+      this.zoom.t += dt;
+      const k = this.zoom.t < 0.5 ? this.zoom.t / 0.5 : this.zoom.t < 2.2 ? 1 : Math.max(0, 1 - (this.zoom.t - 2.2) / 0.8);
+      const e = k * k * (3 - 2 * k);
+      base.lerp(new THREE.Vector3(0, 15, 24), e * 0.6);
+      look.lerp(this.zoom.target, e * 0.35);
+      if (this.zoom.t > 3) this.zoom.t = -1;
+    }
+    if (this.shake > 0) {
+      this.shake = Math.max(0, this.shake - dt * 1.5);
+      const a = this.shake * this.shake * 0.5;
+      base.x += (Math.random() - 0.5) * a;
+      base.y += (Math.random() - 0.5) * a;
+    }
+    this.camera.position.copy(base);
+    this.camera.lookAt(look);
+  }
+
   // 用手搬牌：伸手到那张牌，拿起来沿弧线移到目标，放下停一下，再收回手
   private animateHands(dt: number): void {
     this.held.clear();
@@ -639,8 +824,9 @@ export class Table3D {
       a.t += dt;
       const { reach, carry, settle, back, lift } = a.timing;
       const av = this.characterAt(a.seat)?.avatar;
-      const tile = this.tiles[a.tile];
-      const dest = tile.target?.pos;
+      // tile 为 -1 时只是举手示意，没有要搬的牌
+      const tile = this.tiles[a.tile] ?? null;
+      const dest = tile ? tile.target?.pos : a.start;
       if (!dest || a.t > reach + carry + settle + back) {
         if (av) av.reachWeight = 0;
         return false;
@@ -650,7 +836,10 @@ export class Table3D {
       const grip = (p: THREE.Vector3, raise: number) => p.clone().addScaledVector(toward, 1.6).addScaledVector(up, 1.2 + raise);
       let wrist: THREE.Vector3;
       let weight: number;
-      if (a.t < reach) {
+      if (!tile) {
+        weight = a.t < reach ? easeOut(a.t / reach) : a.t < reach + settle ? 1 : 1 - smooth((a.t - reach - settle) / back);
+        wrist = a.start.clone().addScaledVector(up, Math.sin(a.t * 14) * 0.15);
+      } else if (a.t < reach) {
         // 伸手：先快后慢，最后一点点放慢对准
         const k = easeOut(a.t / reach);
         weight = k;
@@ -705,6 +894,9 @@ export class Table3D {
     if (this.deal && this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
     this.dice.update(dt);
     this.animateHands(dt);
+    this.animateFlights(dt);
+    this.effects.update(dt);
+    this.updateCamera(dt);
     const k = 1 - Math.exp(-dt * 16);
     for (const [id, t] of this.tiles.entries()) {
       if (!t.target || this.held.has(id)) continue;

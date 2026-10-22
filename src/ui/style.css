@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&display=swap&text=%E7%AB%8B%E7%9B%B4%E7%A2%B0%E5%90%83%E6%9D%A0%E8%8D%A3%E5%92%8C%E8%87%AA%E6%91%B8%E6%9A%97%E5%8A%A0');
 :root {
   color-scheme: dark;
   --felt: #1d4b52;
@@ -946,16 +947,165 @@ button {
 }
 
 .hud .toast.left {
-  left: 12%;
+  left: 18%;
   top: 40%;
 }
 
 .hud .toast.right {
-  right: 12%;
+  right: 18%;
   top: 40%;
 }
 
 .hud .result {
   max-height: 90vh;
   width: min(640px, calc(100vw - 32px));
+}
+
+/* ---------- 立直、鸣牌、和牌的大字特效 ---------- */
+
+.toast.fx {
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  animation: none;
+  font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
+  font-weight: 400;
+  letter-spacing: 6px;
+  z-index: 6;
+}
+
+.toast.fx span {
+  display: inline-block;
+  position: relative;
+  font-size: 72px;
+  line-height: 1;
+  color: #fff;
+  -webkit-text-stroke: 2px color-mix(in srgb, var(--fx) 60%, #000);
+  text-shadow:
+    0 0 18px var(--fx),
+    0 0 42px var(--fx),
+    0 4px 0 color-mix(in srgb, var(--fx) 50%, #000);
+  animation: fx-slam 0.42s cubic-bezier(0.2, 1.6, 0.4, 1) both, fx-out 0.4s ease-in 1s forwards;
+}
+
+/* 字后面一圈扩散的光环 */
+.toast.fx span::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 160px;
+  height: 160px;
+  margin: -80px 0 0 -80px;
+  border-radius: 50%;
+  border: 4px solid var(--fx);
+  box-shadow: 0 0 30px var(--fx), inset 0 0 30px var(--fx);
+  animation: fx-ring 0.7s ease-out both;
+  z-index: -1;
+}
+
+.toast.fx-call {
+  --fx: #ffa53a;
+}
+
+.toast.fx-call span {
+  color: #fff4dc;
+}
+
+.toast.fx-kan {
+  --fx: #6cc8ff;
+}
+
+.toast.fx-riichi {
+  --fx: #ff4b3e;
+}
+
+.toast.fx-riichi span {
+  font-size: 86px;
+  color: #fff3e0;
+}
+
+.toast.fx-win {
+  --fx: #ffc43d;
+  left: 50% !important;
+  right: auto !important;
+  top: 34% !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%);
+}
+
+.toast.fx-win span {
+  font-size: 128px;
+  letter-spacing: 16px;
+  background: linear-gradient(180deg, #fffbe8 10%, #ffd36b 55%, #e08a1e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: fx-slam 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both, fx-out 0.5s ease-in 2s forwards;
+}
+
+.toast.fx-win span::before {
+  width: 320px;
+  height: 320px;
+  margin: -160px 0 0 -160px;
+  animation-duration: 1s;
+}
+
+/* 和牌时整个画面闪一下 */
+.toast.fx-win::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 240, 200, 0.75), rgba(255, 200, 80, 0) 60%);
+  animation: fx-flash 0.8s ease-out both;
+  pointer-events: none;
+  z-index: -2;
+}
+
+@keyframes fx-slam {
+  from {
+    opacity: 0;
+    scale: 2.6;
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes fx-out {
+  to {
+    opacity: 0;
+    translate: 0 -24px;
+  }
+}
+
+@keyframes fx-ring {
+  from {
+    opacity: 1;
+    scale: 0.2;
+  }
+  to {
+    opacity: 0;
+    scale: 2.2;
+  }
+}
+
+@keyframes fx-flash {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast.fx span,
+  .toast.fx span::before,
+  .toast.fx-win::after {
+    animation-duration: 0.01s;
+  }
 }

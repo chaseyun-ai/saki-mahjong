@@ -90,10 +90,11 @@ export class Avatar {
   }
 
   // tableY、edgeZ 是桌面高度和桌沿位置（模型自身坐标）；onLap 时手放在腿上
-  setRestPose(tableY: number, edgeZ: number, onLap: boolean): void {
-    if (onLap) {
-      const y = this.hipHeight + 0.08;
-      this.rest = { left: new THREE.Vector3(-0.13, y, -0.26), right: new THREE.Vector3(0.13, y, -0.26) };
+  setRestPose(tableY: number, edgeZ: number, offscreen: boolean): void {
+    if (offscreen) {
+      // 自己：手搭在桌沿外侧，刚好在镜头外，伸手时也不会从桌子底下穿出来
+      const y = tableY - 0.01;
+      this.rest = { left: new THREE.Vector3(-0.17, y, edgeZ + 0.1), right: new THREE.Vector3(0.17, y, edgeZ + 0.1) };
     } else {
       const y = tableY + 0.03;
       this.rest = { left: new THREE.Vector3(-0.16, y, edgeZ - 0.07), right: new THREE.Vector3(0.16, y, edgeZ - 0.07) };
@@ -190,7 +191,9 @@ export class Avatar {
     const d = THREE.MathUtils.clamp(toT.length(), Math.abs(a - b) + 1e-4, (a + b) * 0.999);
     const dir = toT.normalize();
     // 用坐姿里肘部的方向当参考，再往下压一点，避免手臂翻转
-    const hint = e.clone().sub(s).add(new THREE.Vector3(0, -a, 0));
+    // 肘部往外侧、往下：外侧是从身体中线指向这只手的方向
+    const out = s.clone().sub(this.root.getWorldPosition(new THREE.Vector3())).setY(0).normalize();
+    const hint = out.multiplyScalar(a).add(new THREE.Vector3(0, -a * 0.8, 0));
     const perp = hint.sub(dir.clone().multiplyScalar(hint.dot(dir))).normalize();
     const cosA = THREE.MathUtils.clamp((a * a + d * d - b * b) / (2 * a * d), -1, 1);
     const sinA = Math.sqrt(1 - cosA * cosA);
@@ -289,7 +292,12 @@ export class Avatar {
       const right = this.root.localToWorld(this.rest.right.clone());
       // 手放着也不是完全不动：手指偶尔轻轻挪一下
       left.y += Math.max(0, Math.sin(t * 0.8 + 1)) * 0.003 * this.root.scale.x;
-      if (this.reachTarget && this.reachWeight > 0) right.lerp(this.reachTarget, this.reachWeight);
+      if (this.reachTarget && this.reachWeight > 0) {
+        // 从休息位置到目标走一条往上拱的弧线，越过桌沿和手牌，不从牌里穿过去
+        const dist = Math.hypot(this.reachTarget.x - right.x, this.reachTarget.z - right.z);
+        right.lerp(this.reachTarget, this.reachWeight);
+        right.y += Math.sin(this.reachWeight * Math.PI) * Math.min(dist * 0.3, 0.1 * this.root.scale.x);
+      }
       this.solveArm('left', left);
       this.solveArm('right', right);
     }

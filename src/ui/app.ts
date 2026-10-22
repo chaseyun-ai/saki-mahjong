@@ -3,7 +3,7 @@ import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
 import { Meld } from '../engine/score';
 import { TileId, WIND_CN, kindLabel } from '../engine/tiles';
-import { playClick, playChime } from './sound';
+import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { backHtml, tileHtml } from './tile';
 
@@ -20,6 +20,7 @@ interface Toast {
   seat: number;
   text: string;
   big: boolean;
+  kind: string; // riichi / call / kan / win 时有特效样式
 }
 
 export class App {
@@ -41,7 +42,11 @@ export class App {
     this.root = root;
     root.addEventListener('click', (e) => this.onClick(e));
     window.addEventListener('resize', () => this.fit());
+    // 大字特效用的书法字体先下好，免得第一次立直时字还没出来
+    document.fonts?.load('1em "Ma Shan Zheng"', '立直碰吃杠荣和自摸暗加').catch(() => {});
     this.renderSelect();
+    // 调试用：?debug 时可以在控制台里直接触发牌局事件看特效
+    if (location.search.includes('debug')) (window as unknown as { app: App }).app = this;
   }
 
   // ---------- 选角色 ----------
@@ -83,20 +88,20 @@ export class App {
     this.toasts = [];
     this.showResult = false;
     if (this.mode === '3d') {
-      this.root.innerHTML = '<div class="stage3d"><div class="three" id="three"></div><div class="hud" id="hud"></div></div>';
+      this.root.innerHTML = '<div class="stage3d"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div></div>';
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id));
       // 第一局在牌桌建好之前就开始了，补一次开局动画
       this.table3d.onEvent({ type: 'roundStart', label: this.game.roundLabel() }, this.game);
     } else {
       this.root.innerHTML =
-        '<div class="stage"><div class="table" id="table"></div></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
+        '<div class="stage"><div class="table"><div id="table" style="display: contents"></div><div id="toasts"></div></div></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
       this.fit();
     }
     this.step();
   }
 
   private fit(): void {
-    const table = document.getElementById('table');
+    const table = document.querySelector<HTMLElement>('.stage .table');
     if (!table) return;
     const scale = Math.min(window.innerWidth / 1040, window.innerHeight / 800, 1.4);
     table.style.transform = `scale(${scale})`;
@@ -112,8 +117,16 @@ export class App {
       this.timer = null;
     }
     if (g.phase === 'roundEnd' || g.phase === 'gameEnd') {
-      this.showResult = true;
+      // 3D 牌桌先让大家看清倒牌和特效，再弹结算
       this.render();
+      const wins = g.roundResult?.wins.length ?? 0;
+      this.timer = window.setTimeout(
+        () => {
+          this.showResult = true;
+          this.render();
+        },
+        this.mode === '3d' ? (wins ? 2600 : 1400) : 0,
+      );
       return;
     }
     const waiting = g.waitingSeats();
@@ -156,25 +169,33 @@ export class App {
     if (e.type === 'discard') {
       this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
       playClick();
-      if (e.riichi) this.toast(e.seat, '立直', true);
+      if (e.riichi) {
+        playRiichi();
+        this.toast(e.seat, '立直', true, 'riichi');
+      }
     } else if (e.type === 'call') {
-      playClick();
-      this.toast(e.seat, e.call, true);
+      playCall();
+      this.toast(e.seat, e.call, true, e.call.includes('杠') ? 'kan' : 'call');
     } else if (e.type === 'ability') {
       playChime();
       this.toast(e.seat, e.text, false);
     } else if (e.type === 'roundEnd') {
-      for (const w of e.result.wins) this.toast(w.seat, w.from === null ? '自摸' : '荣和', true);
+      if (e.result.wins.length) playWin();
+      for (const w of e.result.wins) this.toast(w.seat, w.from === null ? '自摸' : '荣和', true, 'win');
     }
   }
 
-  private toast(seat: number, text: string, big: boolean): void {
+  private toast(seat: number, text: string, big: boolean, kind = ''): void {
     const id = ++this.toastSeq;
-    this.toasts.push({ id, seat, text, big });
-    window.setTimeout(() => {
-      this.toasts = this.toasts.filter((t) => t.id !== id);
-      this.renderToasts();
-    }, big ? 1100 : 1800);
+    this.toasts.push({ id, seat, text, big, kind });
+    this.renderToasts();
+    window.setTimeout(
+      () => {
+        this.toasts = this.toasts.filter((t) => t.id !== id);
+        this.renderToasts();
+      },
+      kind === 'win' ? 2400 : big ? 1400 : 1800,
+    );
   }
 
   // ---------- 点击 ----------
@@ -256,7 +277,6 @@ export class App {
       ${[0, 1, 2, 3].map((s) => this.pondHtml(s)).join('')}
       ${this.myAreaHtml()}
       ${this.abilityPanelHtml()}
-      <div id="toasts"></div>
       ${this.showResult ? this.resultHtml() : ''}`;
     this.freshDiscard = null;
     this.renderToasts();
@@ -276,7 +296,6 @@ export class App {
       ${plates}
       ${this.myAreaHtml(false)}
       ${this.abilityPanelHtml()}
-      <div id="toasts"></div>
       ${this.showResult ? this.resultHtml() : ''}`;
     this.renderToasts();
     this.table3d.sync(g, {
@@ -290,12 +309,16 @@ export class App {
   private renderToasts(): void {
     const box = document.getElementById('toasts');
     if (!box) return;
-    box.innerHTML = this.toasts
-      .map(
-        (t) =>
-          `<div class="toast ${POS[t.seat]} ${t.big ? 'big' : ''}" style="--c:${this.chars[t.seat].color}">${t.text}</div>`,
-      )
-      .join('');
+    // 提示层不跟着画面重画，只增删变化的那几个，免得动画每次重画都从头播
+    const live = new Set(this.toasts.map((t) => String(t.id)));
+    for (const el of Array.from(box.children) as HTMLElement[]) if (!live.has(el.dataset.id!)) el.remove();
+    for (const t of this.toasts) {
+      if (box.querySelector(`[data-id="${t.id}"]`)) continue;
+      box.insertAdjacentHTML(
+        'beforeend',
+        `<div data-id="${t.id}" class="toast ${POS[t.seat]} ${t.big ? 'big' : ''} ${t.kind ? `fx fx-${t.kind}` : ''}" style="--c:${this.chars[t.seat].color}"><span>${t.text}</span></div>`,
+      );
+    }
   }
 
   private seatLabel(s: number): string {
