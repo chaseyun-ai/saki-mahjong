@@ -40,7 +40,17 @@ export class Avatar {
   readonly lookTarget = new THREE.Object3D();
   private time = Math.random() * 10;
   private nextBlink = 2;
-  private blink = 0;
+  private blinkT = -1;
+  // 视线：想看的点、眼睛实际看着的点（平滑移过去）、头转了多少
+  private lookWant = new THREE.Vector3(0, 0, -10);
+  private lookNow = new THREE.Vector3(0, 0, -10);
+  private lookHoldUntil = 0;
+  private headYaw = 0;
+  private headPitch = 0;
+  // 没事做时视线的落点：自己的手牌，偶尔瞟一眼别人
+  home: THREE.Vector3 | null = null;
+  glances: THREE.Vector3[] = [];
+  private nextGlance = 3 + Math.random() * 4;
   private mood: { name: Mood; until: number } | null = null;
   private moodWeights = new Map<Mood, number>();
   private base = new Map<VRMHumanBoneName, THREE.Quaternion>();
@@ -59,8 +69,6 @@ export class Avatar {
     VRMUtils.combineSkeletons(vrm.scene);
     vrm.scene.traverse((o) => {
       o.frustumCulled = false;
-      // Seed-san 背后的机械臂太大，会伸到牌桌上，先隐藏
-      if (o.name === 'robo_arm') o.visible = false;
       if ((o as THREE.Mesh).isMesh) o.castShadow = true;
     });
     const vrm0 = vrm.meta?.metaVersion === '0';
@@ -134,8 +142,20 @@ export class Avatar {
   }
 
   // 视线看向世界坐标里的一点
-  lookAtPoint(p: THREE.Vector3): void {
-    this.lookTarget.position.copy(p);
+  // 视线看向世界坐标里的一点，hold 秒内不会自己移开
+  lookAtPoint(p: THREE.Vector3, hold = 2): void {
+    this.lookWant.copy(p);
+    this.lookHoldUntil = this.time + hold;
+  }
+
+  // 世界坐标的点换算成以模型自身朝向为准的偏航、俯仰角（+z 朝前，按 VRM 1.0 的约定）
+  private aimAngles(p: THREE.Vector3, from: THREE.Object3D): { yaw: number; pitch: number } {
+    const origin = from.getWorldPosition(new THREE.Vector3());
+    const d = this.root.worldToLocal(p.clone()).sub(this.root.worldToLocal(origin));
+    // 本地 -z 是前方；换成模型的 +z 朝前
+    const mx = -d.x;
+    const mz = -d.z;
+    return { yaw: Math.atan2(mx, mz), pitch: Math.atan2(-d.y, Math.hypot(mx, mz)) };
   }
 
   setMood(name: Mood, seconds: number): void {
@@ -197,22 +217,65 @@ export class Avatar {
     bone.updateMatrixWorld(true);
   }
 
+  private updateGaze(dt: number): void {
+    const t = this.time;
+    // 没人吸引注意时：大部分时间看自己的牌，偶尔瞟一眼别人
+    if (t > this.lookHoldUntil && this.home) {
+      if (t > this.nextGlance && this.glances.length) {
+        this.lookWant.copy(this.glances[Math.floor(Math.random() * this.glances.length)]);
+        this.lookHoldUntil = t + 0.8 + Math.random() * 0.9;
+        this.nextGlance = t + 4 + Math.random() * 6;
+      } else {
+        this.lookWant.copy(this.home);
+      }
+    }
+    this.lookNow.lerp(this.lookWant, 1 - Math.exp(-dt * 7));
+    this.lookTarget.position.copy(this.lookNow);
+
+    // 头跟着视线转一部分，转得比眼睛慢
+    const head = this.bone('head');
+    if (!head) return;
+    const { yaw, pitch } = this.aimAngles(this.lookNow, head);
+    const k = 1 - Math.exp(-dt * 3.5);
+    this.headYaw += (THREE.MathUtils.clamp(yaw * 0.55, -0.7, 0.7) - this.headYaw) * k;
+    this.headPitch += (THREE.MathUtils.clamp(pitch * 0.5, -0.25, 0.45) - this.headPitch) * k;
+    const sway = Math.sin(t * 0.6) * 0.035;
+    const q = axisQ(Y, this.headYaw * 0.6).multiply(axisQ(X, this.headPitch * 0.6)).multiply(axisQ(Z, sway));
+    this.bone('neck')?.quaternion.copy(this.local(axisQ(Y, this.headYaw * 0.4).multiply(axisQ(X, this.headPitch * 0.4))));
+    head.quaternion.copy(this.local(q));
+  }
+
   update(dt: number): void {
     this.time += dt;
     const t = this.time;
+    this.root.updateMatrixWorld(true);
 
-    // 呼吸：脊柱轻微起伏；伸手时身体前倾
+    // 身体：呼吸、轻微晃动；伸手时按距离前倾，并往手的方向转一点
+    let lean = 0;
+    let twist = 0;
+    if (this.reachTarget && this.reachWeight > 0) {
+      const local = this.root.worldToLocal(this.reachTarget.clone());
+      const dist = Math.hypot(local.x, local.z);
+      lean = this.reachWeight * THREE.MathUtils.clamp((dist - 0.3) * 1.4, 0.05, 0.5);
+      twist = this.reachWeight * THREE.MathUtils.clamp(Math.atan2(-local.x, -local.z) * 0.35, -0.3, 0.3);
+    }
+    const breath = Math.sin(t * 1.6);
     const spine = this.bone('spine');
     const spineBase = this.base.get('spine');
     if (spine && spineBase) {
-      spine.quaternion
-        .copy(spineBase)
-        .multiply(this.local(axisQ(X, Math.sin(t * 1.7) * 0.02 + this.reachWeight * 0.28)));
+      const q = axisQ(X, breath * 0.012 + Math.sin(t * 0.37) * 0.015 + lean * 0.6)
+        .multiply(axisQ(Y, twist * 0.6))
+        .multiply(axisQ(Z, Math.sin(t * 0.23) * 0.02));
+      spine.quaternion.copy(spineBase).multiply(this.local(q));
     }
-    const head = this.bone('head');
-    if (head) head.quaternion.copy(this.local(axisQ(Z, Math.sin(t * 0.6) * 0.04)));
+    const chest = this.bone('chest');
+    if (chest) chest.quaternion.copy(this.local(axisQ(X, breath * 0.015 + lean * 0.4).multiply(axisQ(Y, twist * 0.4))));
+    // 伸手时右肩微微抬起
+    const shoulder = this.bone('rightShoulder');
+    if (shoulder) shoulder.quaternion.copy(this.local(axisQ(Z, this.reachWeight * 0.12)));
+    this.updateGaze(dt);
 
-    // 双手：先回到坐姿，再用 IK 放到休息位置；右手按权重移向出牌的目标
+    // 双手：先回到坐姿，再用 IK 放到休息位置；右手按权重移向目标
     for (const n of ['leftUpperArm', 'leftLowerArm', 'rightUpperArm', 'rightLowerArm'] as VRMHumanBoneName[]) {
       const b = this.bone(n);
       const q = this.base.get(n);
@@ -224,30 +287,43 @@ export class Avatar {
       this.root.updateMatrixWorld(true);
       const left = this.root.localToWorld(this.rest.left.clone());
       const right = this.root.localToWorld(this.rest.right.clone());
+      // 手放着也不是完全不动：手指偶尔轻轻挪一下
+      left.y += Math.max(0, Math.sin(t * 0.8 + 1)) * 0.003 * this.root.scale.x;
       if (this.reachTarget && this.reachWeight > 0) right.lerp(this.reachTarget, this.reachWeight);
       this.solveArm('left', left);
       this.solveArm('right', right);
     }
 
-    // 眨眼
-    if (t > this.nextBlink) {
-      this.blink = 0.15;
-      this.nextBlink = t + 2 + Math.random() * 3;
-    }
-    const em = this.vrm.expressionManager;
-    if (em) {
-      this.blink = Math.max(0, this.blink - dt);
-      const moodActive = this.mood && t < this.mood.until ? this.mood.name : null;
-      for (const m of ['happy', 'sad', 'angry', 'surprised', 'relaxed'] as Mood[]) {
-        const cur = this.moodWeights.get(m) ?? 0;
-        const goal = m === moodActive ? 1 : 0;
-        const next = cur + (goal - cur) * Math.min(1, dt * 6);
-        this.moodWeights.set(m, next);
-        em.setValue(m, next);
-      }
-      // 笑的时候本来就眯眼，不再叠加眨眼
-      em.setValue('blink', this.blink > 0 && moodActive !== 'happy' ? 1 : 0);
-    }
+    this.updateFace(dt);
     this.vrm.update(dt);
+  }
+
+  private updateFace(dt: number): void {
+    const t = this.time;
+    const em = this.vrm.expressionManager;
+    if (!em) return;
+    // 眨眼：闭眼快、睁眼慢，偶尔连眨两下
+    if (t > this.nextBlink) {
+      this.blinkT = 0;
+      this.nextBlink = t + (Math.random() < 0.15 ? 0.35 : 2.5 + Math.random() * 3.5);
+    }
+    let blink = 0;
+    if (this.blinkT >= 0) {
+      this.blinkT += dt;
+      blink = this.blinkT < 0.06 ? this.blinkT / 0.06 : Math.max(0, 1 - (this.blinkT - 0.06) / 0.12);
+      if (this.blinkT > 0.18) this.blinkT = -1;
+    }
+    const moodActive = this.mood && t < this.mood.until ? this.mood.name : null;
+    for (const m of ['happy', 'sad', 'angry', 'surprised', 'relaxed'] as Mood[]) {
+      const cur = this.moodWeights.get(m) ?? 0;
+      const goal = m === moodActive ? 1 : 0;
+      const next = cur + (goal - cur) * Math.min(1, dt * 6);
+      this.moodWeights.set(m, next);
+      // VRM 0.x 没有“吃惊”，用张嘴代替
+      if (m === 'surprised' && !em.getExpression('surprised')) em.setValue('oh', next * 0.7);
+      else em.setValue(m, next);
+    }
+    // 笑的时候本来就眯眼，不再叠加眨眼
+    em.setValue('blink', moodActive === 'happy' ? 0 : blink);
   }
 }

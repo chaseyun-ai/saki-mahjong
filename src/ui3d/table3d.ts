@@ -5,6 +5,7 @@ import type { Meld } from '../engine/score';
 import { TILE_COUNT, TileId, WIND_CN } from '../engine/tiles';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
 import { Avatar } from './avatar';
+import { LOOKS, applyLook } from './looks';
 import { Dice } from './dice';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 
@@ -29,8 +30,7 @@ const WALL_PITCH = TILE_W + 0.02;
 const TABLE_HALF = 14;
 const CONSOLE_HALF = 2.9;
 
-// 角色：免费的 VRM 示例模型（署名见 README）。牌宽约 2.6 厘米，按这个比例人大约放大 24 倍
-const AVATAR_MODELS = ['models/pixiv-sample.glb', 'models/seed-san.glb'];
+// 角色：VRoid 的 CC0 示例模型改色（见 looks.ts）。牌宽约 2.6 厘米，按这个比例人放大约 20 倍
 const AVATAR_SCALE = 20;
 const SEAT_Y = -0.3 * AVATAR_SCALE;
 const SEAT_Z = TABLE_HALF + 0.2 * AVATAR_SCALE;
@@ -40,10 +40,16 @@ const DEAL_START = 1.3;
 const DEAL_BATCH = 0.14;
 const DEAL_END = DEAL_START + 16 * DEAL_BATCH + 0.35;
 
-// 出牌动作：伸手、拿着牌放到牌河、收手
-const REACH_TIME = 0.26;
-const CARRY_TIME = 0.32;
-const RETURN_TIME = 0.32;
+// 用手搬牌的动作：伸手、拿起来移过去、放下停一下、收手（秒）
+interface HandTiming {
+  reach: number;
+  carry: number;
+  settle: number;
+  back: number;
+  lift: number; // 移动时抬多高
+}
+const DISCARD_TIMING: HandTiming = { reach: 0.3, carry: 0.34, settle: 0.1, back: 0.4, lift: 1.4 };
+const DRAW_TIMING: HandTiming = { reach: 0.26, carry: 0.3, settle: 0.04, back: 0.32, lift: 0.9 };
 
 interface Character {
   seat: number;
@@ -58,11 +64,12 @@ interface DealState {
   order: Map<TileId, { d: number; time: number }>;
 }
 
-interface DiscardAnim {
+interface HandAnim {
   seat: number;
   tile: TileId;
   t: number;
   start: THREE.Vector3;
+  timing: HandTiming;
 }
 
 const STACKS_HALF = 9;
@@ -87,6 +94,7 @@ export interface SyncView {
   me: number;
   clickable: Set<TileId>;
   colors: string[];
+  ids: string[];
 }
 
 export class Table3D {
@@ -111,7 +119,7 @@ export class Table3D {
   private characterGen = 0;
   private dice = new Dice(0.5);
   private deal: DealState | null = null;
-  private discards: DiscardAnim[] = [];
+  private handAnims: HandAnim[] = [];
   private held = new Set<TileId>();
 
   constructor(
@@ -246,7 +254,8 @@ export class Table3D {
     }
   }
 
-  private buildCharacters(colors: string[], me: number): void {
+  private buildCharacters(view: SyncView): void {
+    const { colors, me } = view;
     for (const c of this.characters) this.scene.remove(c.seatRoot);
     this.characters = [];
     const gen = ++this.characterGen;
@@ -262,10 +271,12 @@ export class Table3D {
       this.scene.add(seatRoot);
       const ch: Character = { seat: s, seatRoot, avatar: null };
       this.characters.push(ch);
-      const url = AVATAR_MODELS[rel % AVATAR_MODELS.length];
+      const look = LOOKS[view.ids[s]] ?? LOOKS.saki;
+      const url = look.model;
       Avatar.load(url)
         .then((av) => {
           if (gen !== this.characterGen) return;
+          applyLook(av.vrm, look);
           if (holder) seatRoot.remove(holder);
           av.root.scale.setScalar(AVATAR_SCALE);
           av.root.position.y = SEAT_Y - av.hipHeight * AVATAR_SCALE;
@@ -274,7 +285,12 @@ export class Table3D {
           av.setRestPose(av.hipHeight - SEAT_Y / AVATAR_SCALE, (TABLE_HALF - SEAT_Z) / AVATAR_SCALE, rel === 0);
           seatRoot.add(av.root);
           ch.avatar = av;
-          this.lookAtHand(ch);
+          av.home = this.seatPoint(s, 0, 0, HAND_Z);
+          // 偶尔瞟一眼别家的脸或者桌子中间
+          av.glances = [0, 1, 2, 3]
+            .filter((o) => o !== s)
+            .map((o) => this.seatPoint(o, 0, SEAT_Y + 0.55 * AVATAR_SCALE, SEAT_Z))
+            .concat(new THREE.Vector3(0, 0, 0));
         })
         .catch((err) => console.warn('角色模型加载失败', url, err));
     }
@@ -290,10 +306,6 @@ export class Table3D {
     return new THREE.Vector3(x, y, z).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(seat, me));
   }
 
-  private lookAtHand(ch: Character): void {
-    ch.avatar?.lookAtPoint(this.seatPoint(ch.seat, 0, 0, HAND_Z));
-  }
-
   // 发牌或骰子动画还要多久（毫秒），这段时间里电脑先不出牌
   busyMs(): number {
     if (!this.deal) return 0;
@@ -305,23 +317,24 @@ export class Table3D {
     const all = this.characters;
     if (e.type === 'roundStart') this.startDeal(g);
     if (e.type === 'draw') {
+      // 发牌动画里庄家的第一张不用另外伸手
+      const drawn = g.players[e.seat].drawn;
+      if (!this.deal && drawn !== null) this.startHandAnim(e.seat, drawn, DRAW_TIMING);
       const ch = this.characterAt(e.seat);
-      if (ch) this.lookAtHand(ch);
+      if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
-      const pond = this.seatPoint(e.seat, 0, 0, POND_Z);
-      const tile = this.tiles[e.tile];
-      if (tile.shown) this.discards.push({ seat: e.seat, tile: e.tile, t: 0, start: tile.group.position.clone() });
+      const pond = this.seatPoint(e.seat, 0, 0, POND_Z + 1.5);
+      this.startHandAnim(e.seat, e.tile, DISCARD_TIMING);
       for (const ch of all) {
-        if (ch.seat === e.seat) {
-          ch.avatar?.lookAtPoint(pond);
-          if (e.riichi) ch.avatar?.setMood('angry', 1.6);
-        } else ch.avatar?.lookAtPoint(pond);
+        // 别人出牌时看一眼，反应有先后
+        ch.avatar?.lookAtPoint(pond, ch.seat === e.seat ? 1 : 0.9 + Math.random() * 0.8);
+        if (ch.seat === e.seat && e.riichi) ch.avatar?.setMood('angry', 1.6);
       }
     } else if (e.type === 'call') {
       const who = this.seatPoint(e.seat, 0, 8, SEAT_Z);
       for (const ch of all) {
         if (ch.seat === e.seat) ch.avatar?.setMood('happy', 1.2);
-        else ch.avatar?.lookAtPoint(who);
+        else ch.avatar?.lookAtPoint(who, 1.5);
       }
     } else if (e.type === 'ability') {
       for (const ch of all) {
@@ -336,8 +349,17 @@ export class Table3D {
         else if (r.deltas[ch.seat] < 0) ch.avatar?.setMood('sad', 2);
       }
     } else if (e.type === 'roundStart') {
-      for (const ch of all) this.lookAtHand(ch);
+      // 掷骰子时大家看桌子中间
+      for (const ch of all) ch.avatar?.lookAtPoint(new THREE.Vector3(0, 0.5, 0), DEAL_START);
     }
+  }
+
+  private startHandAnim(seat: number, tile: TileId, timing: HandTiming): void {
+    const obj = this.tiles[tile];
+    if (!obj.shown) return;
+    // 同一个人上一个动作还没做完就直接结束它
+    this.handAnims = this.handAnims.filter((a) => a.seat !== seat);
+    this.handAnims.push({ seat, tile, t: 0, start: obj.group.position.clone(), timing });
   }
 
   // ---------- 摆牌 ----------
@@ -361,13 +383,13 @@ export class Table3D {
     }
     this.deal = { start, dealer: g.dealer, sum: g.dice[0] + g.dice[1], order };
     this.dice.roll(g.dice, DEAL_END + 0.6);
-    this.discards = [];
+    this.handAnims = [];
     // 新的一局：所有牌从上方落下，重新码好牌山
     for (const t of this.tiles) t.shown = false;
   }
 
   sync(g: Game, view: SyncView): void {
-    if (this.characters.length === 0) this.buildCharacters(view.colors, view.me);
+    if (this.characters.length === 0) this.buildCharacters(view);
     this.lastSync = { g, view };
     this.clickable = view.clickable;
     const targets = new Map<TileId, Placement>();
@@ -606,42 +628,50 @@ export class Table3D {
     return o ? (o.userData.tileId as TileId) : null;
   }
 
-  // 出牌：角色伸手到那张牌，拿起来放进牌河，再收回手
-  private animateDiscards(dt: number): void {
+  // 用手搬牌：伸手到那张牌，拿起来沿弧线移到目标，放下停一下，再收回手
+  private animateHands(dt: number): void {
     this.held.clear();
     const up = new THREE.Vector3(0, 1, 0);
     const me = this.lastSync?.view.me ?? 0;
-    this.discards = this.discards.filter((a) => {
+    const smooth = (x: number) => x * x * (3 - 2 * x);
+    const easeOut = (x: number) => 1 - (1 - x) * (1 - x) * (1 - x);
+    this.handAnims = this.handAnims.filter((a) => {
       a.t += dt;
+      const { reach, carry, settle, back, lift } = a.timing;
       const av = this.characterAt(a.seat)?.avatar;
       const tile = this.tiles[a.tile];
       const dest = tile.target?.pos;
-      if (!dest || a.t > REACH_TIME + CARRY_TIME + RETURN_TIME) {
+      if (!dest || a.t > reach + carry + settle + back) {
         if (av) av.reachWeight = 0;
         return false;
       }
-      // 手腕在牌的后上方一点，手指正好捏住牌
-      const back = new THREE.Vector3(0, 0, 1).applyAxisAngle(up, this.seatAngle(a.seat, me));
-      const grip = (p: THREE.Vector3) => p.clone().addScaledVector(back, 1.6).addScaledVector(up, 1.3);
-      const smooth = (x: number) => x * x * (3 - 2 * x);
+      // 手腕在牌的后上方，手指正好捏住牌
+      const toward = new THREE.Vector3(0, 0, 1).applyAxisAngle(up, this.seatAngle(a.seat, me));
+      const grip = (p: THREE.Vector3, raise: number) => p.clone().addScaledVector(toward, 1.6).addScaledVector(up, 1.2 + raise);
       let wrist: THREE.Vector3;
       let weight: number;
-      if (a.t < REACH_TIME) {
-        weight = smooth(a.t / REACH_TIME);
-        wrist = grip(a.start);
+      if (a.t < reach) {
+        // 伸手：先快后慢，最后一点点放慢对准
+        const k = easeOut(a.t / reach);
+        weight = k;
+        wrist = grip(a.start, (1 - k) * 0.8);
         tile.group.position.copy(a.start);
         this.held.add(a.tile);
-      } else if (a.t < REACH_TIME + CARRY_TIME) {
-        const k = smooth((a.t - REACH_TIME) / CARRY_TIME);
+      } else if (a.t < reach + carry) {
+        const k = smooth((a.t - reach) / carry);
         weight = 1;
-        const p = a.start.clone().lerp(dest, k).addScaledVector(up, Math.sin(k * Math.PI) * 1.2);
-        wrist = grip(p);
+        const p = a.start.clone().lerp(dest, k).addScaledVector(up, Math.sin(k * Math.PI) * lift);
+        wrist = grip(p, 0);
         tile.group.position.copy(p);
-        if (tile.target) tile.group.quaternion.slerp(tile.target.quat, Math.min(1, dt * 14));
+        if (tile.target) tile.group.quaternion.slerp(tile.target.quat, Math.min(1, dt * 12));
         this.held.add(a.tile);
+      } else if (a.t < reach + carry + settle) {
+        weight = 1;
+        wrist = grip(dest, 0);
       } else {
-        weight = 1 - smooth((a.t - REACH_TIME - CARRY_TIME) / RETURN_TIME);
-        wrist = grip(dest);
+        const k = smooth((a.t - reach - carry - settle) / back);
+        weight = 1 - k;
+        wrist = grip(dest, k * 0.6);
       }
       if (av) {
         av.reachTarget = wrist;
@@ -674,7 +704,7 @@ export class Table3D {
     // 发牌期间每帧重新摆一次，让牌按时间从牌山飞到手里
     if (this.deal && this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
     this.dice.update(dt);
-    this.animateDiscards(dt);
+    this.animateHands(dt);
     const k = 1 - Math.exp(-dt * 16);
     for (const [id, t] of this.tiles.entries()) {
       if (!t.target || this.held.has(id)) continue;

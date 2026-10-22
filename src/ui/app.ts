@@ -11,6 +11,8 @@ import { backHtml, tileHtml } from './tile';
 const POS = ['bottom', 'right', 'top', 'left'];
 
 const AI_TURN_DELAY = 550;
+// 3D 牌桌上角色要先伸手摸牌，节奏放慢一点
+const AI_TURN_DELAY_3D = 1000;
 const AI_CALL_DELAY = 250;
 
 interface Toast {
@@ -67,7 +69,7 @@ export class App {
           <button class="${this.mode === '2d' ? 'on' : ''}" data-ui="mode-2d">2D 牌桌</button>
         </div>
         <div class="char-grid">${cards}</div>
-        <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物暂用示例模型：Seed-san © VirtualCast, Inc.（VRM Public License 1.0）、VRM1 Constraint Twist Sample © pixiv Inc.</p>
+        <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物由 VRoid 官方 CC0 示例模型改色</p>
       </div>`;
   }
 
@@ -130,7 +132,7 @@ export class App {
       this.timer = window.setTimeout(() => {
         g.act(g.turn, chooseAction(g, g.turn, this.chars[g.turn].ai));
         this.step();
-      }, AI_TURN_DELAY + this.busyMs());
+      }, (this.mode === '3d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
       return;
     }
     if (g.phase === 'turn' && g.turn === this.me) {
@@ -281,6 +283,7 @@ export class App {
       me: this.me,
       clickable: g.phase === 'turn' && g.turn === this.me && !this.showResult ? this.discardable() : new Set(),
       colors: this.chars.map((c) => c.color),
+      ids: this.chars.map((c) => c.id),
     });
   }
 

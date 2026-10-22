@@ -32,12 +32,16 @@ npx vite-node scripts/balance.ts 300   # 让电脑打 300 场，统计各角色�
 
 ## 3D 人物模型
 
-3D 牌桌上的对手暂时用免费的 VRM 示例模型，之后会换成自己做的角色模型（例如用 VRoid Studio 制作）。
+四位角色暂时用 VRoid 项目公开的示例模型改色而成（`src/ui3d/looks.ts` 里设置每个角色用哪个模型、头发和眼睛的颜色）：
 
-- `public/models/seed-san.glb`：Seed-san，© VirtualCast, Inc.，[VRM Public License 1.0](https://vrm.dev/licenses/1.0/)，允许再分发和修改，需署名。游戏里隐藏了她背后的机械臂。
-- `public/models/pixiv-sample.glb`：VRM1_Constraint_Twist_Sample，© 2022 pixiv Inc.，来自 [pixiv/three-vrm](https://github.com/pixiv/three-vrm) 的示例模型。
+| 角色 | 底模 | 文件 |
+| --- | --- | --- |
+| 宫永咲 | AvatarSample_E（ビビ） | `public/models/vroid-e.glb` |
+| 原村和 | AvatarSample_G（ヴィクトリア・ルービン） | `public/models/vroid-g.glb` |
+| 松实玄 | 千駄ヶ谷篠 | `public/models/vroid-shino.glb` |
+| 园城寺怜 | AvatarSample_F（ヴィータ） | `public/models/vroid-f.glb` |
 
-两个文件就是原始的 `.vrm`，只是改了扩展名，方便作为普通 glTF 文件发布。
+模型作者是 VRoid プロジェクト，许可写在模型里：任何人可用、可修改、可再分发、可商用，不需要署名（[VRoid Hub 许可条款](https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=allow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=allow&sexual_expression=allow&version=1&violent_expression=allow)）。原始文件来自 [OpenGameArt 上的 VRoid Studio CC0 models](https://opengameart.org/content/vroid-studio-cc0-models)，用 `python3 scripts/shrink-vrm.py 原文件.vrm 输出.glb` 把贴图缩小后放进项目。
 
 ## 牌面字体
 
