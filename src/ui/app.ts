@@ -4,6 +4,7 @@ import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
 import { Meld } from '../engine/score';
 import { TileId, WIND_CN, kindLabel } from '../engine/tiles';
 import { playClick, playChime } from './sound';
+import { Table3D } from '../ui3d/table3d';
 import { backHtml, tileHtml } from './tile';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
@@ -31,6 +32,8 @@ export class App {
   private showResult = false;
   // 刚打出的牌只在第一次画出来时播放落桌动画，之后重绘不再重播
   private freshDiscard: string | null = null;
+  private mode: '2d' | '3d' = '3d';
+  private table3d: Table3D | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -43,6 +46,8 @@ export class App {
 
   private renderSelect(): void {
     this.game = null;
+    this.table3d?.dispose();
+    this.table3d = null;
     const cards = CHARACTERS.map(
       (c) => `
       <button class="char-card" data-pick="${c.id}" style="--c:${c.color}">
@@ -57,8 +62,12 @@ export class App {
       <div class="select-screen">
         <h1>超能力麻将</h1>
         <p class="subtitle">选择你的角色，其余三位由电脑操作。东风战，赤宝牌 3 张。</p>
+        <div class="mode-switch">
+          <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 牌桌</button>
+          <button class="${this.mode === '2d' ? 'on' : ''}" data-ui="mode-2d">2D 牌桌</button>
+        </div>
         <div class="char-grid">${cards}</div>
-        <p class="footnote">2D 原型 · 角色与能力参考《天才麻将少女》，同人非商业作品</p>
+        <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品</p>
       </div>`;
   }
 
@@ -71,9 +80,14 @@ export class App {
     this.game.onEvent((e) => this.onGameEvent(e));
     this.toasts = [];
     this.showResult = false;
-    this.root.innerHTML =
-      '<div class="stage"><div class="table" id="table"></div></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
-    this.fit();
+    if (this.mode === '3d') {
+      this.root.innerHTML = '<div class="stage3d"><div class="three" id="three"></div><div class="hud" id="hud"></div></div>';
+      this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id));
+    } else {
+      this.root.innerHTML =
+        '<div class="stage"><div class="table" id="table"></div></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
+      this.fit();
+    }
     this.step();
   }
 
@@ -167,6 +181,11 @@ export class App {
       this.startGame(el.dataset.pick);
       return;
     }
+    if (el.dataset.ui === 'mode-3d' || el.dataset.ui === 'mode-2d') {
+      this.mode = el.dataset.ui === 'mode-3d' ? '3d' : '2d';
+      this.renderSelect();
+      return;
+    }
     const g = this.game;
     if (!g) return;
     if (el.dataset.ui === 'next') {
@@ -184,22 +203,40 @@ export class App {
       this.render();
       return;
     }
-    const legal = g.legalActions(this.me);
     if (el.dataset.tile !== undefined) {
-      const tile = Number(el.dataset.tile);
-      const a = legal.find((x) => x.type === 'discard' && x.tile === tile && !!x.riichi === this.riichiMode);
-      if (a) this.playerAct(a);
+      this.onTileClick(Number(el.dataset.tile));
       return;
     }
+    const legal = g.legalActions(this.me);
     if (el.dataset.act !== undefined) {
       const a = legal[Number(el.dataset.act)];
       if (a) this.playerAct(a);
     }
   }
 
+  private onTileClick(tile: TileId): void {
+    const g = this.game;
+    if (!g) return;
+    const a = g
+      .legalActions(this.me)
+      .find((x) => x.type === 'discard' && x.tile === tile && !!x.riichi === this.riichiMode);
+    if (a) this.playerAct(a);
+  }
+
+  private discardable(): Set<TileId> {
+    const legal = this.game!.legalActions(this.me);
+    return new Set(
+      legal.filter((a) => a.type === 'discard' && !!a.riichi === this.riichiMode).map((a) => (a as { tile: TileId }).tile),
+    );
+  }
+
   // ---------- 画面 ----------
 
   private render(): void {
+    if (this.table3d) {
+      this.render3d();
+      return;
+    }
     const g = this.game;
     const table = document.getElementById('table');
     if (!g || !table) return;
@@ -213,6 +250,30 @@ export class App {
       ${this.showResult ? this.resultHtml() : ''}`;
     this.freshDiscard = null;
     this.renderToasts();
+  }
+
+  private render3d(): void {
+    const g = this.game;
+    const hud = document.getElementById('hud');
+    if (!g || !hud || !this.table3d) return;
+    const plates = [1, 2, 3]
+      .map((s) => {
+        const c = this.chars[s];
+        return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
+      })
+      .join('');
+    hud.innerHTML = `
+      ${plates}
+      ${this.myAreaHtml(false)}
+      ${this.abilityPanelHtml()}
+      <div id="toasts"></div>
+      ${this.showResult ? this.resultHtml() : ''}`;
+    this.renderToasts();
+    this.table3d.sync(g, {
+      me: this.me,
+      clickable: g.phase === 'turn' && g.turn === this.me && !this.showResult ? this.discardable() : new Set(),
+      colors: this.chars.map((c) => c.color),
+    });
   }
 
   private renderToasts(): void {
@@ -303,13 +364,11 @@ export class App {
     return `<div class="pond ${POS[s]}">${tiles}</div>`;
   }
 
-  private myAreaHtml(): string {
+  private myAreaHtml(withHand = true): string {
     const g = this.game!;
     const p = g.players[this.me];
     const legal = g.legalActions(this.me);
-    const discardable = new Set(
-      legal.filter((a) => a.type === 'discard' && !!a.riichi === this.riichiMode).map((a) => (a as { tile: TileId }).tile),
-    );
+    const discardable = this.discardable();
     const sorted = p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b);
     const hand = sorted
       .map((t) => tileHtml(t, { classes: discardable.has(t) ? ['can'] : ['dim'], data: { tile: t } }))
@@ -352,10 +411,14 @@ export class App {
       <div class="me" style="--c:${c.color}">
         <div class="actions">${buttons.join('')}</div>
         ${waitHtml}${hint}
-        <div class="hand-row">
+        ${
+          withHand
+            ? `<div class="hand-row">
           <div class="hand">${hand}${drawn}</div>
           <div class="melds">${this.meldsHtml(p.melds, this.me)}</div>
-        </div>
+        </div>`
+            : ''
+        }
         <div class="nameplate mine"><div class="avatar">${c.name.slice(-1)}</div><div class="pname">${this.seatLabel(this.me)}</div></div>
       </div>`;
   }

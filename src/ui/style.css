@@ -849,3 +849,113 @@ button {
   background: var(--gold);
   margin-top: 8px;
 }
+
+/* ---------- 选择 2D / 3D ---------- */
+
+.mode-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.mode-switch button {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 18px;
+  color: var(--ink-quiet);
+  background: none;
+}
+
+.mode-switch button.on {
+  color: #222;
+  background: var(--gold);
+  font-weight: 700;
+}
+
+/* ---------- 3D 牌桌上的界面层 ---------- */
+
+.stage3d {
+  position: fixed;
+  inset: 0;
+}
+
+.three {
+  position: absolute;
+  inset: 0;
+}
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud .actions,
+.hud .ability-panel,
+.hud .modal {
+  pointer-events: auto;
+}
+
+.hud .me {
+  height: 100%;
+}
+
+.hud .actions {
+  bottom: 24%;
+}
+
+.hud .waits,
+.hud .hint {
+  bottom: 21%;
+}
+
+.hud .nameplate.mine {
+  bottom: 21%;
+  left: 24px;
+}
+
+.nameplate.float {
+  position: absolute;
+}
+
+.nameplate.float.top {
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.nameplate.float.left {
+  left: 24px;
+  top: 42%;
+}
+
+.nameplate.float.right {
+  right: 24px;
+  top: 42%;
+}
+
+.hud .toast.bottom {
+  bottom: 30%;
+}
+
+.hud .toast.top {
+  top: 18%;
+}
+
+.hud .toast.left {
+  left: 12%;
+  top: 40%;
+}
+
+.hud .toast.right {
+  right: 12%;
+  top: 40%;
+}
+
+.hud .result {
+  max-height: 90vh;
+  width: min(640px, calc(100vw - 32px));
+}
