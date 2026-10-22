@@ -125,7 +125,7 @@ export class App {
           this.showResult = true;
           this.render();
         },
-        this.mode === '3d' ? (wins ? 2600 : 1400) : 0,
+        this.mode === '3d' ? (wins ? 2400 : 1400) + this.busyMs() : 0,
       );
       return;
     }
@@ -134,10 +134,12 @@ export class App {
     // 先让电脑把自己的回应都做完，再等玩家
     if (g.phase === 'calls' && ai.length > 0) {
       this.render();
+      // 荣和在牌落下的那一刻就喊出来，吃碰杠稍微想一下
+      const ron = ai.some((s) => g.legalActions(s).some((a) => a.type === 'ron'));
       this.timer = window.setTimeout(() => {
         for (const s of ai) g.act(s, chooseAction(g, s, this.chars[s].ai));
         this.step();
-      }, AI_CALL_DELAY + this.busyMs());
+      }, (ron ? 0 : AI_CALL_DELAY) + this.busyMs());
       return;
     }
     this.render();

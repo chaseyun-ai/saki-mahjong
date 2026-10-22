@@ -75,3 +75,35 @@ describe('整场模拟', () => {
     expect(wins).toBeGreaterThan(rounds * 0.4);
   }, 120000);
 });
+
+describe('园城寺怜的立直', () => {
+  it('立直后只要没人鸣牌，下一巡一定能自摸', () => {
+    const toki = CHARACTERS.findIndex((c) => c.id === 'toki');
+    let riichis = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const g = new Game({ seed, players: CHARACTERS.map((c) => ({ name: c.name, ability: c.ability })) });
+      let watching = false;
+      g.onEvent((e) => {
+        if (e.type === 'discard' && e.seat === toki && e.riichi) {
+          watching = true;
+          riichis++;
+        }
+        if (e.type === 'call' || e.type === 'roundEnd') watching = false;
+        if (e.type === 'draw' && e.seat === toki && watching) {
+          expect(g.legalActions(toki).some((a) => a.type === 'tsumo')).toBe(true);
+          watching = false;
+        }
+      });
+      let steps = 0;
+      while (g.phase !== 'gameEnd' && ++steps < 20000) {
+        if (g.phase === 'roundEnd') {
+          g.nextRound();
+          continue;
+        }
+        const seat = g.waitingSeats()[0];
+        g.act(seat, chooseAction(g, seat, CHARACTERS[seat].ai));
+      }
+    }
+    expect(riichis).toBeGreaterThan(0);
+  }, 120000);
+});

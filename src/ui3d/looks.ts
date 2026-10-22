@@ -10,17 +10,19 @@ export interface Look {
   eyes: string;
   // 头发明暗对比，深色头发调低一些免得发灰
   hairContrast?: number;
+  // 倒牌方式：wave 从左到右依次倒，slam 一起拍倒
+  reveal?: 'wave' | 'slam';
 }
 
 export const LOOKS: Record<string, Look> = {
   // 宫永咲：栗色短发、红褐色眼睛
-  saki: { model: 'models/vroid-e.glb', hair: '#8c4f36', eyes: '#a5492f' },
+  saki: { model: 'models/vroid-e.glb', hair: '#8c4f36', eyes: '#a5492f', reveal: 'wave' },
   // 原村和：粉色长发、偏紫的粉色眼睛
-  nodoka: { model: 'models/vroid-g.glb', hair: '#f0a3bb', eyes: '#b86ea6' },
+  nodoka: { model: 'models/vroid-g.glb', hair: '#f0a3bb', eyes: '#b86ea6', reveal: 'slam' },
   // 松实玄：黑色长发、红褐色眼睛
-  kuro: { model: 'models/vroid-shino.glb', hair: '#2b2326', eyes: '#8e3b2e', hairContrast: 0.5 },
+  kuro: { model: 'models/vroid-shino.glb', hair: '#2b2326', eyes: '#8e3b2e', hairContrast: 0.5, reveal: 'slam' },
   // 园城寺怜：深灰蓝短发、暗红色眼睛
-  toki: { model: 'models/vroid-f.glb', hair: '#353b4a', eyes: '#93333a', hairContrast: 0.6 },
+  toki: { model: 'models/vroid-f.glb', hair: '#353b4a', eyes: '#93333a', hairContrast: 0.6, reveal: 'wave' },
 };
 
 function hslToRgb(h: number, s: number, l: number, out: [number, number, number]): void {

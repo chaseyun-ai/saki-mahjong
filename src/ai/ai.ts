@@ -191,6 +191,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (riichi && best.sh === 0) {
     const c = counts.slice();
     c[kindOf(best.a.tile)]--;
+    if (style.foresightRiichi) {
+      // 怜：先见到下一巡摸的牌正好和牌才立直（一发自摸），否则默听
+      if (nextDraw === undefined) return best.a;
+      c[kindOf(nextDraw)]++;
+      return shanten(c, p.melds.length) === -1 ? riichi : best.a;
+    }
     if (ukeire(c, p.melds.length, visible) > 0) return riichi;
   }
   return best.a;
