@@ -3,7 +3,9 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import type { Game } from '../engine/game';
 import type { Meld } from '../engine/score';
 import { TILE_COUNT, TileId, WIND_CN } from '../engine/tiles';
+import type { GameEvent } from '../engine/game';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
+import { Avatar } from './avatar';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -22,6 +24,18 @@ const POND_COLS = 6;
 const MELD_Z = 10.4;
 const TABLE_HALF = 14;
 const CONSOLE_HALF = 2.9;
+
+// 角色：免费的 VRM 示例模型（署名见 README）
+const AVATAR_MODELS = ['models/pixiv-sample.glb', 'models/seed-san.glb'];
+const AVATAR_SCALE = 13;
+const SEAT_Y = -4;
+const SEAT_Z = TABLE_HALF + 5;
+
+interface Character {
+  seat: number;
+  seatRoot: THREE.Group;
+  avatar: Avatar | null;
+}
 
 const STANDING = new THREE.Euler(0, 0, 0);
 const FACE_UP = new THREE.Euler(-Math.PI / 2, 0, 0);
@@ -48,7 +62,7 @@ export interface SyncView {
 export class Table3D {
   readonly renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
+  camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
   private atlas = new FaceAtlas();
   private tiles: TileObj[] = [];
   private faceGeoms: THREE.PlaneGeometry[] = [];
@@ -61,7 +75,8 @@ export class Table3D {
   private lastSync: { g: Game; view: SyncView } | null = null;
   private clock = new THREE.Clock();
   private frame = 0;
-  private characters: THREE.Group[] = [];
+  private characters: Character[] = [];
+  private characterGen = 0;
 
   constructor(
     private container: HTMLElement,
@@ -91,6 +106,8 @@ export class Table3D {
     el.addEventListener('pointerleave', () => this.pointer.set(-9, -9));
     el.addEventListener('click', this.onClick);
     this.loop();
+    // 调试用：?debug 时可以在控制台里拿到牌桌对象
+    if (location.search.includes('debug')) (window as unknown as { table3d: Table3D }).table3d = this;
   }
 
   dispose(): void {
@@ -185,40 +202,85 @@ export class Table3D {
   }
 
   private buildCharacters(colors: string[], me: number): void {
-    for (const c of this.characters) this.scene.remove(c);
+    for (const c of this.characters) this.scene.remove(c.seatRoot);
     this.characters = [];
-    // 占位人物：之后换成 VRM 模型
+    const gen = ++this.characterGen;
+    let n = 0;
     for (let s = 0; s < 4; s++) {
       if (s === me) continue;
-      const color = new THREE.Color(colors[s]);
-      const g = new THREE.Group();
-      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
-      const skin = new THREE.MeshStandardMaterial({ color: '#f3d9c6', roughness: 0.7 });
-      const body = new THREE.Mesh(new THREE.CapsuleGeometry(1.5, 2.2, 6, 16), mat);
-      body.position.y = 2.2;
-      const head = new THREE.Mesh(new THREE.SphereGeometry(1.25, 24, 16), skin);
-      head.position.y = 5.3;
-      const hair = new THREE.Mesh(
-        new THREE.SphereGeometry(1.32, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.55),
-        new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.55), roughness: 0.8 }),
-      );
-      hair.position.y = 5.4;
-      hair.rotation.x = -0.3;
-      const eyeMat = new THREE.MeshStandardMaterial({ color: '#2a1f2e' });
-      for (const x of [-0.42, 0.42]) {
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), eyeMat);
-        eye.position.set(x, 5.35, -1.12);
-        eye.scale.z = 0.5;
-        g.add(eye);
+      const seatRoot = new THREE.Group();
+      const local = new THREE.Vector3(0, 0, SEAT_Z);
+      seatRoot.position.copy(local.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(s, me)));
+      seatRoot.rotation.y = this.seatAngle(s, me);
+      // 模型加载完之前先放一个简单的占位人物
+      const holder = placeholder(colors[s]);
+      seatRoot.add(holder);
+      this.scene.add(seatRoot);
+      const ch: Character = { seat: s, seatRoot, avatar: null };
+      this.characters.push(ch);
+      const url = AVATAR_MODELS[n++ % AVATAR_MODELS.length];
+      Avatar.load(url)
+        .then((av) => {
+          if (gen !== this.characterGen) return;
+          seatRoot.remove(holder);
+          av.root.scale.setScalar(AVATAR_SCALE);
+          av.root.position.y = SEAT_Y - av.hipHeight * AVATAR_SCALE;
+          seatRoot.add(av.root);
+          ch.avatar = av;
+          this.lookAtHand(ch);
+        })
+        .catch((err) => console.warn('角色模型加载失败', url, err));
+    }
+  }
+
+  private characterAt(seat: number): Character | undefined {
+    return this.characters.find((c) => c.seat === seat);
+  }
+
+  // 本地坐标 → 世界坐标
+  private seatPoint(seat: number, x: number, y: number, z: number): THREE.Vector3 {
+    const me = this.lastSync?.view.me ?? 0;
+    return new THREE.Vector3(x, y, z).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(seat, me));
+  }
+
+  private lookAtHand(ch: Character): void {
+    ch.avatar?.lookAtPoint(this.seatPoint(ch.seat, 0, 0, HAND_Z));
+  }
+
+  // 牌局事件驱动角色的视线、表情和动作
+  onEvent(e: GameEvent): void {
+    const all = this.characters;
+    if (e.type === 'draw') {
+      const ch = this.characterAt(e.seat);
+      if (ch) this.lookAtHand(ch);
+    } else if (e.type === 'discard') {
+      const pond = this.seatPoint(e.seat, 0, 0, POND_Z);
+      for (const ch of all) {
+        if (ch.seat === e.seat) {
+          ch.avatar?.reach();
+          if (e.riichi) ch.avatar?.setMood('angry', 1.6);
+        } else ch.avatar?.lookAtPoint(pond);
       }
-      for (const m of [body, head, hair]) m.castShadow = true;
-      g.add(body, head, hair);
-      const local = new THREE.Vector3(0, 0, TABLE_HALF + 2.2);
-      g.position.copy(local.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(s, me)));
-      g.rotation.y = this.seatAngle(s, me);
-      g.userData.seat = s;
-      this.scene.add(g);
-      this.characters.push(g);
+    } else if (e.type === 'call') {
+      const who = this.seatPoint(e.seat, 0, 8, SEAT_Z);
+      for (const ch of all) {
+        if (ch.seat === e.seat) ch.avatar?.setMood('happy', 1.2);
+        else ch.avatar?.lookAtPoint(who);
+      }
+    } else if (e.type === 'ability') {
+      for (const ch of all) {
+        if (ch.seat === e.seat) ch.avatar?.setMood('relaxed', 2);
+        else ch.avatar?.setMood('surprised', 1.2);
+      }
+    } else if (e.type === 'roundEnd') {
+      const r = e.result;
+      for (const ch of all) {
+        if (r.wins.some((w) => w.seat === ch.seat)) ch.avatar?.setMood('happy', 3);
+        else if (r.wins.some((w) => w.from === ch.seat)) ch.avatar?.setMood('sad', 3);
+        else if (r.deltas[ch.seat] < 0) ch.avatar?.setMood('sad', 2);
+      }
+    } else if (e.type === 'roundStart') {
+      for (const ch of all) this.lookAtHand(ch);
     }
   }
 
@@ -415,8 +477,8 @@ export class Table3D {
     this.camera.aspect = w / h;
     // 竖屏时把视野拉宽，保证整张桌子都在画面里
     this.camera.fov = w / h < 1.2 ? 38 * Math.min(1.9, 1.2 / (w / h)) : 38;
-    this.camera.position.set(0, 27, 23);
-    this.camera.lookAt(0, 0, 1.6);
+    this.camera.position.set(0, 18, 29);
+    this.camera.lookAt(0, 1, -3);
     this.camera.updateProjectionMatrix();
   };
 
@@ -457,15 +519,21 @@ export class Table3D {
       const sc = t.group.scale.x + (t.target.scale - t.group.scale.x) * k;
       t.group.scale.setScalar(sc);
     }
-    // 占位人物轻轻呼吸
-    const time = this.clock.elapsedTime;
-    this.characters.forEach((c, i) => {
-      c.children.forEach((m) => {
-        if (m instanceof THREE.Mesh && m.geometry instanceof THREE.CapsuleGeometry) m.scale.y = 1 + Math.sin(time * 1.6 + i) * 0.015;
-      });
-    });
+    for (const c of this.characters) c.avatar?.update(dt);
     this.renderer.render(this.scene, this.camera);
   };
+}
+
+function placeholder(color: string): THREE.Group {
+  const c = new THREE.Color(color);
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(1.5, 2.2, 6, 16), new THREE.MeshStandardMaterial({ color: c, roughness: 0.6 }));
+  body.position.y = 2.2;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(1.25, 24, 16), new THREE.MeshStandardMaterial({ color: '#f3d9c6', roughness: 0.7 }));
+  head.position.y = 5.3;
+  body.castShadow = head.castShadow = true;
+  g.add(body, head);
+  return g;
 }
 
 function feltTexture(): THREE.CanvasTexture {

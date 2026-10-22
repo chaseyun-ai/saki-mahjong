@@ -67,7 +67,7 @@ export class App {
           <button class="${this.mode === '2d' ? 'on' : ''}" data-ui="mode-2d">2D 牌桌</button>
         </div>
         <div class="char-grid">${cards}</div>
-        <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品</p>
+        <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物暂用示例模型：Seed-san © VirtualCast, Inc.（VRM Public License 1.0）、VRM1 Constraint Twist Sample © pixiv Inc.</p>
       </div>`;
   }
 
@@ -148,6 +148,7 @@ export class App {
   }
 
   private onGameEvent(e: GameEvent): void {
+    this.table3d?.onEvent(e);
     if (e.type === 'discard') {
       this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
       playClick();
