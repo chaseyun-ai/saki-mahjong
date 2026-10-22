@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRM, VRMHumanBoneName, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import type { RestPose } from './looks';
 
 // 坐在牌桌边的 VRM 角色：坐姿、呼吸、眨眼、视线、表情，以及用右手去拿牌（两段骨骼 IK）。
 // 模型面朝本地 -z（牌桌中心）。
@@ -61,6 +62,7 @@ export class Avatar {
   reachWeight = 0;
   // 双手休息的位置（模型自身坐标，右手 +x）：桌沿上，或者放在腿上
   private rest: { left: THREE.Vector3; right: THREE.Vector3 } | null = null;
+  private restPose: RestPose = 'edge';
   // 站立时髋部离脚底的高度（模型自身单位），用来把角色放到椅子高度
   readonly hipHeight: number;
 
@@ -89,15 +91,24 @@ export class Avatar {
     return new Avatar(gltf.userData.vrm as VRM);
   }
 
-  // tableY、edgeZ 是桌面高度和桌沿位置（模型自身坐标）；onLap 时手放在腿上
-  setRestPose(tableY: number, edgeZ: number, offscreen: boolean): void {
-    if (offscreen) {
-      // 自己：手搭在桌沿外侧，刚好在镜头外，伸手时也不会从桌子底下穿出来
-      const y = tableY - 0.01;
-      this.rest = { left: new THREE.Vector3(-0.17, y, edgeZ + 0.1), right: new THREE.Vector3(0.17, y, edgeZ + 0.1) };
+  // 没事做时手放哪。tableY、edgeZ 是桌面高度和桌沿位置（模型自身坐标，-z 朝桌子）
+  setRestPose(tableY: number, edgeZ: number, pose: RestPose): void {
+    this.restPose = pose;
+    const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+    const hip = this.hipHeight;
+    if (pose === 'offscreen') {
+      // 自己：手在桌沿外侧，刚好在镜头外
+      this.rest = { left: v(-0.17, tableY - 0.01, edgeZ + 0.15), right: v(0.17, tableY - 0.01, edgeZ + 0.15) };
+    } else if (pose === 'lap') {
+      // 双手搭在大腿上
+      this.rest = { left: v(-0.11, hip + 0.08, -0.2), right: v(0.11, hip + 0.08, -0.2) };
+    } else if (pose === 'crossed') {
+      // 抱胸：两只手腕在胸前交叉，一前一后
+      // 抱胸：前臂在胸前交叉，手腕搭到另一边的胳膊肘上
+      this.rest = { left: v(0.15, hip + 0.3, -0.17), right: v(-0.15, hip + 0.33, -0.14) };
     } else {
-      const y = tableY + 0.03;
-      this.rest = { left: new THREE.Vector3(-0.16, y, edgeZ - 0.07), right: new THREE.Vector3(0.16, y, edgeZ - 0.07) };
+      // 双手轻轻扶着桌沿
+      this.rest = { left: v(-0.19, tableY + 0.015, edgeZ - 0.01), right: v(0.19, tableY + 0.015, edgeZ - 0.01) };
     }
   }
 
@@ -259,7 +270,7 @@ export class Avatar {
     if (this.reachTarget && this.reachWeight > 0) {
       const local = this.root.worldToLocal(this.reachTarget.clone());
       const dist = Math.hypot(local.x, local.z);
-      lean = this.reachWeight * THREE.MathUtils.clamp((dist - 0.3) * 1.4, 0.05, 0.5);
+      lean = this.reachWeight * THREE.MathUtils.clamp((dist - 0.35) * 1.4, 0.05, 0.62);
       twist = this.reachWeight * THREE.MathUtils.clamp(Math.atan2(-local.x, -local.z) * 0.35, -0.3, 0.3);
     }
     const breath = Math.sin(t * 1.6);
@@ -294,12 +305,23 @@ export class Avatar {
       left.y += Math.max(0, Math.sin(t * 0.8 + 1)) * 0.003 * this.root.scale.x;
       if (this.reachTarget && this.reachWeight > 0) {
         // 从休息位置到目标走一条往上拱的弧线，越过桌沿和手牌，不从牌里穿过去
+        // 手从腿上、胸前出发时先抬高，越过桌沿再往前伸
         const dist = Math.hypot(this.reachTarget.x - right.x, this.reachTarget.z - right.z);
-        right.lerp(this.reachTarget, this.reachWeight);
-        right.y += Math.sin(this.reachWeight * Math.PI) * Math.min(dist * 0.3, 0.1 * this.root.scale.x);
+        const w = this.reachWeight;
+        const y = THREE.MathUtils.lerp(right.y, this.reachTarget.y, 1 - (1 - w) ** 3);
+        right.lerp(this.reachTarget, w).setY(y);
+        right.y += Math.sin(w * Math.PI) * Math.min(dist * 0.3, 0.1 * this.root.scale.x);
       }
       this.solveArm('left', left);
       this.solveArm('right', right);
+      if (this.restPose === 'crossed') {
+        // 抱胸时手掌往回收，抓住另一边的胳膊，而不是伸在外面
+        const curl = 1.3;
+        const lh = this.bone('leftHand');
+        const rh = this.bone('rightHand');
+        if (lh) this.rotateWorld(lh, axisQ(Y, -curl));
+        if (rh) this.rotateWorld(rh, axisQ(Y, curl * (1 - this.reachWeight)));
+      }
     }
 
     this.updateFace(dt);

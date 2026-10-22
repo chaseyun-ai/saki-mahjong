@@ -40,10 +40,11 @@ const DRAWER_Y = -0.85;
 const DRAWER_OPEN = 2.4;
 const STICK_LEN = 3.6;
 
-// 角色：VRoid 的 CC0 示例模型改色（见 looks.ts）。牌宽约 2.6 厘米，按这个比例人放大约 20 倍
-const AVATAR_SCALE = 20;
+// 角色：VRoid 的 CC0 示例模型改色（见 looks.ts）。人放大 23 倍，牌和手的比例接近日麻用的小号牌
+const AVATAR_SCALE = 23;
 const SEAT_Y = -0.24 * AVATAR_SCALE;
-const SEAT_Z = TABLE_HALF + 0.2 * AVATAR_SCALE;
+// 髋部离桌沿 0.3 米，身体和桌子之间留一拳多的空
+const SEAT_Z = TABLE_HALF + 0.3 * AVATAR_SCALE;
 
 // 发牌：骰子落定后，每批 4 张（最后每人 1 张）依次发出，先按发到的顺序摆，
 // 发完后手牌往后一倒再立起来，变成理好的顺序
@@ -179,6 +180,9 @@ export class Table3D {
   private zoom = { t: -1, target: new THREE.Vector3() };
   private held = new Set<TileId>();
   private reveal: RevealState | null = null;
+  // 每家手牌上一次的摆法；打牌时先按这个摆，牌落进牌河后再理牌
+  private layouts: { hand: TileId[]; drawn: TileId | null }[] = [];
+  private frozen = new Map<number, { hand: TileId[]; drawn: TileId | null; until: number }>();
   private consoleKey = '';
 
   constructor(
@@ -360,7 +364,7 @@ export class Table3D {
           av.root.position.y = SEAT_Y - av.hipHeight * AVATAR_SCALE;
           if (rel === 0) av.setFirstPerson(this.camera);
           // 桌面和桌沿换算到模型自身坐标；自己的手平时放在腿上，免得挡住手牌
-          av.setRestPose(av.hipHeight - SEAT_Y / AVATAR_SCALE, (TABLE_HALF - SEAT_Z) / AVATAR_SCALE, rel === 0);
+          av.setRestPose(av.hipHeight - SEAT_Y / AVATAR_SCALE, (TABLE_HALF - SEAT_Z) / AVATAR_SCALE, rel === 0 ? 'offscreen' : look.pose ?? 'edge');
           seatRoot.add(av.root);
           ch.avatar = av;
           av.home = this.seatPoint(s, 0, 0, HAND_Z);
@@ -409,7 +413,10 @@ export class Table3D {
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
       const pond = this.seatPoint(e.seat, 0, 0, POND_Z + 1.5);
-      this.startHandAnim(e.seat, e.tile, e.riichi ? RIICHI_TIMING : DISCARD_TIMING);
+      const timing = e.riichi ? RIICHI_TIMING : DISCARD_TIMING;
+      const prev = this.layouts[e.seat];
+      if (prev) this.frozen.set(e.seat, { ...prev, until: this.now + timing.reach + timing.carry + 0.15 });
+      this.startHandAnim(e.seat, e.tile, timing);
       if (e.riichi) {
         // 立直宣言：牌拍下去的那一刻放特效，接着从抽屉里拿立直棒放到桌上
         window.setTimeout(() => this.callFx(e.seat, 'riichi'), (RIICHI_TIMING.reach + RIICHI_TIMING.carry) * 1000);
@@ -683,6 +690,8 @@ export class Table3D {
     const p = g.players[s];
     const mine = s === me;
     const lyingY = TILE_T / 2;
+    // 松实姐妹的习惯：牌河和副露倒过来摆，让对手看到的是正的
+    const flip = LOOKS[this.lastSync?.view.ids[s] ?? '']?.upsideDown ? Math.PI : 0;
 
     // 副露：从右边往左摆
     let mx = TABLE_HALF - 1.2;
@@ -696,7 +705,7 @@ export class Table3D {
         const hidden = m.type === 'ankan' && (i === 0 || i === 3);
         const w = sideways ? TILE_H : TILE_W;
         const z = sideways ? MELD_Z + (TILE_H - TILE_W) / 2 : MELD_Z;
-        out.set(t, this.toWorld(s, me, x + w / 2, lyingY, z, hidden ? FACE_DOWN : FACE_UP, sideways ? Math.PI / 2 : 0));
+        out.set(t, this.toWorld(s, me, x + w / 2, lyingY, z, hidden ? FACE_DOWN : FACE_UP, (sideways ? Math.PI / 2 : 0) + flip));
         x += w + GAP;
       }
       if (m.type === 'kakan') {
@@ -705,19 +714,30 @@ export class Table3D {
         const ci = tiles.indexOf(m.calledTile!);
         let cx = mx;
         for (let i = 0; i < ci; i++) cx += TILE_W + GAP;
-        out.set(added, this.toWorld(s, me, cx + TILE_H / 2, lyingY, MELD_Z + (TILE_H - TILE_W) / 2 - TILE_W - GAP, FACE_UP, Math.PI / 2));
+        out.set(added, this.toWorld(s, me, cx + TILE_H / 2, lyingY, MELD_Z + (TILE_H - TILE_W) / 2 - TILE_W - GAP, FACE_UP, Math.PI / 2 + flip));
       }
       mx -= 0.3;
     }
 
     // 手牌：自己的稍微后仰朝向镜头，别人的立着背对我们
-    const drawn = p.drawn;
-    const hand = p.hand.filter((t) => t !== drawn).sort((a, b) => a - b);
+    let drawn = p.drawn;
+    let hand: (TileId | null)[] = p.hand.filter((t) => t !== drawn).sort((a, b) => a - b);
+    // 刚打出去的牌还没落进牌河：其他牌原地不动，空位先留着
+    const fz = this.frozen.get(s);
+    if (fz && this.now < fz.until) {
+      const has = new Set(p.hand);
+      const listed = new Set([...fz.hand, fz.drawn]);
+      hand = fz.hand.map((t) => (has.has(t) ? t : null)).concat(p.hand.filter((t) => !listed.has(t)));
+      drawn = fz.drawn;
+    } else {
+      this.frozen.delete(s);
+    }
     // 发牌时先按发到的顺序摆，理牌那一下所有牌往后倒，再按顺序立起来
     const deal = this.deal;
     const dealing = !!deal && this.now < deal.start + DEAL_SORT;
     const tilting = !!deal && !dealing && this.now < deal.start + DEAL_SORT + SORT_TILT;
-    if (dealing || tilting) hand.sort((a, b) => (deal!.order.get(a)?.d ?? 99) - (deal!.order.get(b)?.d ?? 99));
+    if (dealing || tilting) hand.sort((a, b) => (deal!.order.get(a!)?.d ?? 99) - (deal!.order.get(b!)?.d ?? 99));
+    if (!this.frozen.has(s)) this.layouts[s] = { hand: hand as TileId[], drawn };
     const count = hand.length + (drawn !== null ? 1 : 0);
     // 自己的手牌放大一些，看得清也好点
     const hs = mine ? MY_HAND_SCALE : 1;
@@ -729,9 +749,9 @@ export class Table3D {
     const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(-0.32, 0, 0) : STANDING;
     const y = tilting ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
     const hz = HAND_Z + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
-    const place = (t: TileId) => {
-      const lift = mine && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
-      out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, 0, hs));
+    const place = (t: TileId | null) => {
+      const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
+      if (t !== null && p.hand.includes(t)) out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, 0, hs));
       x += step;
     };
     hand.forEach(place);
@@ -754,7 +774,7 @@ export class Table3D {
       }
       const w = d.riichi ? TILE_H : TILE_W;
       const z = POND_Z + row * (TILE_H + GAP) + TILE_H / 2;
-      out.set(d.tile, this.toWorld(s, me, px + w / 2, lyingY, z, FACE_UP, d.riichi ? Math.PI / 2 : 0));
+      out.set(d.tile, this.toWorld(s, me, px + w / 2, lyingY, z, FACE_UP, (d.riichi ? Math.PI / 2 : 0) + flip));
       px += w + GAP;
       col++;
     }
@@ -1016,7 +1036,8 @@ export class Table3D {
       const dest = a.landed ?? destP?.pos ?? a.start;
       // 手腕在东西的后上方，手指正好捏住
       const toward = new THREE.Vector3(0, 0, 1).applyAxisAngle(up, this.seatAngle(a.seat, me));
-      const grip = (p: THREE.Vector3, raise: number) => p.clone().addScaledVector(toward, 1.6).addScaledVector(up, 1.2 + raise);
+      const grip = (p: THREE.Vector3, raise: number) =>
+        p.clone().addScaledVector(toward, AVATAR_SCALE * 0.08).addScaledVector(up, AVATAR_SCALE * 0.06 + raise);
       let wrist: THREE.Vector3;
       let weight: number;
       if (a.kind === 'gesture') {
@@ -1124,8 +1145,9 @@ export class Table3D {
       this.renderer.domElement.style.cursor = hover !== null ? 'pointer' : 'default';
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
     }
-    // 发牌期间每帧重新摆一次，让牌按时间从牌山飞到手里
-    if (this.deal && this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
+    // 发牌期间每帧重新摆一次，让牌按时间从牌山飞到手里；打出的牌落下后理牌
+    const thawed = [...this.frozen.values()].some((f) => this.now >= f.until);
+    if ((this.deal || thawed) && this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
     this.dice.update(dt);
     this.animateHands(dt);
     this.animateFlights(dt);
