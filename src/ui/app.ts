@@ -83,6 +83,8 @@ export class App {
     if (this.mode === '3d') {
       this.root.innerHTML = '<div class="stage3d"><div class="three" id="three"></div><div class="hud" id="hud"></div></div>';
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id));
+      // 第一局在牌桌建好之前就开始了，补一次开局动画
+      this.table3d.onEvent({ type: 'roundStart', label: this.game.roundLabel() }, this.game);
     } else {
       this.root.innerHTML =
         '<div class="stage"><div class="table" id="table"></div></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
@@ -120,7 +122,7 @@ export class App {
       this.timer = window.setTimeout(() => {
         for (const s of ai) g.act(s, chooseAction(g, s, this.chars[s].ai));
         this.step();
-      }, AI_CALL_DELAY);
+      }, AI_CALL_DELAY + this.busyMs());
       return;
     }
     this.render();
@@ -128,7 +130,7 @@ export class App {
       this.timer = window.setTimeout(() => {
         g.act(g.turn, chooseAction(g, g.turn, this.chars[g.turn].ai));
         this.step();
-      }, AI_TURN_DELAY);
+      }, AI_TURN_DELAY + this.busyMs());
       return;
     }
     if (g.phase === 'turn' && g.turn === this.me) {
@@ -148,7 +150,7 @@ export class App {
   }
 
   private onGameEvent(e: GameEvent): void {
-    this.table3d?.onEvent(e);
+    this.table3d?.onEvent(e, this.game!);
     if (e.type === 'discard') {
       this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
       playClick();
@@ -215,9 +217,14 @@ export class App {
     }
   }
 
+  // 3D 牌桌在掷骰子、发牌时，先等动画放完
+  private busyMs(): number {
+    return this.table3d?.busyMs() ?? 0;
+  }
+
   private onTileClick(tile: TileId): void {
     const g = this.game;
-    if (!g) return;
+    if (!g || this.busyMs() > 0) return;
     const a = g
       .legalActions(this.me)
       .find((x) => x.type === 'discard' && x.tile === tile && !!x.riichi === this.riichiMode);

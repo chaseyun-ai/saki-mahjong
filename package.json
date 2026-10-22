@@ -12,7 +12,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "@types/opentype.js": "^1.3.10",
     "@types/three": "^0.170.0",
+    "opentype.js": "^1.3.4",
     "typescript": "^5.9.3",
     "vite": "^6.4.5",
     "vitest": "^3.2.7"

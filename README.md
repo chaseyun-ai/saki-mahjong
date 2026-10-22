@@ -38,3 +38,7 @@ npx vite-node scripts/balance.ts 300   # 让电脑打 300 场，统计各角色�
 - `public/models/pixiv-sample.glb`：VRM1_Constraint_Twist_Sample，© 2022 pixiv Inc.，来自 [pixiv/three-vrm](https://github.com/pixiv/three-vrm) 的示例模型。
 
 两个文件就是原始的 `.vrm`，只是改了扩展名，方便作为普通 glTF 文件发布。
+
+## 牌面字体
+
+万子和字牌的字形取自 [霞鹜文楷 TC（LXGW WenKai TC）](https://github.com/lxgw/LxgwWenkaiTC) Bold，SIL Open Font License 1.1。`scripts/gen-glyphs.ts` 从 `scripts/fonts/` 里的字体子集生成 `src/ui/glyphs.ts`，游戏运行时不需要加载字体。

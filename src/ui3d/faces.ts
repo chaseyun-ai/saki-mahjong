@@ -51,6 +51,11 @@ export class FaceAtlas {
     this.texture.needsUpdate = true;
   }
 
+  // 把一张牌面画到别的 canvas 上（控制台上的宝牌指示牌）
+  drawFace(ctx: CanvasRenderingContext2D, index: number, x: number, y: number, w: number, h: number): void {
+    ctx.drawImage(this.canvas, (index % COLS) * CELL_W, Math.floor(index / COLS) * CELL_H, CELL_W, CELL_H, x, y, w, h);
+  }
+
   // 一张牌正面的平面，UV 对准图集里的那一格
   faceGeometry(index: number, w: number, h: number): THREE.PlaneGeometry {
     const g = new THREE.PlaneGeometry(w, h);
