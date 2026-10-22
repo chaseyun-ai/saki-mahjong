@@ -29,6 +29,8 @@ export class App {
   private toastSeq = 0;
   private timer: number | null = null;
   private showResult = false;
+  // 刚打出的牌只在第一次画出来时播放落桌动画，之后重绘不再重播
+  private freshDiscard: string | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -133,6 +135,7 @@ export class App {
 
   private onGameEvent(e: GameEvent): void {
     if (e.type === 'discard') {
+      this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
       playClick();
       if (e.riichi) this.toast(e.seat, '立直', true);
     } else if (e.type === 'call') {
@@ -208,6 +211,7 @@ export class App {
       ${this.abilityPanelHtml()}
       <div id="toasts"></div>
       ${this.showResult ? this.resultHtml() : ''}`;
+    this.freshDiscard = null;
     this.renderToasts();
   }
 
@@ -292,6 +296,7 @@ export class App {
         if (d.called) classes.push('called');
         if (d.tsumogiri) classes.push('tsumogiri');
         if (last && last.seat === s && i === p.discards.length - 1) classes.push('last');
+        if (this.freshDiscard === `${s}-${i}`) classes.push('fresh');
         return tileHtml(d.tile, { size: 'pond', sideways: d.riichi, classes });
       })
       .join('');

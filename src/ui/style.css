@@ -182,12 +182,11 @@ button {
 
 .tile .face {
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  font-weight: 700;
+  padding: 8% 6%;
+}
+
+.tile .face svg {
+  display: block;
 }
 
 .tile.t-hand {
@@ -214,48 +213,8 @@ button {
   box-shadow: 0 2px 0 var(--tile-edge);
 }
 
-.t-suit {
-  font-size: 0.8em;
-  margin-top: 0.12em;
-}
-
-.t-suit.s0 {
-  color: var(--man);
-}
-
-.t-suit.s1 {
-  color: var(--pin);
-}
-
-.t-suit.s2 {
-  color: var(--sou);
-}
-
-.t-honor {
-  font-size: 1.35em;
-}
-
-.t-honor.h5 {
-  color: var(--sou);
-}
-
-.t-honor.h6 {
-  color: var(--man);
-}
-
-.t-haku {
-  width: 55%;
-  height: 60%;
-  border: 2px solid #6a9ccc;
-  border-radius: 3px;
-}
-
 .tile.red {
-  background: #ffe6e1;
-}
-
-.tile.red .t-num {
-  color: var(--man);
+  background: #fff1ec;
 }
 
 .tile.back {
@@ -500,19 +459,26 @@ button {
 }
 
 .pond .tile.last {
-  animation: drop 0.25s ease-out;
   outline: 2px solid var(--gold);
 }
 
+.pond .tile.fresh {
+  animation: drop 0.25s ease-out;
+}
+
+/* 用 translate / scale 属性做动画，不覆盖立直牌的 rotate */
 @keyframes drop {
   from {
-    transform: translateY(-14px) scale(1.15);
+    translate: 0 -14px;
+    scale: 1.15;
     opacity: 0.2;
   }
 }
 
-.pond .tile.sideways.last {
-  animation: none;
+@media (prefers-reduced-motion: reduce) {
+  .pond .tile.fresh {
+    animation: none;
+  }
 }
 
 /* ---------- 自己 ---------- */
