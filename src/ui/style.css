@@ -65,6 +65,10 @@ button {
   margin-top: 24px;
 }
 
+.footnote a {
+  color: inherit;
+}
+
 .char-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 240px));

@@ -1,0 +1,204 @@
+/* ---------- 出牌动作调试 ---------- */
+
+.lab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  height: 100%;
+}
+
+.lab-stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lab-three {
+  position: absolute;
+  inset: 0;
+}
+
+.lab-status {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--ink-quiet);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.lab-panel {
+  overflow-y: auto;
+  padding: 16px;
+  background: #0e2328;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lab-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.lab-head h1 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--gold);
+  letter-spacing: 2px;
+}
+
+.lab-head a {
+  color: var(--ink-quiet);
+  font-size: 13px;
+}
+
+.lab-panel section {
+  padding: 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.lab-panel h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: normal;
+  color: var(--ink-quiet);
+}
+
+.lab-panel h2 small {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.lab-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lab-chip {
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lab-chip.on {
+  border-color: var(--gold);
+  background: rgba(240, 195, 90, 0.16);
+  color: var(--gold);
+}
+
+.lab-hand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.lab-gap {
+  width: 6px;
+}
+
+.lab-tile {
+  padding: 2px 1px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lab-tile.on {
+  background: var(--gold);
+}
+
+.lab-hand .tile.t-mini {
+  width: 19px;
+  height: 26px;
+}
+
+.lab-tile.on .tile {
+  transform: translateY(-3px);
+}
+
+.lab-pond {
+  display: grid;
+  grid-template-columns: repeat(6, 28px);
+  gap: 3px;
+}
+
+.lab-cell {
+  height: 34px;
+  padding: 0;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  background: transparent;
+  color: #222;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lab-cell.filled {
+  border: 0;
+  background: var(--tile-face);
+  box-shadow: 0 2px 0 var(--tile-edge);
+  opacity: 0.55;
+}
+
+.lab-cell.on {
+  border: 2px solid var(--gold);
+  background: rgba(240, 195, 90, 0.25);
+  color: var(--gold);
+}
+
+.lab-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lab-primary {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--gold);
+  color: #1b1405;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.lab-primary kbd {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.15);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+/* 手机竖屏：画面在上，面板在下 */
+@media (max-width: 760px) {
+  .lab {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .lab-panel {
+    max-height: 46vh;
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}

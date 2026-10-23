@@ -189,6 +189,7 @@ export class Table3D {
   private layouts: { hand: TileId[]; drawn: TileId | null }[] = [];
   private frozen = new Map<number, { hand: TileId[]; drawn: TileId | null; until: number }>();
   private consoleKey = '';
+  private resizer = new ResizeObserver(() => this.resize());
 
   constructor(
     private container: HTMLElement,
@@ -220,8 +221,9 @@ export class Table3D {
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
     });
 
+    // 跟着容器大小走：窗口变了、旁边的面板变高变矮都要重新算画面比例
     this.resize();
-    window.addEventListener('resize', this.resize);
+    this.resizer.observe(container);
     const el = this.renderer.domElement;
     el.addEventListener('pointermove', this.onPointerMove);
     el.addEventListener('pointerleave', () => this.pointer.set(-9, -9));
@@ -233,7 +235,7 @@ export class Table3D {
 
   dispose(): void {
     cancelAnimationFrame(this.frame);
-    window.removeEventListener('resize', this.resize);
+    this.resizer.disconnect();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -387,6 +389,36 @@ export class Table3D {
     return this.characters.find((c) => c.seat === seat);
   }
 
+  // ---------- 动作调试场景用 ----------
+
+  // 换人物或座位后重新请人入座
+  rebuildCharacters(view: SyncView): void {
+    this.buildCharacters(view);
+  }
+
+  // 四个人的模型都加载好了
+  charactersReady(): boolean {
+    return this.characters.length === 4 && this.characters.every((c) => c.avatar);
+  }
+
+  // 立刻把所有牌放到位：停掉手上的动作、飞牌、发牌和理牌，手回到休息位置
+  snap(): void {
+    this.handAnims = [];
+    this.flights = [];
+    this.frozen.clear();
+    this.deal = null;
+    this.held.clear();
+    for (const c of this.characters) if (c.avatar) c.avatar.reachWeight = 0;
+    for (const t of this.tiles) {
+      if (!t.target) continue;
+      t.group.position.copy(t.target.pos);
+      t.group.quaternion.copy(t.target.quat);
+      t.group.scale.setScalar(t.target.scale);
+      t.group.visible = true;
+      t.shown = true;
+    }
+  }
+
   // 本地坐标 → 世界坐标
   private seatPoint(seat: number, x: number, y: number, z: number): THREE.Vector3 {
     const me = this.lastSync?.view.me ?? 0;
@@ -418,15 +450,12 @@ export class Table3D {
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
       const pond = this.seatPoint(e.seat, 0, 0, POND_Z + 1.5);
-      const timing = e.riichi ? RIICHI_DISCARD : DEFAULT_DISCARD;
-      const prev = this.layouts[e.seat];
-      if (prev) this.frozen.set(e.seat, { ...prev, until: this.now + timing.reach + timing.carry + 0.15 });
       // 立直宣言：牌拍下去的那一刻放特效（落桌标记），接着从抽屉里拿立直棒放到桌上
-      this.startHandAnim(e.seat, e.tile, timing, !!e.riichi);
+      this.playDiscard(e.seat, e.tile, e.riichi ? RIICHI_DISCARD : DEFAULT_DISCARD, !!e.riichi);
       if (e.riichi) this.startStickAnim(e.seat, -(RIICHI_DISCARD.reach + RIICHI_DISCARD.carry + RIICHI_DISCARD.settle));
       for (const ch of all) {
         // 别人出牌时看一眼，反应有先后
-        ch.avatar?.lookAtPoint(pond, ch.seat === e.seat ? 1 : 0.9 + Math.random() * 0.8);
+        if (ch.seat !== e.seat) ch.avatar?.lookAtPoint(pond, 0.9 + Math.random() * 0.8);
         if (ch.seat === e.seat && e.riichi) ch.avatar?.setMood('angry', 1.6);
       }
     } else if (e.type === 'call') {
@@ -570,6 +599,15 @@ export class Table3D {
     if (!obj.shown) return;
     this.flights = this.flights.filter((f) => f.tile !== tile);
     this.flights.push({ tile, t: 0, start: obj.group.position.clone() });
+  }
+
+  // 出牌：手牌在牌落进牌河之前保持原样，出牌的人看着牌河，手把牌搬过去。
+  // 牌局和动作调试场景都走这里；调用之后再 sync，牌的落点就是 sync 算出的牌河位置
+  playDiscard(seat: number, tile: TileId, motion: DiscardParams, riichi = false): void {
+    const prev = this.layouts[seat];
+    if (prev) this.frozen.set(seat, { ...prev, until: this.now + motion.reach + motion.carry + 0.15 });
+    this.startHandAnim(seat, tile, motion, riichi);
+    this.characterAt(seat)?.avatar?.lookAtPoint(this.seatPoint(seat, 0, 0, POND_Z + 1.5), 1);
   }
 
   private startHandAnim(seat: number, tile: TileId, motion: DiscardParams, riichi = false): void {
@@ -972,6 +1010,7 @@ export class Table3D {
   private resize = (): void => {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
+    if (!w || !h) return;
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     // 竖屏时把视野拉宽，保证整张桌子都在画面里
