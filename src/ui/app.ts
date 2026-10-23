@@ -5,6 +5,8 @@ import { Meld } from '../engine/score';
 import { TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
+import { preloadModels } from '../ui3d/avatar';
+import { MODEL_URLS } from '../ui3d/looks';
 import { backHtml, tileHtml } from './tile';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
@@ -68,6 +70,8 @@ export class App {
     this.game = null;
     this.table3d?.dispose();
     this.table3d = null;
+    // 3D 牌桌要用的人物模型现在就开始在后台下载
+    if (this.mode === '3d') preloadModels(MODEL_URLS);
     const cards = CHARACTERS.map(
       (c) => `
       <button class="char-card" data-pick="${c.id}" style="--c:${c.color}">

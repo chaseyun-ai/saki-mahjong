@@ -5,7 +5,7 @@ import type { Game, GameEvent } from '../engine/game';
 import { TILE_COUNT, TileId, WIND_CN } from '../engine/tiles';
 import { meldLayout } from '../ui/meldLayout';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
-import { Avatar } from './avatar';
+import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects } from './effects';
@@ -159,6 +159,10 @@ export class Table3D {
   private frame = 0;
   private characters: Character[] = [];
   private characterGen = 0;
+  // 角色模型还没到齐时，画面上方显示下载进度；有模型加载失败就不再显示（占位人偶先顶着）
+  private modelUrls: string[] = [];
+  private modelFailed = false;
+  private loadingEl: HTMLDivElement | null = null;
   private dice = new Dice(0.5);
   private deal: DealState | null = null;
   private handAnims: HandAnim[] = [];
@@ -244,6 +248,7 @@ export class Table3D {
     this.resizer.disconnect();
     this.renderer.dispose();
     this.renderer.domElement.remove();
+    this.loadingEl?.remove();
   }
 
   // ---------- 场景 ----------
@@ -363,6 +368,8 @@ export class Table3D {
     const { colors, me } = view;
     for (const c of this.characters) this.scene.remove(c.seatRoot);
     this.characters = [];
+    this.modelUrls = [];
+    this.modelFailed = false;
     const gen = ++this.characterGen;
     for (let s = 0; s < 4; s++) {
       const rel = (s - me + 4) % 4;
@@ -377,6 +384,7 @@ export class Table3D {
       this.characters.push(ch);
       this.seatCharacter(ch, me);
       const url = look.model;
+      this.modelUrls.push(url);
       Avatar.load(url)
         .then((av) => {
           if (gen !== this.characterGen) return;
@@ -387,7 +395,10 @@ export class Table3D {
           if (rel === 0) av.setFirstPerson(this.camera);
           seatRoot.add(av.root);
         })
-        .catch((err) => console.warn('角色模型加载失败', url, err));
+        .catch((err) => {
+          if (gen === this.characterGen) this.modelFailed = true;
+          console.warn('角色模型加载失败', url, err);
+        });
     }
   }
 
@@ -1379,6 +1390,22 @@ export class Table3D {
     }
     this.updateMarks();
     for (const c of this.characters) c.avatar?.update(dt);
+    this.updateLoading();
+  }
+
+  private updateLoading(): void {
+    if (this.characters.length === 0 || this.charactersReady() || this.modelFailed) {
+      this.loadingEl?.remove();
+      this.loadingEl = null;
+      return;
+    }
+    if (!this.loadingEl) {
+      this.loadingEl = document.createElement('div');
+      this.loadingEl.className = 'model-loading';
+      this.container.appendChild(this.loadingEl);
+    }
+    const text = `角色加载中 ${Math.floor(modelProgress(this.modelUrls) * 100)}%`;
+    if (this.loadingEl.textContent !== text) this.loadingEl.textContent = text;
   }
 
   // 标记的牌上方各放一个朝下的小三角，跟着牌走（鼠标移上去牌抬起来，三角也跟着抬），总是正对镜头

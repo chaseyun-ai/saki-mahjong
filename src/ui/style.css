@@ -993,6 +993,32 @@ button {
   pointer-events: none;
 }
 
+/* 人物模型还没下载好时，画面右上角的进度（正上方是对家的名牌，左上角是能力说明） */
+.model-loading {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(8, 20, 22, 0.72);
+  border: 1px solid rgba(240, 195, 90, 0.45);
+  color: #f3e6c4;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* 竖着的手机上右上角也挤，放到画面最下面 */
+@media (max-width: 600px) {
+  .model-loading {
+    top: auto;
+    bottom: 16px;
+    right: 50%;
+    transform: translateX(50%);
+  }
+}
+
 .hud .actions,
 .hud .ability-panel,
 .hud .modal {

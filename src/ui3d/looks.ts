@@ -31,6 +31,9 @@ export const LOOKS: Record<string, Look> = {
   toki: { model: 'models/vroid-f.v2.glb', hair: '#353b4a', eyes: '#93333a', hairContrast: 0.6, reveal: 'wave', pose: 'crossed' },
 };
 
+// 牌桌上要用到的全部模型文件（每局四个座位正好是这四个角色）
+export const MODEL_URLS = [...new Set(Object.values(LOOKS).map((l) => l.model))];
+
 function hslToRgb(h: number, s: number, l: number, out: [number, number, number]): void {
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
   const p = 2 * l - q;

@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRM, VRMHumanBoneName, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import type { RestPose } from './looks';
 import { DEFAULT_DISCARD } from './discardMotion';
+import { forgetOthers, loadCached, saveCached } from './modelCache';
 
 // 坐在牌桌边的 VRM 角色：坐姿、呼吸、眨眼、视线、表情，以及用右手去拿牌（两段骨骼 IK）。
 // 模型面朝本地 -z（牌桌中心）。
@@ -12,24 +13,72 @@ export type Mood = 'happy' | 'sad' | 'angry' | 'surprised' | 'relaxed';
 const loader = new GLTFLoader();
 loader.register((parser) => new VRMLoaderPlugin(parser));
 
-// 同一个模型文件只下载一次，每个座位各自解析一份
+// 同一个模型文件只下载一次，每个座位各自解析一份。先找浏览器本地存的，没有再下载
 const fileCache = new Map<string, Promise<ArrayBuffer>>();
+// 每个文件下载了几成（0 到 1），不知道文件多大时下完之前一直是 0
+const fileProgress = new Map<string, number>();
 
-// 发布页不能直接提供 .glb，那里的模型是 base64 文本（.glb.txt），自己解码
 function fetchModel(url: string): Promise<ArrayBuffer> {
   let p = fileCache.get(url);
   if (!p) {
-    p = fetch(url).then(async (res) => {
-      if (!res.ok) throw new Error(`${url}: ${res.status}`);
-      if (!url.endsWith('.txt')) return res.arrayBuffer();
-      const raw = atob((await res.text()).trim());
-      const bin = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) bin[i] = raw.charCodeAt(i);
-      return bin.buffer;
-    });
+    fileProgress.set(url, 0);
+    p = (async () => {
+      const buf = (await loadCached(url)) ?? (await download(url));
+      fileProgress.set(url, 1);
+      return buf;
+    })();
+    // 下载失败的下次再试
+    p.catch(() => fileCache.delete(url));
     fileCache.set(url, p);
   }
   return p;
+}
+
+// 发布页不能直接提供 .glb，那里的模型是 base64 文本（.glb.txt），自己解码
+async function download(url: string): Promise<ArrayBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.status}`);
+  // 压缩传输时 Content-Length 是压缩后的大小，和读到的字节数对不上，就不算进度了
+  const total = res.headers.get('content-encoding') ? 0 : Number(res.headers.get('content-length')) || 0;
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+  const reader = res.body?.getReader();
+  if (reader) {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      if (total) fileProgress.set(url, Math.min(0.99, loaded / total));
+    }
+  } else {
+    chunks.push(new Uint8Array(await res.arrayBuffer()));
+  }
+  let bytes = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let at = 0;
+  for (const c of chunks) {
+    bytes.set(c, at);
+    at += c.length;
+  }
+  if (url.endsWith('.txt')) {
+    const raw = atob(new TextDecoder().decode(bytes).trim());
+    bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  }
+  void saveCached(url, bytes.buffer);
+  return bytes.buffer;
+}
+
+// 选人的时候就在后台开始下载，进牌桌时多半已经下好了；顺便删掉浏览器里存的旧版本模型
+export function preloadModels(urls: string[]): void {
+  for (const url of urls) fetchModel(url).catch(() => {});
+  void forgetOthers(urls);
+}
+
+// 这几个模型一共下载了几成（0 到 1）
+export function modelProgress(urls: string[]): number {
+  if (urls.length === 0) return 1;
+  return urls.reduce((sum, url) => sum + (fileProgress.get(url) ?? 0), 0) / urls.length;
 }
 
 const X = new THREE.Vector3(1, 0, 0);
