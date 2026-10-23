@@ -56,9 +56,13 @@
   letter-spacing: 2px;
 }
 
-.lab-head a {
+.lab-exit {
+  border: none;
+  padding: 0;
+  background: none;
   color: var(--ink-quiet);
   font-size: 13px;
+  text-decoration: underline;
 }
 
 .lab-tabs {

@@ -38,7 +38,11 @@ export class App {
   private mode: '2d' | '3d' = '3d';
   private table3d: Table3D | null = null;
 
-  constructor(root: HTMLElement) {
+  // openLab：选人页上点"动作调试"时调用
+  constructor(
+    root: HTMLElement,
+    private openLab: () => void,
+  ) {
     this.root = root;
     root.addEventListener('click', (e) => this.onClick(e));
     window.addEventListener('resize', () => this.fit());
@@ -73,8 +77,9 @@ export class App {
           <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 牌桌</button>
           <button class="${this.mode === '2d' ? 'on' : ''}" data-ui="mode-2d">2D 牌桌</button>
         </div>
+        <button class="lab-entry" data-ui="lab">动作调试</button>
         <div class="char-grid">${cards}</div>
-        <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物由 VRoid 官方 CC0 示例模型改色 · <a href="#lab">动作调试</a></p>
+        <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物由 VRoid 官方 CC0 示例模型改色</p>
       </div>`;
   }
 
@@ -211,6 +216,10 @@ export class App {
     if (!el) return;
     if (el.dataset.pick) {
       this.startGame(el.dataset.pick);
+      return;
+    }
+    if (el.dataset.ui === 'lab') {
+      this.openLab();
       return;
     }
     if (el.dataset.ui === 'mode-3d' || el.dataset.ui === 'mode-2d') {

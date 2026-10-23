@@ -29,6 +29,10 @@ export class LabCamera {
     this.controls.enabled = false;
   }
 
+  dispose(): void {
+    this.controls.dispose();
+  }
+
   // 换机位：按这次出牌的路线摆镜头
   set(mode: CameraMode, path: DiscardPath | null): void {
     this.mode = mode;

@@ -57,7 +57,11 @@ export class DiscardLab {
   private viewTab: HTMLElement;
   private paramsPanel: ParamsPanel;
 
-  constructor(root: HTMLElement) {
+  // onExit：点"返回游戏"时调用，这之前调试场景已经自己收拾干净
+  constructor(
+    root: HTMLElement,
+    private onExit: () => void,
+  ) {
     root.innerHTML = `
       <div class="lab">
         <div class="lab-stage">
@@ -76,7 +80,7 @@ export class DiscardLab {
     this.panel.innerHTML = `
       <header class="lab-head">
         <h1>出牌动作调试</h1>
-        <a href="#" data-act="exit">返回游戏</a>
+        <button class="lab-exit" data-act="exit">返回游戏</button>
       </header>
       <nav class="lab-tabs">${Object.entries(TABS)
         .map(([k, label]) => `<button data-act="tab" data-v="${k}">${label}</button>`)
@@ -257,6 +261,14 @@ export class DiscardLab {
   }
 
   // 换了人物或座位：重新请人入座，模型都加载好再演
+  // 停掉渲染、作废还在等的模型加载、拿掉键盘监听
+  private dispose(): void {
+    this.waiting++;
+    window.removeEventListener('keydown', this.onKey);
+    this.cam.dispose();
+    this.table.dispose();
+  }
+
   private reseat(): void {
     this.table.rebuildCharacters(this.view());
     this.whenReady();
@@ -363,8 +375,8 @@ export class DiscardLab {
     const v = el.dataset.v ?? '';
     const s = this.state;
     if (act === 'exit') {
-      e.preventDefault();
-      location.hash = '';
+      this.dispose();
+      this.onExit();
     } else if (act === 'tab') {
       this.showTab(v as Tab);
     } else if (act === 'char' && v !== s.char) {

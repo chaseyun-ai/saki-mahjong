@@ -65,10 +65,6 @@ button {
   margin-top: 24px;
 }
 
-.footnote a {
-  color: inherit;
-}
-
 .char-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 240px));
@@ -878,6 +874,17 @@ button {
   color: #222;
   background: var(--gold);
   font-weight: 700;
+}
+
+/* 出牌动作调试场景的入口，跟在 3D/2D 切换后面 */
+.lab-entry {
+  margin: 8px 0 0 8px;
+  padding: 9px 16px;
+  border: 1px solid rgba(240, 195, 90, 0.5);
+  border-radius: 999px;
+  color: var(--gold);
+  background: rgba(0, 0, 0, 0.3);
+  vertical-align: top;
 }
 
 /* ---------- 3D 牌桌上的界面层 ---------- */
