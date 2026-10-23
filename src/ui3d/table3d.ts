@@ -9,6 +9,7 @@ import { LOOKS, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects } from './effects';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
+import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, tableDims } from './tableLayout';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
@@ -17,35 +18,22 @@ import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, R
 // 下家在 +x，对家在 -z，上家在 -x。每个座位用“本地坐标”摆牌：本地 +z 指向座位的人，+x 是他的右手边，
 // 再绕 y 轴转 seat × 90° 得到世界坐标。
 
-export const TILE_W = 1;
-export const TILE_H = 1.36;
-export const TILE_T = 0.78;
+export { TILE_H, TILE_T, TILE_W };
+
 const GAP = 0.04;
-
-const HAND_Z = 11;
-const POND_Z = 3.6;
-const POND_COLS = 6;
-const MELD_Z = 11.6;
 const MY_HAND_SCALE = 1.25;
-const WALL_Z = 9.45;
 const WALL_PITCH = TILE_W + 0.02;
-const TABLE_HALF = 14;
-const CONSOLE_HALF = 2.9;
 
-// 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉
-const FRAME_W = 1.4;
+// 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
+// 手牌、牌河、桌边、座位这些尺寸可以调，见 tableLayout.ts
 const FRAME_TOP = 0.2;
-const BODY_HALF = TABLE_HALF + FRAME_W;
 const DRAWER_X = 5;
 const DRAWER_Y = -0.85;
 const DRAWER_OPEN = 2.4;
 const STICK_LEN = 3.6;
 
-// 角色：VRoid 的 CC0 示例模型改色（见 looks.ts）。人放大 23 倍，牌和手的比例接近日麻用的小号牌
-export const AVATAR_SCALE = 23;
-const SEAT_Y = -0.24 * AVATAR_SCALE;
-// 髋部离桌沿 0.3 米，身体和桌子之间留一拳多的空
-const SEAT_Z = TABLE_HALF + 0.3 * AVATAR_SCALE;
+// 角色：VRoid 的 CC0 示例模型改色（见 looks.ts）。人物大小 100% 时放大 23 倍
+export const AVATAR_SCALE = BASE_AVATAR_SCALE;
 
 // 发牌：骰子落定后，每批 4 张（最后每人 1 张）依次发出，先按发到的顺序摆，
 // 发完后手牌往后一倒再立起来，变成理好的顺序
@@ -193,6 +181,9 @@ export class Table3D {
   private frozen = new Map<number, { hand: TileId[]; drawn: TileId | null; until: number }>();
   private consoleKey = '';
   private resizer = new ResizeObserver(() => this.resize());
+  // 牌桌尺寸（可调的参数）和由它算出来的各处位置
+  private tableLayout: TableLayout = { ...DEFAULT_LAYOUT };
+  private dim: TableDims = tableDims(this.tableLayout);
 
   constructor(
     private container: HTMLElement,
@@ -264,7 +255,7 @@ export class Table3D {
 
     // 桌布
     const felt = new THREE.Mesh(
-      new THREE.PlaneGeometry(TABLE_HALF * 2, TABLE_HALF * 2),
+      new THREE.PlaneGeometry(this.dim.tableHalf * 2, this.dim.tableHalf * 2),
       new THREE.MeshStandardMaterial({ map: feltTexture(), roughness: 0.95 }),
     );
     felt.rotation.x = -Math.PI / 2;
@@ -278,17 +269,17 @@ export class Table3D {
     const frameH = FRAME_TOP + 0.6;
     for (let s = 0; s < 4; s++) {
       const side = new THREE.Group();
-      const rail = new THREE.Mesh(new RoundedBoxGeometry(BODY_HALF * 2, frameH, FRAME_W, 3, 0.12), frameMat);
-      rail.position.set(0, FRAME_TOP - frameH / 2, TABLE_HALF + FRAME_W / 2);
+      const rail = new THREE.Mesh(new RoundedBoxGeometry(this.dim.bodyHalf * 2, frameH, this.dim.frame, 3, 0.12), frameMat);
+      rail.position.set(0, FRAME_TOP - frameH / 2, this.dim.tableHalf + this.dim.frame / 2);
       rail.castShadow = true;
       rail.receiveShadow = true;
-      const trim = new THREE.Mesh(new THREE.BoxGeometry(TABLE_HALF * 2, 0.05, 0.08), trimMat);
-      trim.position.set(0, FRAME_TOP - 0.02, TABLE_HALF + 0.05);
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(this.dim.tableHalf * 2, 0.05, 0.08), trimMat);
+      trim.position.set(0, FRAME_TOP - 0.02, this.dim.tableHalf + 0.05);
       side.add(rail, trim);
       side.rotation.y = (s * Math.PI) / 2;
       this.scene.add(side);
     }
-    const body = new THREE.Mesh(new RoundedBoxGeometry(BODY_HALF * 2 - 0.2, 2.6, BODY_HALF * 2 - 0.2, 3, 0.15), bodyMat);
+    const body = new THREE.Mesh(new RoundedBoxGeometry(this.dim.bodyHalf * 2 - 0.2, 2.6, this.dim.bodyHalf * 2 - 0.2, 3, 0.15), bodyMat);
     body.position.y = FRAME_TOP - frameH - 1.3 + 0.05;
     this.scene.add(body);
 
@@ -297,7 +288,7 @@ export class Table3D {
       const holder = new THREE.Group();
       holder.rotation.y = (rel * Math.PI) / 2;
       const drawer = buildDrawer(frameMat, trimMat);
-      drawer.position.set(DRAWER_X, DRAWER_Y, BODY_HALF - 0.1);
+      drawer.position.set(DRAWER_X, DRAWER_Y, this.dim.bodyHalf - 0.1);
       holder.add(drawer);
       this.scene.add(holder);
       this.drawers.push({ group: drawer, open: 0 });
@@ -354,7 +345,7 @@ export class Table3D {
     for (let s = 0; s < 4; s++) {
       const rel = (s - me + 4) % 4;
       const seatRoot = new THREE.Group();
-      const local = new THREE.Vector3(0, 0, SEAT_Z);
+      const local = new THREE.Vector3(0, 0, this.dim.seatZ);
       seatRoot.position.copy(local.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(s, me)));
       seatRoot.rotation.y = this.seatAngle(s, me);
       // 模型加载完之前先放一个简单的占位人物（自己的座位不放，免得挡住手牌）
@@ -370,18 +361,18 @@ export class Table3D {
           if (gen !== this.characterGen) return;
           applyLook(av.vrm, look);
           if (holder) seatRoot.remove(holder);
-          av.root.scale.setScalar(AVATAR_SCALE);
-          av.root.position.y = SEAT_Y - av.hipHeight * AVATAR_SCALE;
+          av.root.scale.setScalar(this.dim.scale);
+          av.root.position.y = this.dim.seatY - av.hipHeight * this.dim.scale;
           if (rel === 0) av.setFirstPerson(this.camera);
           // 桌面和桌沿换算到模型自身坐标；自己的手平时放在腿上，免得挡住手牌
-          av.setRestPose(av.hipHeight - SEAT_Y / AVATAR_SCALE, (TABLE_HALF - SEAT_Z) / AVATAR_SCALE, rel === 0 ? 'offscreen' : look.pose ?? 'edge');
+          av.setRestPose(av.hipHeight - this.dim.seatY / this.dim.scale, (this.dim.tableHalf - this.dim.seatZ) / this.dim.scale, rel === 0 ? 'offscreen' : look.pose ?? 'edge');
           seatRoot.add(av.root);
           ch.avatar = av;
-          av.home = this.seatPoint(s, 0, 0, HAND_Z);
+          av.home = this.seatPoint(s, 0, 0, this.dim.handZ);
           // 偶尔瞟一眼别家的脸或者桌子中间
           av.glances = [0, 1, 2, 3]
             .filter((o) => o !== s)
-            .map((o) => this.seatPoint(o, 0, SEAT_Y + 0.55 * AVATAR_SCALE, SEAT_Z))
+            .map((o) => this.seatPoint(o, 0, this.dim.seatY + 0.55 * this.dim.scale, this.dim.seatZ))
             .concat(new THREE.Vector3(0, 0, 0));
         })
         .catch((err) => console.warn('角色模型加载失败', url, err));
@@ -511,7 +502,7 @@ export class Table3D {
       const ch = this.characterAt(e.seat);
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
-      const pond = this.seatPoint(e.seat, 0, 0, POND_Z + 1.5);
+      const pond = this.seatPoint(e.seat, 0, 0, this.dim.pondZ + 1.5);
       // 立直宣言：牌拍下去的那一刻放特效（落桌标记），接着从抽屉里拿立直棒放到桌上
       this.playDiscard(e.seat, e.tile, e.riichi ? RIICHI_DISCARD : DEFAULT_DISCARD, !!e.riichi);
       if (e.riichi) this.startStickAnim(e.seat, -(RIICHI_DISCARD.reach + RIICHI_DISCARD.carry + RIICHI_DISCARD.settle));
@@ -521,7 +512,7 @@ export class Table3D {
         if (ch.seat === e.seat && e.riichi) ch.avatar?.setMood('angry', 1.6);
       }
     } else if (e.type === 'call') {
-      const who = this.seatPoint(e.seat, 0, 8, SEAT_Z);
+      const who = this.seatPoint(e.seat, 0, 8, this.dim.seatZ);
       this.callFx(e.seat, e.call.includes('杠') ? 'kan' : 'call');
       for (const ch of all) {
         if (ch.seat === e.seat) ch.avatar?.setMood('happy', 1.2);
@@ -539,7 +530,7 @@ export class Table3D {
       const r = e.result;
       this.startReveal(g);
       if (r.wins.length) {
-        const who = this.seatPoint(r.wins[0].seat, 0, 8, SEAT_Z);
+        const who = this.seatPoint(r.wins[0].seat, 0, 8, this.dim.seatZ);
         for (const ch of all) if (!r.wins.some((w) => w.seat === ch.seat)) ch.avatar?.lookAtPoint(who, 3);
       }
       for (const ch of all) {
@@ -566,15 +557,15 @@ export class Table3D {
   private stickPlacement(seat: number): Placement {
     const me = this.lastSync?.view.me ?? 0;
     if (this.lastSync?.view.ids[seat] === 'toki') {
-      return this.toWorld(seat, me, 0, STICK_LEN / 2, POND_Z - 0.5, new THREE.Euler(0, 0, Math.PI / 2));
+      return this.toWorld(seat, me, 0, STICK_LEN / 2, this.dim.pondZ - 0.5, new THREE.Euler(0, 0, Math.PI / 2));
     }
-    return this.toWorld(seat, me, 0, 0.09, POND_Z - 0.35, STANDING);
+    return this.toWorld(seat, me, 0, 0.09, this.dim.pondZ - 0.35, STANDING);
   }
 
   // 抽屉里那根立直棒的位置（抽屉拉开时）
   private drawerStick(seat: number): Placement {
     const me = this.lastSync?.view.me ?? 0;
-    return this.toWorld(seat, me, DRAWER_X, DRAWER_Y - 0.2, BODY_HALF - 0.1 + DRAWER_OPEN - 1.1, STANDING);
+    return this.toWorld(seat, me, DRAWER_X, DRAWER_Y - 0.2, this.dim.bodyHalf - 0.1 + DRAWER_OPEN - 1.1, STANDING);
   }
 
   private placeRiichiSticks(g: Game): void {
@@ -620,7 +611,7 @@ export class Table3D {
   // 鸣牌、立直的特效：在这家前面的桌上放冲击波，角色举手示意
   private callFx(seat: number, kind: 'call' | 'kan' | 'riichi'): void {
     const color = kind === 'riichi' ? FX_RED : kind === 'kan' ? '#9fd8ff' : FX_GOLD;
-    const at = this.seatPoint(seat, 0, 0.1, kind === 'riichi' ? POND_Z : HAND_Z - 2);
+    const at = this.seatPoint(seat, 0, 0.1, kind === 'riichi' ? this.dim.pondZ : this.dim.handZ - 2);
     this.effects.ring(at, color, kind === 'kan' ? 9 : 6);
     this.effects.flash(at.clone().setY(1.5), color, kind === 'riichi' ? 10 : 7);
     if (kind !== 'call') this.effects.ring(at, color, 12, 1.1);
@@ -635,7 +626,7 @@ export class Table3D {
         kind: 'gesture',
         tile: -1,
         t: 0,
-        start: this.seatPoint(seat, 1.5, 6, HAND_Z + 1),
+        start: this.seatPoint(seat, 1.5, 6, this.dim.handZ + 1),
         timing: { reach: 0.22, carry: 0, settle: 0.45, back: 0.35, lift: 0 },
         hold: 0,
       });
@@ -644,14 +635,14 @@ export class Table3D {
 
   // 和牌：金色光柱、闪光粒子，镜头往和牌的人那边推一点
   private winFx(seat: number, tsumo: boolean): void {
-    const at = this.seatPoint(seat, 0, 0.1, HAND_Z - 2.5);
+    const at = this.seatPoint(seat, 0, 0.1, this.dim.handZ - 2.5);
     this.effects.beam(at, FX_GOLD, 14, 2.2);
     this.effects.ring(at, FX_GOLD, 14, 1.2);
     this.effects.ring(at, '#ffffff', 8, 0.8);
     this.effects.sparkles(at, FX_GOLD, 70, 5, 2.2);
     this.effects.flash(at.clone().setY(3), '#fff2c4', 18, 0.6);
     this.shake = 0.6;
-    if (seat !== this.lastSync?.view.me) this.zoom = { t: 0, target: this.seatPoint(seat, 0, 4, SEAT_Z - 2) };
+    if (seat !== this.lastSync?.view.me) this.zoom = { t: 0, target: this.seatPoint(seat, 0, 4, this.dim.seatZ - 2) };
     // 自摸的人举手，荣和的人身体前倾
     if (tsumo) this.callFx(seat, 'call');
   }
@@ -669,7 +660,7 @@ export class Table3D {
     const prev = this.layouts[seat];
     if (prev) this.frozen.set(seat, { ...prev, until: this.now + motion.reach + motion.carry + 0.15 });
     this.startHandAnim(seat, tile, motion, riichi);
-    this.characterAt(seat)?.avatar?.lookAtPoint(this.seatPoint(seat, 0, 0, POND_Z + 1.5), 1);
+    this.characterAt(seat)?.avatar?.lookAtPoint(this.seatPoint(seat, 0, 0, this.dim.pondZ + 1.5), 1);
   }
 
   private startHandAnim(seat: number, tile: TileId, motion: DiscardParams, riichi = false): void {
@@ -825,7 +816,7 @@ export class Table3D {
     const flip = LOOKS[this.lastSync?.view.ids[s] ?? '']?.upsideDown ? Math.PI : 0;
 
     // 副露：从右边往左摆
-    let mx = TABLE_HALF - 1.2;
+    let mx = this.dim.tableHalf - 1.2;
     const meldWidth = (m: Meld) => m.tiles.length * (TILE_W + GAP) + (m.calledTile !== undefined ? TILE_H - TILE_W : 0);
     for (const m of p.melds) {
       const tiles = this.meldOrder(m);
@@ -835,7 +826,7 @@ export class Table3D {
         const sideways = t === m.calledTile;
         const hidden = m.type === 'ankan' && (i === 0 || i === 3);
         const w = sideways ? TILE_H : TILE_W;
-        const z = sideways ? MELD_Z + (TILE_H - TILE_W) / 2 : MELD_Z;
+        const z = sideways ? this.dim.meldZ + (TILE_H - TILE_W) / 2 : this.dim.meldZ;
         out.set(t, this.toWorld(s, me, x + w / 2, lyingY, z, hidden ? FACE_DOWN : FACE_UP, (sideways ? Math.PI / 2 : 0) + flip));
         x += w + GAP;
       }
@@ -845,7 +836,7 @@ export class Table3D {
         const ci = tiles.indexOf(m.calledTile!);
         let cx = mx;
         for (let i = 0; i < ci; i++) cx += TILE_W + GAP;
-        out.set(added, this.toWorld(s, me, cx + TILE_H / 2, lyingY, MELD_Z + (TILE_H - TILE_W) / 2 - TILE_W - GAP, FACE_UP, Math.PI / 2 + flip));
+        out.set(added, this.toWorld(s, me, cx + TILE_H / 2, lyingY, this.dim.meldZ + (TILE_H - TILE_W) / 2 - TILE_W - GAP, FACE_UP, Math.PI / 2 + flip));
       }
       mx -= 0.3;
     }
@@ -879,7 +870,7 @@ export class Table3D {
     let x = -width / 2 - shift + TILE_W / 2;
     const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(-0.32, 0, 0) : STANDING;
     const y = tilting ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
-    const hz = HAND_Z + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
+    const hz = this.dim.handZ + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
     const place = (t: TileId | null) => {
       const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
       if (t !== null && p.hand.includes(t)) out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, 0, hs));
@@ -904,7 +895,7 @@ export class Table3D {
         px = -((POND_COLS * pstep) / 2);
       }
       const w = d.riichi ? TILE_H : TILE_W;
-      const z = POND_Z + row * (TILE_H + GAP) + TILE_H / 2;
+      const z = this.dim.pondZ + row * (TILE_H + GAP) + TILE_H / 2;
       out.set(d.tile, this.toWorld(s, me, px + w / 2, lyingY, z, FACE_UP, (d.riichi ? Math.PI / 2 : 0) + flip));
       px += w + GAP;
       col++;
@@ -928,7 +919,7 @@ export class Table3D {
       const step = TILE_W + GAP;
       const width = (tiles.length + (win !== null ? 1 : 0)) * step + (win !== null ? 0.5 : 0);
       let x = -width / 2 - (g.players[s].melds.length ? 3 : 0) + TILE_W / 2;
-      const z = HAND_Z + 0.3;
+      const z = this.dim.handZ + 0.3;
       const topple = (t: TileId, i: number) => {
         if (!rv.topple.has(t)) rv.topple.set(t, { at: rv.at + (wave ? i * TOPPLE_STAGGER : 0), from: null });
       };
@@ -1078,7 +1069,7 @@ export class Table3D {
     // 竖屏时把视野拉宽，保证整张桌子都在画面里
     this.camera.fov = w / h < 1.2 ? 38 * Math.min(1.9, 1.2 / (w / h)) : 38;
     if (!this.debugCamera) {
-      this.camera.position.set(0, 18, 28.5);
+      this.camera.position.set(0, 18, this.dim.tableHalf + 14.5);
       this.camera.lookAt(0, 0.5, -1.5);
     }
     this.camera.updateProjectionMatrix();
@@ -1174,7 +1165,7 @@ export class Table3D {
       // 手腕在东西的后上方，手指正好捏住
       const toward = new THREE.Vector3(0, 0, 1).applyAxisAngle(up, this.seatAngle(a.seat, me));
       const grip = (p: THREE.Vector3, raise: number) =>
-        p.clone().addScaledVector(toward, AVATAR_SCALE * 0.08).addScaledVector(up, AVATAR_SCALE * 0.06 + raise);
+        p.clone().addScaledVector(toward, this.dim.scale * 0.08).addScaledVector(up, this.dim.scale * 0.06 + raise);
       let wrist: THREE.Vector3;
       let weight: number;
       if (a.kind === 'gesture') {
@@ -1220,7 +1211,7 @@ export class Table3D {
       }
       return true;
     });
-    for (const d of this.drawers) d.group.position.z = BODY_HALF - 0.1 + d.open * DRAWER_OPEN;
+    for (const d of this.drawers) d.group.position.z = this.dim.bodyHalf - 0.1 + d.open * DRAWER_OPEN;
   }
 
   // 出牌的起点终点：牌从手里的位置到牌桌给它算好的落点
@@ -1235,7 +1226,7 @@ export class Table3D {
       toQuat: target.quat,
       landed: a.landed,
       toward: new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(a.seat, me)),
-      scale: AVATAR_SCALE,
+      scale: this.dim.scale,
       hold: a.hold,
     };
   }
