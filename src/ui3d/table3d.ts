@@ -27,12 +27,18 @@ const MY_HAND_SCALE = 1.25;
 
 // 牌桌的两种样子：3d 有坐着的人物；25d 不请人物，镜头从高处往下看，牌桌占满画面（像雀魂）
 export type TableStyle = '3d' | '25d';
-// 2.5D 的镜头：俯角（弧度，0 是平视）、视野（度），看向桌子中心偏自己这边一点。离多远按画面比例算，见 fitCamera
-const CAM_25D = { pitch: 0.95, fov: 34, lookZ: 1.5 };
-// 竖屏时画面窄而高，镜头再往上抬一些（更接近正俯视），桌子在竖直方向能铺开一点
-const CAM_25D_PORTRAIT_PITCH = 1.2;
-// 2.5D 时自己的手牌更大，往后仰到差不多正对镜头
-const MY_HAND_SCALE_25D = 1.5;
+// 2.5D 的镜头：俯角 pitch（弧度，0 是平视）、视野 fov（度），看向桌子中心偏自己这边 lookZ。
+// 离多远按画面比例算，见 fitCamera。竖屏时画面窄而高，镜头再往上抬到 portraitPitch，桌子在竖直方向能铺开一点。
+// hand：自己的手牌放大多少；tilt：手牌往后仰多少，1 是正对镜头，0 是直立
+export interface View25 {
+  pitch: number;
+  portraitPitch: number;
+  fov: number;
+  lookZ: number;
+  hand: number;
+  tilt: number;
+}
+export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 34, lookZ: 1.5, hand: 1.4, tilt: 0.8 };
 const WALL_PITCH = TILE_W + 0.02;
 
 // 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
@@ -191,6 +197,7 @@ export class Table3D {
   // 2.5D 镜头平时的位置（按画面比例算好），和自己手牌往后仰的角度
   private rest = { pos: new THREE.Vector3(0, 18, 28.5), look: new THREE.Vector3(0, 0.5, -1.5) };
   private handTilt = -0.32;
+  private view25: View25 = { ...DEFAULT_VIEW_25D };
   // 出牌动作经过标记（出发、抓住、落桌、松手、收回）时通知外面，比如落桌时放声音。
   // 每张打出的牌每个标记都恰好报一次，动作被打断也会补报
   onMarker: ((seat: number, tile: TileId, name: MarkerName) => void) | null = null;
@@ -978,7 +985,7 @@ export class Table3D {
     if (!this.frozen.has(s)) this.layouts[s] = { hand: hand as TileId[], drawn };
     const count = hand.length + (drawn !== null ? 1 : 0);
     // 自己的手牌放大一些，看得清也好点
-    const hs = mine ? (this.style === '25d' ? MY_HAND_SCALE_25D : MY_HAND_SCALE) : 1;
+    const hs = mine ? (this.style === '25d' ? this.view25.hand : MY_HAND_SCALE) : 1;
     const step = (TILE_W + GAP) * hs;
     const width = count * step + (drawn !== null ? 0.5 : 0);
     // 副露多了手牌往左让
@@ -1194,12 +1201,13 @@ export class Table3D {
   private fitCamera(): void {
     const d = this.dim;
     const cam = this.camera;
-    cam.fov = CAM_25D.fov;
+    const v = this.view25;
+    cam.fov = v.fov;
     cam.updateProjectionMatrix();
-    const pitch = cam.aspect < 1 ? CAM_25D_PORTRAIT_PITCH : CAM_25D.pitch;
+    const pitch = cam.aspect < 1 ? v.portraitPitch : v.pitch;
     const dir = new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch));
-    const myZ = d.handZ + (MY_HAND_SCALE_25D - 1) * 1.2;
-    const myHalf = 7.5 * (TILE_W + GAP) * MY_HAND_SCALE_25D + 0.5;
+    const myZ = d.handZ + (v.hand - 1) * 1.2;
+    const myHalf = 7.5 * (TILE_W + GAP) * v.hand + 0.5;
     const far = d.handZ + TILE_T;
     const side = WALL_Z + TILE_H;
     const pts = [
@@ -1215,7 +1223,7 @@ export class Table3D {
       new THREE.Vector3(-myHalf, 0, myZ + TILE_T),
       new THREE.Vector3(myHalf, 0, myZ + TILE_T),
     ];
-    const look = new THREE.Vector3(0, 0, CAM_25D.lookZ);
+    const look = new THREE.Vector3(0, 0, v.lookZ);
     // 镜头离 look 多远时所有点都在画面里（两边各留一点边）
     const fits = (dist: number): { ok: boolean; mid: number } => {
       cam.position.copy(look).addScaledVector(dir, dist);
@@ -1256,10 +1264,17 @@ export class Table3D {
     }
     // 手牌往后仰：牌面朝着镜头
     const toCam = this.rest.pos.clone().sub(new THREE.Vector3(0, 0, myZ));
-    this.handTilt = -Math.atan2(toCam.y, toCam.z);
+    this.handTilt = -Math.atan2(toCam.y, toCam.z) * v.tilt;
     if (this.debugCamera) return;
     cam.position.copy(this.rest.pos);
     cam.lookAt(this.rest.look);
+  }
+
+  // 换 2.5D 的镜头参数（调试用）：重新算镜头，手牌按新的大小和角度重摆
+  setView25(v: Partial<View25>): void {
+    this.view25 = { ...this.view25, ...v };
+    this.resize();
+    if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
   }
 
   private onPointerMove = (e: PointerEvent): void => {
