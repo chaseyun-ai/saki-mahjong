@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&display=swap&text=%E7%AB%8B%E7%9B%B4%E7%A2%B0%E5%90%83%E6%9D%A0%E8%8D%A3%E5%92%8C%E8%87%AA%E6%91%B8%E6%9A%97%E5%8A%A0');
+@import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&display=swap&text=%E7%AB%8B%E7%9B%B4%E7%A2%B0%E5%90%83%E6%9D%A0%E8%8D%A3%E5%92%8C%E8%87%AA%E6%91%B8%E6%9A%97%E5%8A%A0%E5%AE%9D%E7%89%8C%E8%81%9A%E9%9B%86%E5%B2%AD%E4%B8%8A%E5%BC%80%E8%8A%B1%E4%B8%80%E5%B7%A1%E5%85%88%E8%A7%81%E7%9A%84%E6%B0%94%E6%81%AF');
 :root {
   color-scheme: dark;
   --felt: #1d4b52;
@@ -1496,5 +1496,189 @@ button {
   .toast.fx span::before,
   .toast.fx-win::after {
     animation-duration: 0.01s;
+  }
+}
+
+/* ---------- 2.5D 的切入演出：立绘和大字从座位那一侧滑进来（src/ui/cutin.ts） ---------- */
+
+.cutin {
+  --y: 52vh; /* 色带的上沿 */
+  --art: min(58vh, 70vw);
+  --fx: #ffa53a;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.cutin.right,
+.cutin.left {
+  --y: 32vh;
+}
+
+.cutin.top {
+  --y: 27vh;
+}
+
+.cutin.kan {
+  --fx: #6cc8ff;
+}
+
+.cutin.riichi {
+  --fx: #ff4b3e;
+}
+
+.cutin.ability {
+  --fx: #c58cff;
+}
+
+.cutin.win {
+  --fx: #ffc43d;
+}
+
+/* 斜着的色带，角色颜色，两头透明 */
+.cutin .band {
+  position: absolute;
+  left: -10%;
+  width: 120%;
+  top: var(--y);
+  height: 30vh;
+  transform: skewY(-5deg);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--c) 45%, #000) 22%,
+    color-mix(in srgb, var(--c) 80%, #000) 50%,
+    color-mix(in srgb, var(--c) 45%, #000) 78%,
+    transparent 100%
+  );
+  border-block: 2px solid color-mix(in srgb, var(--fx) 70%, transparent);
+  opacity: 0.88;
+  animation:
+    cutin-band var(--in) ease-out both,
+    cutin-fade var(--out) ease-in calc(var(--in) + var(--hold)) forwards;
+}
+
+/* 立绘：脚底压在色带下沿，从画面外滑进来，走的时候继续往里滑一点并淡掉 */
+.cutin .art {
+  position: absolute;
+  height: var(--art);
+  top: calc(var(--y) + 30vh - var(--art));
+  right: 3vw;
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.5));
+  animation:
+    cutin-from-right var(--in) cubic-bezier(0.2, 0.9, 0.3, 1) both,
+    cutin-leave-left var(--out) ease-in calc(var(--in) + var(--hold)) forwards;
+}
+
+.cutin.left .art {
+  right: auto;
+  left: 3vw;
+  animation:
+    cutin-from-left var(--in) cubic-bezier(0.2, 0.9, 0.3, 1) both,
+    cutin-leave-right var(--out) ease-in calc(var(--in) + var(--hold)) forwards;
+}
+
+/* 大字：在立绘靠画面中间的一侧 */
+.cutin .word {
+  position: absolute;
+  top: calc(var(--y) + 15vh);
+  right: calc(3vw + var(--art) * 0.62);
+  transform: translateY(-50%);
+  font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.cutin.left .word {
+  right: auto;
+  left: calc(3vw + var(--art) * 0.62);
+}
+
+.cutin .word span {
+  display: inline-block;
+  font-size: min(15vh, 17vw);
+  line-height: 1;
+  color: #fff;
+  -webkit-text-stroke: 2px color-mix(in srgb, var(--fx) 55%, #000);
+  text-shadow:
+    0 0 18px var(--fx),
+    0 0 42px var(--fx),
+    0 4px 0 color-mix(in srgb, var(--fx) 50%, #000);
+  animation:
+    fx-slam calc(var(--in) + 0.16s) cubic-bezier(0.2, 1.6, 0.4, 1) 0.06s both,
+    cutin-fade var(--out) ease-in calc(var(--in) + var(--hold)) forwards;
+}
+
+.cutin.ability .word span {
+  font-size: min(10vh, 11vw);
+}
+
+.cutin.win .word span {
+  font-size: min(19vh, 21vw);
+  background: linear-gradient(180deg, #fffbe8 10%, #ffd36b 55%, #e08a1e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 和牌时整个画面闪一下 */
+.cutin.win::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 45%, rgba(255, 240, 200, 0.6), rgba(255, 200, 80, 0) 60%);
+  animation: fx-flash 0.8s ease-out both;
+}
+
+@keyframes cutin-band {
+  from {
+    opacity: 0;
+    scale: 1 0.2;
+  }
+}
+
+@keyframes cutin-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes cutin-from-right {
+  from {
+    opacity: 0;
+    translate: 40vw 0;
+  }
+}
+
+@keyframes cutin-from-left {
+  from {
+    opacity: 0;
+    translate: -40vw 0;
+  }
+}
+
+@keyframes cutin-leave-left {
+  to {
+    opacity: 0;
+    translate: -8vw 0;
+  }
+}
+
+@keyframes cutin-leave-right {
+  to {
+    opacity: 0;
+    translate: 8vw 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cutin .band,
+  .cutin .art,
+  .cutin .word span {
+    animation-name: cutin-fade;
+    animation-duration: 0.01s;
+    animation-delay: calc(var(--in) + var(--hold));
   }
 }

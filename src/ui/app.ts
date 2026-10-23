@@ -11,6 +11,7 @@ import { backHtml, tileHtml } from './tile';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
+import { CutinKind, Cutins } from './cutin';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -55,6 +56,9 @@ export class App {
   // 2.5D 头像框里每家现在的表情，到 until（毫秒时间戳）变回平常；一局结束时的表情留到下一局开始
   private faces: { face: Face; until: number }[] = [];
   private faceTimer: number | null = null;
+  // 2.5D 的切入演出；能力的切入每局每种只放第一次（宝牌聚集这种一局会发动好多次），之后只出小字
+  private cutins: Cutins | null = null;
+  private cutinSeen = new Set<string>();
 
   // openLab：选人页上点"动作调试"时调用
   constructor(
@@ -69,7 +73,7 @@ export class App {
     });
     window.addEventListener('resize', () => this.fit());
     // 大字特效用的书法字体先下好，免得第一次立直时字还没出来
-    document.fonts?.load('1em "Ma Shan Zheng"', '立直碰吃杠荣和自摸暗加').catch(() => {});
+    document.fonts?.load('1em "Ma Shan Zheng"', '立直碰吃杠荣和自摸暗加宝牌聚集岭上开花一巡先见的气息').catch(() => {});
     this.renderSelect();
     // 调试用：?debug 时可以在控制台里直接触发牌局事件看特效
     if (location.search.includes('debug')) (window as unknown as { app: App }).app = this;
@@ -124,7 +128,9 @@ export class App {
     if (this.mode !== '2d') {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
       const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
-      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div>${tip}</div>`;
+      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="cutins"></div>${tip}</div>`;
+      this.cutins = this.mode === '25d' ? new Cutins(document.getElementById('cutins')!) : null;
+      this.cutinSeen.clear();
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d');
       this.table3d.onHover = (id) => this.hoverTile(id);
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
@@ -219,23 +225,43 @@ export class App {
   private onGameEvent(e: GameEvent): void {
     this.table3d?.onEvent(e, this.game!);
     this.updateFaces(e);
+    if (e.type === 'roundStart') this.cutinSeen.clear();
     if (e.type === 'discard') {
       this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
       if (!this.table3d) playClick();
       if (e.riichi) {
         playRiichi();
-        this.toast(e.seat, '立直', true, 'riichi');
+        this.bigFx(e.seat, '立直', 'riichi');
       }
     } else if (e.type === 'call') {
       playCall();
-      this.toast(e.seat, e.call, true, e.call.includes('杠') ? 'kan' : 'call');
+      this.bigFx(e.seat, e.call, e.call.includes('杠') ? 'kan' : 'call');
     } else if (e.type === 'ability') {
       playChime();
-      this.toast(e.seat, e.text, false);
+      // 宝牌聚集、杠的气息、岭上开花：这一局第一次发动放切入，之后只出小字。能力失效的消息只出小字
+      const key = `${e.seat}-${e.text}`;
+      const fresh = e.ability !== 'kuro' || e.text === '宝牌聚集';
+      if (!(fresh && !this.cutinSeen.has(key) && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
+      this.cutinSeen.add(key);
+    } else if (e.type === 'draw' && this.chars[e.seat].id === 'toki' && !this.cutinSeen.has(`${e.seat}-一巡先见`)) {
+      // 一巡先见一直开着，没有发动的时机：每局她第一次摸牌时放一次
+      this.cutinSeen.add(`${e.seat}-一巡先见`);
+      this.cutin(e.seat, '一巡先见', 'ability');
     } else if (e.type === 'roundEnd') {
       if (e.result.wins.length) playWin();
-      for (const w of e.result.wins) this.toast(w.seat, w.from === null ? '自摸' : '荣和', true, 'win');
+      for (const w of e.result.wins) this.bigFx(w.seat, w.from === null ? '自摸' : '荣和', 'win');
     }
+  }
+
+  // 立直、鸣牌、和牌的大字：2.5D 放带立绘的切入，3D、2D 还是原来的大字特效
+  private bigFx(seat: number, word: string, kind: 'riichi' | 'call' | 'kan' | 'win'): void {
+    if (this.cutins) this.cutin(seat, word, kind);
+    else this.toast(seat, word, true, kind);
+  }
+
+  private cutin(seat: number, word: string, kind: CutinKind): boolean {
+    const c = this.chars[seat];
+    return !!this.cutins?.show({ pos: POS[seat], id: c.id, color: c.color, word, kind });
   }
 
   // 头像跟着牌局换表情：立直时认真到这局结束，牌被吃碰杠吓一跳，发动能力认真一下，
