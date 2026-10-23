@@ -174,26 +174,55 @@
   cursor: pointer;
 }
 
-.lab-primary {
-  width: 100%;
-  margin-top: 12px;
-  padding: 10px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--gold);
-  color: #1b1405;
-  font: inherit;
-  font-size: 15px;
-  cursor: pointer;
+.lab-gizmos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 10px;
 }
 
-.lab-primary kbd {
-  margin-left: 6px;
-  padding: 0 5px;
-  border-radius: 3px;
-  background: rgba(0, 0, 0, 0.15);
-  font-family: inherit;
+.lab-gizmos .lab-check {
+  margin: 4px 0 0;
+}
+
+.lab-check i,
+.lab-hud i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* 测量读数：画面左上角 */
+.lab-hud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(8, 20, 23, 0.72);
   font-size: 12px;
+  color: var(--ink-quiet);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.lab-hud:empty {
+  display: none;
+}
+
+.lab-hud div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.7;
+}
+
+.lab-hud b {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--ink);
+  font-weight: normal;
 }
 
 /* 时间轴：画面下方 */

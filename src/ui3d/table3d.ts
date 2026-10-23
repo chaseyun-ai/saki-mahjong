@@ -9,7 +9,7 @@ import { LOOKS, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects } from './effects';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
-import { DEFAULT_DISCARD, DiscardParams, MarkerName, RIICHI_DISCARD, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
+import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -42,7 +42,7 @@ const DRAWER_OPEN = 2.4;
 const STICK_LEN = 3.6;
 
 // 角色：VRoid 的 CC0 示例模型改色（见 looks.ts）。人放大 23 倍，牌和手的比例接近日麻用的小号牌
-const AVATAR_SCALE = 23;
+export const AVATAR_SCALE = 23;
 const SEAT_Y = -0.24 * AVATAR_SCALE;
 // 髋部离桌沿 0.3 米，身体和桌子之间留一拳多的空
 const SEAT_Z = TABLE_HALF + 0.3 * AVATAR_SCALE;
@@ -182,6 +182,9 @@ export class Table3D {
   // 出牌动作经过标记（出发、抓住、落桌、松手、收回）时通知外面，比如落桌时放声音。
   // 每张打出的牌每个标记都恰好报一次，动作被打断也会补报
   onMarker: ((seat: number, tile: TileId, name: MarkerName) => void) | null = null;
+  // 每帧画之前调用（动画已经推进到这一帧），调试场景在这里更新辅助线和读数
+  beforeRender: (() => void) | null = null;
+  private overlayGroup: THREE.Group | null = null;
   private zoom = { t: -1, target: new THREE.Vector3() };
   private held = new Set<TileId>();
   private reveal: RevealState | null = null;
@@ -416,6 +419,37 @@ export class Table3D {
   // 换人物或座位后重新请人入座
   rebuildCharacters(view: SyncView): void {
     this.buildCharacters(view);
+  }
+
+  // 这个人正在做的出牌动作：参数、路径、动作时间和这一刻的姿势；没在出牌就是 null
+  discardInfo(seat: number): { params: DiscardParams; path: DiscardPath; t: number; pose: DiscardPose } | null {
+    const a = this.handAnims.find((x) => x.seat === seat && x.kind === 'tile' && x.t >= 0);
+    const path = a && this.discardPath(a);
+    if (!a || !path) return null;
+    return { params: a.motion!, path, t: a.t, pose: sampleDiscard(a.motion!, path, a.t) };
+  }
+
+  // 调试场景的辅助线放在这里（用到时才建，正式牌局里没有）
+  get overlay(): THREE.Group {
+    if (!this.overlayGroup) {
+      this.overlayGroup = new THREE.Group();
+      this.scene.add(this.overlayGroup);
+    }
+    return this.overlayGroup;
+  }
+
+  // 只看出牌的人：其他三个人藏起来，侧面看的时候不挡镜头
+  setOthersVisible(seat: number, on: boolean): void {
+    for (const c of this.characters) c.seatRoot.visible = on || c.seat === seat;
+  }
+
+  avatarAt(seat: number): Avatar | null {
+    return this.characterAt(seat)?.avatar ?? null;
+  }
+
+  // 自己座位的人：第一人称时藏起头（正常打牌），第三人称时整个人都画出来（调试场景换机位时）
+  setFirstPerson(on: boolean): void {
+    this.avatarAt(this.lastSync?.view.me ?? 0)?.setFirstPerson(this.camera, on);
   }
 
   // 四个人的模型都加载好了
@@ -1043,8 +1077,10 @@ export class Table3D {
     this.camera.aspect = w / h;
     // 竖屏时把视野拉宽，保证整张桌子都在画面里
     this.camera.fov = w / h < 1.2 ? 38 * Math.min(1.9, 1.2 / (w / h)) : 38;
-    this.camera.position.set(0, 18, 28.5);
-    this.camera.lookAt(0, 0.5, -1.5);
+    if (!this.debugCamera) {
+      this.camera.position.set(0, 18, 28.5);
+      this.camera.lookAt(0, 0.5, -1.5);
+    }
     this.camera.updateProjectionMatrix();
   };
 
@@ -1187,34 +1223,37 @@ export class Table3D {
     for (const d of this.drawers) d.group.position.z = BODY_HALF - 0.1 + d.open * DRAWER_OPEN;
   }
 
+  // 出牌的起点终点：牌从手里的位置到牌桌给它算好的落点
+  private discardPath(a: HandAnim): DiscardPath | null {
+    const target = this.tiles[a.tile].target;
+    if (!target) return null;
+    const me = this.lastSync?.view.me ?? 0;
+    return {
+      from: a.start,
+      fromQuat: a.startQuat!,
+      to: target.pos,
+      toQuat: target.quat,
+      landed: a.landed,
+      toward: new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(a.seat, me)),
+      scale: AVATAR_SCALE,
+      hold: a.hold,
+    };
+  }
+
   // 出牌：手和牌的姿势全部由 discardMotion 按时间算出来
   private animateDiscard(a: HandAnim, av: Avatar | null): boolean {
     const p = a.motion!;
     const tile = this.tiles[a.tile];
-    const target = tile.target;
-    if (!target || a.t > totalTime(p, a.hold)) {
+    const path = this.discardPath(a);
+    if (!path || a.t > totalTime(p, a.hold)) {
       this.emitMarkers(a, Infinity);
       if (av) av.reachWeight = 0;
       return false;
     }
     this.emitMarkers(a, a.t);
-    const me = this.lastSync?.view.me ?? 0;
-    const pose = sampleDiscard(
-      p,
-      {
-        from: a.start,
-        fromQuat: a.startQuat!,
-        to: target.pos,
-        toQuat: target.quat,
-        landed: a.landed,
-        toward: new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(a.seat, me)),
-        scale: AVATAR_SCALE,
-        hold: a.hold,
-      },
-      a.t,
-    );
+    const pose = sampleDiscard(p, path, a.t);
     // 放下那一刻记住位置，之后牌被拿走（比如荣和）手也停在原处
-    if (pose.phase === 'settle') a.landed ??= target.pos.clone();
+    if (pose.phase === 'settle') a.landed ??= path.to.clone();
     if (pose.holding) {
       tile.group.position.copy(pose.tilePos);
       tile.group.quaternion.copy(pose.tileQuat);
@@ -1265,12 +1304,14 @@ export class Table3D {
   private loop = (): void => {
     this.frame = requestAnimationFrame(this.loop);
     this.tick(Math.min(this.clock.getDelta(), 0.05) * this.timeScale);
+    this.beforeRender?.();
     this.renderer.render(this.scene, this.camera);
   };
 
   // 调试用：按固定步长快进动画再画一帧，截图测试不受渲染速度影响
   debugAdvance(seconds: number): void {
     for (let t = 0; t < seconds; t += 1 / 30) this.tick(1 / 30);
+    this.beforeRender?.();
     this.renderer.render(this.scene, this.camera);
   }
 

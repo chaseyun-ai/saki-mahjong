@@ -73,6 +73,7 @@ export class Avatar {
   // 双手休息的位置（模型自身坐标，右手 +x）：桌沿上，或者放在腿上
   private rest: { left: THREE.Vector3; right: THREE.Vector3 } | null = null;
   private restPose: RestPose = 'edge';
+  private fpReady = false;
   // 站立时髋部离脚底的高度（模型自身单位），用来把角色放到椅子高度
   readonly hipHeight: number;
   // 动作调试场景每次重放的起点：头的朝向、视线，还有头发、衣服这些弹簧骨骼当时的状态
@@ -175,13 +176,37 @@ export class Avatar {
     this.vrm.scene.traverse((o) => o.updateWorldMatrix(false, false));
   }
 
-  // 第一人称：藏起自己的头，不挡镜头
-  setFirstPerson(camera: THREE.Camera): void {
+  // 第一人称：藏起自己的头，不挡镜头；on 为 false 时换回第三人称，从外面看整个人
+  setFirstPerson(camera: THREE.Camera, on = true): void {
     const fp = this.vrm.firstPerson;
     if (!fp) return;
-    fp.setup();
-    camera.layers.enable(fp.firstPersonOnlyLayer);
-    camera.layers.disable(fp.thirdPersonOnlyLayer);
+    if (!this.fpReady) fp.setup();
+    this.fpReady = true;
+    camera.layers.set(0);
+    camera.layers.enable(on ? fp.firstPersonOnlyLayer : fp.thirdPersonOnlyLayer);
+  }
+
+  // 右手 IK 这一帧实际要去的位置（休息位置和目标按权重混合、加上弧线之后）
+  readonly rightGoal = new THREE.Vector3();
+
+  // 右臂各关节现在的世界坐标：肩、肘、手腕、食指指尖
+  rightArm(): { shoulder: THREE.Vector3; elbow: THREE.Vector3; wrist: THREE.Vector3; tip: THREE.Vector3 } {
+    const at = (o: THREE.Object3D | null | undefined) => (o ? o.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3());
+    const raw = (n: VRMHumanBoneName) => this.vrm.humanoid?.getRawBoneNode(n) ?? null;
+    const wrist = at(raw('rightHand'));
+    // 指尖：最后一节食指往外的端点；模型没有端点就按最后一节的方向延长
+    const distal = raw('rightIndexDistal');
+    let tip = wrist.clone();
+    if (distal) {
+      const end = distal.children.find((c) => !(c as THREE.Bone).isBone || c.children.length === 0);
+      const d = at(distal);
+      if (end) tip = at(end);
+      else {
+        const mid = at(raw('rightIndexIntermediate'));
+        tip = d.clone().add(d.clone().sub(mid).multiplyScalar(0.8));
+      }
+    }
+    return { shoulder: at(raw('rightUpperArm')), elbow: at(raw('rightLowerArm')), wrist, tip };
   }
 
   private bone(name: VRMHumanBoneName): THREE.Object3D | null {
@@ -375,6 +400,7 @@ export class Avatar {
         right.lerp(this.reachTarget, w).setY(y);
         right.y += Math.sin(w * Math.PI) * Math.min(dist * 0.3, this.tuning.arcMax * this.root.scale.x);
       }
+      this.rightGoal.copy(right);
       this.solveArm('left', left);
       this.solveArm('right', right);
       if (this.restPose === 'crossed') {

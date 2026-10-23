@@ -2,8 +2,10 @@ import './lab.css';
 import { CHARACTERS } from '../abilities/characters';
 import { playClick } from '../ui/sound';
 import { tileHtml } from '../ui/tile';
-import { DEFAULT_DISCARD, DiscardParams, RIICHI_DISCARD, markers, phaseAt, totalTime } from '../ui3d/discardMotion';
-import { SyncView, Table3D } from '../ui3d/table3d';
+import { DEFAULT_DISCARD, DiscardParams, DiscardPath, RIICHI_DISCARD, markers, phaseAt, totalTime } from '../ui3d/discardMotion';
+import { AVATAR_SCALE, SyncView, Table3D } from '../ui3d/table3d';
+import { GIZMO_COLORS, GIZMO_LABELS, GizmoKind, Gizmos } from './gizmos';
+import { CAMERA_LABELS, CameraMode, LabCamera } from './labCamera';
 import { HAND_SLOTS, LabScene, LabSetup, POND_SLOTS, applyDiscard, composeScene } from './scene';
 import { Timeline } from './timeline';
 
@@ -14,6 +16,8 @@ const SEATS = ['自己', '下家', '对家', '上家'];
 // 收手之后多看一会儿再循环
 const TAIL = 0.35;
 const FRAME = 1 / 60;
+// 世界单位换算成毫米（人物按 1 米 = AVATAR_SCALE 个世界单位放大）
+const mm = (d: number) => Math.round((d / AVATAR_SCALE) * 1000);
 
 interface LabState {
   char: string; // 出牌的人物
@@ -38,6 +42,13 @@ export class DiscardLab {
   private loop = true;
   // 定位时间时从头快进，这期间经过的标记不响也不闪
   private seeking = false;
+  private gizmos: Gizmos;
+  private shown: Record<GizmoKind, boolean> = { target: true, arm: true, contact: true, wristPath: true, tilePath: true };
+  private cam: LabCamera;
+  private path: DiscardPath | null = null;
+  // 只看出牌的人（侧面看时别家会挡住镜头）
+  private hideOthers = false;
+  private hud: HTMLElement;
 
   constructor(root: HTMLElement) {
     root.innerHTML = `
@@ -46,6 +57,7 @@ export class DiscardLab {
           <div class="lab-view">
             <div class="lab-three" id="lab-three"></div>
             <div class="lab-status" id="lab-status"></div>
+            <div class="lab-hud" id="lab-hud"></div>
           </div>
           <div class="lab-timeline" id="lab-timeline"></div>
         </div>
@@ -53,6 +65,7 @@ export class DiscardLab {
       </div>`;
     this.panel = root.querySelector('#lab-panel')!;
     this.status = root.querySelector('#lab-status')!;
+    this.hud = root.querySelector('#lab-hud')!;
     this.renderPanel();
     this.timeline = new Timeline(
       root.querySelector('#lab-timeline')!,
@@ -73,11 +86,13 @@ export class DiscardLab {
       this.timeline.flash(name);
       if (name === 'land') playClick();
     };
+    this.gizmos = new Gizmos(this.table.overlay);
+    this.cam = new LabCamera(this.table);
+    this.table.beforeRender = () => this.tick();
     this.panel.addEventListener('click', (e) => this.onClick(e));
     window.addEventListener('keydown', this.onKey);
     this.table.sync(this.compose().game, this.view());
     this.whenReady();
-    this.tick();
     // 调试用：?debug 时可以在控制台里拿到调试场景
     if (location.search.includes('debug')) (window as unknown as { lab: DiscardLab }).lab = this;
   }
@@ -124,12 +139,19 @@ export class DiscardLab {
     this.table.playDiscard(this.seat, scene.tile, this.motion());
     applyDiscard(scene, this.setup());
     this.table.sync(scene.game, view);
+    this.table.setOthersVisible(this.seat, !this.hideOthers);
     this.timeline.setMarkers(markers(this.motion()), this.duration());
+    const info = this.table.discardInfo(this.seat);
+    if (info) {
+      this.path = info.path;
+      this.gizmos.setPaths(info.params, info.path);
+    }
   }
 
-  // 重放并开始播放
-  replay(): void {
+  // 重放并开始播放；reframe 为真时（换了座位、牌位）按新的路线重新摆机位
+  replay(reframe = false): void {
     this.restart();
+    if (reframe) this.cam.set(this.cam.mode, this.path);
     this.setPlaying(true);
   }
 
@@ -175,16 +197,30 @@ export class DiscardLab {
     else this.seek(Math.max(0, Math.ceil(this.t / FRAME - 1 - 1e-6) * FRAME));
   }
 
-  // 每帧刷新时间轴；播完了循环或者停在最后
-  private tick = (): void => {
-    requestAnimationFrame(this.tick);
+  // 每帧画之前：播完了循环或者停在最后，刷新时间轴、辅助线、读数和跟手的镜头
+  tick(): void {
     if (this.playing && this.t > this.duration()) {
       if (this.loop) this.restart();
       else this.setPlaying(false);
     }
     const t = Math.min(this.t, this.duration());
     this.timeline.show(t, phaseAt(this.motion(), t), this.playing);
-  };
+    const av = this.table.avatarAt(this.seat);
+    if (!av) return;
+    const info = this.table.discardInfo(this.seat);
+    const arm = av.rightArm();
+    const pose = info?.pose ?? null;
+    this.gizmos.update({ target: pose?.wrist ?? null, goal: av.rightGoal, arm, contact: pose?.contact ?? null });
+    this.cam.update(arm.wrist);
+    const row = (color: string, label: string, value: string) =>
+      `<div><i style="background:${color}"></i>${label}<b>${value}</b></div>`;
+    this.hud.innerHTML = [
+      row('transparent', '伸手权重', av.reachWeight.toFixed(2)),
+      row('#ff4b3e', '手腕误差', `${mm(av.rightGoal.distanceTo(arm.wrist))} mm`),
+      row(GIZMO_COLORS.contact, '指尖到接触点', pose ? `${mm(pose.contact.distanceTo(arm.tip))} mm` : '—'),
+      row(GIZMO_COLORS.tilePath, '牌离牌河', pose && info ? `${mm(Math.max(0, pose.tilePos.y - info.path.to.y))} mm` : '—'),
+    ].join('');
+  }
 
   // 换了人物或座位：重新请人入座，模型都加载好再演
   private reseat(): void {
@@ -207,7 +243,7 @@ export class DiscardLab {
       this.table.snap();
       this.table.advance(2, 1 / 30);
       this.table.captureIdle();
-      this.replay();
+      this.replay(true);
     };
     check();
   }
@@ -230,6 +266,14 @@ export class DiscardLab {
     const hand = sorted.map(slot).join('') + `<span class="lab-gap"></span>` + slot(p.drawn!, HAND_SLOTS);
 
     // 牌河：六张一行，已经有的牌画成小方块，选中的位置高亮
+    const cams = (Object.keys(CAMERA_LABELS) as CameraMode[]).map((m) => chip('camera', m, CAMERA_LABELS[m], m === (this.cam?.mode ?? 'game'))).join('');
+    const gizmos = (Object.keys(GIZMO_LABELS) as GizmoKind[])
+      .map(
+        (k) =>
+          `<label class="lab-check"><input type="checkbox" data-act="gizmo" data-v="${k}" ${this.shown[k] ? 'checked' : ''} /><i style="background:${GIZMO_COLORS[k]}"></i>${GIZMO_LABELS[k]}</label>`,
+      )
+      .join('');
+
     const pond = Array.from({ length: POND_SLOTS }, (_, i) => {
       const cls = i < s.pondSlot ? 'filled' : i === s.pondSlot ? 'on' : '';
       return `<button class="lab-cell ${cls}" data-act="pond" data-v="${i}" title="牌河第 ${i + 1} 张">${i === s.pondSlot ? i + 1 : ''}</button>`;
@@ -257,7 +301,15 @@ export class DiscardLab {
         <div class="lab-pond">${pond}</div>
         <label class="lab-check"><input type="checkbox" data-act="sideways" ${s.sideways ? 'checked' : ''} /> 横放（立直宣言牌）</label>
       </section>
-      <button class="lab-primary" data-act="replay">重放 <kbd>R</kbd></button>`;
+      <section>
+        <h2>机位 <small>${this.cam?.mode === 'side' || this.cam?.mode === 'top' ? '可以拖动旋转、滚轮缩放' : ''}</small></h2>
+        <div class="lab-row">${cams}</div>
+        <label class="lab-check"><input type="checkbox" data-act="others" ${this.hideOthers ? 'checked' : ''} /> 只看出牌的人</label>
+      </section>
+      <section>
+        <h2>辅助线</h2>
+        <div class="lab-gizmos">${gizmos}</div>
+      </section>`;
   }
 
   private onClick(e: MouseEvent): void {
@@ -282,17 +334,27 @@ export class DiscardLab {
     } else if (act === 'hand') {
       s.handSlot = +v;
       this.renderPanel();
-      this.replay();
+      this.replay(true);
     } else if (act === 'pond') {
       s.pondSlot = +v;
       this.renderPanel();
-      this.replay();
+      this.replay(true);
     } else if (act === 'sideways') {
       s.sideways = (el as HTMLInputElement).checked;
       this.renderPanel();
-      this.replay();
-    } else if (act === 'replay') {
-      this.replay();
+      this.replay(true);
+    } else if (act === 'camera') {
+      // 侧面看时别家正好挡在镜头前，先藏起来（可以再勾回来）
+      if (v === 'side') this.hideOthers = true;
+      this.table.setOthersVisible(this.seat, !this.hideOthers);
+      this.cam.set(v as CameraMode, this.path);
+      this.renderPanel();
+    } else if (act === 'others') {
+      this.hideOthers = (el as HTMLInputElement).checked;
+      this.table.setOthersVisible(this.seat, !this.hideOthers);
+    } else if (act === 'gizmo') {
+      this.shown[v as GizmoKind] = (el as HTMLInputElement).checked;
+      this.gizmos.show(v as GizmoKind, this.shown[v as GizmoKind]);
     }
   }
 
