@@ -93,7 +93,8 @@ export function markers(p: DiscardParams, hold = 0): Marker[] {
 export function dueMarkers(p: DiscardParams, hold: number, fired: number, t: number): Marker[] {
   const due: Marker[] = [];
   for (const m of markers(p, hold).slice(fired)) {
-    if (m.t > t) break;
+    // 时间是一帧帧累加出来的，差一点点浮点零头也算到了
+    if (m.t > t + 1e-9) break;
     due.push(m);
   }
   return due;

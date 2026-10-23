@@ -37,6 +37,13 @@ const Y = new THREE.Vector3(0, 1, 0);
 const Z = new THREE.Vector3(0, 0, 1);
 const axisQ = (axis: THREE.Vector3, a: number) => new THREE.Quaternion().setFromAxisAngle(axis, a);
 
+// 弹簧骨骼（头发、裙摆）每一节的运动状态。three-vrm 没有公开存取的接口，调试场景要原样存下来再放回去
+interface SpringState {
+  bone: THREE.Object3D;
+  _currentTail: THREE.Vector3;
+  _prevTail: THREE.Vector3;
+}
+
 export class Avatar {
   readonly root = new THREE.Group();
   readonly lookTarget = new THREE.Object3D();
@@ -68,6 +75,14 @@ export class Avatar {
   private restPose: RestPose = 'edge';
   // 站立时髋部离脚底的高度（模型自身单位），用来把角色放到椅子高度
   readonly hipHeight: number;
+  // 动作调试场景每次重放的起点：头的朝向、视线，还有头发、衣服这些弹簧骨骼当时的状态
+  private idle: {
+    lookNow: THREE.Vector3;
+    lookWant: THREE.Vector3;
+    headYaw: number;
+    headPitch: number;
+    springs: { joint: SpringState; quat: THREE.Quaternion; cur: THREE.Vector3; prev: THREE.Vector3 }[];
+  } | null = null;
 
   private constructor(readonly vrm: VRM) {
     VRMUtils.removeUnnecessaryVertices(vrm.scene);
@@ -113,6 +128,51 @@ export class Avatar {
       // 双手轻轻扶着桌沿
       this.rest = { left: v(-0.19, tableY + 0.015, edgeZ - 0.01), right: v(0.19, tableY + 0.015, edgeZ - 0.01) };
     }
+  }
+
+  // 动作调试场景用：记下现在静止的样子，之后每次重放都从这里开始
+  captureIdle(): void {
+    const joints = [...(this.vrm.springBoneManager?.joints ?? [])] as unknown as SpringState[];
+    this.idle = {
+      lookNow: this.lookNow.clone(),
+      lookWant: this.lookWant.clone(),
+      headYaw: this.headYaw,
+      headPitch: this.headPitch,
+      springs: joints.map((joint) => ({ joint, quat: joint.bone.quaternion.clone(), cur: joint._currentTail.clone(), prev: joint._prevTail.clone() })),
+    };
+  }
+
+  // 回到记下的样子，呼吸、眨眼、瞟人的时机也从零算起，同一时刻的画面每次重放都一样
+  resetIdle(): void {
+    const s = this.idle;
+    if (s) {
+      this.lookNow.copy(s.lookNow);
+      this.lookWant.copy(s.lookWant);
+      this.headYaw = s.headYaw;
+      this.headPitch = s.headPitch;
+    }
+    this.time = 0;
+    this.nextBlink = 2.5;
+    this.blinkT = -1;
+    this.nextGlance = 8;
+    this.lookHoldUntil = 0;
+    this.mood = null;
+    this.moodWeights.clear();
+    if (!s) return;
+    // 先不推进时间摆回休息姿势，再放回头发的状态，最后整体刷新一遍位置：
+    // 物理第一步用到的骨骼位置就和上一次重放停在哪里无关了
+    this.reachWeight = 0;
+    this.update(0);
+    for (const { joint, quat, cur, prev } of s.springs) {
+      // 弹簧骨骼不自动更新局部矩阵，要手动算一次
+      joint.bone.quaternion.copy(quat);
+      joint.bone.updateMatrix();
+      joint._currentTail.copy(cur);
+      joint._prevTail.copy(prev);
+    }
+    // 逐个刷新（不用 updateMatrixWorld）：弹簧骨骼的碰撞体只在 updateWorldMatrix 里更新自己的位置
+    this.root.updateMatrixWorld(true);
+    this.vrm.scene.traverse((o) => o.updateWorldMatrix(false, false));
   }
 
   // 第一人称：藏起自己的头，不挡镜头

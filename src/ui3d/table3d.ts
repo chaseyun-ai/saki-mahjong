@@ -391,6 +391,28 @@ export class Table3D {
 
   // ---------- 动作调试场景用 ----------
 
+  // 画面循环的时间倍速：1 正常，0 暂停
+  timeScale = 1;
+
+  // 现在的动画时间（秒）
+  get time(): number {
+    return this.now;
+  }
+
+  // 按固定步长往前推进动画（不画，画面循环会画），调试场景定位到某个时刻用。
+  // 先走整步，零头最后补一步；同样的时长总是同样的步子，头发这些物理效果才每次一样
+  advance(seconds: number, step = 1 / 60): void {
+    const n = Math.floor(seconds / step + 1e-6);
+    for (let i = 0; i < n; i++) this.tick(step);
+    const rest = seconds - n * step;
+    if (rest > 1e-6) this.tick(rest);
+  }
+
+  // 记下人物现在静止的样子，之后 snap 都回到这个样子
+  captureIdle(): void {
+    for (const c of this.characters) c.avatar?.captureIdle();
+  }
+
   // 换人物或座位后重新请人入座
   rebuildCharacters(view: SyncView): void {
     this.buildCharacters(view);
@@ -401,14 +423,20 @@ export class Table3D {
     return this.characters.length === 4 && this.characters.every((c) => c.avatar);
   }
 
-  // 立刻把所有牌放到位：停掉手上的动作、飞牌、发牌和理牌，手回到休息位置
+  // 立刻把所有牌放到位：停掉手上的动作、飞牌、发牌和理牌，人回到记下的静止样子
   snap(): void {
     this.handAnims = [];
     this.flights = [];
     this.frozen.clear();
     this.deal = null;
     this.held.clear();
-    for (const c of this.characters) if (c.avatar) c.avatar.reachWeight = 0;
+    for (const c of this.characters) {
+      if (!c.avatar) continue;
+      c.avatar.reachWeight = 0;
+      c.avatar.resetIdle();
+    }
+    // 理牌中途停下的话，按不再冻结的手牌重新摆一次
+    if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
     for (const t of this.tiles) {
       if (!t.target) continue;
       t.group.position.copy(t.target.pos);
@@ -1236,7 +1264,7 @@ export class Table3D {
 
   private loop = (): void => {
     this.frame = requestAnimationFrame(this.loop);
-    this.tick(Math.min(this.clock.getDelta(), 0.05));
+    this.tick(Math.min(this.clock.getDelta(), 0.05) * this.timeScale);
     this.renderer.render(this.scene, this.camera);
   };
 

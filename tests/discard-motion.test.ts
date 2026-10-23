@@ -94,6 +94,14 @@ describe('出牌动作', () => {
     expect(dueMarkers(p, 0, 5, Infinity)).toEqual([]);
   });
 
+  it('一帧帧累加出来的时间差一点浮点零头，也算到了标记', () => {
+    const p = DEFAULT_DISCARD;
+    let t = 0;
+    for (let i = 0; i < 18; i++) t += 1 / 60; // 0.3 附近，可能差一点点
+    expect(dueMarkers(p, 0, 1, t).map((m) => m.name)).toEqual(['grab']);
+    expect(dueMarkers(p, 0, 1, p.reach - 1e-6)).toEqual([]);
+  });
+
   it('同样的参数和时间得到同样的姿势', () => {
     const a = sampleDiscard(DEFAULT_DISCARD, path(), 0.47);
     const b = sampleDiscard(DEFAULT_DISCARD, path(), 0.47);

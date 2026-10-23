@@ -7,7 +7,14 @@
 }
 
 .lab-stage {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.lab-view {
   position: relative;
+  flex: 1;
   min-height: 0;
   overflow: hidden;
 }
@@ -189,11 +196,221 @@
   font-size: 12px;
 }
 
+/* 时间轴：画面下方 */
+.lab-timeline {
+  padding: 8px 16px 12px;
+  background: #0a1b1e;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  user-select: none;
+}
+
+.lab-transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.lab-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.lab-icon:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.lab-play {
+  width: 40px;
+  background: var(--gold);
+  color: #1b1405;
+}
+
+.lab-play:hover {
+  background: #f6d27e;
+}
+
+.lab-readout {
+  min-width: 150px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--ink-quiet);
+}
+
+.lab-readout b {
+  display: inline-block;
+  min-width: 3.2em;
+  text-align: right;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.lab-readout span {
+  margin-left: 6px;
+  color: var(--gold);
+}
+
+.lab-readout small {
+  margin-left: 8px;
+}
+
+.lab-speeds {
+  display: flex;
+  margin-left: auto;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.lab-speed {
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-quiet);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lab-speed.on {
+  background: rgba(240, 195, 90, 0.2);
+  color: var(--gold);
+}
+
+.lab-timeline .lab-check {
+  margin: 0;
+}
+
+/* 滑块两头各留出半个拖柄，标记的位置才和滑块对得上 */
+.lab-track {
+  --thumb: 14px;
+  position: relative;
+  margin-top: 30px;
+}
+
+.lab-ticks {
+  position: absolute;
+  left: calc(var(--thumb) / 2);
+  right: calc(var(--thumb) / 2);
+  top: -20px;
+  height: 30px;
+  pointer-events: none;
+}
+
+.lab-tick {
+  position: absolute;
+  left: calc(var(--x) * 1%);
+  top: 0;
+  width: 2px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: rgba(255, 255, 255, 0.55);
+  transform: translateX(-1px);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.lab-tick span {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, 4px);
+  padding: 0 3px;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--ink-quiet);
+}
+
+.lab-tick[data-name='land'] {
+  background: var(--gold);
+}
+
+.lab-tick[data-name='land'] span {
+  color: var(--gold);
+}
+
+.lab-tick.hit span {
+  animation: lab-hit 0.5s ease-out;
+}
+
+@keyframes lab-hit {
+  from {
+    color: #fff;
+    text-shadow: 0 0 8px var(--gold);
+  }
+}
+
+.lab-track input[type='range'] {
+  display: block;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.lab-track input[type='range']::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--track, #2a3a3e);
+}
+
+.lab-track input[type='range']::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--track, #2a3a3e);
+}
+
+.lab-track input[type='range']::-webkit-slider-thumb {
+  width: var(--thumb);
+  height: 18px;
+  margin-top: -5px;
+  border: 2px solid #1b1405;
+  border-radius: 4px;
+  background: #fff;
+  -webkit-appearance: none;
+}
+
+.lab-track input[type='range']::-moz-range-thumb {
+  width: var(--thumb);
+  height: 18px;
+  border: 2px solid #1b1405;
+  border-radius: 4px;
+  background: #fff;
+}
+
 /* 手机竖屏：画面在上，面板在下 */
 @media (max-width: 760px) {
   .lab {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .lab-timeline {
+    padding: 6px 10px 10px;
+  }
+
+  .lab-readout {
+    min-width: 0;
+  }
+
+  .lab-readout small {
+    display: none;
+  }
+
+  .lab-speeds {
+    margin-left: 0;
   }
 
   .lab-panel {

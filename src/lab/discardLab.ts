@@ -1,14 +1,19 @@
 import './lab.css';
 import { CHARACTERS } from '../abilities/characters';
+import { playClick } from '../ui/sound';
 import { tileHtml } from '../ui/tile';
-import { DEFAULT_DISCARD, DiscardParams, RIICHI_DISCARD } from '../ui3d/discardMotion';
+import { DEFAULT_DISCARD, DiscardParams, RIICHI_DISCARD, markers, phaseAt, totalTime } from '../ui3d/discardMotion';
 import { SyncView, Table3D } from '../ui3d/table3d';
 import { HAND_SLOTS, LabScene, LabSetup, POND_SLOTS, applyDiscard, composeScene } from './scene';
+import { Timeline } from './timeline';
 
 // 出牌动作调试场景：选人物、座位、打哪张、落到牌河哪里，反复看同一个出牌动作。
 // 牌桌、人物模型、IK 和出牌动作都和正式牌局是同一套代码，这里只负责摆场景和重放。
 
 const SEATS = ['自己', '下家', '对家', '上家'];
+// 收手之后多看一会儿再循环
+const TAIL = 0.35;
+const FRAME = 1 / 60;
 
 interface LabState {
   char: string; // 出牌的人物
@@ -25,24 +30,54 @@ export class DiscardLab {
   private state: LabState = { char: 'saki', rel: 2, handSlot: 6, pondSlot: 3, sideways: false };
   // 模型加载完要先重放一次；换人物时旧的等待作废
   private waiting = 0;
+  private timeline: Timeline;
+  // 这次出牌开始时牌桌的动画时间；动作时间 = 牌桌时间 - t0
+  private t0 = 0;
+  private playing = true;
+  private speed = 1;
+  private loop = true;
+  // 定位时间时从头快进，这期间经过的标记不响也不闪
+  private seeking = false;
 
   constructor(root: HTMLElement) {
     root.innerHTML = `
       <div class="lab">
         <div class="lab-stage">
-          <div class="lab-three" id="lab-three"></div>
-          <div class="lab-status" id="lab-status"></div>
+          <div class="lab-view">
+            <div class="lab-three" id="lab-three"></div>
+            <div class="lab-status" id="lab-status"></div>
+          </div>
+          <div class="lab-timeline" id="lab-timeline"></div>
         </div>
         <aside class="lab-panel" id="lab-panel"></aside>
       </div>`;
     this.panel = root.querySelector('#lab-panel')!;
     this.status = root.querySelector('#lab-status')!;
     this.renderPanel();
+    this.timeline = new Timeline(
+      root.querySelector('#lab-timeline')!,
+      {
+        toggle: () => this.toggle(),
+        step: (dir) => this.step(dir),
+        replay: () => this.replay(),
+        seek: (t) => this.seek(t),
+        speed: (v) => this.setSpeed(v),
+        loop: (on) => (this.loop = on),
+      },
+      this.speed,
+      this.loop,
+    );
     this.table = new Table3D(root.querySelector('#lab-three')!, () => {});
+    this.table.onMarker = (_seat, _tile, name) => {
+      if (this.seeking) return;
+      this.timeline.flash(name);
+      if (name === 'land') playClick();
+    };
     this.panel.addEventListener('click', (e) => this.onClick(e));
     window.addEventListener('keydown', this.onKey);
     this.table.sync(this.compose().game, this.view());
     this.whenReady();
+    this.tick();
     // 调试用：?debug 时可以在控制台里拿到调试场景
     if (location.search.includes('debug')) (window as unknown as { lab: DiscardLab }).lab = this;
   }
@@ -79,17 +114,77 @@ export class DiscardLab {
     return this.state.sideways ? RIICHI_DISCARD : DEFAULT_DISCARD;
   }
 
-  // 重放：牌回到手里，所有东西摆好，再从头出一次牌
-  replay(): void {
+  // 牌回到手里，所有东西摆好，从头出一次牌（动作时间回到 0）
+  private restart(): void {
     const scene = this.compose();
     const view = this.view();
     this.table.sync(scene.game, view);
     this.table.snap();
+    this.t0 = this.table.time;
     this.table.playDiscard(this.seat, scene.tile, this.motion());
     applyDiscard(scene, this.setup());
     this.table.sync(scene.game, view);
-    this.renderPanel();
+    this.timeline.setMarkers(markers(this.motion()), this.duration());
   }
+
+  // 重放并开始播放
+  replay(): void {
+    this.restart();
+    this.setPlaying(true);
+  }
+
+  // ---------- 时间 ----------
+
+  // 这次出牌的动作时间（秒），去掉累加带来的浮点零头，正好停在标记上时算已经到了
+  get t(): number {
+    return Math.round((this.table.time - this.t0) * 1e6) / 1e6;
+  }
+
+  private duration(): number {
+    return totalTime(this.motion()) + TAIL;
+  }
+
+  private setPlaying(on: boolean): void {
+    this.playing = on;
+    this.table.timeScale = on ? this.speed : 0;
+  }
+
+  private toggle(): void {
+    if (!this.playing && this.t >= this.duration() - 1e-6) this.restart();
+    this.setPlaying(!this.playing);
+  }
+
+  private setSpeed(v: number): void {
+    this.speed = v;
+    if (this.playing) this.table.timeScale = v;
+  }
+
+  // 定位到动作时间 t：从头按固定步长快进过去，画面和正常播放到这一刻一样
+  seek(t: number): void {
+    this.setPlaying(false);
+    this.seeking = true;
+    this.restart();
+    this.table.advance(Math.max(0, Math.min(t, this.duration())));
+    this.seeking = false;
+  }
+
+  // 逐帧：往前直接走一帧（经过落桌会响），往回就定位到上一帧
+  private step(dir: 1 | -1): void {
+    this.setPlaying(false);
+    if (dir > 0) this.table.advance(Math.min(FRAME, Math.max(0, this.duration() - this.t)));
+    else this.seek(Math.max(0, Math.ceil(this.t / FRAME - 1 - 1e-6) * FRAME));
+  }
+
+  // 每帧刷新时间轴；播完了循环或者停在最后
+  private tick = (): void => {
+    requestAnimationFrame(this.tick);
+    if (this.playing && this.t > this.duration()) {
+      if (this.loop) this.restart();
+      else this.setPlaying(false);
+    }
+    const t = Math.min(this.t, this.duration());
+    this.timeline.show(t, phaseAt(this.motion(), t), this.playing);
+  };
 
   // 换了人物或座位：重新请人入座，模型都加载好再演
   private reseat(): void {
@@ -107,6 +202,11 @@ export class DiscardLab {
         return;
       }
       this.status.textContent = '';
+      // 先让大家坐稳（视线、头发都静下来），记下这个样子作为每次重放的起点
+      this.table.sync(this.compose().game, this.view());
+      this.table.snap();
+      this.table.advance(2, 1 / 30);
+      this.table.captureIdle();
       this.replay();
     };
     check();
@@ -181,20 +281,31 @@ export class DiscardLab {
       this.reseat();
     } else if (act === 'hand') {
       s.handSlot = +v;
+      this.renderPanel();
       this.replay();
     } else if (act === 'pond') {
       s.pondSlot = +v;
+      this.renderPanel();
       this.replay();
     } else if (act === 'sideways') {
       s.sideways = (el as HTMLInputElement).checked;
+      this.renderPanel();
       this.replay();
     } else if (act === 'replay') {
       this.replay();
     }
   }
 
+  // 空格暂停 / 继续，← → 逐帧，R 重放
   private onKey = (e: KeyboardEvent): void => {
-    if (e.target instanceof HTMLInputElement && e.target.type !== 'checkbox') return;
-    if (e.key === 'r' || e.key === 'R') this.replay();
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === ' ') this.toggle();
+    else if (e.key === 'ArrowLeft') this.step(-1);
+    else if (e.key === 'ArrowRight') this.step(1);
+    else if (e.key === 'r' || e.key === 'R') this.replay();
+    else return;
+    e.preventDefault();
+    // 焦点在按钮或勾选框上时，空格松开会再点一次它
+    if (e.target instanceof HTMLElement && e.target !== document.body) e.target.blur();
   };
 }
