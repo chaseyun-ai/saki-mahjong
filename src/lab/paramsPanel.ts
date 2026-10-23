@@ -1,43 +1,36 @@
-import { DiscardParams } from '../ui3d/discardMotion';
-import {
-  BUILTIN_PRESETS,
-  PARAM_KEYS,
-  PARAM_SPECS,
-  Preset,
-  exportPreset,
-  loadDraft,
-  loadUserPresets,
-  parsePresets,
-  sameParams,
-  saveDraft,
-  saveUserPresets,
-} from './presets';
+import { ParamKit, Preset } from './presets';
 
-// 动作参数面板：选预设，拖滑块或者直接填数字实时改参数，存成自己的预设，导出导入 JSON。
-// params 是正在用的那一份参数，调试场景出牌时直接引用它，改了马上生效。
+// 参数面板（出牌动作、牌桌尺寸各一个）：选预设，拖滑块或者直接填数字实时改参数，存成自己的预设，导出导入 JSON。
+// params 是正在用的那一份参数，调试场景直接引用它，改了马上生效。
 
 type Io = 'none' | 'saveas' | 'export' | 'import';
 
 const decimals = (step: number) => (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
-export class ParamsPanel {
-  readonly params: DiscardParams;
+type Nums<P> = { [K in keyof P]: number };
+
+export class ParamsPanel<P extends Nums<P>> {
+  readonly params: P;
   private presetName: string;
-  private user: Preset[] = loadUserPresets();
+  private user: Preset<P>[];
   private io: Io = 'none';
   private msg = '';
   private confirmDelete = false;
 
   // change(structural)：structural 为真表示整套换了（换预设、导入、恢复），否则是拖了一个滑块
+  // note：参数下面的一行说明（比如换算成真实尺寸），每次参数变了都重新算
   constructor(
     private el: HTMLElement,
+    private kit: ParamKit<P>,
     private onChange: (structural: boolean) => void,
+    private note: ((params: P) => string) | null = null,
   ) {
-    const draft = loadDraft();
+    this.user = kit.loadUser();
+    const draft = kit.loadDraft();
     const known = draft && this.find(draft.preset);
-    this.presetName = known ? draft.preset : BUILTIN_PRESETS[0].name;
-    this.params = { ...(known ? draft.params : BUILTIN_PRESETS[0].params) };
+    this.presetName = known ? draft.preset : kit.builtins[0].name;
+    this.params = { ...(known ? draft.params : kit.builtins[0].params) };
     el.addEventListener('click', (e) => this.onClick(e));
     el.addEventListener('input', (e) => this.onInput(e));
     el.addEventListener('change', (e) => this.onSelect(e));
@@ -48,16 +41,16 @@ export class ParamsPanel {
     return this.presetName;
   }
 
-  private find(name: string): Preset | undefined {
-    return BUILTIN_PRESETS.find((p) => p.name === name) ?? this.user.find((p) => p.name === name);
+  private find(name: string): Preset<P> | undefined {
+    return this.kit.builtins.find((p) => p.name === name) ?? this.user.find((p) => p.name === name);
   }
 
-  private get preset(): Preset {
-    return this.find(this.presetName) ?? BUILTIN_PRESETS[0];
+  private get preset(): Preset<P> {
+    return this.find(this.presetName) ?? this.kit.builtins[0];
   }
 
   private get modified(): boolean {
-    return !sameParams(this.params, this.preset.params);
+    return !this.kit.same(this.params, this.preset.params);
   }
 
   // 换成某个预设的参数
@@ -70,29 +63,29 @@ export class ParamsPanel {
     this.changed(true);
   }
 
-  // 勾"横放"时：还在用没改过的内置预设，就顺手换成对应的那一套
+  // 勾"横放"时：还在用没改过的内置预设，就顺手换成对应的那一套（出牌动作的面板才有两套内置）
   followSideways(sideways: boolean): void {
-    if (this.modified) return;
-    const [normal, riichi] = BUILTIN_PRESETS;
+    const [normal, riichi] = this.kit.builtins;
+    if (this.modified || !riichi) return;
     if (sideways && this.presetName === normal.name) this.load(riichi.name);
     else if (!sideways && this.presetName === riichi.name) this.load(normal.name);
   }
 
   private changed(structural: boolean): void {
-    saveDraft({ preset: this.presetName, params: { ...this.params } });
+    this.kit.saveDraft({ preset: this.presetName, params: { ...this.params } });
     if (structural) this.render();
     else this.refreshState();
     this.onChange(structural);
   }
 
   render(): void {
-    const opt = (p: Preset) => `<option value="${esc(p.name)}" ${p.name === this.presetName ? 'selected' : ''}>${esc(p.name)}</option>`;
+    const opt = (p: Preset<P>) => `<option value="${esc(p.name)}" ${p.name === this.presetName ? 'selected' : ''}>${esc(p.name)}</option>`;
     const options =
-      `<optgroup label="内置">${BUILTIN_PRESETS.map(opt).join('')}</optgroup>` +
+      `<optgroup label="内置">${this.kit.builtins.map(opt).join('')}</optgroup>` +
       (this.user.length ? `<optgroup label="我的预设">${this.user.map(opt).join('')}</optgroup>` : '');
     const builtin = !!this.preset.builtin;
-    const rows = PARAM_KEYS.map((k) => {
-      const s = PARAM_SPECS[k];
+    const rows = this.kit.keys.map((k) => {
+      const s = this.kit.specs[k];
       const v = (this.params[k] * s.scale).toFixed(decimals(s.step));
       return `
         <div class="lab-param" title="${s.hint}">
@@ -119,6 +112,7 @@ export class ParamsPanel {
       <section>
         <h2>参数 <small>拖动或直接填数字，马上生效</small></h2>
         ${rows}
+        ${this.note ? '<p class="lab-note" data-r="note"></p>' : ''}
         <button class="lab-chip lab-reset" data-p="reset">恢复成预设的值</button>
       </section>`;
     this.refreshState();
@@ -126,7 +120,7 @@ export class ParamsPanel {
 
   private ioHtml(): string {
     if (this.io === 'saveas') {
-      const base = this.preset.builtin ? '我的出牌' : this.presetName;
+      const base = this.preset.builtin ? this.kit.saveAsName : this.presetName;
       return `
         <div class="lab-io">
           <input type="text" class="lab-name" data-p="name" maxlength="40" value="${esc(this.user.some((p) => p.name === base) ? `${base} 2` : base)}" />
@@ -136,7 +130,7 @@ export class ParamsPanel {
     if (this.io === 'export') {
       return `
         <div class="lab-io">
-          <textarea readonly rows="8" data-p="json">${esc(exportPreset({ name: this.presetName, params: this.params }))}</textarea>
+          <textarea readonly rows="8" data-p="json">${esc(this.kit.exportOne({ name: this.presetName, params: this.params }))}</textarea>
           <div class="lab-row"><button class="lab-chip on" data-p="copy">复制</button><button class="lab-chip" data-p="close">收起</button></div>
         </div>`;
     }
@@ -156,6 +150,13 @@ export class ParamsPanel {
     if (m) m.textContent = this.modified ? '已修改，还没保存' : '';
     const msg = this.el.querySelector('[data-r=msg]');
     if (msg) msg.textContent = this.msg;
+    const note = this.el.querySelector('[data-r=note]');
+    if (note && this.note) note.textContent = this.note(this.params);
+  }
+
+  // 外面的情况变了（比如人物模型换了），说明要重新算
+  refreshNote(): void {
+    this.refreshState();
   }
 
   private say(text: string): void {
@@ -165,15 +166,15 @@ export class ParamsPanel {
 
   private onInput(e: Event): void {
     const input = e.target as HTMLInputElement;
-    const k = input.dataset.param as keyof DiscardParams | undefined;
+    const k = input.dataset.param as keyof P | undefined;
     if (!k) return;
-    const s = PARAM_SPECS[k];
+    const s = this.kit.specs[k];
     const shown = parseFloat(input.value);
     if (!Number.isFinite(shown)) return;
     const clamped = Math.min(s.max, Math.max(s.min, shown));
-    this.params[k] = clamped / s.scale;
+    this.params[k] = (clamped / s.scale) as P[keyof P];
     // 滑块和数字框互相跟着
-    for (const other of this.el.querySelectorAll<HTMLInputElement>(`[data-param=${k}]`)) {
+    for (const other of this.el.querySelectorAll<HTMLInputElement>(`[data-param=${String(k)}]`)) {
       if (other !== input) other.value = clamped.toFixed(decimals(s.step));
     }
     this.msg = '';
@@ -204,7 +205,7 @@ export class ParamsPanel {
     } else if (act === 'saveas-ok') {
       const name = (this.el.querySelector<HTMLInputElement>('[data-p=name]')?.value ?? '').trim().slice(0, 40);
       if (!name) return this.say('先起个名字');
-      if (BUILTIN_PRESETS.some((b) => b.name === name)) return this.say('和内置预设重名了，换个名字');
+      if (this.kit.builtins.some((b) => b.name === name)) return this.say('和内置预设重名了，换个名字');
       const old = this.user.find((x) => x.name === name);
       if (old) old.params = { ...this.params };
       else this.user.push({ name, params: { ...this.params } });
@@ -219,9 +220,9 @@ export class ParamsPanel {
       }
       const name = this.presetName;
       this.user = this.user.filter((x) => x.name !== name);
-      saveUserPresets(this.user);
+      this.kit.saveUser(this.user);
       this.msg = `已删除"${name}"`;
-      this.load(BUILTIN_PRESETS[0].name);
+      this.load(this.kit.builtins[0].name);
     } else if (act === 'export') {
       this.open('export');
     } else if (act === 'import') {
@@ -249,21 +250,21 @@ export class ParamsPanel {
   }
 
   private persist(okMsg: string): void {
-    this.msg = saveUserPresets(this.user) ? okMsg : '这个浏览器存不了（可能是隐私模式），请用导出保存';
-    saveDraft({ preset: this.presetName, params: { ...this.params } });
+    this.msg = this.kit.saveUser(this.user) ? okMsg : '这个浏览器存不了（可能是隐私模式），请用导出保存';
+    this.kit.saveDraft({ preset: this.presetName, params: { ...this.params } });
     this.render();
   }
 
   private importJson(text: string): void {
-    let list: Preset[];
+    let list: Preset<P>[];
     try {
-      list = parsePresets(text);
+      list = this.kit.parse(text);
     } catch (err) {
       return this.say(`导入失败：${(err as Error).message}`);
     }
     for (const p of list) {
       // 和内置预设重名的，名字后面加个标记，免得覆盖不了
-      const name = BUILTIN_PRESETS.some((b) => b.name === p.name) ? `${p.name}（导入）` : p.name;
+      const name = this.kit.builtins.some((b) => b.name === p.name) ? `${p.name}（导入）` : p.name;
       const old = this.user.find((x) => x.name === name);
       if (old) old.params = p.params;
       else this.user.push({ name, params: p.params });
@@ -271,7 +272,7 @@ export class ParamsPanel {
     }
     this.io = 'none';
     this.msg = `导入了 ${list.length} 个预设`;
-    saveUserPresets(this.user);
+    this.kit.saveUser(this.user);
     this.load(list[0].name);
   }
 

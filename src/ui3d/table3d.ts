@@ -6,11 +6,11 @@ import type { Meld } from '../engine/score';
 import { TILE_COUNT, TileId, WIND_CN } from '../engine/tiles';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
 import { Avatar } from './avatar';
-import { LOOKS, applyLook } from './looks';
+import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects } from './effects';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
-import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, tableDims } from './tableLayout';
+import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 
@@ -71,6 +71,7 @@ interface Character {
   seat: number;
   seatRoot: THREE.Group;
   avatar: Avatar | null;
+  pose: RestPose; // 手平时放哪
 }
 
 interface DealState {
@@ -360,39 +361,49 @@ export class Table3D {
     const gen = ++this.characterGen;
     for (let s = 0; s < 4; s++) {
       const rel = (s - me + 4) % 4;
+      const look = LOOKS[view.ids[s]] ?? LOOKS.saki;
       const seatRoot = new THREE.Group();
-      const local = new THREE.Vector3(0, 0, this.dim.seatZ);
-      seatRoot.position.copy(local.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(s, me)));
-      seatRoot.rotation.y = this.seatAngle(s, me);
       // 模型加载完之前先放一个简单的占位人物（自己的座位不放，免得挡住手牌）
       const holder = rel === 0 ? null : placeholder(colors[s]);
       if (holder) seatRoot.add(holder);
       this.scene.add(seatRoot);
-      const ch: Character = { seat: s, seatRoot, avatar: null };
+      // 自己的手平时放在腿上，免得挡住手牌
+      const ch: Character = { seat: s, seatRoot, avatar: null, pose: rel === 0 ? 'offscreen' : look.pose ?? 'edge' };
       this.characters.push(ch);
-      const look = LOOKS[view.ids[s]] ?? LOOKS.saki;
+      this.seatCharacter(ch, me);
       const url = look.model;
       Avatar.load(url)
         .then((av) => {
           if (gen !== this.characterGen) return;
           applyLook(av.vrm, look);
           if (holder) seatRoot.remove(holder);
-          av.root.scale.setScalar(this.dim.scale);
-          av.root.position.y = this.dim.seatY - av.hipHeight * this.dim.scale;
-          if (rel === 0) av.setFirstPerson(this.camera);
-          // 桌面和桌沿换算到模型自身坐标；自己的手平时放在腿上，免得挡住手牌
-          av.setRestPose(av.hipHeight - this.dim.seatY / this.dim.scale, (this.dim.tableHalf - this.dim.seatZ) / this.dim.scale, rel === 0 ? 'offscreen' : look.pose ?? 'edge');
-          seatRoot.add(av.root);
           ch.avatar = av;
-          av.home = this.seatPoint(s, 0, 0, this.dim.handZ);
-          // 偶尔瞟一眼别家的脸或者桌子中间
-          av.glances = [0, 1, 2, 3]
-            .filter((o) => o !== s)
-            .map((o) => this.seatPoint(o, 0, this.dim.seatY + 0.55 * this.dim.scale, this.dim.seatZ))
-            .concat(new THREE.Vector3(0, 0, 0));
+          this.seatCharacter(ch, me);
+          if (rel === 0) av.setFirstPerson(this.camera);
+          seatRoot.add(av.root);
         })
         .catch((err) => console.warn('角色模型加载失败', url, err));
     }
+  }
+
+  // 按现在的牌桌尺寸让人入座：椅子的位置、人物大小、坐多高、手放在哪、平时看哪里
+  private seatCharacter(ch: Character, me: number): void {
+    const d = this.dim;
+    const s = ch.seat;
+    ch.seatRoot.position.set(0, 0, d.seatZ).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(s, me));
+    ch.seatRoot.rotation.y = this.seatAngle(s, me);
+    const av = ch.avatar;
+    if (!av) return;
+    av.root.scale.setScalar(d.scale);
+    av.root.position.y = d.seatY - av.hipHeight * d.scale;
+    // 桌面和桌沿换算到模型自身坐标
+    av.setRestPose(av.hipHeight - d.seatY / d.scale, (d.tableHalf - d.seatZ) / d.scale, ch.pose);
+    av.home = this.seatPoint(s, 0, 0, d.handZ);
+    // 偶尔瞟一眼别家的脸或者桌子中间
+    av.glances = [0, 1, 2, 3]
+      .filter((o) => o !== s)
+      .map((o) => this.seatPoint(o, 0, d.seatY + 0.55 * d.scale, d.seatZ))
+      .concat(new THREE.Vector3(0, 0, 0));
   }
 
   private characterAt(seat: number): Character | undefined {
@@ -486,6 +497,27 @@ export class Table3D {
       t.group.visible = true;
       t.shown = true;
     }
+  }
+
+  // 现在的牌桌尺寸
+  get layout(): TableLayout {
+    return { ...this.tableLayout };
+  }
+
+  get dims(): TableDims {
+    return this.dim;
+  }
+
+  // 换牌桌尺寸：桌子重建，人重新入座，牌和立直棒按新的位置摆。动作调试场景用，之后再 snap 一次
+  setLayout(l: TableLayout): void {
+    this.tableLayout = clampLayout(l);
+    this.dim = tableDims(this.tableLayout);
+    this.buildTable();
+    const me = this.lastSync?.view.me ?? 0;
+    for (const c of this.characters) this.seatCharacter(c, me);
+    this.resize();
+    if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
+    for (let s = 0; s < 4; s++) if (this.stickState[s] === 'placed') this.finishStick(s);
   }
 
   // 本地坐标 → 世界坐标
@@ -1085,7 +1117,8 @@ export class Table3D {
     // 竖屏时把视野拉宽，保证整张桌子都在画面里
     this.camera.fov = w / h < 1.2 ? 38 * Math.min(1.9, 1.2 / (w / h)) : 38;
     if (!this.debugCamera) {
-      this.camera.position.set(0, 18, this.dim.tableHalf + 14.5);
+      // 镜头跟着自己的手牌走，手牌挪远挪近都还在画面里同一个地方附近
+      this.camera.position.set(0, 18, this.dim.handZ + 17.5);
       this.camera.lookAt(0, 0.5, -1.5);
     }
     this.camera.updateProjectionMatrix();

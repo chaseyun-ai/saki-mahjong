@@ -3,10 +3,12 @@ import { CHARACTERS } from '../abilities/characters';
 import { playClick } from '../ui/sound';
 import { tileHtml } from '../ui/tile';
 import { DiscardParams, DiscardPath, markers, phaseAt, totalTime } from '../ui3d/discardMotion';
-import { AVATAR_SCALE, SyncView, Table3D } from '../ui3d/table3d';
+import { SyncView, Table3D } from '../ui3d/table3d';
+import { TILE_W, TableLayout, tableDims } from '../ui3d/tableLayout';
 import { GIZMO_COLORS, GIZMO_LABELS, GizmoKind, Gizmos } from './gizmos';
 import { CAMERA_LABELS, CameraMode, LabCamera } from './labCamera';
 import { ParamsPanel } from './paramsPanel';
+import { DISCARD_KIT, TABLE_KIT } from './presets';
 import { HAND_SLOTS, LabScene, LabSetup, POND_SLOTS, applyDiscard, composeScene } from './scene';
 import { Timeline } from './timeline';
 
@@ -14,13 +16,13 @@ import { Timeline } from './timeline';
 // 牌桌、人物模型、IK 和出牌动作都和正式牌局是同一套代码，这里只负责摆场景和重放。
 
 const SEATS = ['自己', '下家', '对家', '上家'];
-const TABS = { scene: '场景', params: '动作参数', view: '机位和辅助线' };
+const TABS = { scene: '场景', params: '动作参数', table: '牌桌', view: '机位' };
 type Tab = keyof typeof TABS;
 // 收手之后多看一会儿再循环
 const TAIL = 0.35;
 const FRAME = 1 / 60;
-// 世界单位换算成毫米（人物按 1 米 = AVATAR_SCALE 个世界单位放大）
-const mm = (d: number) => Math.round((d / AVATAR_SCALE) * 1000);
+// 比赛用的 28 毫米牌宽约 21 毫米，拿来把牌桌换算成真实尺寸
+const REAL_TILE_MM = 21;
 
 interface LabState {
   char: string; // 出牌的人物
@@ -55,7 +57,10 @@ export class DiscardLab {
   private tab: Tab = 'scene';
   private sceneTab: HTMLElement;
   private viewTab: HTMLElement;
-  private paramsPanel: ParamsPanel;
+  private paramsPanel: ParamsPanel<DiscardParams>;
+  private layoutPanel: ParamsPanel<TableLayout>;
+  // 拖牌桌滑块时，等停手再让大家重新坐稳
+  private settleTimer = 0;
 
   // onExit：点"返回游戏"时调用，这之前调试场景已经自己收拾干净
   constructor(
@@ -87,10 +92,17 @@ export class DiscardLab {
         .join('')}</nav>
       <div data-tab="scene"></div>
       <div data-tab="params"></div>
+      <div data-tab="table"></div>
       <div data-tab="view"></div>`;
     this.sceneTab = this.panel.querySelector('[data-tab=scene]')!;
     this.viewTab = this.panel.querySelector('[data-tab=view]')!;
-    this.paramsPanel = new ParamsPanel(this.panel.querySelector('[data-tab=params]')!, (structural) => this.paramsChanged(structural));
+    this.paramsPanel = new ParamsPanel(this.panel.querySelector('[data-tab=params]')!, DISCARD_KIT, (structural) => this.paramsChanged(structural));
+    this.layoutPanel = new ParamsPanel(
+      this.panel.querySelector('[data-tab=table]')!,
+      TABLE_KIT,
+      () => this.layoutChanged(),
+      (l) => this.layoutNote(l),
+    );
     this.showTab(this.tab);
     this.renderScene();
     this.timeline = new Timeline(
@@ -107,6 +119,7 @@ export class DiscardLab {
       this.loop,
     );
     this.table = new Table3D(root.querySelector('#lab-three')!, () => {});
+    this.table.setLayout(this.layoutPanel.params);
     this.table.onMarker = (_seat, _tile, name) => {
       if (this.seeking) return;
       this.timeline.flash(name);
@@ -250,6 +263,8 @@ export class DiscardLab {
     const pose = info?.pose ?? null;
     this.gizmos.update({ target: pose?.wrist ?? null, goal: av.rightGoal, arm, contact: pose?.contact ?? null });
     this.cam.update(arm.wrist);
+    // 世界单位换算成人物身上的毫米
+    const mm = (d: number) => Math.round((d / this.table.dims.scale) * 1000);
     const row = (color: string, label: string, value: string) =>
       `<div><i style="background:${color}"></i>${label}<b>${value}</b></div>`;
     this.hud.innerHTML = [
@@ -260,15 +275,16 @@ export class DiscardLab {
     ].join('');
   }
 
-  // 换了人物或座位：重新请人入座，模型都加载好再演
   // 停掉渲染、作废还在等的模型加载、拿掉键盘监听
   private dispose(): void {
     this.waiting++;
+    window.clearTimeout(this.settleTimer);
     window.removeEventListener('keydown', this.onKey);
     this.cam.dispose();
     this.table.dispose();
   }
 
+  // 换了人物或座位：重新请人入座，模型都加载好再演
   private reseat(): void {
     this.table.rebuildCharacters(this.view());
     this.whenReady();
@@ -284,14 +300,44 @@ export class DiscardLab {
         return;
       }
       this.status.textContent = '';
-      // 先让大家坐稳（视线、头发都静下来），记下这个样子作为每次重放的起点
-      this.table.sync(this.compose().game, this.view());
-      this.table.snap();
-      this.table.advance(2, 1 / 30);
-      this.table.captureIdle();
+      this.settleDown();
+      this.layoutPanel.refreshNote();
       this.replay(true);
     };
     check();
+  }
+
+  // 先让大家坐稳（视线、头发都静下来），记下这个样子作为每次重放的起点
+  private settleDown(): void {
+    this.table.sync(this.compose().game, this.view());
+    this.table.snap();
+    this.table.advance(2, 1 / 30);
+    this.table.captureIdle();
+  }
+
+  // 牌桌尺寸改了：桌子马上重建；人的位置和大小变了，头发要重新静下来、重新记起点，
+  // 拖滑块时等停手 0.2 秒再做，然后从同一时刻接着看（播放中就从头播）
+  private layoutChanged(): void {
+    this.table.setLayout(this.layoutPanel.params);
+    window.clearTimeout(this.settleTimer);
+    this.settleTimer = window.setTimeout(() => {
+      if (!this.table.charactersReady()) return;
+      const t = this.t;
+      this.settleDown();
+      if (this.playing) return this.replay(true);
+      this.seek(t);
+      this.cam.set(this.cam.mode, this.path);
+    }, 200);
+  }
+
+  // 牌桌参数下面的换算：按比赛用牌算，桌子多大、出牌的人多高
+  private layoutNote(l: TableLayout): string {
+    const d = tableDims(l);
+    const cm = (world: number) => Math.round((world / TILE_W) * REAL_TILE_MM) / 10;
+    const name = CHARACTERS.find((c) => c.id === this.state.char)?.name ?? '';
+    const av = this.table?.avatarAt(this.seat);
+    const height = av ? `${name}约 ${Math.round(cm(av.stature * d.scale))} 厘米高（真人约 155）` : `${name}的身高等人物加载好再算`;
+    return `按比赛用牌（宽 ${REAL_TILE_MM} 毫米）换算：桌子外框 ${Math.round(cm(d.bodyHalf * 2))} 厘米（真实 89–98），${height}。`;
   }
 
   // ---------- 面板 ----------

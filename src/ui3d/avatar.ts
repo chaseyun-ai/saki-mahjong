@@ -76,6 +76,7 @@ export class Avatar {
   private fpReady = false;
   // 站立时髋部离脚底的高度（模型自身单位），用来把角色放到椅子高度
   readonly hipHeight: number;
+  readonly stature: number;
   // 动作调试场景每次重放的起点：头的朝向、视线，还有头发、衣服这些弹簧骨骼当时的状态
   private idle: {
     lookNow: THREE.Vector3;
@@ -102,6 +103,9 @@ export class Avatar {
     vrm.scene.updateMatrixWorld(true);
     const hips = this.bone('hips');
     this.hipHeight = hips ? hips.getWorldPosition(new THREE.Vector3()).y : 0.9;
+    // 大约的身高：头骨根部的高度再加上脑袋（二次元的头大，按 14% 算）
+    const head = this.bone('head');
+    this.stature = (head ? head.getWorldPosition(new THREE.Vector3()).y : 1.4) * 1.14;
   }
 
   static async load(url: string): Promise<Avatar> {

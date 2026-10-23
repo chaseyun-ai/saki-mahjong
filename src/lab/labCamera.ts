@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { BASE_AVATAR_SCALE } from '../ui3d/tableLayout';
 import { DiscardPath } from '../ui3d/discardMotion';
 import { Table3D } from '../ui3d/table3d';
 
@@ -44,12 +45,14 @@ export class LabCamera {
     if (mode === 'game' || !path) return;
     const center = path.from.clone().lerp(path.to, 0.5).setY(1.5);
     const side = new THREE.Vector3().crossVectors(UP, path.toward).normalize();
-    if (mode === 'side') cam.position.copy(center).addScaledVector(side, 26).addScaledVector(UP, 9).addScaledVector(path.toward, -1);
-    else if (mode === 'top') cam.position.copy(center).addScaledVector(UP, 26).addScaledVector(path.toward, 7);
+    // 人物放大时镜头跟着拉远
+    const k = this.table.dims.scale / BASE_AVATAR_SCALE;
+    if (mode === 'side') cam.position.copy(center).addScaledVector(side, 26 * k).addScaledVector(UP, 9 * k).addScaledVector(path.toward, -1);
+    else if (mode === 'top') cam.position.copy(center).addScaledVector(UP, 26 * k).addScaledVector(path.toward, 7);
     this.controls.target.copy(center);
     if (mode === 'follow') {
       this.following = true;
-      this.follow.copy(side).multiplyScalar(5).addScaledVector(UP, 4).addScaledVector(path.toward, 5);
+      this.follow.copy(side).multiplyScalar(5 * k).addScaledVector(UP, 4 * k).addScaledVector(path.toward, 5 * k);
       return;
     }
     cam.lookAt(center);
