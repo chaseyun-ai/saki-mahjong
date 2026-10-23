@@ -4,6 +4,7 @@ import {
   DEFAULT_DISCARD,
   DiscardPath,
   RIICHI_DISCARD,
+  dueMarkers,
   markers,
   phaseAt,
   sampleDiscard,
@@ -68,6 +69,29 @@ describe('出牌动作', () => {
     const base = Math.max(path().from.y, path().to.y);
     expect(top).toBeGreaterThan(base + p.lift * 0.8);
     expect(top).toBeLessThan(base + p.lift + 0.01);
+  });
+
+  it('按帧推进时每个标记只报一次，顺序不乱', () => {
+    for (const dt of [1 / 30, 1 / 60, 0.05, 0.7]) {
+      const p = DEFAULT_DISCARD;
+      const seen: string[] = [];
+      let fired = 0;
+      for (let t = 0; t <= totalTime(p) + dt; t += dt) {
+        const due = dueMarkers(p, 0, fired, t);
+        fired += due.length;
+        seen.push(...due.map((m) => m.name));
+      }
+      expect(seen).toEqual(['depart', 'grab', 'land', 'release', 'done']);
+    }
+  });
+
+  it('动作中途被打断时，剩下的标记一次报完，落桌也只报一次', () => {
+    const p = RIICHI_DISCARD;
+    const first = dueMarkers(p, 0, 0, 0.1);
+    expect(first.map((m) => m.name)).toEqual(['depart']);
+    const rest = dueMarkers(p, 0, first.length, Infinity);
+    expect(rest.map((m) => m.name)).toEqual(['grab', 'land', 'release', 'done']);
+    expect(dueMarkers(p, 0, 5, Infinity)).toEqual([]);
   });
 
   it('同样的参数和时间得到同样的姿势', () => {

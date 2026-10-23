@@ -9,7 +9,7 @@ import { LOOKS, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects } from './effects';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
-import { DEFAULT_DISCARD, DiscardParams, RIICHI_DISCARD, sampleDiscard, totalTime } from './discardMotion';
+import { DEFAULT_DISCARD, DiscardParams, MarkerName, RIICHI_DISCARD, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -117,6 +117,8 @@ interface HandAnim {
   dest?: Placement; // 立直棒放到哪里
   startQuat?: THREE.Quaternion;
   motion?: DiscardParams; // 出牌动作的参数（kind 为 tile 时）
+  fired?: number; // 已经报过几个动作标记
+  riichi?: boolean; // 立直宣言牌，落桌时放立直特效
   landed?: THREE.Vector3; // 放下的位置，之后牌被拿走手也停在这里
 }
 
@@ -177,6 +179,9 @@ export class Table3D {
   private shake = 0;
   // 调试截图时手动摆镜头，不让动画覆盖
   debugCamera = false;
+  // 出牌动作经过标记（出发、抓住、落桌、松手、收回）时通知外面，比如落桌时放声音。
+  // 每张打出的牌每个标记都恰好报一次，动作被打断也会补报
+  onMarker: ((seat: number, tile: TileId, name: MarkerName) => void) | null = null;
   private zoom = { t: -1, target: new THREE.Vector3() };
   private held = new Set<TileId>();
   private reveal: RevealState | null = null;
@@ -416,12 +421,9 @@ export class Table3D {
       const timing = e.riichi ? RIICHI_DISCARD : DEFAULT_DISCARD;
       const prev = this.layouts[e.seat];
       if (prev) this.frozen.set(e.seat, { ...prev, until: this.now + timing.reach + timing.carry + 0.15 });
-      this.startHandAnim(e.seat, e.tile, timing);
-      if (e.riichi) {
-        // 立直宣言：牌拍下去的那一刻放特效，接着从抽屉里拿立直棒放到桌上
-        window.setTimeout(() => this.callFx(e.seat, 'riichi'), (RIICHI_DISCARD.reach + RIICHI_DISCARD.carry) * 1000);
-        this.startStickAnim(e.seat, -(RIICHI_DISCARD.reach + RIICHI_DISCARD.carry + RIICHI_DISCARD.settle));
-      }
+      // 立直宣言：牌拍下去的那一刻放特效（落桌标记），接着从抽屉里拿立直棒放到桌上
+      this.startHandAnim(e.seat, e.tile, timing, !!e.riichi);
+      if (e.riichi) this.startStickAnim(e.seat, -(RIICHI_DISCARD.reach + RIICHI_DISCARD.carry + RIICHI_DISCARD.settle));
       for (const ch of all) {
         // 别人出牌时看一眼，反应有先后
         ch.avatar?.lookAtPoint(pond, ch.seat === e.seat ? 1 : 0.9 + Math.random() * 0.8);
@@ -570,12 +572,11 @@ export class Table3D {
     this.flights.push({ tile, t: 0, start: obj.group.position.clone() });
   }
 
-  private startHandAnim(seat: number, tile: TileId, motion: DiscardParams): void {
+  private startHandAnim(seat: number, tile: TileId, motion: DiscardParams, riichi = false): void {
     const obj = this.tiles[tile];
-    if (!obj.shown) return;
     // 同一个人上一个动作还没做完就直接结束它
     this.cancelHandAnims(seat);
-    this.handAnims.push({
+    const a: HandAnim = {
       seat,
       kind: 'tile',
       tile,
@@ -585,12 +586,31 @@ export class Table3D {
       timing: motion,
       motion,
       hold: 0,
-    });
+      riichi,
+    };
+    // 牌还没摆出来就不演了，但落桌声音照样要响
+    if (obj.shown) this.handAnims.push(a);
+    else this.emitMarkers(a, Infinity);
   }
 
-  // 结束这个人手上的动作；还没放下的立直棒直接放好
+  // 报出出牌动作到时刻 t 为止经过的标记
+  private emitMarkers(a: HandAnim, t: number): void {
+    if (a.kind !== 'tile') return;
+    const due = dueMarkers(a.motion!, a.hold, a.fired ?? 0, t);
+    a.fired = (a.fired ?? 0) + due.length;
+    for (const m of due) {
+      if (m.name === 'land' && a.riichi) this.callFx(a.seat, 'riichi');
+      this.onMarker?.(a.seat, a.tile, m.name);
+    }
+  }
+
+  // 结束这个人手上的动作；还没放下的立直棒直接放好，没报完的标记补报
   private cancelHandAnims(seat: number): void {
-    for (const a of this.handAnims) if (a.seat === seat && a.kind === 'stick') this.finishStick(seat);
+    for (const a of this.handAnims) {
+      if (a.seat !== seat) continue;
+      if (a.kind === 'stick') this.finishStick(seat);
+      this.emitMarkers(a, Infinity);
+    }
     this.handAnims = this.handAnims.filter((a) => a.seat !== seat);
     for (const d of this.drawers) d.open = 0;
   }
@@ -649,6 +669,7 @@ export class Table3D {
     }
     this.deal = { start, dealer: g.dealer, sum: g.dice[0] + g.dice[1], order };
     this.dice.roll(g.dice, DEAL_END + 0.6);
+    for (const a of this.handAnims) this.emitMarkers(a, Infinity);
     this.handAnims = [];
     // 新的一局：所有牌从上方落下，重新码好牌山
     for (const t of this.tiles) t.shown = false;
@@ -1105,9 +1126,11 @@ export class Table3D {
     const tile = this.tiles[a.tile];
     const target = tile.target;
     if (!target || a.t > totalTime(p, a.hold)) {
+      this.emitMarkers(a, Infinity);
       if (av) av.reachWeight = 0;
       return false;
     }
+    this.emitMarkers(a, a.t);
     const me = this.lastSync?.view.me ?? 0;
     const pose = sampleDiscard(
       p,

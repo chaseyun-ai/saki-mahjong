@@ -90,6 +90,10 @@ export class App {
     if (this.mode === '3d') {
       this.root.innerHTML = '<div class="stage3d"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div></div>';
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id));
+      // 3D 牌桌上牌真正落到牌河时才响
+      this.table3d.onMarker = (_seat, _tile, name) => {
+        if (name === 'land') playClick();
+      };
       // 第一局在牌桌建好之前就开始了，补一次开局动画
       this.table3d.onEvent({ type: 'roundStart', label: this.game.roundLabel() }, this.game);
     } else {
@@ -170,7 +174,7 @@ export class App {
     this.table3d?.onEvent(e, this.game!);
     if (e.type === 'discard') {
       this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
-      playClick();
+      if (!this.table3d) playClick();
       if (e.riichi) {
         playRiichi();
         this.toast(e.seat, '立直', true, 'riichi');

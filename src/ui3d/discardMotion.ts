@@ -88,6 +88,17 @@ export function markers(p: DiscardParams, hold = 0): Marker[] {
   ];
 }
 
+// 已经报过 fired 个标记，到时刻 t 为止又经过了哪些（按顺序）。
+// 一帧跨过好几个标记时全部按顺序报出来；t 传 Infinity 就是把剩下的全报完（动作被打断时用）
+export function dueMarkers(p: DiscardParams, hold: number, fired: number, t: number): Marker[] {
+  const due: Marker[] = [];
+  for (const m of markers(p, hold).slice(fired)) {
+    if (m.t > t) break;
+    due.push(m);
+  }
+  return due;
+}
+
 export function phaseAt(p: DiscardParams, t: number, hold = 0): DiscardPhase {
   if (t < p.reach) return 'reach';
   if (t < p.reach + p.carry) return 'carry';
