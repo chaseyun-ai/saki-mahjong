@@ -36,12 +36,12 @@ npx vite-node scripts/balance.ts 300   # 让电脑打 300 场，统计各角色�
 
 | 角色 | 底模 | 文件 |
 | --- | --- | --- |
-| 宫永咲 | AvatarSample_E（ビビ） | `public/models/vroid-e.glb` |
-| 原村和 | AvatarSample_G（ヴィクトリア・ルービン） | `public/models/vroid-g.glb` |
-| 松实玄 | 千駄ヶ谷篠 | `public/models/vroid-shino.glb` |
-| 园城寺怜 | AvatarSample_F（ヴィータ） | `public/models/vroid-f.glb` |
+| 宫永咲 | AvatarSample_E（ビビ） | `public/models/vroid-e.v2.glb` |
+| 原村和 | AvatarSample_G（ヴィクトリア・ルービン） | `public/models/vroid-g.v2.glb` |
+| 松实玄 | 千駄ヶ谷篠 | `public/models/vroid-shino.v2.glb` |
+| 园城寺怜 | AvatarSample_F（ヴィータ） | `public/models/vroid-f.v2.glb` |
 
-模型作者是 VRoid プロジェクト，许可写在模型里：任何人可用、可修改、可再分发、可商用，不需要署名（[VRoid Hub 许可条款](https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=allow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=allow&sexual_expression=allow&version=1&violent_expression=allow)）。原始文件来自 [OpenGameArt 上的 VRoid Studio CC0 models](https://opengameart.org/content/vroid-studio-cc0-models)，用 `python3 scripts/shrink-vrm.py 原文件.vrm 输出.glb` 把贴图缩小后放进项目。
+模型作者是 VRoid プロジェクト，许可写在模型里：任何人可用、可修改、可再分发、可商用，不需要署名（[VRoid Hub 许可条款](https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=allow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=allow&sexual_expression=allow&version=1&violent_expression=allow)）。原始文件来自 [OpenGameArt 上的 VRoid Studio CC0 models](https://opengameart.org/content/vroid-studio-cc0-models)，用 `python3 scripts/shrink-vrm.py 原文件.vrm 输出.glb` 瘦身后放进项目：贴图缩小并转成 WebP，表情形变只存动了的顶点，四个模型一共约 8 MB。模型更新时换一个新文件名（`.v2`、`.v3`……），玩家浏览器里存的旧模型就不会被误用。
 
 ## 牌面字体
 
