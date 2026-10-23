@@ -12,7 +12,7 @@ import { Effects } from './effects';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
-import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
+import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -57,12 +57,12 @@ const STICK_LEN = 3.6;
 export const AVATAR_SCALE = BASE_AVATAR_SCALE;
 
 // 发牌：骰子落定后，每批 4 张（最后每人 1 张）依次发出，先按发到的顺序摆，
-// 发完后手牌往后一倒再立起来，变成理好的顺序
-const DEAL_START = 1.3;
-const DEAL_BATCH = 0.14;
-const DEAL_SORT = DEAL_START + 16 * DEAL_BATCH + 0.35;
-const SORT_TILT = 0.28;
-const DEAL_END = DEAL_SORT + SORT_TILT + 0.4;
+// 发完后手牌往后一倒再立起来，变成理好的顺序。开局到第一张牌落桌约 3.5 秒（雀魂约 2.3 秒）
+const DEAL_START = 0.8;
+const DEAL_BATCH = 0.07;
+const DEAL_SORT = DEAL_START + 16 * DEAL_BATCH + 0.2;
+const SORT_TILT = 0.24;
+const DEAL_END = DEAL_SORT + SORT_TILT + 0.15;
 
 // 倒牌：宣言后停一下，手牌依次（或一起）往前倒，倒完再放和牌特效
 const REVEAL_DELAY = 0.7;
@@ -80,8 +80,12 @@ interface HandTiming {
 // 出牌的节奏和手的姿势参数在 discardMotion.ts（DEFAULT_DISCARD、RIICHI_DISCARD）
 // 立直棒：从抽屉里拿出来放到桌上
 const STICK_TIMING: HandTiming = { reach: 0.5, carry: 0.6, settle: 0.25, back: 0.45, lift: 2.6 };
+// 2.5D 没有人物：宣言牌落桌后停一下，立直棒从上方直接掉到桌上
+const STICK_DROP: HandTiming = { reach: 0, carry: 0.25, settle: 0, back: 0, lift: 0 };
+const STICK_DROP_DELAY = 0.25;
+const STICK_DROP_HEIGHT = 3;
 // 摸牌不用手，牌自己沿弧线从牌山飞进手里
-const DRAW_FLIGHT = 0.38;
+const DRAW_FLIGHT = 0.25;
 // 上一张打出的牌落桌后，隔这么久下一家才摸牌（雀魂约 0.15 秒）
 const DRAW_GAP = 0.1;
 
@@ -132,6 +136,8 @@ interface HandAnim {
   fired?: number; // 已经报过几个动作标记
   riichi?: boolean; // 立直宣言牌，落桌时放立直特效
   landed?: THREE.Vector3; // 放下的位置，之后牌被拿走手也停在这里
+  startScale?: number; // 出牌时牌在手里放大多少，搬运途中缩回牌河的大小
+  drop?: boolean; // 2.5D 的立直棒：不开抽屉，从上方掉下来
 }
 
 const STACKS_HALF = 9;
@@ -172,6 +178,8 @@ export class Table3D {
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2(-9, -9);
   private hovered: TileId | null = null;
+  // 鼠标移上移下的那两张牌，这一小会儿抬起、放下要快（雀魂一帧就到位）
+  private hoverSnap: { ids: TileId[]; until: number } = { ids: [], until: 0 };
   private clickable = new Set<TileId>();
   private lastSync: { g: Game; view: SyncView } | null = null;
   private clock = new THREE.Clock();
@@ -616,9 +624,11 @@ export class Table3D {
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
       const pond = this.seatPoint(e.seat, 0, 0, this.dim.pondZ + 1.5);
-      // 立直宣言：牌拍下去的那一刻放特效（落桌标记），接着从抽屉里拿立直棒放到桌上
-      this.playDiscard(e.seat, e.tile, e.riichi ? RIICHI_DISCARD : DEFAULT_DISCARD, !!e.riichi);
-      if (e.riichi) this.startStickAnim(e.seat, -(RIICHI_DISCARD.reach + RIICHI_DISCARD.carry + RIICHI_DISCARD.settle));
+      // 立直宣言：牌拍下去的那一刻放特效（落桌标记），接着从抽屉里拿立直棒放到桌上（2.5D 是落桌后立直棒直接掉下来）
+      const flat = this.style === '25d';
+      const motion = e.riichi ? (flat ? SLIDE_RIICHI : RIICHI_DISCARD) : flat ? SLIDE_DISCARD : DEFAULT_DISCARD;
+      this.playDiscard(e.seat, e.tile, motion, !!e.riichi);
+      if (e.riichi) this.startStickAnim(e.seat, -(motion.reach + motion.carry + (flat ? STICK_DROP_DELAY : motion.settle)));
       for (const ch of all) {
         // 别人出牌时看一眼，反应有先后
         if (ch.seat !== e.seat) ch.avatar?.lookAtPoint(pond, 0.9 + Math.random() * 0.8);
@@ -697,7 +707,9 @@ export class Table3D {
   }
 
   private startStickAnim(seat: number, delay: number): void {
-    const from = this.drawerStick(seat);
+    const dest = this.stickPlacement(seat);
+    const drop = this.style === '25d';
+    const from = drop ? { pos: dest.pos.clone().setY(dest.pos.y + STICK_DROP_HEIGHT), quat: dest.quat } : this.drawerStick(seat);
     this.stickState[seat] = 'anim';
     this.riichiSticks[seat].visible = false;
     this.handAnims.push({
@@ -707,9 +719,10 @@ export class Table3D {
       t: delay,
       start: from.pos,
       startQuat: from.quat,
-      dest: this.stickPlacement(seat),
-      timing: STICK_TIMING,
+      dest,
+      timing: drop ? STICK_DROP : STICK_TIMING,
       hold: 0,
+      drop,
     });
   }
 
@@ -791,7 +804,9 @@ export class Table3D {
   // 牌局和动作调试场景都走这里；调用之后再 sync，牌的落点就是 sync 算出的牌河位置
   playDiscard(seat: number, tile: TileId, motion: DiscardParams, riichi = false): void {
     const prev = this.layouts[seat];
-    if (prev) this.frozen.set(seat, { ...prev, until: this.now + motion.reach + motion.carry + 0.15 });
+    // 空位留到落桌：2.5D 落桌那一刻就合拢（雀魂空位停约 0.35 秒），3D 再多等一下
+    const close = this.style === '25d' ? 0 : 0.15;
+    if (prev) this.frozen.set(seat, { ...prev, until: this.now + motion.reach + motion.carry + close });
     this.startHandAnim(seat, tile, motion, riichi);
     this.characterAt(seat)?.avatar?.lookAtPoint(this.seatPoint(seat, 0, 0, this.dim.pondZ + 1.5), 1);
   }
@@ -807,6 +822,7 @@ export class Table3D {
       t: 0,
       start: obj.group.position.clone(),
       startQuat: obj.group.quaternion.clone(),
+      startScale: obj.group.scale.x,
       timing: motion,
       motion,
       hold: 0,
@@ -1451,7 +1467,9 @@ export class Table3D {
         weight = k;
         wrist = grip(a.start, (1 - k) * 0.8);
       } else if (a.t < reach + carry) {
-        const k = smooth((a.t - reach) / carry);
+        // 2.5D 的立直棒是掉下来的，越落越快
+        const u = (a.t - reach) / carry;
+        const k = a.drop ? u * u : smooth(u);
         weight = 1;
         const p = a.start.clone().lerp(dest, k).addScaledVector(up, Math.sin(k * Math.PI) * lift);
         wrist = grip(p, 0);
@@ -1475,7 +1493,7 @@ export class Table3D {
         wrist = grip(dest, k * 0.6);
       }
       // 抽屉：伸手时拉开，拿到立直棒后推回去
-      if (a.kind === 'stick') {
+      if (a.kind === 'stick' && !a.drop) {
         const open = a.t < reach ? easeOut(a.t / reach) : 1 - smooth(Math.min(1, (a.t - reach) / (carry * 0.8)));
         this.drawers[(a.seat - me + 4) % 4].open = open;
       }
@@ -1522,6 +1540,11 @@ export class Table3D {
     if (pose.holding) {
       tile.group.position.copy(pose.tilePos);
       tile.group.quaternion.copy(pose.tileQuat);
+      // 自己的手牌是放大的，搬过去的路上缩回牌河里的大小
+      if (a.startScale !== undefined) {
+        const k = Math.min(1, Math.max(0, (a.t - p.reach) / p.carry));
+        tile.group.scale.setScalar(THREE.MathUtils.lerp(a.startScale, tile.target?.scale ?? 1, k));
+      }
       this.held.add(a.tile);
     }
     if (av) {
@@ -1584,6 +1607,7 @@ export class Table3D {
     this.now += dt;
     const hover = this.pick();
     if (hover !== this.hovered) {
+      this.hoverSnap = { ids: [this.hovered, hover].filter((x): x is TileId => x !== null), until: this.now + 0.12 };
       this.hovered = hover;
       this.renderer.domElement.style.cursor = hover !== null ? 'pointer' : 'default';
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
@@ -1603,9 +1627,12 @@ export class Table3D {
     this.animateReveal();
     this.effects.update(dt);
     this.updateCamera(dt);
-    const k = 1 - Math.exp(-dt * 16);
+    const slow = 1 - Math.exp(-dt * 16);
+    const fast = 1 - Math.exp(-dt * 60);
+    const snap = this.now < this.hoverSnap.until ? this.hoverSnap.ids : [];
     for (const [id, t] of this.tiles.entries()) {
       if (!t.target || this.held.has(id)) continue;
+      const k = snap.includes(id) ? fast : slow;
       t.group.position.lerp(t.target.pos, k);
       t.group.quaternion.slerp(t.target.quat, k);
       const sc = t.group.scale.x + (t.target.scale - t.group.scale.x) * k;

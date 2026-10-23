@@ -16,8 +16,10 @@ import { AbilityTrace, traceLine } from './abilityTrace';
 const POS = ['bottom', 'right', 'top', 'left'];
 
 const AI_TURN_DELAY = 550;
-// 3D 牌桌上角色要先伸手摸牌，节奏放慢一点
-const AI_TURN_DELAY_3D = 1000;
+// 3D、2.5D 牌桌：上一张牌落桌、这家摸完牌以后再想这么久才出（毫秒）。
+// 算上出牌动作，电脑一回合（落桌到落桌）约 1.1 秒，和雀魂差不多。3D 的角色伸手要 0.3 秒，所以想得短一点
+const AI_TURN_DELAY_3D = 360;
+const AI_TURN_DELAY_25D = 620;
 const AI_CALL_DELAY = 250;
 // 开局点数，终局排名的 ± 从这里算
 const START_SCORE = 25000;
@@ -116,7 +118,7 @@ export class App {
     if (this.mode !== '2d') {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
       const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
-      this.root.innerHTML = `<div class="stage3d"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div>${tip}</div>`;
+      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div>${tip}</div>`;
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d');
       this.table3d.onHover = (id) => this.hoverTile(id);
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
@@ -180,11 +182,16 @@ export class App {
       return;
     }
     this.render();
+    // 只剩自己要决定鸣不鸣：鸣牌按钮等那张牌落到牌河再弹出（雀魂落桌 0.15 秒内弹出）
+    if (g.phase === 'calls' && this.busyMs() > 0) {
+      this.timer = window.setTimeout(() => this.step(), this.busyMs());
+      return;
+    }
     if (g.phase === 'turn' && g.turn !== this.me) {
       this.timer = window.setTimeout(() => {
         g.act(g.turn, chooseAction(g, g.turn, this.chars[g.turn].ai));
         this.step();
-      }, (this.mode !== '2d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
+      }, (this.mode === '25d' ? AI_TURN_DELAY_25D : this.mode === '3d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
       return;
     }
     if (g.phase === 'turn' && g.turn === this.me) {
@@ -499,7 +506,9 @@ export class App {
       p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn, { classes: classes(p.drawn), data: { tile: p.drawn } })}</div>` : '';
 
     const buttons: string[] = [];
-    legal.forEach((a, i) => {
+    // 3D 牌桌上别人打的牌还在半空时先不弹鸣牌按钮，落桌后 step 会再画一次
+    const landing = g.phase === 'calls' && this.busyMs() > 0;
+    if (!landing) legal.forEach((a, i) => {
       const label = actionLabel(a);
       if (!label) return;
       // 吃、碰、杠的按钮上画出叫了以后的样子

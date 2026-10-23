@@ -4,7 +4,8 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 // 开局的两颗骰子：从上方抛下，翻滚几下停在控制台上，点数朝上。
 
 const SIZE = 0.85;
-const ROLL_TIME = 1.1;
+// 掷完骰子马上发牌（牌桌 DEAL_START 0.8 秒），骰子要在那之前停稳
+const ROLL_TIME = 0.75;
 
 // BoxGeometry 六个面的顺序是 +x -x +y -y +z -z，对面点数相加为 7
 const FACE_VALUES = [3, 4, 1, 6, 2, 5];

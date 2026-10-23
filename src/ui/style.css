@@ -1106,6 +1106,11 @@ button {
   bottom: 21%;
 }
 
+/* 2.5D：手牌上方就是自己的牌山，提示字放到手牌下面 */
+.stage3d.flat .hud .hint {
+  bottom: 2%;
+}
+
 .hud .nameplate.mine {
   bottom: 21%;
   left: 24px;
@@ -1299,6 +1304,11 @@ button {
   }
 
   .seat-frame.bottom {
+    bottom: auto;
+    top: calc(50% + 54vw);
+  }
+
+  .stage3d.flat .hud .hint {
     bottom: auto;
     top: calc(50% + 54vw);
   }

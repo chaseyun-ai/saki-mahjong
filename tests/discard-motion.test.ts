@@ -4,6 +4,8 @@ import {
   DEFAULT_DISCARD,
   DiscardPath,
   RIICHI_DISCARD,
+  SLIDE_DISCARD,
+  SLIDE_RIICHI,
   dueMarkers,
   markers,
   phaseAt,
@@ -100,6 +102,31 @@ describe('出牌动作', () => {
     for (let i = 0; i < 18; i++) t += 1 / 60; // 0.3 附近，可能差一点点
     expect(dueMarkers(p, 0, 1, t).map((m) => m.name)).toEqual(['grab']);
     expect(dueMarkers(p, 0, 1, p.reach - 1e-6)).toEqual([]);
+  });
+
+  it('2.5D 滑牌：点下去牌就开始走，0.35 秒落桌，落桌后动作结束', () => {
+    for (const p of [SLIDE_DISCARD, SLIDE_RIICHI]) {
+      expect(markers(p).find((x) => x.name === 'land')!.t).toBeCloseTo(0.35);
+      expect(totalTime(p)).toBeCloseTo(0.35);
+      const start = sampleDiscard(p, path(), 0);
+      expect(start.tilePos.distanceTo(path().from)).toBeLessThan(1e-9);
+      expect(start.holding).toBe(true);
+      expect(sampleDiscard(p, path(), 0.35 + 1e-6).tilePos.distanceTo(path().to)).toBeLessThan(1e-9);
+      let prev = start;
+      for (let t = 1 / 600; t <= totalTime(p); t += 1 / 600) {
+        const cur = sampleDiscard(p, path(), t);
+        expect(cur.tilePos.distanceTo(prev.tilePos)).toBeLessThan(0.2);
+        prev = cur;
+      }
+      const seen: string[] = [];
+      let fired = 0;
+      for (let t = 0; t <= totalTime(p) + 1 / 30; t += 1 / 30) {
+        const due = dueMarkers(p, 0, fired, t);
+        fired += due.length;
+        seen.push(...due.map((m) => m.name));
+      }
+      expect(seen).toEqual(['depart', 'grab', 'land', 'release', 'done']);
+    }
   });
 
   it('同样的参数和时间得到同样的姿势', () => {

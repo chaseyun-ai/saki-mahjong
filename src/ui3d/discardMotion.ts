@@ -33,6 +33,11 @@ export const DEFAULT_DISCARD: DiscardParams = {
 // 立直宣言牌：抬得更高，拍下去更快，停得更久
 export const RIICHI_DISCARD: DiscardParams = { ...DEFAULT_DISCARD, reach: 0.28, carry: 0.26, settle: 0.3, lift: 3.4 };
 
+// 2.5D 没有人物：牌直接从手里滑进牌河，不伸手也不收手，0.35 秒落桌（雀魂从点下去到落桌的节奏）
+export const SLIDE_DISCARD: DiscardParams = { ...DEFAULT_DISCARD, reach: 0, carry: 0.35, settle: 0, back: 0, lift: 0.8 };
+// 2.5D 的立直宣言牌：抬高一点再拍下去
+export const SLIDE_RIICHI: DiscardParams = { ...SLIDE_DISCARD, lift: 2 };
+
 // 搬运途中牌转向牌河朝向的速度（每秒）
 const TURN_RATE = 15.33;
 // 伸手开始时手腕比接触点多抬多高、收手结束时抬多高（世界单位）
