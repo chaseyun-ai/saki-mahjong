@@ -137,7 +137,7 @@ export class ParamsPanel {
       return `
         <div class="lab-io">
           <textarea readonly rows="8" data-p="json">${esc(exportPreset({ name: this.presetName, params: this.params }))}</textarea>
-          <div class="lab-row"><button class="lab-chip on" data-p="copy">复制</button><button class="lab-chip" data-p="download">下载 .json</button><button class="lab-chip" data-p="close">收起</button></div>
+          <div class="lab-row"><button class="lab-chip on" data-p="copy">复制</button><button class="lab-chip" data-p="close">收起</button></div>
         </div>`;
     }
     if (this.io === 'import') {
@@ -230,8 +230,6 @@ export class ParamsPanel {
       this.importJson(this.el.querySelector<HTMLTextAreaElement>('[data-p=json]')?.value ?? '');
     } else if (act === 'copy') {
       this.copy();
-    } else if (act === 'download') {
-      this.download();
     } else if (act === 'close') {
       this.io = 'none';
       this.render();
@@ -292,21 +290,5 @@ export class ParamsPanel {
     };
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(area.value).then(done, fallback);
     else fallback();
-  }
-
-  private download(): void {
-    const text = exportPreset({ name: this.presetName, params: this.params });
-    try {
-      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${this.presetName}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch {
-      this.say('下载不了，请用复制');
-    }
   }
 }
