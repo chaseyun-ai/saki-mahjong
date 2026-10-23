@@ -1217,14 +1217,15 @@ button {
   bottom: 21%;
 }
 
+/* 左右两家放在偏上的位置：下半边是上家的副露 */
 .seat-frame.left {
   left: 24px;
-  top: 38%;
+  top: 24%;
 }
 
 .seat-frame.right {
   right: 24px;
-  top: 38%;
+  top: 24%;
 }
 
 /* 对家的头像框放在右上角，和雀魂一样（左上角是能力说明） */

@@ -29,7 +29,7 @@ const MY_HAND_SCALE = 1.25;
 export type TableStyle = '3d' | '25d';
 // 2.5D 的镜头：俯角 pitch（弧度，0 是平视）、视野 fov（度），看向桌子中心偏自己这边 lookZ。
 // 离多远按画面比例算，见 fitCamera。竖屏时画面窄而高，镜头再往上抬到 portraitPitch，桌子在竖直方向能铺开一点。
-// hand：自己的手牌放大多少；tilt：手牌往后仰多少，1 是正对镜头，0 是直立；
+// hand：自己的手牌放大多少；tilt：手牌往后仰多少度，0 是直立；
 // fan：两头的牌往中间转多少（弧度），中间的牌不转，越往两头转得越多
 export interface View25 {
   pitch: number;
@@ -40,7 +40,7 @@ export interface View25 {
   tilt: number;
   fan: number;
 }
-export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 34, lookZ: 1.5, hand: 1.15, tilt: 0.2, fan: 0 };
+export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 34, lookZ: 1.5, hand: 1.15, tilt: 15, fan: 0 };
 const WALL_PITCH = TILE_W + 0.02;
 
 // 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
@@ -941,7 +941,7 @@ export class Table3D {
     const flip = LOOKS[this.lastSync?.view.ids[s] ?? '']?.upsideDown ? Math.PI : 0;
 
     // 副露：一组一组从右边往左摆，每组里的顺序见 meldLayout（横着的那张按来源放左、中、右）
-    let mx = this.dim.tableHalf - 1.2;
+    let mx = this.meldStart(mine);
     for (const m of p.melds) {
       const slots = meldLayout(m, s);
       mx -= slots.reduce((sum, sl) => sum + (sl.sideways ? TILE_H : TILE_W) + GAP, 0);
@@ -1212,7 +1212,7 @@ export class Table3D {
     const pitch = cam.aspect < 1 ? v.portraitPitch : v.pitch;
     const dir = new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch));
     const myZ = d.handZ + (v.hand - 1) * 1.2;
-    const myHalf = 7.5 * (TILE_W + GAP) * v.hand + 0.5;
+    const myHalf = this.myHandHalf();
     const far = d.handZ + TILE_T;
     const side = WALL_Z + TILE_H;
     const pts = [
@@ -1227,6 +1227,12 @@ export class Table3D {
       // 自己的手牌，下沿
       new THREE.Vector3(-myHalf, 0, myZ + TILE_T),
       new THREE.Vector3(myHalf, 0, myZ + TILE_T),
+      // 自己的副露（摆在手牌右边，横着的牌伸得最远）
+      new THREE.Vector3(myHalf, 0, d.meldZ + TILE_H),
+      // 别家的副露：左右两家的在桌子两侧靠前靠后，对家的在上面
+      new THREE.Vector3(-(d.meldZ + TILE_H), 0, this.meldStart(false)),
+      new THREE.Vector3(d.meldZ + TILE_H, 0, -this.meldStart(false)),
+      new THREE.Vector3(-this.meldStart(false), 0, -(d.meldZ + TILE_H)),
     ];
     const look = new THREE.Vector3(0, 0, v.lookZ);
     // 镜头离 look 多远时所有点都在画面里（两边各留一点边）
@@ -1267,12 +1273,22 @@ export class Table3D {
       this.scene.fog.near = dist + 8;
       this.scene.fog.far = dist + 48;
     }
-    // 手牌往后仰：牌面朝着镜头
-    const toCam = this.rest.pos.clone().sub(new THREE.Vector3(0, 0, myZ));
-    this.handTilt = -Math.atan2(toCam.y, toCam.z) * v.tilt;
+    this.handTilt = -THREE.MathUtils.degToRad(v.tilt);
     if (this.debugCamera) return;
     cam.position.copy(this.rest.pos);
     cam.lookAt(this.rest.look);
+  }
+
+  // 2.5D 时自己的手牌（14 张加摸到的那张）占的半宽，镜头保证这么宽都在画面里
+  private myHandHalf(): number {
+    return 7.5 * (TILE_W + GAP) * this.view25.hand + 0.5;
+  }
+
+  // 第一组副露从哪里往左摆（座位本地坐标）。3D 从桌角摆起；2.5D 桌角在画面外，
+  // 自己的从手牌最右边摆起，别家的从牌山末端附近摆起
+  private meldStart(mine: boolean): number {
+    if (this.style !== '25d') return this.dim.tableHalf - 1.2;
+    return mine ? this.myHandHalf() : 8 * (TILE_W + GAP) + 0.5;
   }
 
   // 换 2.5D 的镜头参数（调试用）：重新算镜头，手牌按新的大小和角度重摆
