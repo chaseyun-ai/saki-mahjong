@@ -1009,11 +1009,12 @@ export class Table3D {
     const tilting = !!deal && !dealing && this.now < deal.start + DEAL_SORT + SORT_TILT;
     if (dealing || tilting) hand.sort((a, b) => (deal!.order.get(a!)?.d ?? 99) - (deal!.order.get(b!)?.d ?? 99));
     if (!this.frozen.has(s)) this.layouts[s] = { hand: hand as TileId[], drawn };
-    const count = hand.length + (drawn !== null ? 1 : 0);
     // 自己的手牌放大一些，看得清也好点
     const hs = mine ? (this.style === '25d' ? this.view25.hand : MY_HAND_SCALE) : 1;
     const step = (TILE_W + GAP) * hs;
-    const width = count * step + (drawn !== null ? 0.5 : 0);
+    // 宽度总按“手牌 + 摸到的那张”算，不管现在手里有没有摸到的牌：
+    // 这样摸牌、打牌时这一排不左右挪，打掉摸到的牌其他牌也原地不动（和雀魂一样）
+    const width = (13 - 3 * p.melds.length + 1) * step + 0.5;
     // 副露多了手牌往左让，和副露之间留一点缝
     const shift = p.melds.length ? Math.max(0, width / 2 - (mx - 0.25)) : 0;
     let x = -width / 2 - shift + TILE_W / 2;
