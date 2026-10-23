@@ -29,7 +29,8 @@ const MY_HAND_SCALE = 1.25;
 export type TableStyle = '3d' | '25d';
 // 2.5D 的镜头：俯角 pitch（弧度，0 是平视）、视野 fov（度），看向桌子中心偏自己这边 lookZ。
 // 离多远按画面比例算，见 fitCamera。竖屏时画面窄而高，镜头再往上抬到 portraitPitch，桌子在竖直方向能铺开一点。
-// hand：自己的手牌放大多少；tilt：手牌往后仰多少，1 是正对镜头，0 是直立
+// hand：自己的手牌放大多少；tilt：手牌往后仰多少，1 是正对镜头，0 是直立；
+// fan：两头的牌往中间转多少（弧度），中间的牌不转，越往两头转得越多
 export interface View25 {
   pitch: number;
   portraitPitch: number;
@@ -37,8 +38,9 @@ export interface View25 {
   lookZ: number;
   hand: number;
   tilt: number;
+  fan: number;
 }
-export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 34, lookZ: 1.5, hand: 1.4, tilt: 0.8 };
+export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 34, lookZ: 1.5, hand: 1.15, tilt: 0.2, fan: 0 };
 const WALL_PITCH = TILE_W + 0.02;
 
 // 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
@@ -994,9 +996,12 @@ export class Table3D {
     const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : STANDING;
     const y = tilting ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
     const hz = this.dim.handZ + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
+    // 2.5D 时自己的手牌两头往中间转一点
+    const fan = mine && this.style === '25d' && !tilting ? this.view25.fan : 0;
     const place = (t: TileId | null) => {
       const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
-      if (t !== null && p.hand.includes(t)) out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, 0, hs));
+      const yaw = fan ? (-fan * (x + shift)) / (width / 2) : 0;
+      if (t !== null && p.hand.includes(t)) out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
       x += step;
     };
     hand.forEach(place);
