@@ -80,6 +80,33 @@ function shoot(camera: THREE.PerspectiveCamera, w: number, h: number): string {
   return out.toDataURL('image/webp', 0.9);
 }
 
+// 切入立绘的镜头：从左前方稍微往上拍，框住头顶、腰和两只手（手指留出余量），手伸得再远也拍得进来
+function frame(cam: THREE.PerspectiveCamera, av: Avatar, head: THREE.Vector3): void {
+  const at = (n: 'hips' | 'leftHand' | 'rightHand') => av.vrm.humanoid!.getNormalizedBoneNode(n)!.getWorldPosition(new THREE.Vector3());
+  const top = head.clone().add(new THREE.Vector3(0, 0.22, 0));
+  const waist = at('hips').add(new THREE.Vector3(0, 0.04, 0));
+  const hands = [at('leftHand'), at('rightHand')];
+  const dir = new THREE.Vector3(-0.3, -0.06, -1).normalize();
+  const look = top.clone().add(waist).multiplyScalar(0.5);
+  let dist = 2;
+  for (let i = 0; i < 40; i++) {
+    cam.position.copy(look).addScaledVector(dir, dist);
+    cam.lookAt(look);
+    cam.updateMatrixWorld();
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+    const pts = [top, waist];
+    for (const h of hands) for (const d of [right, up]) pts.push(h.clone().addScaledVector(d, 0.1), h.clone().addScaledVector(d, -0.1));
+    const ndc = pts.map((p) => p.clone().project(cam));
+    const [x0, x1] = [Math.min(...ndc.map((p) => p.x)), Math.max(...ndc.map((p) => p.x))];
+    const [y0, y1] = [Math.min(...ndc.map((p) => p.y)), Math.max(...ndc.map((p) => p.y))];
+    // 画面中心挪到这些点的正中间，再按超出（或空出）多少拉远拉近，四边各留 5%
+    const halfH = dist * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    look.addScaledVector(right, ((x0 + x1) / 2) * halfH * cam.aspect).addScaledVector(up, ((y0 + y1) / 2) * halfH);
+    dist *= Math.max((x1 - x0) / 2, (y1 - y0) / 2) / 0.9;
+  }
+}
+
 // 给一个角色拍 5 张头像和 1 张切入立绘，返回 文件名 → webp 的 data URL
 export async function renderCharacter(id: string): Promise<Record<string, string>> {
   const look = LOOKS[id];
@@ -107,17 +134,14 @@ export async function renderCharacter(id: string): Promise<Record<string, string
   for (const n of ['leftUpperLeg', 'rightUpperLeg', 'leftLowerLeg', 'rightLowerLeg'] as const) {
     av.vrm.humanoid!.getNormalizedBoneNode(n)?.quaternion.identity();
   }
-  av.setRestPose(0, 0, look.pose === 'crossed' ? 'crossed' : 'lap');
+  // 没抬的那只手叉在腰边（借用扶桌沿的姿势，把“桌沿”放到腰的高度）；抱胸的角色还是抱胸
+  if (look.pose === 'crossed') av.setRestPose(0, 0, 'crossed');
+  else av.setRestPose(av.hipHeight + 0.12, -0.12, 'edge');
   av.reachTarget = av.root.localToWorld(new THREE.Vector3(pose.hand[0], av.hipHeight + pose.hand[1], pose.hand[2]));
   av.reachWeight = 1;
   const cut = new THREE.PerspectiveCamera(26, CUTIN_W / CUTIN_H, 0.05, 20);
   settle(av, headAt().add(new THREE.Vector3(-0.3, 0, -1.6)));
-  const top = headAt().y + 0.22;
-  const waist = av.vrm.humanoid!.getNormalizedBoneNode('hips')!.getWorldPosition(new THREE.Vector3()).y + 0.04;
-  const mid = new THREE.Vector3(0, (top + waist) / 2, headAt().z);
-  const dist = ((top - waist) / 2 / Math.tan(THREE.MathUtils.degToRad(cut.fov / 2))) * 1.06;
-  cut.position.copy(mid).add(new THREE.Vector3(-0.3, -0.06, -1).normalize().multiplyScalar(dist));
-  cut.lookAt(mid);
+  frame(cut, av, headAt());
   setFace(av, { ...FACE_MIX[pose.face], ...pose.extra });
   out[`${id}-cutin.webp`] = shoot(cut, CUTIN_W, CUTIN_H);
 
