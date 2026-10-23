@@ -215,6 +215,8 @@ export class Table3D {
   private reveal: RevealState | null = null;
   // 每家手牌上一次的摆法；打牌时先按这个摆，牌落进牌河后再理牌
   private layouts: { hand: TileId[]; drawn: TileId | null }[] = [];
+  // 每家手牌这一排上一次摆在哪：第一张的中心、每张隔多远、放大多少、离中心多远。倒牌时照着摆，牌原地倒下
+  private handRows: { x0: number; step: number; hs: number; z: number }[] = [];
   private frozen = new Map<number, { hand: TileId[]; drawn: TileId | null; until: number }>();
   private consoleKey = '';
   private resizer = new ResizeObserver(() => this.resize());
@@ -990,12 +992,14 @@ export class Table3D {
     const hs = mine ? (this.style === '25d' ? this.view25.hand : MY_HAND_SCALE) : 1;
     const step = (TILE_W + GAP) * hs;
     const width = count * step + (drawn !== null ? 0.5 : 0);
-    // 副露多了手牌往左让
-    const shift = p.melds.length ? Math.max(0, width / 2 - (mx - 0.6)) : 0;
+    // 副露多了手牌往左让，和副露之间留一点缝
+    const shift = p.melds.length ? Math.max(0, width / 2 - (mx - 0.25)) : 0;
     let x = -width / 2 - shift + TILE_W / 2;
     const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : STANDING;
     const y = tilting ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
     const hz = this.dim.handZ + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
+    // 倒牌开始后不再更新：和牌以后手牌张数可能变了，倒牌要照着和牌前那一刻的位置
+    if (!tilting && !this.reveal) this.handRows[s] = { x0: x, step, hs, z: hz };
     // 2.5D 时自己的手牌两头往中间转一点
     const fan = mine && this.style === '25d' && !tilting ? this.view25.fan : 0;
     const place = (t: TileId | null) => {
@@ -1037,22 +1041,22 @@ export class Table3D {
     for (const [s, win] of this.revealSeats(g)) {
       const wave = (LOOKS[this.lastSync?.view.ids[s] ?? '']?.reveal ?? 'wave') === 'wave';
       const tiles = g.players[s].hand.filter((t) => t !== win).sort((a, b) => a - b);
-      const step = TILE_W + GAP;
-      const width = (tiles.length + (win !== null ? 1 : 0)) * step + (win !== null ? 0.5 : 0);
-      let x = -width / 2 - (g.players[s].melds.length ? 3 : 0) + TILE_W / 2;
-      const z = this.dim.handZ + 0.3;
+      // 照着站着时的位置摆，每张牌原地往下倒，不左右挪（自摸的那张本来就在最右边隔开一点的地方）
+      const row = this.handRows[s] ?? { x0: 0, step: TILE_W + GAP, hs: 1, z: this.dim.handZ };
+      let x = row.x0;
+      const z = row.z + 0.3 * row.hs;
       const topple = (t: TileId, i: number) => {
         if (!rv.topple.has(t)) rv.topple.set(t, { at: rv.at + (wave ? i * TOPPLE_STAGGER : 0), from: null });
       };
       tiles.forEach((t, i) => {
-        out.set(t, this.toWorld(s, me, x, TILE_T / 2, z, FACE_UP));
+        out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * row.hs, z, FACE_UP, 0, row.hs));
         topple(t, i);
-        x += step;
+        x += row.step;
       });
       if (win === null) continue;
       const tsumo = g.players[s].hand.includes(win);
       // 自摸的那张跟着一起倒；荣和的那张等倒完再从牌河移过来
-      if (tsumo || this.now >= rv.fxAt) out.set(win, this.toWorld(s, me, x + 0.5, TILE_T / 2, z, FACE_UP));
+      if (tsumo || this.now >= rv.fxAt) out.set(win, this.toWorld(s, me, x + 0.5, (TILE_T / 2) * row.hs, z, FACE_UP, 0, row.hs));
       if (tsumo) topple(win, tiles.length);
     }
   }
