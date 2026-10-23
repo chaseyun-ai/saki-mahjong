@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Game, GameEvent } from '../engine/game';
 import type { Meld } from '../engine/score';
 import { TILE_COUNT, TileId, WIND_CN } from '../engine/tiles';
@@ -10,6 +11,7 @@ import { Dice } from './dice';
 import { Effects } from './effects';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, tableDims } from './tableLayout';
+import { TableMaterials, buildTableModel } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
@@ -184,6 +186,10 @@ export class Table3D {
   // 牌桌尺寸（可调的参数）和由它算出来的各处位置
   private tableLayout: TableLayout = { ...DEFAULT_LAYOUT };
   private dim: TableDims = tableDims(this.tableLayout);
+  private tableGroup: THREE.Group | null = null;
+  private tableMats: TableMaterials | null = null;
+  private feltMat: THREE.Material | null = null;
+  private keyLight: THREE.DirectionalLight | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -245,43 +251,29 @@ export class Table3D {
     key.position.set(-6, 22, 10);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
-    const sc = key.shadow.camera;
-    sc.left = -16;
-    sc.right = 16;
-    sc.top = 16;
-    sc.bottom = -16;
     key.shadow.bias = -0.0005;
     this.scene.add(key);
 
-    // 桌布
-    const felt = new THREE.Mesh(
-      new THREE.PlaneGeometry(this.dim.tableHalf * 2, this.dim.tableHalf * 2),
-      new THREE.MeshStandardMaterial({ map: feltTexture(), roughness: 0.95 }),
-    );
-    felt.rotation.x = -Math.PI / 2;
-    felt.receiveShadow = true;
-    this.scene.add(felt);
-
-    // 机身：黑色亮面，桌框只比桌布高一点，内侧一圈金属包边
+    // 桌子：黑色亮面，桌框只比桌布高一点，内侧一圈金属包边；尺寸变了会整个重建（buildTable）
     const frameMat = new THREE.MeshStandardMaterial({ color: '#1d2023', roughness: 0.32, metalness: 0.25 });
     const trimMat = new THREE.MeshStandardMaterial({ color: '#b9a477', roughness: 0.3, metalness: 0.8 });
-    const bodyMat = new THREE.MeshStandardMaterial({ color: '#141618', roughness: 0.5, metalness: 0.15 });
-    const frameH = FRAME_TOP + 0.6;
-    for (let s = 0; s < 4; s++) {
-      const side = new THREE.Group();
-      const rail = new THREE.Mesh(new RoundedBoxGeometry(this.dim.bodyHalf * 2, frameH, this.dim.frame, 3, 0.12), frameMat);
-      rail.position.set(0, FRAME_TOP - frameH / 2, this.dim.tableHalf + this.dim.frame / 2);
-      rail.castShadow = true;
-      rail.receiveShadow = true;
-      const trim = new THREE.Mesh(new THREE.BoxGeometry(this.dim.tableHalf * 2, 0.05, 0.08), trimMat);
-      trim.position.set(0, FRAME_TOP - 0.02, this.dim.tableHalf + 0.05);
-      side.add(rail, trim);
-      side.rotation.y = (s * Math.PI) / 2;
-      this.scene.add(side);
+    this.tableMats = {
+      frame: frameMat,
+      trim: trimMat,
+      body: new THREE.MeshStandardMaterial({ color: '#1e2227', roughness: 0.36, metalness: 0.1 }),
+      floor: new THREE.MeshStandardMaterial({ color: '#10262a', roughness: 1 }),
+    };
+    // 机身在桌框下面的阴影里，只靠灯光几乎全黑；给它一点房间的反光，弧面才看得出来
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const room = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+    for (const [m, k] of [[this.tableMats.body, 0.5], [frameMat, 0.35]] as const) {
+      (m as THREE.MeshStandardMaterial).envMap = room;
+      (m as THREE.MeshStandardMaterial).envMapIntensity = k;
     }
-    const body = new THREE.Mesh(new RoundedBoxGeometry(this.dim.bodyHalf * 2 - 0.2, 2.6, this.dim.bodyHalf * 2 - 0.2, 3, 0.15), bodyMat);
-    body.position.y = FRAME_TOP - frameH - 1.3 + 0.05;
-    this.scene.add(body);
+    this.feltMat = new THREE.MeshStandardMaterial({ map: feltTexture(), roughness: 0.95 });
+    this.keyLight = key;
+    this.buildTable();
 
     // 点棒抽屉：按画面上的方位建，座位 rel 对应 drawers[rel]
     for (let rel = 0; rel < 4; rel++) {
@@ -308,6 +300,30 @@ export class Table3D {
     top.rotation.x = -Math.PI / 2;
     top.position.y = 0.505;
     this.scene.add(top);
+  }
+
+  // 桌布、桌框、机身、地面，按现在的尺寸建；换尺寸时把旧的扔掉重建
+  private buildTable(): void {
+    if (this.tableGroup) {
+      this.scene.remove(this.tableGroup);
+      this.tableGroup.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    }
+    const d = this.dim;
+    const group = buildTableModel(d, FRAME_TOP, this.tableMats!);
+    const felt = new THREE.Mesh(new THREE.PlaneGeometry(d.tableHalf * 2, d.tableHalf * 2), this.feltMat!);
+    felt.rotation.x = -Math.PI / 2;
+    felt.receiveShadow = true;
+    group.add(felt);
+    this.tableGroup = group;
+    this.scene.add(group);
+    // 影子要盖住整张桌子
+    const sc = this.keyLight!.shadow.camera;
+    const half = Math.max(16, d.bodyHalf + 1);
+    sc.left = -half;
+    sc.right = half;
+    sc.top = half;
+    sc.bottom = -half;
+    sc.updateProjectionMatrix();
   }
 
   private buildTiles(): void {
