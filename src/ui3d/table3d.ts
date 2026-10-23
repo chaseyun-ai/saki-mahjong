@@ -63,6 +63,8 @@ interface HandTiming {
 const STICK_TIMING: HandTiming = { reach: 0.5, carry: 0.6, settle: 0.25, back: 0.45, lift: 2.6 };
 // 摸牌不用手，牌自己沿弧线从牌山飞进手里
 const DRAW_FLIGHT = 0.38;
+// 上一张打出的牌落桌后，隔这么久下一家才摸牌（雀魂约 0.15 秒）
+const DRAW_GAP = 0.1;
 
 // 鸣牌、立直、和牌的特效颜色
 const FX_GOLD = '#ffd36b';
@@ -167,6 +169,8 @@ export class Table3D {
   private deal: DealState | null = null;
   private handAnims: HandAnim[] = [];
   private flights: Flight[] = [];
+  // 别人打出的牌还在半空时摸到的牌：先留在牌山原处，落桌后再飞进手里
+  private heldDraw: { seat: number; tile: TileId; at: number; from: Placement } | null = null;
   private effects: Effects;
   private riichiSticks: THREE.Mesh[] = [];
   // 立直棒：hidden 还在抽屉里，anim 正被手拿着，placed 已经放到桌上
@@ -495,6 +499,7 @@ export class Table3D {
   snap(): void {
     this.handAnims = [];
     this.flights = [];
+    this.heldDraw = null;
     this.frozen.clear();
     this.deal = null;
     this.held.clear();
@@ -548,6 +553,8 @@ export class Table3D {
     if (this.deal) until = Math.max(until, this.deal.start + DEAL_END);
     // 别人打出的牌落到牌河之前先别响应
     for (const a of this.handAnims) if (a.kind === 'tile') until = Math.max(until, this.now - a.t + a.timing.reach + a.timing.carry);
+    // 摸到的牌还没从牌山出发
+    if (this.heldDraw) until = Math.max(until, this.heldDraw.at);
     if (this.reveal) until = Math.max(until, this.reveal.fxAt);
     return Math.max(0, (until - this.now) * 1000);
   }
@@ -555,14 +562,23 @@ export class Table3D {
   // 牌局事件驱动骰子、发牌，以及角色的视线、表情和动作
   onEvent(e: GameEvent, g: Game): void {
     const all = this.characters;
+    // 等着落桌的那张摸牌，有人出牌、鸣牌或者一局结束就不再等（能力消息不算）
+    if (e.type !== 'ability') this.releaseDraw();
     if (e.type === 'roundStart') {
       this.startDeal(g);
       this.reveal = null;
     }
     if (e.type === 'draw') {
-      // 发牌动画里庄家的第一张不用另外飞
+      // 发牌动画里庄家的第一张不用另外飞。上家打的牌还在半空就先等它落桌
       const drawn = g.players[e.seat].drawn;
-      if (!this.deal && drawn !== null) this.startFlight(drawn);
+      const wait = this.drawWait(e.seat);
+      const obj = drawn !== null ? this.tiles[drawn] : null;
+      if (!this.deal && drawn !== null && obj) {
+        if (wait > 0 && obj.shown) {
+          const from = { pos: obj.group.position.clone(), quat: obj.group.quaternion.clone(), scale: obj.group.scale.x };
+          this.heldDraw = { seat: e.seat, tile: drawn, at: this.now + wait, from };
+        } else this.startFlight(drawn);
+      }
       const ch = this.characterAt(e.seat);
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
@@ -635,7 +651,8 @@ export class Table3D {
   private placeRiichiSticks(g: Game): void {
     for (let s = 0; s < 4; s++) {
       const stick = this.riichiSticks[s];
-      const on = g.players[s].riichi && g.phase !== 'roundEnd';
+      // 立直宣言了但别人还在决定要不要鸣这张牌时，立直还没成立，也算在立直：正在拿的立直棒不能被收回去
+      const on = (g.players[s].riichi || g.players[s].riichiPending) && g.phase !== 'roundEnd';
       if (!on) {
         this.stickState[s] = 'hidden';
         stick.visible = false;
@@ -716,6 +733,25 @@ export class Table3D {
     if (!obj.shown) return;
     this.flights = this.flights.filter((f) => f.tile !== tile);
     this.flights.push({ tile, t: 0, start: obj.group.position.clone() });
+  }
+
+  // 这家的摸牌还要等多久才能飞（秒）：别家打出的牌落桌之后再隔 DRAW_GAP。
+  // 刚落桌不到 DRAW_GAP 的也要等够，不然人鸣牌按“过”正赶上落桌时，两下看着还是同时的
+  private drawWait(seat: number): number {
+    let left = 0;
+    for (const a of this.handAnims) {
+      if (a.kind === 'tile' && a.seat !== seat) left = Math.max(left, a.timing.reach + a.timing.carry + DRAW_GAP - a.t);
+    }
+    return left;
+  }
+
+  // 让等着的那张摸牌从牌山出发
+  private releaseDraw(): void {
+    const h = this.heldDraw;
+    if (!h) return;
+    this.heldDraw = null;
+    if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
+    this.startFlight(h.tile);
   }
 
   // 出牌：手牌在牌落进牌河之前保持原样，出牌的人看着牌河，手把牌搬过去。
@@ -902,6 +938,12 @@ export class Table3D {
     // 手牌：自己的稍微后仰朝向镜头，别人的立着背对我们
     let drawn = p.drawn;
     let hand: (TileId | null)[] = p.hand.filter((t) => t !== drawn).sort((a, b) => a - b);
+    // 摸到的牌还在等上家的牌落桌：留在牌山原处，手牌先不给它留位置
+    const hd = this.heldDraw;
+    if (hd && hd.seat === s && hd.tile === drawn) {
+      out.set(hd.tile, hd.from);
+      drawn = null;
+    }
     // 刚打出去的牌还没落进牌河：其他牌原地不动，空位先留着
     const fz = this.frozen.get(s);
     if (fz && this.now < fz.until) {
@@ -1368,6 +1410,7 @@ export class Table3D {
       this.onHover?.(hover);
     }
     // 发牌期间每帧重新摆一次，让牌按时间从牌山飞到手里；打出的牌落下后理牌
+    if (this.heldDraw && this.now >= this.heldDraw.at) this.releaseDraw();
     const thawed = [...this.frozen.values()].some((f) => this.now >= f.until);
     if ((this.deal || thawed) && this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
     this.dice.update(dt);

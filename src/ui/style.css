@@ -969,23 +969,25 @@ button {
   padding: 4px 8px;
 }
 
-.delta .plus {
+.delta .plus,
+.rank-row .plus {
   color: #7fe08a;
 }
 
-.delta .minus {
+.delta .minus,
+.rank-row .minus {
   color: #ff8a7a;
 }
 
 .rank-row {
-  grid-template-columns: 80px 1fr 100px;
+  grid-template-columns: 80px 1fr 100px 90px;
   font-size: 20px;
   border-left: 4px solid var(--c);
   margin-bottom: 6px;
   background: rgba(255, 255, 255, 0.04);
 }
 
-.rank-row.me {
+.rank-row.mine {
   background: color-mix(in srgb, var(--c) 25%, transparent);
 }
 

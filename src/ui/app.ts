@@ -19,6 +19,8 @@ const AI_TURN_DELAY = 550;
 // 3D 牌桌上角色要先伸手摸牌，节奏放慢一点
 const AI_TURN_DELAY_3D = 1000;
 const AI_CALL_DELAY = 250;
+// 开局点数，终局排名的 ± 从这里算
+const START_SCORE = 25000;
 
 interface Toast {
   id: number;
@@ -104,7 +106,7 @@ export class App {
     const others = CHARACTERS.filter((c) => c.id !== charId);
     this.chars = [mine, ...others];
     const seed = Math.floor(Math.random() * 2 ** 31);
-    this.game = new Game({ seed, players: this.chars.map((c) => ({ name: c.name, ability: c.ability })) });
+    this.game = new Game({ seed, startScore: START_SCORE, players: this.chars.map((c) => ({ name: c.name, ability: c.ability })) });
     this.trace = new AbilityTrace(this.game, seed);
     this.game.onEvent((e) => this.onGameEvent(e));
     this.toasts = [];
@@ -638,10 +640,13 @@ export class App {
     const g = this.game!;
     const rows = g
       .ranking()
-      .map(
-        (s, i) =>
-          `<div class="rank-row ${s === this.me ? 'me' : ''}" style="--c:${this.chars[s].color}"><span class="rank">${i + 1} 位</span><span>${this.chars[s].name}</span><span>${g.players[s].score}</span></div>`,
-      )
+      .map((s, i) => {
+        const score = g.players[s].score;
+        const d = score - START_SCORE;
+        const cls = d > 0 ? 'plus' : d < 0 ? 'minus' : '';
+        // 自己那一行用 mine，不能叫 me：me 是牌桌上自己手牌区的样式
+        return `<div class="rank-row ${s === this.me ? 'mine' : ''}" style="--c:${this.chars[s].color}"><span class="rank">${i + 1} 位</span><span>${this.chars[s].name}</span><span>${score}</span><span class="${cls}">${d > 0 ? '+' : d < 0 ? '' : '±'}${d}</span></div>`;
+      })
       .join('');
     return `
       <div class="modal"><div class="result">
