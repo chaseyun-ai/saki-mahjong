@@ -895,6 +895,72 @@ button {
   gap: 4px;
 }
 
+/* 结算画面的能力痕迹：这一局牌山被动过的地方，一条一句 */
+.trace {
+  margin: 0 0 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: left;
+}
+
+.trace h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: var(--gold);
+  letter-spacing: 0.1em;
+}
+
+.trace-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 0;
+  font-size: 13px;
+  line-height: 2.1;
+}
+
+.trace-turn {
+  flex: none;
+  width: 4.4em;
+  font-size: 12px;
+  color: var(--ink-quiet);
+}
+
+.trace-tag {
+  flex: none;
+  min-width: 3.4em;
+  text-align: center;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.trace-tag.ability {
+  color: var(--gold);
+}
+
+.trace-tag.shift {
+  color: #8fb6e8;
+}
+
+.trace-tag.miss {
+  color: #ff8a7a;
+}
+
+.trace-text .tile {
+  display: inline-flex;
+  vertical-align: -9px;
+  margin: 0 2px;
+}
+
+.trace-none {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-quiet);
+}
+
 .delta,
 .rank-row {
   display: grid;

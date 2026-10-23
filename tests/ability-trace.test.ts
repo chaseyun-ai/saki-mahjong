@@ -4,7 +4,7 @@ import { chooseAction } from '../src/ai/ai';
 import { Game, PlayerConfig } from '../src/engine/game';
 import { TileId, doraFromIndicator, isRed, kindOf } from '../src/engine/tiles';
 import { Wall } from '../src/engine/wall';
-import { AbilityTrace, TraceEntry } from '../src/ui/abilityTrace';
+import { AbilityTrace, TraceEntry, traceLine } from '../src/ui/abilityTrace';
 
 // 测试里偷偷记下牌山真正被换过的地方（换到最前面的那张变了才算），拿来和记录员的说法对账
 type Swap = { wall: Wall; before: TileId; after: TileId };
@@ -167,5 +167,21 @@ describe('能力痕迹', () => {
     }
     expect(n).toBeGreaterThan(20);
     expect(missed).toBeGreaterThan(0);
+  }, 120000);
+
+  it('每条记录都能写成一句完整的解说', () => {
+    const tags = new Set<string>();
+    for (let seed = 1; seed <= 10; seed++) {
+      for (const r of play(seed).rounds) {
+        for (const x of r.entries) {
+          const l = traceLine(x, (s) => CHARACTERS[s].name, (t) => `[${t}]`);
+          tags.add(l.tag);
+          expect(l.html).not.toMatch(/undefined|null|NaN/);
+          expect(l.html.endsWith('。')).toBe(true);
+          expect(l.turn).toBeGreaterThan(0);
+        }
+      }
+    }
+    expect([...tags].sort()).toEqual(['差一点', '能力', '错位'].sort());
   }, 120000);
 });

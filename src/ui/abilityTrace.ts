@@ -112,11 +112,14 @@ export class AbilityTrace {
     const p = this.pending;
     if (!p) return;
     this.pending = null;
-    this.entries.push({ kind: 'note', seat: p.seat, turn: this.turnOf(p.seat), ability: p.ability, text: p.text });
+    this.entries.push({ kind: 'note', seat: p.seat, turn: this.turn(), ability: p.ability, text: p.text });
   }
 
-  private turnOf(seat: number): number {
-    return this.g.players[seat].discards.length + 1;
+  // 第几巡：按这一局从牌山摸了几张算，四张一巡（鸣牌跳过的人不另算），整局从前往后不会倒退
+  private turn(): number {
+    const w = this.g.wall;
+    const drawn = 70 - w.remaining - w.overflow.length;
+    return Math.floor(Math.max(0, drawn - 1) / 4) + 1;
   }
 
   private onDraw(seat: number, ability: { ability: string; text: string } | null): void {
@@ -142,7 +145,7 @@ export class AbilityTrace {
     this.entries.push({
       kind: 'swap',
       seat,
-      turn: this.turnOf(seat),
+      turn: this.turn(),
       ability: ability?.ability ?? g.abilities[seat]?.id ?? null,
       text: ability?.text ?? null,
       rinshan,
@@ -166,7 +169,7 @@ export class AbilityTrace {
     this.entries.push({
       kind: 'shift',
       seat,
-      turn: this.turnOf(seat),
+      turn: this.turn(),
       call,
       from,
       tile,
@@ -180,7 +183,48 @@ export class AbilityTrace {
       const owner = (from + 1 + k) % 4;
       if (owner === seat) return;
       const w = waitInfo(g, owner).tiles.find((x) => x.kind === kindOf(t));
-      if (w?.tsumo) this.entries.push({ kind: 'nearMiss', seat: owner, turn: this.turnOf(owner), tile: t, by: seat, call });
+      if (w?.tsumo) this.entries.push({ kind: 'nearMiss', seat: owner, turn: this.turn(), tile: t, by: seat, call });
     });
   }
+}
+
+// ---------- 讲给玩家听 ----------
+
+export interface TraceLine {
+  turn: number;
+  tag: '能力' | '错位' | '差一点';
+  cls: 'ability' | 'shift' | 'miss';
+  html: string;
+}
+
+// 把一条记录写成解说的一句话。name：座位的名字；tile：一张牌的样子（结算画面用小牌图）
+export function traceLine(x: TraceEntry, name: (seat: number) => string, tile: (t: TileId) => string): TraceLine {
+  const who = name(x.seat);
+  if (x.kind === 'note') return { turn: x.turn, tag: '能力', cls: 'ability', html: `${who}${x.text}。` };
+  if (x.kind === 'nearMiss') {
+    return { turn: x.turn, tag: '差一点', cls: 'miss', html: `要不是${name(x.by)}这一${x.call}，${who}下一次摸牌就能自摸 ${tile(x.tile)}。` };
+  }
+  if (x.kind === 'shift') {
+    let html = `${who}${x.call}了${name(x.from)}打的 ${tile(x.tile)}，牌序错开：下一张本来是${name(x.nextWas)}摸，现在轮到${name(x.nextNow)}。`;
+    if (x.skipped.length) html += `${x.skipped.map(name).join('、')}少摸了一次。`;
+    // 一巡先见几乎每次鸣牌都会被改写，只在怜自己鸣牌时说（她是看着未来去改的）
+    if (x.foresight === x.seat) html += `${who}用这一手改写了自己看到的一巡。`;
+    return { turn: x.turn, tag: '错位', cls: 'shift', html };
+  }
+  const from =
+    x.source === 'rinshan'
+      ? `这张原本是第 ${x.depth + 1} 张岭上牌。`
+      : `这张原本埋在牌山第 ${x.depth + 1} 张${x.depth >= 4 ? `，本来要 ${Math.floor(x.depth / 4)} 巡以后才露面` : ''}。`;
+  let html: string;
+  if (x.rinshan) {
+    html = `${who}开杠，岭上牌本来是 ${tile(x.expected)}，翻上来的却是 ${tile(x.got)}。${from}`;
+  } else {
+    const got =
+      x.text === '宝牌聚集' ? `宝牌 ${tile(x.got)}` : x.text === '杠的气息' ? `能开杠的 ${tile(x.got)}` : tile(x.got);
+    html = `${who}本来该摸 ${tile(x.expected)}，摸到的却是${got}。${from}`;
+    if (x.ability === 'saki' && x.text === null) html += '对子悄悄长成了刻子，没有人察觉。';
+  }
+  if (x.madeWin) html += '这一张正好和了。';
+  if (x.lostWin) html += `被换走的那张，本来能让${who}直接自摸。`;
+  return { turn: x.turn, tag: '能力', cls: 'ability', html };
 }

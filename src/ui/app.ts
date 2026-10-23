@@ -10,6 +10,7 @@ import { MODEL_URLS } from '../ui3d/looks';
 import { backHtml, tileHtml } from './tile';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
+import { AbilityTrace, traceLine } from './abilityTrace';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -44,6 +45,8 @@ export class App {
   // 打牌前预览：轮到自己时，打出去以后能听牌的牌和打掉它以后听什么；鼠标停在哪张牌上
   private preview = new Map<TileId, WaitInfo>();
   private previewTile: TileId | null = null;
+  // 能力痕迹：记下这一局牌山被动过的地方，结算时讲出来
+  private trace: AbilityTrace | null = null;
 
   // openLab：选人页上点"动作调试"时调用
   constructor(
@@ -102,6 +105,7 @@ export class App {
     this.chars = [mine, ...others];
     const seed = Math.floor(Math.random() * 2 ** 31);
     this.game = new Game({ seed, players: this.chars.map((c) => ({ name: c.name, ability: c.ability })) });
+    this.trace = new AbilityTrace(this.game, seed);
     this.game.onEvent((e) => this.onGameEvent(e));
     this.toasts = [];
     this.showResult = false;
@@ -575,6 +579,7 @@ export class App {
       <div class="modal"><div class="result">
         ${title}${wins}${tenpai}
         ${this.deltasHtml(r)}
+        ${this.traceHtml()}
         <button class="primary" data-ui="next">继续</button>
       </div></div>`;
   }
@@ -615,6 +620,18 @@ export class App {
         return `<div class="delta"><span>${this.chars[s].name}</span><span class="${cls}">${d > 0 ? '+' : ''}${d || ''}</span><span>${g.players[s].score}</span></div>`;
       })
       .join('')}</div>`;
+  }
+
+  // 能力痕迹：这一局牌山被动过的地方，按发生的先后讲出来
+  private traceHtml(): string {
+    const lines = (this.trace?.entries ?? [])
+      .map((x) => traceLine(x, (s) => this.chars[s].name, (t) => tileHtml(t, { size: 'mini' })))
+      .map(
+        (l) =>
+          `<div class="trace-line"><span class="trace-turn">第 ${l.turn} 巡</span><span class="trace-tag ${l.cls}">${l.tag}</span><span class="trace-text">${l.html}</span></div>`,
+      )
+      .join('');
+    return `<div class="trace"><h3>能力痕迹</h3>${lines || '<p class="trace-none">这一局牌山没被动过。</p>'}</div>`;
   }
 
   private gameEndHtml(): string {
