@@ -9,6 +9,7 @@ import { LOOKS, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects } from './effects';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
+import { DEFAULT_DISCARD, DiscardParams, RIICHI_DISCARD, sampleDiscard, totalTime } from './discardMotion';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -67,9 +68,7 @@ interface HandTiming {
   back: number;
   lift: number; // 移动时抬多高
 }
-const DISCARD_TIMING: HandTiming = { reach: 0.3, carry: 0.34, settle: 0.22, back: 0.4, lift: 2.2 };
-// 立直：牌抬得更高，拍下去更快，停得更久
-const RIICHI_TIMING: HandTiming = { reach: 0.28, carry: 0.26, settle: 0.3, back: 0.4, lift: 3.4 };
+// 出牌的节奏和手的姿势参数在 discardMotion.ts（DEFAULT_DISCARD、RIICHI_DISCARD）
 // 立直棒：从抽屉里拿出来放到桌上
 const STICK_TIMING: HandTiming = { reach: 0.5, carry: 0.6, settle: 0.25, back: 0.45, lift: 2.6 };
 // 摸牌不用手，牌自己沿弧线从牌山飞进手里
@@ -117,6 +116,7 @@ interface HandAnim {
   hold: number; // 放下后额外停多久（荣和时放铳的手停住）
   dest?: Placement; // 立直棒放到哪里
   startQuat?: THREE.Quaternion;
+  motion?: DiscardParams; // 出牌动作的参数（kind 为 tile 时）
   landed?: THREE.Vector3; // 放下的位置，之后牌被拿走手也停在这里
 }
 
@@ -413,14 +413,14 @@ export class Table3D {
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
       const pond = this.seatPoint(e.seat, 0, 0, POND_Z + 1.5);
-      const timing = e.riichi ? RIICHI_TIMING : DISCARD_TIMING;
+      const timing = e.riichi ? RIICHI_DISCARD : DEFAULT_DISCARD;
       const prev = this.layouts[e.seat];
       if (prev) this.frozen.set(e.seat, { ...prev, until: this.now + timing.reach + timing.carry + 0.15 });
       this.startHandAnim(e.seat, e.tile, timing);
       if (e.riichi) {
         // 立直宣言：牌拍下去的那一刻放特效，接着从抽屉里拿立直棒放到桌上
-        window.setTimeout(() => this.callFx(e.seat, 'riichi'), (RIICHI_TIMING.reach + RIICHI_TIMING.carry) * 1000);
-        this.startStickAnim(e.seat, -(RIICHI_TIMING.reach + RIICHI_TIMING.carry + RIICHI_TIMING.settle));
+        window.setTimeout(() => this.callFx(e.seat, 'riichi'), (RIICHI_DISCARD.reach + RIICHI_DISCARD.carry) * 1000);
+        this.startStickAnim(e.seat, -(RIICHI_DISCARD.reach + RIICHI_DISCARD.carry + RIICHI_DISCARD.settle));
       }
       for (const ch of all) {
         // 别人出牌时看一眼，反应有先后
@@ -570,12 +570,22 @@ export class Table3D {
     this.flights.push({ tile, t: 0, start: obj.group.position.clone() });
   }
 
-  private startHandAnim(seat: number, tile: TileId, timing: HandTiming): void {
+  private startHandAnim(seat: number, tile: TileId, motion: DiscardParams): void {
     const obj = this.tiles[tile];
     if (!obj.shown) return;
     // 同一个人上一个动作还没做完就直接结束它
     this.cancelHandAnims(seat);
-    this.handAnims.push({ seat, kind: 'tile', tile, t: 0, start: obj.group.position.clone(), timing, hold: 0 });
+    this.handAnims.push({
+      seat,
+      kind: 'tile',
+      tile,
+      t: 0,
+      start: obj.group.position.clone(),
+      startQuat: obj.group.quaternion.clone(),
+      timing: motion,
+      motion,
+      hold: 0,
+    });
   }
 
   // 结束这个人手上的动作；还没放下的立直棒直接放好
@@ -1017,14 +1027,17 @@ export class Table3D {
     const me = this.lastSync?.view.me ?? 0;
     const smooth = (x: number) => x * x * (3 - 2 * x);
     const easeOut = (x: number) => 1 - (1 - x) * (1 - x) * (1 - x);
+    for (const c of this.characters) if (c.avatar) c.avatar.tuning = DEFAULT_DISCARD;
     this.handAnims = this.handAnims.filter((a) => {
       a.t += dt;
       if (a.t < 0) return true;
+      const av = this.characterAt(a.seat)?.avatar;
+      if (a.kind === 'tile') return this.animateDiscard(a, av ?? null);
       const { reach, carry, back, lift } = a.timing;
       const settle = a.timing.settle + a.hold;
-      const av = this.characterAt(a.seat)?.avatar;
-      const obj = a.kind === 'tile' ? this.tiles[a.tile].group : a.kind === 'stick' ? this.riichiSticks[a.seat] : null;
-      const destP = a.kind === 'tile' ? this.tiles[a.tile].target : (a.dest ?? null);
+      // 下面是立直棒和举手示意；出牌在 animateDiscard
+      const obj = a.kind === 'stick' ? this.riichiSticks[a.seat] : null;
+      const destP = a.dest ?? null;
       if ((a.kind !== 'gesture' && !destP) || a.t > reach + carry + settle + back) {
         if (av) av.reachWeight = 0;
         if (a.kind === 'stick') {
@@ -1048,10 +1061,6 @@ export class Table3D {
         const k = easeOut(a.t / reach);
         weight = k;
         wrist = grip(a.start, (1 - k) * 0.8);
-        if (a.kind === 'tile') {
-          obj!.position.copy(a.start);
-          this.held.add(a.tile);
-        }
       } else if (a.t < reach + carry) {
         const k = smooth((a.t - reach) / carry);
         weight = 1;
@@ -1063,7 +1072,6 @@ export class Table3D {
         }
         obj!.position.copy(p);
         obj!.quaternion.slerp(destP!.quat, Math.min(1, dt * 12));
-        if (a.kind === 'tile') this.held.add(a.tile);
       } else if (a.t < reach + carry + settle) {
         weight = 1;
         a.landed ??= dest.clone();
@@ -1089,6 +1097,45 @@ export class Table3D {
       return true;
     });
     for (const d of this.drawers) d.group.position.z = BODY_HALF - 0.1 + d.open * DRAWER_OPEN;
+  }
+
+  // 出牌：手和牌的姿势全部由 discardMotion 按时间算出来
+  private animateDiscard(a: HandAnim, av: Avatar | null): boolean {
+    const p = a.motion!;
+    const tile = this.tiles[a.tile];
+    const target = tile.target;
+    if (!target || a.t > totalTime(p, a.hold)) {
+      if (av) av.reachWeight = 0;
+      return false;
+    }
+    const me = this.lastSync?.view.me ?? 0;
+    const pose = sampleDiscard(
+      p,
+      {
+        from: a.start,
+        fromQuat: a.startQuat!,
+        to: target.pos,
+        toQuat: target.quat,
+        landed: a.landed,
+        toward: new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(a.seat, me)),
+        scale: AVATAR_SCALE,
+        hold: a.hold,
+      },
+      a.t,
+    );
+    // 放下那一刻记住位置，之后牌被拿走（比如荣和）手也停在原处
+    if (pose.phase === 'settle') a.landed ??= target.pos.clone();
+    if (pose.holding) {
+      tile.group.position.copy(pose.tilePos);
+      tile.group.quaternion.copy(pose.tileQuat);
+      this.held.add(a.tile);
+    }
+    if (av) {
+      av.reachTarget = pose.wrist;
+      av.reachWeight = pose.weight;
+      av.tuning = p;
+    }
+    return true;
   }
 
   // 倒牌：每张牌绕着靠桌子中心那条底边往前倒，倒下去越来越快

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRM, VRMHumanBoneName, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import type { RestPose } from './looks';
+import { DEFAULT_DISCARD } from './discardMotion';
 
 // 坐在牌桌边的 VRM 角色：坐姿、呼吸、眨眼、视线、表情，以及用右手去拿牌（两段骨骼 IK）。
 // 模型面朝本地 -z（牌桌中心）。
@@ -60,6 +61,8 @@ export class Avatar {
   // 右手要去的位置（世界坐标）和权重，0 是手放在休息的位置，1 是完全伸到目标
   reachTarget: THREE.Vector3 | null = null;
   reachWeight = 0;
+  // 伸手时的弧线高度、前倾上限、手腕弯曲，出牌时由出牌参数决定
+  tuning: { arcMax: number; leanMax: number; wristBend: number } = DEFAULT_DISCARD;
   // 双手休息的位置（模型自身坐标，右手 +x）：桌沿上，或者放在腿上
   private rest: { left: THREE.Vector3; right: THREE.Vector3 } | null = null;
   private restPose: RestPose = 'edge';
@@ -220,7 +223,7 @@ export class Avatar {
     const twist = Math.atan2(new THREE.Vector3().crossVectors(palm, down).dot(axis), palm.dot(down));
     this.rotateWorld(lower, axisQ(axis, twist));
     const bendAxis = new THREE.Vector3().crossVectors(axis, new THREE.Vector3(0, -1, 0)).normalize();
-    this.rotateWorld(hand, axisQ(bendAxis, 0.35));
+    this.rotateWorld(hand, axisQ(bendAxis, side === 'right' ? this.tuning.wristBend : DEFAULT_DISCARD.wristBend));
   }
 
   // 在世界坐标里给骨骼再加一个旋转
@@ -270,7 +273,7 @@ export class Avatar {
     if (this.reachTarget && this.reachWeight > 0) {
       const local = this.root.worldToLocal(this.reachTarget.clone());
       const dist = Math.hypot(local.x, local.z);
-      lean = this.reachWeight * THREE.MathUtils.clamp((dist - 0.35) * 1.4, 0.05, 0.62);
+      lean = this.reachWeight * THREE.MathUtils.clamp((dist - 0.35) * 1.4, 0.05, this.tuning.leanMax);
       twist = this.reachWeight * THREE.MathUtils.clamp(Math.atan2(-local.x, -local.z) * 0.35, -0.3, 0.3);
     }
     const breath = Math.sin(t * 1.6);
@@ -310,7 +313,7 @@ export class Avatar {
         const w = this.reachWeight;
         const y = THREE.MathUtils.lerp(right.y, this.reachTarget.y, 1 - (1 - w) ** 3);
         right.lerp(this.reachTarget, w).setY(y);
-        right.y += Math.sin(w * Math.PI) * Math.min(dist * 0.3, 0.1 * this.root.scale.x);
+        right.y += Math.sin(w * Math.PI) * Math.min(dist * 0.3, this.tuning.arcMax * this.root.scale.x);
       }
       this.solveArm('left', left);
       this.solveArm('right', right);
