@@ -93,6 +93,7 @@ button {
 
 .char-portrait,
 .avatar {
+  position: relative;
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -103,6 +104,17 @@ button {
   font-size: 28px;
   font-weight: 700;
   margin-bottom: 10px;
+}
+
+/* 头像图盖在名字的那个字上面；图没下下来就还是显示那个字 */
+.char-portrait img,
+.seat-frame .portrait img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
 }
 
 .char-name {
@@ -1181,6 +1193,7 @@ button {
 
 .seat-frame .wind {
   position: absolute;
+  z-index: 1;
   left: -6px;
   top: -6px;
   width: 22px;

@@ -34,6 +34,14 @@ export const LOOKS: Record<string, Look> = {
 // 牌桌上要用到的全部模型文件（每局四个座位正好是这四个角色）
 export const MODEL_URLS = [...new Set(Object.values(LOOKS).map((l) => l.model))];
 
+// 头像的五种表情：平常、开心、难过、吃惊、认真
+export const FACES = ['neutral', 'happy', 'sad', 'surprised', 'serious'] as const;
+export type Face = (typeof FACES)[number];
+
+// 头像和切入立绘的图片（scripts/render-portraits.mjs 用模型渲染出来的；以后有手绘图，按同样的文件名换掉就行）
+export const portraitUrl = (id: string, face: Face): string => `portraits/${id}-${face}.webp`;
+export const cutinUrl = (id: string): string => `portraits/${id}-cutin.webp`;
+
 function hslToRgb(h: number, s: number, l: number, out: [number, number, number]): void {
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
   const p = 2 * l - q;

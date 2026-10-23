@@ -6,7 +6,7 @@ import { TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
-import { MODEL_URLS } from '../ui3d/looks';
+import { FACES, Face, MODEL_URLS, portraitUrl } from '../ui3d/looks';
 import { backHtml, tileHtml } from './tile';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
@@ -52,6 +52,9 @@ export class App {
   private previewTile: TileId | null = null;
   // 能力痕迹：记下这一局牌山被动过的地方，结算时讲出来
   private trace: AbilityTrace | null = null;
+  // 2.5D 头像框里每家现在的表情，到 until（毫秒时间戳）变回平常；一局结束时的表情留到下一局开始
+  private faces: { face: Face; until: number }[] = [];
+  private faceTimer: number | null = null;
 
   // openLab：选人页上点"动作调试"时调用
   constructor(
@@ -83,7 +86,7 @@ export class App {
     const cards = CHARACTERS.map(
       (c) => `
       <button class="char-card" data-pick="${c.id}" style="--c:${c.color}">
-        <div class="char-portrait">${c.name.slice(-1)}</div>
+        <div class="char-portrait">${c.name.slice(-1)}<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></div>
         <div class="char-name">${c.name}</div>
         <div class="char-school">${c.school}</div>
         <div class="char-ability">${c.ability ? c.ability.name : '无能力'}</div>
@@ -114,6 +117,9 @@ export class App {
     this.trace = new AbilityTrace(this.game, seed);
     this.game.onEvent((e) => this.onGameEvent(e));
     this.toasts = [];
+    this.faces = [];
+    // 头像先下好，第一次换表情时不会空一下
+    for (const c of this.chars) for (const f of FACES) new Image().src = portraitUrl(c.id, f);
     this.showResult = false;
     if (this.mode !== '2d') {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
@@ -212,6 +218,7 @@ export class App {
 
   private onGameEvent(e: GameEvent): void {
     this.table3d?.onEvent(e, this.game!);
+    this.updateFaces(e);
     if (e.type === 'discard') {
       this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
       if (!this.table3d) playClick();
@@ -229,6 +236,37 @@ export class App {
       if (e.result.wins.length) playWin();
       for (const w of e.result.wins) this.toast(w.seat, w.from === null ? '自摸' : '荣和', true, 'win');
     }
+  }
+
+  // 头像跟着牌局换表情：立直时认真到这局结束，牌被吃碰杠吓一跳，发动能力认真一下，
+  // 和牌的人开心、放铳和掉分的人难过，留到下一局开始
+  private updateFaces(e: GameEvent): void {
+    const g = this.game!;
+    const set = (s: number, face: Face, secs = Infinity) => (this.faces[s] = { face, until: Date.now() + secs * 1000 });
+    if (e.type === 'roundStart') this.faces = [];
+    else if (e.type === 'discard' && e.riichi) set(e.seat, 'serious');
+    else if (e.type === 'call') {
+      const from = g.players[e.seat].melds.at(-1)?.from;
+      if (from !== undefined && from !== e.seat) set(from, 'surprised', 2);
+    } else if (e.type === 'ability') set(e.seat, 'serious', 2);
+    else if (e.type === 'roundEnd') {
+      const r = e.result;
+      for (let s = 0; s < 4; s++) {
+        if (r.wins.some((w) => w.seat === s)) set(s, 'happy');
+        else if (r.wins.some((w) => w.from === s) || r.deltas[s] < 0) set(s, 'sad');
+      }
+    }
+    // 有限时的表情到点后重画一次，换回原来的表情
+    const next = Math.min(...this.faces.map((f) => f?.until ?? Infinity).filter((t) => t > Date.now()));
+    if (this.faceTimer !== null) clearTimeout(this.faceTimer);
+    this.faceTimer = Number.isFinite(next) ? window.setTimeout(() => this.render(), next - Date.now() + 20) : null;
+  }
+
+  private faceOf(s: number): Face {
+    const f = this.faces[s];
+    if (f && Date.now() < f.until) return f.face;
+    // 立直中的人一直认真
+    return this.game?.players[s].riichi && this.game.phase !== 'roundEnd' ? 'serious' : 'neutral';
   }
 
   private toast(seat: number, text: string, big: boolean, kind = ''): void {
@@ -370,7 +408,7 @@ export class App {
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? 'active' : '';
     return `
       <div class="seat-frame ${POS[s]} ${active}" style="--c:${c.color}">
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span></div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${portraitUrl(c.id, this.faceOf(s))}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span></div>
         <div class="info">
           <div class="pname">${c.name}</div>
           <div class="pability">${c.ability?.name ?? '无能力'}</div>
