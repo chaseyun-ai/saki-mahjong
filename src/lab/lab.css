@@ -61,6 +61,32 @@
   font-size: 13px;
 }
 
+.lab-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lab-tabs button {
+  flex: 1;
+  padding: 7px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-quiet);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lab-tabs button.on {
+  background: rgba(240, 195, 90, 0.18);
+  color: var(--gold);
+}
+
 .lab-panel section {
   padding: 12px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -94,6 +120,16 @@
   font: inherit;
   font-size: 13px;
   cursor: pointer;
+}
+
+.lab-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.lab-chip.danger {
+  border-color: #ff4b3e;
+  color: #ff8a80;
 }
 
 .lab-chip.on {
@@ -191,6 +227,88 @@
   height: 10px;
   border-radius: 50%;
   flex: none;
+}
+
+/* 动作参数 */
+.lab-select,
+.lab-name,
+.lab-io textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: #0a1a1d;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.lab-io textarea {
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.lab-actions {
+  margin-top: 8px;
+}
+
+.lab-actions .lab-chip {
+  padding: 5px 10px;
+}
+
+.lab-io {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lab-msg {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--gold);
+}
+
+.lab-msg:empty {
+  display: none;
+}
+
+.lab-param {
+  display: grid;
+  grid-template-columns: 5.2em minmax(0, 1fr) 58px 2.2em;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.lab-param input[type='range'] {
+  width: 100%;
+  accent-color: var(--gold);
+}
+
+.lab-param input[type='number'] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 3px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: #0a1a1d;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.lab-param small {
+  color: var(--ink-quiet);
+  font-size: 11px;
+}
+
+.lab-reset {
+  margin-top: 8px;
 }
 
 /* 测量读数：画面左上角 */

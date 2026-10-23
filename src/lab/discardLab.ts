@@ -2,10 +2,11 @@ import './lab.css';
 import { CHARACTERS } from '../abilities/characters';
 import { playClick } from '../ui/sound';
 import { tileHtml } from '../ui/tile';
-import { DEFAULT_DISCARD, DiscardParams, DiscardPath, RIICHI_DISCARD, markers, phaseAt, totalTime } from '../ui3d/discardMotion';
+import { DiscardParams, DiscardPath, markers, phaseAt, totalTime } from '../ui3d/discardMotion';
 import { AVATAR_SCALE, SyncView, Table3D } from '../ui3d/table3d';
 import { GIZMO_COLORS, GIZMO_LABELS, GizmoKind, Gizmos } from './gizmos';
 import { CAMERA_LABELS, CameraMode, LabCamera } from './labCamera';
+import { ParamsPanel } from './paramsPanel';
 import { HAND_SLOTS, LabScene, LabSetup, POND_SLOTS, applyDiscard, composeScene } from './scene';
 import { Timeline } from './timeline';
 
@@ -13,6 +14,8 @@ import { Timeline } from './timeline';
 // 牌桌、人物模型、IK 和出牌动作都和正式牌局是同一套代码，这里只负责摆场景和重放。
 
 const SEATS = ['自己', '下家', '对家', '上家'];
+const TABS = { scene: '场景', params: '动作参数', view: '机位和辅助线' };
+type Tab = keyof typeof TABS;
 // 收手之后多看一会儿再循环
 const TAIL = 0.35;
 const FRAME = 1 / 60;
@@ -49,6 +52,10 @@ export class DiscardLab {
   // 只看出牌的人（侧面看时别家会挡住镜头）
   private hideOthers = false;
   private hud: HTMLElement;
+  private tab: Tab = 'scene';
+  private sceneTab: HTMLElement;
+  private viewTab: HTMLElement;
+  private paramsPanel: ParamsPanel;
 
   constructor(root: HTMLElement) {
     root.innerHTML = `
@@ -66,7 +73,22 @@ export class DiscardLab {
     this.panel = root.querySelector('#lab-panel')!;
     this.status = root.querySelector('#lab-status')!;
     this.hud = root.querySelector('#lab-hud')!;
-    this.renderPanel();
+    this.panel.innerHTML = `
+      <header class="lab-head">
+        <h1>出牌动作调试</h1>
+        <a href="#" data-act="exit">返回游戏</a>
+      </header>
+      <nav class="lab-tabs">${Object.entries(TABS)
+        .map(([k, label]) => `<button data-act="tab" data-v="${k}">${label}</button>`)
+        .join('')}</nav>
+      <div data-tab="scene"></div>
+      <div data-tab="params"></div>
+      <div data-tab="view"></div>`;
+    this.sceneTab = this.panel.querySelector('[data-tab=scene]')!;
+    this.viewTab = this.panel.querySelector('[data-tab=view]')!;
+    this.paramsPanel = new ParamsPanel(this.panel.querySelector('[data-tab=params]')!, (structural) => this.paramsChanged(structural));
+    this.showTab(this.tab);
+    this.renderScene();
     this.timeline = new Timeline(
       root.querySelector('#lab-timeline')!,
       {
@@ -88,6 +110,7 @@ export class DiscardLab {
     };
     this.gizmos = new Gizmos(this.table.overlay);
     this.cam = new LabCamera(this.table);
+    this.renderView();
     this.table.beforeRender = () => this.tick();
     this.panel.addEventListener('click', (e) => this.onClick(e));
     window.addEventListener('keydown', this.onKey);
@@ -125,8 +148,19 @@ export class DiscardLab {
     return composeScene(names, this.setup());
   }
 
+  // 正在调的参数；出牌动作直接引用这一份，面板上改了马上生效
   private motion(): DiscardParams {
-    return this.state.sideways ? RIICHI_DISCARD : DEFAULT_DISCARD;
+    return this.paramsPanel.params;
+  }
+
+  // 参数改了：时间轴和轨迹按新参数重画；暂停时停在同一时刻重新算这一帧，播放时接着播；
+  // 整套换了（换预设）就从头播
+  private paramsChanged(structural: boolean): void {
+    if (!this.table) return;
+    if (structural && this.playing) return this.replay();
+    if (!this.playing) return this.seek(this.t);
+    this.timeline.setMarkers(markers(this.motion()), this.duration());
+    if (this.path) this.gizmos.setPaths(this.motion(), this.path);
   }
 
   // 牌回到手里，所有东西摆好，从头出一次牌（动作时间回到 0）
@@ -250,12 +284,21 @@ export class DiscardLab {
 
   // ---------- 面板 ----------
 
-  private renderPanel(): void {
+  private showTab(tab: Tab): void {
+    this.tab = tab;
+    for (const el of this.panel.querySelectorAll<HTMLElement>('[data-tab]')) el.hidden = el.dataset.tab !== tab;
+    for (const b of this.panel.querySelectorAll<HTMLElement>('[data-act=tab]')) b.classList.toggle('on', b.dataset.v === tab);
+  }
+
+  private chip(act: string, value: string | number, label: string, on: boolean): string {
+    return `<button class="lab-chip${on ? ' on' : ''}" data-act="${act}" data-v="${value}">${label}</button>`;
+  }
+
+  // 场景：人物、座位、打哪张、落到牌河哪里
+  private renderScene(): void {
     const s = this.state;
-    const chip = (act: string, value: string | number, label: string, on: boolean) =>
-      `<button class="lab-chip${on ? ' on' : ''}" data-act="${act}" data-v="${value}">${label}</button>`;
-    const chars = CHARACTERS.map((c) => chip('char', c.id, c.name, c.id === s.char)).join('');
-    const seats = SEATS.map((name, i) => chip('seat', i, name, i === s.rel)).join('');
+    const chars = CHARACTERS.map((c) => this.chip('char', c.id, c.name, c.id === s.char)).join('');
+    const seats = SEATS.map((name, i) => this.chip('seat', i, name, i === s.rel)).join('');
 
     // 出牌前的手牌：理好的 13 张，隔开一点是刚摸的牌
     const before = this.compose();
@@ -266,24 +309,12 @@ export class DiscardLab {
     const hand = sorted.map(slot).join('') + `<span class="lab-gap"></span>` + slot(p.drawn!, HAND_SLOTS);
 
     // 牌河：六张一行，已经有的牌画成小方块，选中的位置高亮
-    const cams = (Object.keys(CAMERA_LABELS) as CameraMode[]).map((m) => chip('camera', m, CAMERA_LABELS[m], m === (this.cam?.mode ?? 'game'))).join('');
-    const gizmos = (Object.keys(GIZMO_LABELS) as GizmoKind[])
-      .map(
-        (k) =>
-          `<label class="lab-check"><input type="checkbox" data-act="gizmo" data-v="${k}" ${this.shown[k] ? 'checked' : ''} /><i style="background:${GIZMO_COLORS[k]}"></i>${GIZMO_LABELS[k]}</label>`,
-      )
-      .join('');
-
     const pond = Array.from({ length: POND_SLOTS }, (_, i) => {
       const cls = i < s.pondSlot ? 'filled' : i === s.pondSlot ? 'on' : '';
       return `<button class="lab-cell ${cls}" data-act="pond" data-v="${i}" title="牌河第 ${i + 1} 张">${i === s.pondSlot ? i + 1 : ''}</button>`;
     }).join('');
 
-    this.panel.innerHTML = `
-      <header class="lab-head">
-        <h1>出牌动作调试</h1>
-        <a href="#" data-act="exit">返回游戏</a>
-      </header>
+    this.sceneTab.innerHTML = `
       <section>
         <h2>人物</h2>
         <div class="lab-row">${chars}</div>
@@ -300,9 +331,22 @@ export class DiscardLab {
         <h2>落到牌河 <small>第 ${s.pondSlot + 1} 张</small></h2>
         <div class="lab-pond">${pond}</div>
         <label class="lab-check"><input type="checkbox" data-act="sideways" ${s.sideways ? 'checked' : ''} /> 横放（立直宣言牌）</label>
-      </section>
+      </section>`;
+  }
+
+  // 机位和辅助线
+  private renderView(): void {
+    const mode = this.cam.mode;
+    const cams = (Object.keys(CAMERA_LABELS) as CameraMode[]).map((m) => this.chip('camera', m, CAMERA_LABELS[m], m === mode)).join('');
+    const gizmos = (Object.keys(GIZMO_LABELS) as GizmoKind[])
+      .map(
+        (k) =>
+          `<label class="lab-check"><input type="checkbox" data-act="gizmo" data-v="${k}" ${this.shown[k] ? 'checked' : ''} /><i style="background:${GIZMO_COLORS[k]}"></i>${GIZMO_LABELS[k]}</label>`,
+      )
+      .join('');
+    this.viewTab.innerHTML = `
       <section>
-        <h2>机位 <small>${this.cam?.mode === 'side' || this.cam?.mode === 'top' ? '可以拖动旋转、滚轮缩放' : ''}</small></h2>
+        <h2>机位 <small>${mode === 'side' || mode === 'top' ? '可以拖动旋转、滚轮缩放' : ''}</small></h2>
         <div class="lab-row">${cams}</div>
         <label class="lab-check"><input type="checkbox" data-act="others" ${this.hideOthers ? 'checked' : ''} /> 只看出牌的人</label>
       </section>
@@ -321,34 +365,36 @@ export class DiscardLab {
     if (act === 'exit') {
       e.preventDefault();
       location.hash = '';
-      return;
-    }
-    if (act === 'char' && v !== s.char) {
+    } else if (act === 'tab') {
+      this.showTab(v as Tab);
+    } else if (act === 'char' && v !== s.char) {
       s.char = v;
-      this.renderPanel();
+      this.renderScene();
       this.reseat();
     } else if (act === 'seat' && +v !== s.rel) {
       s.rel = +v;
-      this.renderPanel();
+      this.renderScene();
       this.reseat();
     } else if (act === 'hand') {
       s.handSlot = +v;
-      this.renderPanel();
+      this.renderScene();
       this.replay(true);
     } else if (act === 'pond') {
       s.pondSlot = +v;
-      this.renderPanel();
+      this.renderScene();
       this.replay(true);
     } else if (act === 'sideways') {
       s.sideways = (el as HTMLInputElement).checked;
-      this.renderPanel();
+      this.renderScene();
+      // 还在用没改过的内置参数时，跟着换成立直出牌（或换回默认出牌）
+      this.paramsPanel.followSideways(s.sideways);
       this.replay(true);
     } else if (act === 'camera') {
       // 侧面看时别家正好挡在镜头前，先藏起来（可以再勾回来）
       if (v === 'side') this.hideOthers = true;
       this.table.setOthersVisible(this.seat, !this.hideOthers);
       this.cam.set(v as CameraMode, this.path);
-      this.renderPanel();
+      this.renderView();
     } else if (act === 'others') {
       this.hideOthers = (el as HTMLInputElement).checked;
       this.table.setOthersVisible(this.seat, !this.hideOthers);
@@ -361,6 +407,10 @@ export class DiscardLab {
   // 空格暂停 / 继续，← → 逐帧，R 重放
   private onKey = (e: KeyboardEvent): void => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // 在参数面板里打字、拖滑块时不抢键盘（时间轴的滑块除外）
+    const t = e.target as HTMLElement;
+    const typing = t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || (t instanceof HTMLInputElement && t.type !== 'checkbox');
+    if (typing && !t.closest('.lab-timeline')) return;
     if (e.key === ' ') this.toggle();
     else if (e.key === 'ArrowLeft') this.step(-1);
     else if (e.key === 'ArrowRight') this.step(1);
