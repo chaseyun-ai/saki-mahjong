@@ -313,6 +313,30 @@ button {
   align-items: flex-end;
 }
 
+/* 横着的牌和竖着的牌下沿对齐（转过来以后上下各空出 (高 − 宽) / 2） */
+.meld .tile.sideways {
+  transform: translateY(5px) rotate(-90deg);
+}
+
+.meld .tile.t-mini.sideways {
+  margin: 0 4px;
+  transform: translateY(4px) rotate(-90deg);
+}
+
+/* 加杠：加上去的那张叠在横着的那张上面 */
+.meld-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.meld-stack .tile.sideways + .tile.sideways {
+  margin-top: -9px;
+}
+
+.meld-stack .tile.t-mini.sideways + .tile.t-mini.sideways {
+  margin-top: -7px;
+}
+
 /* ---------- 中央 ---------- */
 
 .center {

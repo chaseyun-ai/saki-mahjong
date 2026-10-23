@@ -2,10 +2,11 @@ import { CHARACTERS, Character } from '../abilities/characters';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
 import { Meld } from '../engine/score';
-import { TileId, WIND_CN } from '../engine/tiles';
+import { TileId, WIND_CN, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { backHtml, tileHtml } from './tile';
+import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
@@ -367,18 +368,7 @@ export class App {
   }
 
   private meldsHtml(melds: Meld[], seat: number): string {
-    return melds
-      .map((m) => {
-        const tiles = m.tiles
-          .map((t, i) => {
-            if (m.type === 'ankan' && (i === 0 || i === 3)) return backHtml('pond');
-            const sideways = m.calledTile === t && m.type !== 'kakan';
-            return tileHtml(t, { size: 'pond', sideways });
-          })
-          .join('');
-        return `<div class="meld" title="${seat}">${tiles}</div>`;
-      })
-      .join('');
+    return melds.map((m) => `<div class="meld" title="${seat}">${meldTilesHtml(m, seat, 'pond')}</div>`).join('');
   }
 
   private opponentHtml(s: number): string {
@@ -432,9 +422,20 @@ export class App {
     legal.forEach((a, i) => {
       const label = actionLabel(a);
       if (!label) return;
+      // 吃、碰、杠的按钮上画出叫了以后的样子
+      const called = g.lastDiscard;
       const tiles =
-        a.type === 'chi' || a.type === 'pon'
-          ? a.tiles.map((t) => tileHtml(t, { size: 'mini' })).join('')
+        (a.type === 'chi' || a.type === 'pon' || a.type === 'daiminkan') && called
+          ? `<span class="meld">${meldTilesHtml(
+              {
+                type: a.type === 'daiminkan' ? 'minkan' : a.type,
+                tiles: [...(a.type === 'daiminkan' ? p.hand.filter((t) => kindOf(t) === kindOf(called.tile)) : a.tiles), called.tile],
+                calledTile: called.tile,
+                from: called.seat,
+              },
+              this.me,
+              'mini',
+            )}</span>`
           : a.type === 'ankan'
             ? tileHtml(a.kind * 4 + 1, { size: 'mini' })
             : a.type === 'kakan'
@@ -587,6 +588,18 @@ export class App {
         <button class="primary" data-ui="restart">再来一局</button>
       </div></div>`;
   }
+}
+
+// 一组副露的牌：横着的、扣着的、加杠叠着的都按 meldLayout 摆
+function meldTilesHtml(m: Meld, seat: number, size: 'pond' | 'mini'): string {
+  return meldLayout(m, seat)
+    .map((sl) => {
+      if (sl.hidden) return backHtml(size);
+      const tile = tileHtml(sl.tile, { size, sideways: sl.sideways });
+      if (sl.stacked === undefined) return tile;
+      return `<div class="meld-stack">${tileHtml(sl.stacked, { size, sideways: true })}${tile}</div>`;
+    })
+    .join('');
 }
 
 function actionLabel(a: Action): string {

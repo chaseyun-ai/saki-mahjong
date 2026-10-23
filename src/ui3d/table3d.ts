@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Game, GameEvent } from '../engine/game';
-import type { Meld } from '../engine/score';
 import { TILE_COUNT, TileId, WIND_CN } from '../engine/tiles';
+import { meldLayout } from '../ui/meldLayout';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
 import { Avatar } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
@@ -863,28 +863,22 @@ export class Table3D {
     // 松实姐妹的习惯：牌河和副露倒过来摆，让对手看到的是正的
     const flip = LOOKS[this.lastSync?.view.ids[s] ?? '']?.upsideDown ? Math.PI : 0;
 
-    // 副露：从右边往左摆
+    // 副露：一组一组从右边往左摆，每组里的顺序见 meldLayout（横着的那张按来源放左、中、右）
     let mx = this.dim.tableHalf - 1.2;
-    const meldWidth = (m: Meld) => m.tiles.length * (TILE_W + GAP) + (m.calledTile !== undefined ? TILE_H - TILE_W : 0);
     for (const m of p.melds) {
-      const tiles = this.meldOrder(m);
-      mx -= meldWidth(m);
+      const slots = meldLayout(m, s);
+      mx -= slots.reduce((sum, sl) => sum + (sl.sideways ? TILE_H : TILE_W) + GAP, 0);
       let x = mx;
-      for (const [i, t] of tiles.entries()) {
-        const sideways = t === m.calledTile;
-        const hidden = m.type === 'ankan' && (i === 0 || i === 3);
-        const w = sideways ? TILE_H : TILE_W;
-        const z = sideways ? this.dim.meldZ + (TILE_H - TILE_W) / 2 : this.dim.meldZ;
-        out.set(t, this.toWorld(s, me, x + w / 2, lyingY, z, hidden ? FACE_DOWN : FACE_UP, (sideways ? Math.PI / 2 : 0) + flip));
-        x += w + GAP;
-      }
-      if (m.type === 'kakan') {
+      for (const sl of slots) {
+        const w = sl.sideways ? TILE_H : TILE_W;
+        // 横着的牌往外挪，外沿和竖着的牌对齐
+        const z = sl.sideways ? this.dim.meldZ + (TILE_H - TILE_W) / 2 : this.dim.meldZ;
+        out.set(sl.tile, this.toWorld(s, me, x + w / 2, lyingY, z, sl.hidden ? FACE_DOWN : FACE_UP, (sl.sideways ? Math.PI / 2 : 0) + flip));
         // 加杠的那张叠放在横着的牌上方（靠桌子中心一侧）
-        const added = m.tiles[3];
-        const ci = tiles.indexOf(m.calledTile!);
-        let cx = mx;
-        for (let i = 0; i < ci; i++) cx += TILE_W + GAP;
-        out.set(added, this.toWorld(s, me, cx + TILE_H / 2, lyingY, this.dim.meldZ + (TILE_H - TILE_W) / 2 - TILE_W - GAP, FACE_UP, Math.PI / 2 + flip));
+        if (sl.stacked !== undefined) {
+          out.set(sl.stacked, this.toWorld(s, me, x + w / 2, lyingY, z - TILE_W - GAP, FACE_UP, Math.PI / 2 + flip));
+        }
+        x += w + GAP;
       }
       mx -= 0.3;
     }
@@ -948,13 +942,6 @@ export class Table3D {
       px += w + GAP;
       col++;
     }
-  }
-
-  // 副露里被叫的那张按来源放在对应位置：上家的放左边，对家中间，下家右边
-  private meldOrder(m: Meld): TileId[] {
-    if (m.calledTile === undefined || m.from === undefined) return m.tiles.slice(0, m.type === 'kakan' ? 3 : 4);
-    const own = m.tiles.filter((t) => t !== m.calledTile).slice(0, m.type === 'kakan' ? 2 : 3);
-    return [m.calledTile, ...own];
   }
 
   // 一局结束：和牌的人、流局时听牌的人把手牌摊开（倒牌），和的那张放在最右边
