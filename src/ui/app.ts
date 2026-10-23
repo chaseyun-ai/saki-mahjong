@@ -2,7 +2,7 @@ import { CHARACTERS, Character } from '../abilities/characters';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
 import { Meld } from '../engine/score';
-import { TileId, WIND_CN, kindOf } from '../engine/tiles';
+import { TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { backHtml, tileHtml } from './tile';
@@ -39,6 +39,9 @@ export class App {
   private freshDiscard: string | null = null;
   private mode: '2d' | '3d' = '3d';
   private table3d: Table3D | null = null;
+  // 打牌前预览：轮到自己时，打出去以后能听牌的牌和打掉它以后听什么；鼠标停在哪张牌上
+  private preview = new Map<TileId, WaitInfo>();
+  private previewTile: TileId | null = null;
 
   // openLab：选人页上点"动作调试"时调用
   constructor(
@@ -47,6 +50,10 @@ export class App {
   ) {
     this.root = root;
     root.addEventListener('click', (e) => this.onClick(e));
+    root.addEventListener('mouseover', (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('.hand [data-tile]');
+      this.hoverTile(el ? Number(el.dataset.tile) : null);
+    });
     window.addEventListener('resize', () => this.fit());
     // 大字特效用的书法字体先下好，免得第一次立直时字还没出来
     document.fonts?.load('1em "Ma Shan Zheng"', '立直碰吃杠荣和自摸暗加').catch(() => {});
@@ -97,6 +104,7 @@ export class App {
     if (this.mode === '3d') {
       this.root.innerHTML = '<div class="stage3d"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div></div>';
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id));
+      this.table3d.onHover = (id) => this.hoverTile(id);
       // 3D 牌桌上牌真正落到牌河时才响
       this.table3d.onMarker = (_seat, _tile, name) => {
         if (name === 'land') playClick();
@@ -288,6 +296,7 @@ export class App {
     const g = this.game;
     const table = document.getElementById('table');
     if (!g || !table) return;
+    this.updatePreview();
     table.innerHTML = `
       ${[1, 2, 3].map((s) => this.opponentHtml(s)).join('')}
       <div class="center">${this.centerHtml()}</div>
@@ -303,6 +312,7 @@ export class App {
     const g = this.game;
     const hud = document.getElementById('hud');
     if (!g || !hud || !this.table3d) return;
+    this.updatePreview();
     const plates = [1, 2, 3]
       .map((s) => {
         const c = this.chars[s];
@@ -320,7 +330,40 @@ export class App {
       clickable: g.phase === 'turn' && g.turn === this.me && !this.showResult ? this.discardable() : new Set(),
       colors: this.chars.map((c) => c.color),
       ids: this.chars.map((c) => c.id),
+      marked: new Set(this.showResult ? [] : this.preview.keys()),
     });
+  }
+
+  // 轮到自己出牌时，算出打哪几张能听牌、各听什么（立直模式下按立直算番）
+  private updatePreview(): void {
+    const g = this.game!;
+    this.preview.clear();
+    const myTurn = g.phase === 'turn' && g.turn === this.me;
+    if (!myTurn) this.previewTile = null;
+    if (!myTurn || g.players[this.me].riichi) return;
+    const byKind = new Map<string, WaitInfo>();
+    for (const t of this.discardable()) {
+      // 同一种牌打哪张都一样（赤五单算，宝牌数不同）
+      const key = `${kindOf(t)}-${isRed(t)}`;
+      let info = byKind.get(key);
+      if (!info) byKind.set(key, (info = waitInfo(g, this.me, t, this.riichiMode)));
+      if (info.tiles.length) this.preview.set(t, info);
+    }
+  }
+
+  private hoverTile(id: TileId | null): void {
+    if (id === this.previewTile) return;
+    this.previewTile = id;
+    const slot = document.querySelector('[data-r=waits]');
+    if (slot) slot.innerHTML = this.waitsSlotHtml();
+  }
+
+  // 待和提示框：别人的回合显示现在听什么；自己的回合鼠标停在能听牌的牌上时，显示打掉它以后听什么
+  private waitsSlotHtml(): string {
+    const g = this.game!;
+    if (!(g.phase === 'turn' && g.turn === this.me)) return this.waitsHtml(waitInfo(g, this.me));
+    const info = this.previewTile !== null ? this.preview.get(this.previewTile) : undefined;
+    return info ? this.waitsHtml(info, '打这张 ') : '';
   }
 
   private renderToasts(): void {
@@ -410,13 +453,11 @@ export class App {
     const legal = g.legalActions(this.me);
     const discardable = this.discardable();
     const sorted = p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b);
-    const hand = sorted
-      .map((t) => tileHtml(t, { classes: discardable.has(t) ? ['can'] : ['dim'], data: { tile: t } }))
-      .join('');
+    // 能打的牌亮着，打出去能听牌的上面加个小三角
+    const classes = (t: TileId) => [discardable.has(t) ? 'can' : 'dim', ...(this.preview.has(t) ? ['tenpai'] : [])];
+    const hand = sorted.map((t) => tileHtml(t, { classes: classes(t), data: { tile: t } })).join('');
     const drawn =
-      p.drawn !== null
-        ? `<div class="drawn">${tileHtml(p.drawn, { classes: discardable.has(p.drawn) ? ['can'] : ['dim'], data: { tile: p.drawn } })}</div>`
-        : '';
+      p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn, { classes: classes(p.drawn), data: { tile: p.drawn } })}</div>` : '';
 
     const buttons: string[] = [];
     legal.forEach((a, i) => {
@@ -449,7 +490,7 @@ export class App {
       );
     }
 
-    const waitHtml = g.phase === 'turn' && g.turn === this.me ? '' : this.waitsHtml(waitInfo(g, this.me));
+    const waitHtml = `<div data-r="waits">${this.waitsSlotHtml()}</div>`;
     const hint =
       g.phase === 'turn' && g.turn === this.me && discardable.size > 0
         ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}</div>`
@@ -472,7 +513,7 @@ export class App {
   }
 
   // 待和提示：每张待和牌下面写还剩几张、荣和几番；没役、只能自摸的写明白，和不了的变灰
-  private waitsHtml(info: WaitInfo): string {
+  private waitsHtml(info: WaitInfo, prefix = ''): string {
     if (!info.tiles.length) return '';
     const status = info.tiles.map((w) => waitStatus(w, info.furiten));
     const tiles = info.tiles
@@ -483,7 +524,7 @@ export class App {
         return `<div class="wait${dead ? ' dead' : ''}">${tileHtml(w.kind * 4 + 1, { size: 'pond' })}<span class="wait-left">余 ${w.left}</span><span class="wait-han ${st}">${label}</span></div>`;
       })
       .join('');
-    const title = status.every((st) => st === 'none') ? '形式听牌（无役）' : '听牌';
+    const title = prefix + (status.every((st) => st === 'none') ? '形式听牌（无役）' : '听牌');
     return `<div class="waits"><div class="waits-title">${title}${info.furiten ? '<span class="furiten">振听</span>' : ''}</div><div class="wait-list">${tiles}</div></div>`;
   }
 

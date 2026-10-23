@@ -136,6 +136,7 @@ export interface SyncView {
   clickable: Set<TileId>;
   colors: string[];
   ids: string[];
+  marked?: Set<TileId>; // 上方加个小三角的手牌（打出去能听牌的）
 }
 
 export class Table3D {
@@ -175,6 +176,10 @@ export class Table3D {
   onMarker: ((seat: number, tile: TileId, name: MarkerName) => void) | null = null;
   // 每帧画之前调用（动画已经推进到这一帧），调试场景在这里更新辅助线和读数
   beforeRender: (() => void) | null = null;
+  // 鼠标移到能打的牌上、或者移开（null）时通知外面，用来显示打这张以后听什么
+  onHover: ((id: TileId | null) => void) | null = null;
+  // 标记用的小三角，按需要的个数建，多出来的藏起来
+  private marks: THREE.Mesh[] = [];
   private overlayGroup: THREE.Group | null = null;
   private zoom = { t: -1, target: new THREE.Vector3() };
   private held = new Set<TileId>();
@@ -1349,6 +1354,7 @@ export class Table3D {
       this.hovered = hover;
       this.renderer.domElement.style.cursor = hover !== null ? 'pointer' : 'default';
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
+      this.onHover?.(hover);
     }
     // 发牌期间每帧重新摆一次，让牌按时间从牌山飞到手里；打出的牌落下后理牌
     const thawed = [...this.frozen.values()].some((f) => this.now >= f.until);
@@ -1371,9 +1377,41 @@ export class Table3D {
       const sc = t.group.scale.x + (t.target.scale - t.group.scale.x) * k;
       t.group.scale.setScalar(sc);
     }
+    this.updateMarks();
     for (const c of this.characters) c.avatar?.update(dt);
   }
 
+  // 标记的牌上方各放一个朝下的小三角，跟着牌走（鼠标移上去牌抬起来，三角也跟着抬），总是正对镜头
+  private updateMarks(): void {
+    const ids = [...(this.lastSync?.view.marked ?? [])].filter((id) => this.tiles[id].group.visible);
+    while (this.marks.length < ids.length) {
+      // 用到时才建（建材质会用掉随机数，提前建会让桌布的花纹和以前不一样）
+      const m = this.marks[0]?.clone() ?? new THREE.Mesh(markGeometry(), new THREE.MeshBasicMaterial({ color: '#f0c35a', depthTest: false, toneMapped: false }));
+      m.renderOrder = 10;
+      this.scene.add(m);
+      this.marks.push(m);
+    }
+    this.marks.forEach((m, i) => {
+      const id = ids.at(i);
+      m.visible = id !== undefined;
+      if (id === undefined) return;
+      const g = this.tiles[id].group;
+      m.position.copy(g.position);
+      m.position.y += (TILE_H / 2) * g.scale.x + 0.3;
+      m.quaternion.copy(this.camera.quaternion);
+    });
+  }
+
+}
+
+// 朝下的小三角，尖在原点
+function markGeometry(): THREE.ShapeGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.lineTo(0.27, 0.36);
+  shape.lineTo(-0.27, 0.36);
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape);
 }
 
 // 七段数码管：text 以 (cx, cy) 为中心，h 是字高；没亮的段也淡淡地画出来

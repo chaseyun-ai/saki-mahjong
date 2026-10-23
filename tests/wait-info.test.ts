@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/engine/game';
 import { Meld } from '../src/engine/score';
-import { kindOf, parseKinds, parseTiles } from '../src/engine/tiles';
+import { kindOf, parseKinds, parseTiles, toCounts } from '../src/engine/tiles';
 import { hanLabel, waitInfo, waitStatus } from '../src/ui/waitInfo';
 
 const SEAT = 1; // 南家，不是庄家，东风也不是他的役牌
@@ -124,5 +124,80 @@ describe('待和提示', () => {
     const east = g.players[SEAT].hand.find((t) => kindOf(t) === kinds('1z')[0])!;
     expect(waitInfo(g, SEAT, east).tiles[0].ron).toBeNull();
     expect(waitInfo(g, SEAT, east, true).tiles[0].ron!.yaku.map((y) => y.name)).toEqual(['立直']);
+  });
+});
+
+describe('打牌前预览', () => {
+  // 随便凑一手差不多和了的牌：四组面子加一对，再把其中一张换成随机的牌，一共 14 张
+  function nearlyComplete(rng: () => number): number[] {
+    const counts = new Array(34).fill(0);
+    const kinds: number[] = [];
+    const add = (k: number) => {
+      if (counts[k] >= 4) return false;
+      counts[k]++;
+      kinds.push(k);
+      return true;
+    };
+    const pick = (n: number) => Math.floor(rng() * n);
+    while (kinds.length < 12) {
+      if (rng() < 0.6) {
+        const k = pick(3) * 9 + pick(7);
+        if (counts[k] < 4 && counts[k + 1] < 4 && counts[k + 2] < 4) [k, k + 1, k + 2].forEach(add);
+      } else {
+        const k = pick(34);
+        if (counts[k] <= 1) [k, k, k].forEach(add);
+      }
+    }
+    for (;;) {
+      const k = pick(34);
+      if (counts[k] <= 2) {
+        add(k);
+        add(k);
+        break;
+      }
+    }
+    kinds[pick(14)] = -1;
+    counts.fill(0);
+    for (const k of kinds) if (k >= 0) counts[k]++;
+    for (;;) {
+      const k = pick(34);
+      if (counts[k] < 4) {
+        kinds[kinds.indexOf(-1)] = k;
+        break;
+      }
+    }
+    const used = new Map<number, number>();
+    return kinds.map((k) => {
+      const n = used.get(k) ?? 0;
+      used.set(k, n + 1);
+      return k * 4 + n;
+    });
+  }
+
+  it('打出去能听牌的牌，就是规则那边允许立直的牌（除了只差自己已经拿满四张的那种）', () => {
+    let s = 12345;
+    const rng = () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
+    let marked = 0;
+    for (let n = 0; n < 300; n++) {
+      const { g, me } = table('');
+      me.hand = nearlyComplete(rng);
+      me.drawn = me.hand[13];
+      g.phase = 'turn';
+      g.turn = SEAT;
+      const riichi = new Set(g.legalActions(SEAT).flatMap((a) => (a.type === 'discard' && a.riichi ? [kindOf(a.tile)] : [])));
+      for (const t of me.hand) {
+        const tenpai = waitInfo(g, SEAT, t).tiles.length > 0;
+        if (tenpai) {
+          expect(riichi.has(kindOf(t))).toBe(true);
+          marked++;
+        } else if (riichi.has(kindOf(t))) {
+          // 牌形听了，但要等的牌自己手里已经有四张，一张也来不了：不标
+          const rest = toCounts(me.hand.filter((x) => x !== t));
+          expect(rest.some((c) => c === 4)).toBe(true);
+        }
+      }
+    }
+    // 确实测到了不少能听牌的情况
+    expect(marked).toBeGreaterThan(200);
   });
 });
