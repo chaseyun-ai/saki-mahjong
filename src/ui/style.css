@@ -1139,6 +1139,170 @@ button {
   top: 42%;
 }
 
+/* ---------- 2.5D 的头像框 ---------- */
+
+.seat-frame {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 5px;
+  border-radius: 12px;
+  background: rgba(6, 16, 18, 0.62);
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.seat-frame.active {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(240, 195, 90, 0.35), 0 0 18px color-mix(in srgb, var(--c) 60%, transparent);
+}
+
+.seat-frame .portrait {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 2px solid color-mix(in srgb, var(--c) 80%, white);
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--c) 70%, white) 0%, var(--c) 55%, color-mix(in srgb, var(--c) 55%, black) 100%);
+  color: #fff;
+  font-size: 30px;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+.seat-frame .wind {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #10292c;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  font-size: 12px;
+  text-shadow: none;
+}
+
+.seat-frame .pname {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.seat-frame .pts {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f3e6c4;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 立直了：分数下面挂一根立直棒 */
+.seat-frame .stick {
+  width: 54px;
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: radial-gradient(circle, #e0413a 0 2.5px, transparent 3px), #f4f1e8;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.seat-frame.bottom {
+  left: 24px;
+  bottom: 21%;
+}
+
+.seat-frame.left {
+  left: 24px;
+  top: 38%;
+}
+
+.seat-frame.right {
+  right: 24px;
+  top: 38%;
+}
+
+/* 对家的头像框放在右上角，和雀魂一样（左上角是能力说明） */
+.seat-frame.top {
+  top: 12px;
+  right: 24px;
+}
+
+/* 横过来的手机、竖着的手机：头像框缩小 */
+@media (max-height: 500px), (max-width: 600px) {
+  .seat-frame {
+    gap: 6px;
+    padding: 3px 8px 3px 3px;
+    border-radius: 9px;
+  }
+
+  .seat-frame .portrait {
+    width: 36px;
+    height: 36px;
+    font-size: 19px;
+    border-radius: 7px;
+  }
+
+  .seat-frame .wind {
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+    left: -5px;
+    top: -5px;
+  }
+
+  .seat-frame .pname {
+    font-size: 11px;
+  }
+
+  .seat-frame .pability {
+    display: none;
+  }
+
+  .seat-frame .pts {
+    font-size: 12px;
+  }
+
+  .seat-frame .stick {
+    width: 40px;
+    height: 5px;
+    margin-top: 2px;
+  }
+
+  .seat-frame.left,
+  .seat-frame.bottom {
+    left: 10px;
+  }
+
+  .seat-frame.right,
+  .seat-frame.top {
+    right: 10px;
+  }
+
+  .seat-frame.top {
+    top: 6px;
+  }
+}
+
+/* 竖着的手机：桌子在画面中间，上下都空着。左右两家的头像框放到桌子上方，自己的放到桌子下方 */
+@media (orientation: portrait) and (max-width: 600px) {
+  .seat-frame.left,
+  .seat-frame.right {
+    top: auto;
+    bottom: calc(50% + 54vw);
+  }
+
+  .seat-frame.bottom {
+    bottom: auto;
+    top: calc(50% + 54vw);
+  }
+}
+
 .hud .toast.bottom {
   bottom: 30%;
 }

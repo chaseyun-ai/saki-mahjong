@@ -24,6 +24,15 @@ export { TILE_H, TILE_T, TILE_W };
 
 const GAP = 0.04;
 const MY_HAND_SCALE = 1.25;
+
+// 牌桌的两种样子：3d 有坐着的人物；25d 不请人物，镜头从高处往下看，牌桌占满画面（像雀魂）
+export type TableStyle = '3d' | '25d';
+// 2.5D 的镜头：俯角（弧度，0 是平视）、视野（度），看向桌子中心偏自己这边一点。离多远按画面比例算，见 fitCamera
+const CAM_25D = { pitch: 0.95, fov: 34, lookZ: 1.5 };
+// 竖屏时画面窄而高，镜头再往上抬一些（更接近正俯视），桌子在竖直方向能铺开一点
+const CAM_25D_PORTRAIT_PITCH = 1.2;
+// 2.5D 时自己的手牌更大，往后仰到差不多正对镜头
+const MY_HAND_SCALE_25D = 1.5;
 const WALL_PITCH = TILE_W + 0.02;
 
 // 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
@@ -179,6 +188,9 @@ export class Table3D {
   private shake = 0;
   // 调试截图时手动摆镜头，不让动画覆盖
   debugCamera = false;
+  // 2.5D 镜头平时的位置（按画面比例算好），和自己手牌往后仰的角度
+  private rest = { pos: new THREE.Vector3(0, 18, 28.5), look: new THREE.Vector3(0, 0.5, -1.5) };
+  private handTilt = -0.32;
   // 出牌动作经过标记（出发、抓住、落桌、松手、收回）时通知外面，比如落桌时放声音。
   // 每张打出的牌每个标记都恰好报一次，动作被打断也会补报
   onMarker: ((seat: number, tile: TileId, name: MarkerName) => void) | null = null;
@@ -208,6 +220,7 @@ export class Table3D {
   constructor(
     private container: HTMLElement,
     private onTileClick: (id: TileId) => void,
+    readonly style: TableStyle = '3d',
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -345,9 +358,11 @@ export class Table3D {
     for (let i = 0; i < FACE_TOTAL; i++) this.faceGeoms.push(this.atlas.faceGeometry(i, TILE_W * 0.9, TILE_H * 0.9));
     const bodyGeom = new RoundedBoxGeometry(TILE_W, TILE_H, TILE_T * 0.62, 3, 0.12);
     const backGeom = new RoundedBoxGeometry(TILE_W, TILE_H, TILE_T * 0.42, 3, 0.12);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: '#f6f1e3', roughness: 0.35 });
-    const backMat = new THREE.MeshStandardMaterial({ color: '#2f78a8', roughness: 0.4 });
-    const faceMat = new THREE.MeshStandardMaterial({ map: this.atlas.texture, transparent: true, roughness: 0.35 });
+    // 2.5D 时自己的手牌几乎正对镜头，灯又在镜头这边，亮面会把牌面照白一片，所以磨砂一点
+    const matte = this.style === '25d' ? 0.62 : 0;
+    const bodyMat = new THREE.MeshStandardMaterial({ color: '#f6f1e3', roughness: matte || 0.35 });
+    const backMat = new THREE.MeshStandardMaterial({ color: '#2f78a8', roughness: matte || 0.4 });
+    const faceMat = new THREE.MeshStandardMaterial({ map: this.atlas.texture, transparent: true, roughness: matte || 0.35 });
     for (let id = 0; id < TILE_COUNT; id++) {
       const group = new THREE.Group();
       const body = new THREE.Mesh(bodyGeom, bodyMat);
@@ -492,6 +507,7 @@ export class Table3D {
 
   // 四个人的模型都加载好了
   charactersReady(): boolean {
+    if (this.style === '25d') return true;
     return this.characters.length === 4 && this.characters.every((c) => c.avatar);
   }
 
@@ -867,7 +883,7 @@ export class Table3D {
   }
 
   sync(g: Game, view: SyncView): void {
-    if (this.characters.length === 0) this.buildCharacters(view);
+    if (this.characters.length === 0 && this.style === '3d') this.buildCharacters(view);
     this.lastSync = { g, view };
     this.clickable = view.clickable;
     const targets = new Map<TileId, Placement>();
@@ -962,13 +978,13 @@ export class Table3D {
     if (!this.frozen.has(s)) this.layouts[s] = { hand: hand as TileId[], drawn };
     const count = hand.length + (drawn !== null ? 1 : 0);
     // 自己的手牌放大一些，看得清也好点
-    const hs = mine ? MY_HAND_SCALE : 1;
+    const hs = mine ? (this.style === '25d' ? MY_HAND_SCALE_25D : MY_HAND_SCALE) : 1;
     const step = (TILE_W + GAP) * hs;
     const width = count * step + (drawn !== null ? 0.5 : 0);
     // 副露多了手牌往左让
     const shift = p.melds.length ? Math.max(0, width / 2 - (mx - 0.6)) : 0;
     let x = -width / 2 - shift + TILE_W / 2;
-    const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(-0.32, 0, 0) : STANDING;
+    const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : STANDING;
     const y = tilting ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
     const hz = this.dim.handZ + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
     const place = (t: TileId | null) => {
@@ -1159,6 +1175,10 @@ export class Table3D {
     if (!w || !h) return;
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
+    if (this.style === '25d') {
+      this.fitCamera();
+      return;
+    }
     // 竖屏时把视野拉宽，保证整张桌子都在画面里
     this.camera.fov = w / h < 1.2 ? 38 * Math.min(1.9, 1.2 / (w / h)) : 38;
     if (!this.debugCamera) {
@@ -1168,6 +1188,79 @@ export class Table3D {
     }
     this.camera.updateProjectionMatrix();
   };
+
+  // 2.5D：俯角固定，镜头往后退到四家的手牌和牌山都在画面里为止（竖屏时自然就退得远）。
+  // 再上下挪一挪，让上下留的边一样多。自己的手牌跟着仰到正对镜头
+  private fitCamera(): void {
+    const d = this.dim;
+    const cam = this.camera;
+    cam.fov = CAM_25D.fov;
+    cam.updateProjectionMatrix();
+    const pitch = cam.aspect < 1 ? CAM_25D_PORTRAIT_PITCH : CAM_25D.pitch;
+    const dir = new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch));
+    const myZ = d.handZ + (MY_HAND_SCALE_25D - 1) * 1.2;
+    const myHalf = 7.5 * (TILE_W + GAP) * MY_HAND_SCALE_25D + 0.5;
+    const far = d.handZ + TILE_T;
+    const side = WALL_Z + TILE_H;
+    const pts = [
+      // 对家的手牌（立着，算上牌的高度）
+      new THREE.Vector3(-side, TILE_H, -far),
+      new THREE.Vector3(side, TILE_H, -far),
+      // 左右两家的手牌
+      new THREE.Vector3(-far, TILE_H, -side),
+      new THREE.Vector3(far, TILE_H, -side),
+      new THREE.Vector3(-far, 0, side),
+      new THREE.Vector3(far, 0, side),
+      // 自己的手牌，下沿
+      new THREE.Vector3(-myHalf, 0, myZ + TILE_T),
+      new THREE.Vector3(myHalf, 0, myZ + TILE_T),
+    ];
+    const look = new THREE.Vector3(0, 0, CAM_25D.lookZ);
+    // 镜头离 look 多远时所有点都在画面里（两边各留一点边）
+    const fits = (dist: number): { ok: boolean; mid: number } => {
+      cam.position.copy(look).addScaledVector(dir, dist);
+      cam.lookAt(look);
+      cam.updateMatrixWorld();
+      let lo = Infinity;
+      let hi = -Infinity;
+      let ok = true;
+      for (const p of pts) {
+        const v = p.clone().project(cam);
+        if (Math.abs(v.x) > 0.97) ok = false;
+        lo = Math.min(lo, v.y);
+        hi = Math.max(hi, v.y);
+      }
+      return { ok: ok && hi - lo < 1.96, mid: (lo + hi) / 2 };
+    };
+    const nearest = (): number => {
+      let a = 5;
+      let b = 300;
+      while (b - a > 0.05) {
+        const m = (a + b) / 2;
+        if (fits(m).ok) b = m;
+        else a = m;
+      }
+      return b;
+    };
+    // 画面上下居中：中点偏上就把看的地方往远处挪，偏下往近处挪，挪完重新算距离
+    for (let i = 0; i < 4; i++) {
+      const dist = nearest();
+      look.z -= (fits(dist).mid * dist * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))) / Math.sin(pitch);
+    }
+    const dist = nearest();
+    this.rest = { pos: look.clone().addScaledVector(dir, dist), look };
+    // 雾跟着镜头距离走：竖屏时镜头退得很远，雾还按原来的距离的话整张桌子都被雾盖住
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.near = dist + 8;
+      this.scene.fog.far = dist + 48;
+    }
+    // 手牌往后仰：牌面朝着镜头
+    const toCam = this.rest.pos.clone().sub(new THREE.Vector3(0, 0, myZ));
+    this.handTilt = -Math.atan2(toCam.y, toCam.z);
+    if (this.debugCamera) return;
+    cam.position.copy(this.rest.pos);
+    cam.lookAt(this.rest.look);
+  }
 
   private onPointerMove = (e: PointerEvent): void => {
     const r = this.renderer.domElement.getBoundingClientRect();
@@ -1209,13 +1302,13 @@ export class Table3D {
   // 镜头：特效时轻微震动；有人和牌时往那边推近一点再回来
   private updateCamera(dt: number): void {
     if (this.debugCamera) return;
-    const base = new THREE.Vector3(0, 18, 28.5);
-    const look = new THREE.Vector3(0, 0.5, -1.5);
+    const base = this.style === '25d' ? this.rest.pos.clone() : new THREE.Vector3(0, 18, 28.5);
+    const look = this.style === '25d' ? this.rest.look.clone() : new THREE.Vector3(0, 0.5, -1.5);
     if (this.zoom.t >= 0) {
       this.zoom.t += dt;
       const k = this.zoom.t < 0.5 ? this.zoom.t / 0.5 : this.zoom.t < 2.2 ? 1 : Math.max(0, 1 - (this.zoom.t - 2.2) / 0.8);
       const e = k * k * (3 - 2 * k);
-      base.lerp(new THREE.Vector3(0, 15, 24), e * 0.6);
+      base.lerp(this.style === '25d' ? base.clone().lerp(look, 0.16) : new THREE.Vector3(0, 15, 24), e * 0.6);
       look.lerp(this.zoom.target, e * 0.35);
       if (this.zoom.t > 3) this.zoom.t = -1;
     }

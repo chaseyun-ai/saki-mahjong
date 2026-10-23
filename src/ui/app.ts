@@ -42,7 +42,8 @@ export class App {
   private showResult = false;
   // 刚打出的牌只在第一次画出来时播放落桌动画，之后重绘不再重播
   private freshDiscard: string | null = null;
-  private mode: '2d' | '3d' = '3d';
+  // 25d：3D 牌桌、不坐人物，从上往下看（默认）；3d：坐着人物的实验版；2d：网页画的平面牌桌
+  private mode: '25d' | '3d' | '2d' = '25d';
   private table3d: Table3D | null = null;
   // 打牌前预览：轮到自己时，打出去以后能听牌的牌和打掉它以后听什么；鼠标停在哪张牌上
   private preview = new Map<TileId, WaitInfo>();
@@ -92,7 +93,8 @@ export class App {
         <h1>超能力麻将</h1>
         <p class="subtitle">选择你的角色，其余三位由电脑操作。东风战，赤宝牌 3 张。</p>
         <div class="mode-switch">
-          <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 牌桌</button>
+          <button class="${this.mode === '25d' ? 'on' : ''}" data-ui="mode-25d">2.5D 牌桌</button>
+          <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 实验</button>
           <button class="${this.mode === '2d' ? 'on' : ''}" data-ui="mode-2d">2D 牌桌</button>
         </div>
         <button class="lab-entry" data-ui="lab">动作调试</button>
@@ -111,9 +113,11 @@ export class App {
     this.game.onEvent((e) => this.onGameEvent(e));
     this.toasts = [];
     this.showResult = false;
-    if (this.mode === '3d') {
-      this.root.innerHTML = '<div class="stage3d"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div></div>';
-      this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id));
+    if (this.mode !== '2d') {
+      // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
+      const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
+      this.root.innerHTML = `<div class="stage3d"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div>${tip}</div>`;
+      this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d');
       this.table3d.onHover = (id) => this.hoverTile(id);
       // 3D 牌桌上牌真正落到牌河时才响
       this.table3d.onMarker = (_seat, _tile, name) => {
@@ -154,7 +158,7 @@ export class App {
           this.showResult = true;
           this.render();
         },
-        this.mode === '3d' ? (wins ? 2400 : 1400) + this.busyMs() : 0,
+        this.mode !== '2d' ? (wins ? 2400 : 1400) + this.busyMs() : 0,
       );
       return;
     }
@@ -176,7 +180,7 @@ export class App {
       this.timer = window.setTimeout(() => {
         g.act(g.turn, chooseAction(g, g.turn, this.chars[g.turn].ai));
         this.step();
-      }, (this.mode === '3d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
+      }, (this.mode !== '2d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
       return;
     }
     if (g.phase === 'turn' && g.turn === this.me) {
@@ -242,8 +246,8 @@ export class App {
       this.openLab();
       return;
     }
-    if (el.dataset.ui === 'mode-3d' || el.dataset.ui === 'mode-2d') {
-      this.mode = el.dataset.ui === 'mode-3d' ? '3d' : '2d';
+    if (el.dataset.ui === 'mode-25d' || el.dataset.ui === 'mode-3d' || el.dataset.ui === 'mode-2d') {
+      this.mode = el.dataset.ui.slice(5) as '25d' | '3d' | '2d';
       this.renderSelect();
       return;
     }
@@ -323,15 +327,18 @@ export class App {
     const hud = document.getElementById('hud');
     if (!g || !hud || !this.table3d) return;
     this.updatePreview();
-    const plates = [1, 2, 3]
-      .map((s) => {
-        const c = this.chars[s];
-        return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
-      })
-      .join('');
+    const flat = this.table3d.style === '25d';
+    const plates = flat
+      ? [0, 1, 2, 3].map((s) => this.seatFrameHtml(s)).join('')
+      : [1, 2, 3]
+          .map((s) => {
+            const c = this.chars[s];
+            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
+          })
+          .join('');
     hud.innerHTML = `
       ${plates}
-      ${this.myAreaHtml(false)}
+      ${this.myAreaHtml(false, !flat)}
       ${this.abilityPanelHtml()}
       ${this.showResult ? this.resultHtml() : ''}`;
     this.renderToasts();
@@ -342,6 +349,24 @@ export class App {
       ids: this.chars.map((c) => c.id),
       marked: new Set(this.showResult ? [] : this.preview.keys()),
     });
+  }
+
+  // 2.5D 的头像框：头像（先用名字的最后一个字占位）、风位、名字、能力、分数；立直了挂一根立直棒，轮到谁谁亮
+  private seatFrameHtml(s: number): string {
+    const g = this.game!;
+    const c = this.chars[s];
+    const p = g.players[s];
+    const active = g.phase === 'turn' && g.turn === s && !this.showResult ? 'active' : '';
+    return `
+      <div class="seat-frame ${POS[s]} ${active}" style="--c:${c.color}">
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span></div>
+        <div class="info">
+          <div class="pname">${c.name}</div>
+          <div class="pability">${c.ability?.name ?? '无能力'}</div>
+          <div class="pts">${p.score}</div>
+          ${p.riichi ? '<div class="stick"></div>' : ''}
+        </div>
+      </div>`;
   }
 
   // 轮到自己出牌时，算出打哪几张能听牌、各听什么（立直模式下按立直算番）
@@ -457,7 +482,7 @@ export class App {
     return `<div class="pond ${POS[s]}">${tiles}</div>`;
   }
 
-  private myAreaHtml(withHand = true): string {
+  private myAreaHtml(withHand = true, withPlate = true): string {
     const g = this.game!;
     const p = g.players[this.me];
     const legal = g.legalActions(this.me);
@@ -518,7 +543,7 @@ export class App {
         </div>`
             : ''
         }
-        <div class="nameplate mine"><div class="avatar">${c.name.slice(-1)}</div><div class="pname">${this.seatLabel(this.me)}</div></div>
+        ${withPlate ? `<div class="nameplate mine"><div class="avatar">${c.name.slice(-1)}</div><div class="pname">${this.seatLabel(this.me)}</div></div>` : ''}
       </div>`;
   }
 
