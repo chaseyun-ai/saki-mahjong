@@ -119,6 +119,10 @@ export class App {
       this.root.innerHTML = `<div class="stage3d"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div>${tip}</div>`;
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d');
       this.table3d.onHover = (id) => this.hoverTile(id);
+      // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
+      if (this.mode === '25d') {
+        this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel')].map((el) => el.getBoundingClientRect());
+      }
       // 3D 牌桌上牌真正落到牌河时才响
       this.table3d.onMarker = (_seat, _tile, name) => {
         if (name === 'land') playClick();

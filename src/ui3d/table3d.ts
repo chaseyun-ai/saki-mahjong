@@ -42,6 +42,8 @@ export interface View25 {
 }
 export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 34, lookZ: 1.5, hand: 1.15, tilt: 15, fan: 0 };
 const WALL_PITCH = TILE_W + 0.02;
+// 2.5D 时别家的第一组副露至少能摆到这里（座位本地 x，牌山末端附近），镜头取景按这个算
+const MELD_MIN_25D = 8 * (TILE_W + GAP) + 0.5;
 
 // 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
 // 手牌、牌河、桌边、座位这些尺寸可以调，见 tableLayout.ts
@@ -199,6 +201,10 @@ export class Table3D {
   // 2.5D 镜头平时的位置（按画面比例算好），和自己手牌往后仰的角度
   private rest = { pos: new THREE.Vector3(0, 18, 28.5), look: new THREE.Vector3(0, 0.5, -1.5) };
   private handTilt = -0.32;
+  // 2.5D：画面上不能让副露压住的地方（头像框、能力说明），由外面给出，相对页面的矩形
+  keepOut: (() => DOMRect[]) | null = null;
+  // 2.5D：每家（按相对座位，0 是自己）第一组副露最远能摆到哪，画面大小变了重新算
+  private meldLimit: number[] | null = null;
   private view25: View25 = { ...DEFAULT_VIEW_25D };
   // 出牌动作经过标记（出发、抓住、落桌、松手、收回）时通知外面，比如落桌时放声音。
   // 每张打出的牌每个标记都恰好报一次，动作被打断也会补报
@@ -943,7 +949,7 @@ export class Table3D {
     const flip = LOOKS[this.lastSync?.view.ids[s] ?? '']?.upsideDown ? Math.PI : 0;
 
     // 副露：一组一组从右边往左摆，每组里的顺序见 meldLayout（横着的那张按来源放左、中、右）
-    let mx = this.meldStart(mine);
+    let mx = this.meldStart(s, me);
     for (const m of p.melds) {
       const slots = meldLayout(m, s);
       mx -= slots.reduce((sum, sl) => sum + (sl.sideways ? TILE_H : TILE_W) + GAP, 0);
@@ -1234,9 +1240,9 @@ export class Table3D {
       // 自己的副露（摆在手牌右边，横着的牌伸得最远）
       new THREE.Vector3(myHalf, 0, d.meldZ + TILE_H),
       // 别家的副露：左右两家的在桌子两侧靠前靠后，对家的在上面
-      new THREE.Vector3(-(d.meldZ + TILE_H), 0, this.meldStart(false)),
-      new THREE.Vector3(d.meldZ + TILE_H, 0, -this.meldStart(false)),
-      new THREE.Vector3(-this.meldStart(false), 0, -(d.meldZ + TILE_H)),
+      new THREE.Vector3(-(d.meldZ + TILE_H), 0, MELD_MIN_25D),
+      new THREE.Vector3(d.meldZ + TILE_H, 0, -MELD_MIN_25D),
+      new THREE.Vector3(-MELD_MIN_25D, 0, -(d.meldZ + TILE_H)),
     ];
     const look = new THREE.Vector3(0, 0, v.lookZ);
     // 镜头离 look 多远时所有点都在画面里（两边各留一点边）
@@ -1272,6 +1278,7 @@ export class Table3D {
     }
     const dist = nearest();
     this.rest = { pos: look.clone().addScaledVector(dir, dist), look };
+    this.meldLimit = null;
     // 雾跟着镜头距离走：竖屏时镜头退得很远，雾还按原来的距离的话整张桌子都被雾盖住
     if (this.scene.fog instanceof THREE.Fog) {
       this.scene.fog.near = dist + 8;
@@ -1288,11 +1295,51 @@ export class Table3D {
     return 7.5 * (TILE_W + GAP) * this.view25.hand + 0.5;
   }
 
-  // 第一组副露从哪里往左摆（座位本地坐标）。3D 从桌角摆起；2.5D 桌角在画面外，
-  // 自己的从手牌最右边摆起，别家的从牌山末端附近摆起
-  private meldStart(mine: boolean): number {
+  // 第一组副露从哪里往左摆（座位本地坐标）。3D 从桌角摆起；2.5D 桌角可能在画面外，
+  // 从桌角往里找，摆在画面里能放下的最外侧
+  private meldStart(seat: number, me: number): number {
     if (this.style !== '25d') return this.dim.tableHalf - 1.2;
-    return mine ? this.myHandHalf() : 8 * (TILE_W + GAP) + 0.5;
+    return this.meldLimits()[(seat - me + 4) % 4];
+  }
+
+  // 每家第一组副露最远摆到哪：这组副露（往里约 3.5 宽，前后两条边）都在画面里，又不压着头像框和能力说明。
+  // 自己的至少摆在手牌右边，别家的至少摆到牌山末端附近
+  private meldLimits(): number[] {
+    if (this.meldLimit) return this.meldLimit;
+    const d = this.dim;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    const box = this.container.getBoundingClientRect();
+    const rects = this.keepOut?.() ?? [];
+    const pad = 8;
+    const cam = this.camera.clone();
+    cam.position.copy(this.rest.pos);
+    cam.lookAt(this.rest.look);
+    cam.updateMatrixWorld();
+    const up = new THREE.Vector3(0, 1, 0);
+    const clear = (rel: number, x: number, z: number): boolean => {
+      const v = new THREE.Vector3(x, 0, z).applyAxisAngle(up, (rel * Math.PI) / 2).project(cam);
+      if (Math.abs(v.x) > 0.96 || Math.abs(v.y) > 0.96) return false;
+      const px = box.left + ((v.x + 1) / 2) * w;
+      const py = box.top + ((1 - v.y) / 2) * h;
+      return !rects.some((r) => px > r.left - pad && px < r.right + pad && py > r.top - pad && py < r.bottom + pad);
+    };
+    const ok = (rel: number, x: number) =>
+      [0, 1.75, 3.5].every((dx) => clear(rel, x - dx, d.meldZ - TILE_H / 2) && clear(rel, x - dx, d.meldZ + TILE_H / 2));
+    const limits = [0, 1, 2, 3].map((rel) => {
+      let a = rel === 0 ? this.myHandHalf() : MELD_MIN_25D;
+      let b = d.tableHalf - 1.2;
+      if (ok(rel, b)) return b;
+      for (let i = 0; i < 24; i++) {
+        const m = (a + b) / 2;
+        if (ok(rel, m)) a = m;
+        else b = m;
+      }
+      return a;
+    });
+    // 头像框还没画出来时先不记住，等画出来再算一次
+    if (!this.keepOut || rects.length) this.meldLimit = limits;
+    return limits;
   }
 
   // 换 2.5D 的镜头参数（调试用）：重新算镜头，手牌按新的大小和角度重摆
