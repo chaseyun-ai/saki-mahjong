@@ -2,10 +2,11 @@ import { CHARACTERS, Character } from '../abilities/characters';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
 import { Meld } from '../engine/score';
-import { TileId, WIND_CN, kindLabel } from '../engine/tiles';
+import { TileId, WIND_CN } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { backHtml, tileHtml } from './tile';
+import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -447,10 +448,7 @@ export class App {
       );
     }
 
-    const waits = g.phase === 'turn' && g.turn === this.me ? [] : g.waits(this.me);
-    const waitHtml = waits.length
-      ? `<div class="waits">听牌：${waits.map((k) => kindLabel(k)).join('、')}${g.isFuriten(this.me) ? '<span class="furiten">振听</span>' : ''}</div>`
-      : '';
+    const waitHtml = g.phase === 'turn' && g.turn === this.me ? '' : this.waitsHtml(waitInfo(g, this.me));
     const hint =
       g.phase === 'turn' && g.turn === this.me && discardable.size > 0
         ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}</div>`
@@ -470,6 +468,22 @@ export class App {
         }
         <div class="nameplate mine"><div class="avatar">${c.name.slice(-1)}</div><div class="pname">${this.seatLabel(this.me)}</div></div>
       </div>`;
+  }
+
+  // 待和提示：每张待和牌下面写还剩几张、荣和几番；没役、只能自摸的写明白，和不了的变灰
+  private waitsHtml(info: WaitInfo): string {
+    if (!info.tiles.length) return '';
+    const status = info.tiles.map((w) => waitStatus(w, info.furiten));
+    const tiles = info.tiles
+      .map((w, i) => {
+        const st = status[i];
+        const label = st === 'ron' ? hanLabel(w.ron!) : st === 'tsumo' ? '仅自摸' : '无役';
+        const dead = st === 'none' || w.left === 0;
+        return `<div class="wait${dead ? ' dead' : ''}">${tileHtml(w.kind * 4 + 1, { size: 'pond' })}<span class="wait-left">余 ${w.left}</span><span class="wait-han ${st}">${label}</span></div>`;
+      })
+      .join('');
+    const title = status.every((st) => st === 'none') ? '形式听牌（无役）' : '听牌';
+    return `<div class="waits"><div class="waits-title">${title}${info.furiten ? '<span class="furiten">振听</span>' : ''}</div><div class="wait-list">${tiles}</div></div>`;
   }
 
   private abilityPanelHtml(): string {
