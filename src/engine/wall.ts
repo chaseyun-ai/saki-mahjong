@@ -50,6 +50,8 @@ export class Wall {
   locked = new Locks();
   // 控场能力给这一次摸牌定的规矩：为真的牌不能换到下一张摸的位置（live[0] 或 rinshan[0]）
   deny: ((t: TileId) => boolean) | null = null;
+  // 配牌调整期间的把关：live 的这些位置换成这些牌行不行（不能让配牌的规矩变差）。别的时候是 null
+  guard: ((changes: [number, TileId][]) => boolean) | null = null;
 
   constructor(rng: Rng) {
     const tiles = rng.shuffle(Array.from({ length: TILE_COUNT }, (_, i) => i));
@@ -108,7 +110,9 @@ export class Wall {
     const cands: number[] = [];
     for (let i = 0; i < this.live.length; i++) {
       if (i === target || this.locked.has(this.live[i]) || (from && !from(i))) continue;
-      if (ok(this.live[i])) cands.push(i);
+      if (!ok(this.live[i])) continue;
+      if (this.guard && !this.guard([[target, this.live[i]], [i, this.live[target]]])) continue;
+      cands.push(i);
     }
     if (cands.length === 0) return false;
     const j = cands[rng.int(cands.length)];
@@ -123,7 +127,7 @@ export class Wall {
     if (ok(this.rinshan[0])) return true;
     const cands: { from: 'live' | 'rinshan'; i: number }[] = [];
     this.live.forEach((t, i) => {
-      if (!this.locked.has(t) && ok(t)) cands.push({ from: 'live', i });
+      if (!this.locked.has(t) && ok(t) && (!this.guard || this.guard([[i, this.rinshan[0]]]))) cands.push({ from: 'live', i });
     });
     this.rinshan.forEach((t, i) => {
       if (i > 0 && !this.locked.has(t) && ok(t)) cands.push({ from: 'rinshan', i });
@@ -145,7 +149,9 @@ export class Wall {
       if (j > i && !this.locked.has(t) && pred(t)) cands.push({ src: this.uraIndicators, i: j });
     });
     this.live.forEach((t, j) => {
-      if (!this.locked.has(t) && (!from || from(j)) && pred(t)) cands.push({ src: this.live, i: j });
+      if (this.locked.has(t) || (from && !from(j)) || !pred(t)) return;
+      if (this.guard && !this.guard([[j, this.uraIndicators[i]]])) return;
+      cands.push({ src: this.live, i: j });
     });
     this.rinshan.forEach((t, j) => {
       if (!this.locked.has(t) && pred(t)) cands.push({ src: this.rinshan, i: j });

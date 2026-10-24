@@ -34,29 +34,40 @@ export const kasumiAbility: Ability = {
   description: `落后时请神上身，之后整场都不退。请神后每局定一种花色：别人的配牌里没有这种花色，摸牌也摸不到（岭上牌除外）；她自己摸牌有 ${KASUMI.drawChance * 100}% 的概率摸到这种花色或字牌。`,
   priority: PRIORITY.kasumi,
 
-  beforeDeal(g, seat) {
+  // 请神：选她配牌里最多的花色（按洗好的牌算，还没人动过），别人的配牌里不能有这种花色
+  dealRules(g, seat) {
     const gs = gameStateOf(g, seat);
     const me = g.players[seat].score;
     const behind = g.players.some((p) => p.seat !== seat && p.score > me);
     if (!gs.summoned && !behind) return;
     const first = !gs.summoned;
     gs.summoned = true;
-    const st = stateOf(g, seat);
-    // 选她配牌里最多的花色
     const per = [0, 0, 0];
-    for (const i of g.dealIndices(seat)) {
-      const k = kindOf(g.wall.live[i]);
+    for (const t of g.dealHand(seat)) {
+      const k = kindOf(t);
       if (k < 27) per[suitOf(k)]++;
     }
     const suit = per.indexOf(Math.max(...per));
+    const st = stateOf(g, seat);
     st.suit = suit;
     st.first = first;
-    // 别人配牌里的这种花色换到发完牌以后的牌山里
+    const pred = inSuit(suit);
+    return [0, 1, 2, 3]
+      .filter((s) => s !== seat)
+      .map((s) => ({ seat, ability: 'kasumi', text: '绝一门', target: s, bad: (hand: TileId[]) => hand.filter(pred).length }));
+  },
+
+  // 别人配牌里的这种花色换到发完牌以后的牌山里。别人的规矩（比如淡的安全圈）不能变差；换不了的留着（无解降级）
+  beforeDeal(g, seat) {
+    const suit = stateOf(g, seat).suit;
+    if (suit === undefined) return;
     const pred = inSuit(suit);
     for (let s = 0; s < 4; s++) {
       if (s === seat) continue;
       for (const i of g.dealIndices(s)) {
-        if (pred(g.wall.live[i])) g.wall.bringToLive(i, (t) => !pred(t), g.rng, (j) => j >= 52);
+        if (!pred(g.wall.live[i])) continue;
+        const swap = () => g.wall.bringToLive(i, (t) => !pred(t), g.rng, (j) => j >= 52);
+        if (!swap()) g.dealFallback(seat, swap);
       }
     }
   },

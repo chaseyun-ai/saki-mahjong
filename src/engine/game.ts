@@ -1,4 +1,4 @@
-import { PRIORITY, type Ability, type DrawRule } from '../abilities/types';
+import { PRIORITY, type Ability, type DealRule, type DrawRule } from '../abilities/types';
 import { Rng } from './rng';
 import { Meld, WinResult, evaluateWin } from './score';
 import { shanten, waitingKinds } from './shanten';
@@ -122,6 +122,12 @@ export class Game {
   roundResult: RoundResult | null = null;
   // 这一局发完配牌、庄家还没摸第一张时牌山的样子（给能力痕迹对照用）
   dealtWall: { live: TileId[]; rinshan: TileId[] } = { live: [], rinshan: [] };
+  // 这一局对配牌定的规矩；调整完还没满足的（无解降级）记在 dealUnmet
+  dealRules: DealRule[] = [];
+  dealUnmet: DealRule[] = [];
+  // 正在调整配牌的人（他自己的规矩由他自己权衡，不拦他）；降级中的人：只顾比他先动的人的规矩
+  private dealActor: number | null = null;
+  private dealRelaxFor: number | null = null;
   events: GameEvent[] = [];
   private eventListeners: ((e: GameEvent) => void)[] = [];
 
@@ -209,6 +215,50 @@ export class Game {
     return Array.from({ length: 13 }, (_, i) => i * 4 + rel);
   }
 
+  // 这一家现在会拿到的配牌（配牌前调用才有意义）
+  dealHand(seat: number): TileId[] {
+    return this.dealIndices(seat).map((i) => this.wall.live[i]);
+  }
+
+  // 配牌调整期间补一条规矩（比如淡定好了自己的配牌以后）
+  addDealRule(r: DealRule): void {
+    this.dealRules.push(r);
+  }
+
+  // 调整不下去时降级：fn 里的换牌只顾比 seat 先动的人的规矩
+  dealFallback<T>(seat: number, fn: () => T): T {
+    const prev = this.dealRelaxFor;
+    this.dealRelaxFor = seat;
+    try {
+      return fn();
+    } finally {
+      this.dealRelaxFor = prev;
+    }
+  }
+
+  // 配牌调整期间的把关：live 的这些位置换成这些牌以后，受影响的配牌上别人的规矩没有一条变差
+  private dealChangeOk(changes: [number, TileId][]): boolean {
+    const order = this.abilityOrder();
+    const limit = this.dealRelaxFor === null ? Infinity : order.indexOf(this.dealRelaxFor);
+    const bySeat = new Map<number, Map<number, TileId>>();
+    for (const [i, t] of changes) {
+      if (i >= 52) continue;
+      const seat = (this.dealer + (i % 4)) % 4;
+      if (!bySeat.has(seat)) bySeat.set(seat, new Map());
+      bySeat.get(seat)!.set(i, t);
+    }
+    for (const [seat, ch] of bySeat) {
+      const idx = this.dealIndices(seat);
+      const before = idx.map((i) => this.wall.live[i]);
+      const after = idx.map((i) => ch.get(i) ?? this.wall.live[i]);
+      for (const r of this.dealRules) {
+        if (r.target !== seat || r.seat === this.dealActor || order.indexOf(r.seat) > limit) continue;
+        if (r.bad(after) > r.bad(before)) return false;
+      }
+    }
+    return true;
+  }
+
   // 下一张牌（live[0]）谁摸：假设没人鸣牌
   nextDrawer(): number {
     if (this.phase === 'turn') return (this.turn + 1) % 4;
@@ -257,7 +307,22 @@ export class Game {
     this.kanBy = [];
     this.noCallsYet = true;
     this.roundResult = null;
-    for (const s of this.abilityOrder()) this.abilities[s]!.beforeDeal?.(this, s);
+    // 配牌：先由所有人定规矩，再依次调整（换牌不能让任何一条规矩变差），最后统一锁定、发牌
+    const order = this.abilityOrder();
+    this.dealRules = [];
+    for (const s of order) this.dealRules.push(...(this.abilities[s]!.dealRules?.(this, s) ?? []));
+    this.wall.guard = (changes) => this.dealChangeOk(changes);
+    try {
+      for (const s of order) {
+        this.dealActor = s;
+        this.abilities[s]!.beforeDeal?.(this, s);
+      }
+    } finally {
+      this.wall.guard = null;
+      this.dealActor = null;
+    }
+    this.dealUnmet = this.dealRules.filter((r) => r.bad(this.dealHand(r.target)) > 0);
+    for (let i = 0; i < 52; i++) this.wall.locked.add(this.wall.live[i], 'deal');
     for (let i = 0; i < 13; i++) {
       for (let k = 0; k < 4; k++) {
         this.players[(this.dealer + k) % 4].hand.push(this.wall.draw());

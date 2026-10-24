@@ -38,7 +38,8 @@ export function awaiWaitingForCorner(g: Game, seat: number): Kind | null {
 }
 
 // 随机配一手听牌：一个暗刻 + 两个顺子 + 一个对子 + 一个两面搭子。暗杠以后听的牌不能变
-function planHand(avail: number[], rng: Rng): { kinds: Kind[]; kan: Kind } | null {
+// accept：别人对她配牌的规矩也得满足（比如霞绝掉的花色）
+function planHand(avail: number[], rng: Rng, accept: (kinds: Kind[]) => boolean): { kinds: Kind[]; kan: Kind } | null {
   for (let attempt = 0; attempt < 200; attempt++) {
     const need = new Array<number>(KIND_COUNT).fill(0);
     const kan = rng.int(KIND_COUNT);
@@ -67,6 +68,7 @@ function planHand(avail: number[], rng: Rng): { kinds: Kind[]; kan: Kind } | nul
     hand.forEach((n, k) => {
       for (let i = 0; i < n; i++) kinds.push(k);
     });
+    if (!accept(kinds)) continue;
     return { kinds, kan };
   }
   return null;
@@ -86,65 +88,110 @@ function cornerSlot(g: Game, seat: number): number | null {
   return null;
 }
 
+// 把 kinds 摆到她的配牌位置上：已经是要的牌种就不动，缺的先从发完牌以后的牌山里拿
+function placeHand(g: Game, mine: number[], kinds: Kind[]): boolean {
+  const w = g.wall;
+  const need = new Array<number>(KIND_COUNT).fill(0);
+  for (const k of kinds) need[k]++;
+  const todo: number[] = [];
+  for (const i of mine) {
+    const k = kindOf(w.live[i]);
+    if (need[k] > 0) need[k]--;
+    else todo.push(i);
+  }
+  const mineSet = new Set(mine);
+  for (const i of todo) {
+    const wanted = (t: TileId) => need[kindOf(t)] > 0;
+    if (!w.bringToLive(i, wanted, g.rng, (j) => j >= 52) && !w.bringToLive(i, wanted, g.rng, (j) => !mineSet.has(j))) return false;
+    need[kindOf(w.live[i])]--;
+  }
+  return true;
+}
+
+// 把一家的配牌压到 safeShanten 向听以上。做到了返回 true
+function worsen(g: Game, idx: number[]): boolean {
+  const w = g.wall;
+  for (let guard = 0; guard < 80; guard++) {
+    const counts = toCounts(idx.map((i) => w.live[i]));
+    const sh = shanten(counts);
+    if (sh >= AWAI.safeShanten) return true;
+    // 换一张：能让向听变差最好；哪张都换不差（几个搭子互相顶替）时，先横着换一张，打散手牌再说
+    const swap = (i: number, need: number) => {
+      const old = kindOf(w.live[i]);
+      return (t: TileId) => {
+        if (kindOf(t) === old) return false;
+        counts[old]--;
+        counts[kindOf(t)]++;
+        const ok = shanten(counts) >= need;
+        counts[kindOf(t)]--;
+        counts[old]++;
+        return ok;
+      };
+    };
+    const order = g.rng.shuffle(idx.slice());
+    if (order.some((i) => w.bringToLive(i, swap(i, sh + 1), g.rng, (j) => j >= 52))) continue;
+    if (!order.some((i) => w.bringToLive(i, swap(i, sh), g.rng, (j) => j >= 52))) return false;
+  }
+  return shanten(toCounts(idx.map((i) => w.live[i]))) >= AWAI.safeShanten;
+}
+
 export const awaiAbility: Ability = {
   id: 'awai',
   name: '绝对安全圈',
   description: `每局有 ${AWAI.circleChance * 100}% 展开绝对安全圈：另外三家的配牌至少 ${AWAI.safeShanten} 向听，没人鸣牌的话前 ${AWAI.safeTurns} 巡也摸不到有用的牌。展开时有 ${AWAI.cornerKanChance * 100}% 配牌就听牌、可以双立直，手里的暗刻在牌山最后一个转角前开暗杠，杠里四张都是里宝牌，下一张就是和了牌。`,
   priority: PRIORITY.awai,
 
+  // 安全圈：另外三家的配牌至少 safeShanten 向听
+  dealRules(g, seat) {
+    if (!g.rng.chance(AWAI.circleChance)) return;
+    stateOf(g, seat).circle = true;
+    return [0, 1, 2, 3]
+      .filter((s) => s !== seat)
+      .map((s) => ({ seat, ability: 'awai', text: '绝对安全圈', target: s, bad: (hand: TileId[]) => Math.max(0, AWAI.safeShanten - shanten(toCounts(hand))) }));
+  },
+
   beforeDeal(g, seat) {
     const w = g.wall;
     const st = stateOf(g, seat);
-    const avail = toCounts(w.live);
-    if (!g.rng.chance(AWAI.circleChance)) return;
-    st.circle = true;
-    const plan = g.rng.chance(AWAI.cornerKanChance) ? planHand(avail, g.rng) : null;
-    const slot = cornerSlot(g, seat);
-    const mine = new Set(g.dealIndices(seat));
-    if (plan) {
-      // 把配好的牌一张张换到她的配牌位置上
-      const ids: TileId[] = [];
-      for (const k of plan.kinds) ids.push(w.live.find((t) => kindOf(t) === k && !ids.includes(t))!);
-      g.dealIndices(seat).forEach((i, n) => w.bringToLive(i, (t) => t === ids[n], g.rng));
-      st.kanKind = plan.kan;
-      const fourth = w.live.find((t, i) => kindOf(t) === plan.kan && !mine.has(i));
-      if (slot !== null && fourth !== undefined && w.bringToLive(slot, (t) => t === fourth, g.rng)) {
-        st.corner = fourth;
-        w.locked.add(fourth, 'awai');
-      }
-      // 杠里要用的指示牌先藏在后面的里宝牌里：开局时牌山里一定还有，等到转角时可能早被摸光了
-      const indicator = (t: TileId) => doraFromIndicator(kindOf(t)) === plan.kan;
-      w.bringToUra(1, indicator, g.rng, (j) => j >= 52);
-      w.bringToUra(2, indicator, g.rng, (j) => j >= 52);
+    if (!st.circle) return;
+    const mine = g.dealIndices(seat);
+    const mineSet = new Set(mine);
+    // 双立直的配牌：先找一手满足别人规矩的（规矩只看牌种，所以拿每种牌里的一张代表来算）
+    let plan: { kinds: Kind[]; kan: Kind } | null = null;
+    if (g.rng.chance(AWAI.cornerKanChance)) {
+      const avail = toCounts(w.live);
+      const others = g.dealRules.filter((r) => r.target === seat && r.seat !== seat);
+      plan = planHand(avail, g.rng, (kinds) => others.every((r) => r.bad(kinds.map((k) => k * 4 + 1)) === 0));
+      // 无解时降级：不顾比她后动的人的规矩，换牌也一样
+      if (!plan) plan = planHand(avail, g.rng, () => true);
     }
-    // 别人的配牌：把有用的牌换成没用的，换到发完牌以后的牌山里
+    if (plan) {
+      const placed = placeHand(g, mine, plan.kinds) || g.dealFallback(seat, () => placeHand(g, mine, plan!.kinds));
+      if (placed) {
+        st.kanKind = plan.kan;
+        const want = [...plan.kinds].sort((a, b) => a - b).join();
+        g.addDealRule({ seat, ability: 'awai', text: '双立直配牌', target: seat, bad: (hand) => ([...hand].map(kindOf).sort((a, b) => a - b).join() === want ? 0 : 1) });
+        // 第四张放在转角前她摸的位置，锁住
+        const slot = cornerSlot(g, seat);
+        const kan = plan.kan;
+        const isKan = (t: TileId) => kindOf(t) === kan;
+        if (slot !== null && (w.bringToLive(slot, isKan, g.rng, (j) => j >= 52) || w.bringToLive(slot, isKan, g.rng, (j) => !mineSet.has(j)))) {
+          st.corner = w.live[slot];
+          w.locked.add(st.corner, 'awai');
+        }
+        // 杠里要用的指示牌先藏在后面的里宝牌里：开局时牌山里一定还有，等到转角时可能早被摸光了
+        const indicator = (t: TileId) => doraFromIndicator(kindOf(t)) === kan;
+        w.bringToUra(1, indicator, g.rng, (j) => j >= 52);
+        w.bringToUra(2, indicator, g.rng, (j) => j >= 52);
+      }
+    }
+    // 别人的配牌：把有用的牌换成没用的，换到发完牌以后的牌山里。别人的规矩（比如霞绝掉的花色）不能变差；
+    // 这样打不到 safeShanten 时降级，不顾比她后动的人的规矩
     for (let s = 0; s < 4; s++) {
       if (s === seat) continue;
       const idx = g.dealIndices(s);
-      for (let guard = 0; guard < 80; guard++) {
-        const counts = toCounts(idx.map((i) => w.live[i]));
-        const sh = shanten(counts);
-        if (sh >= AWAI.safeShanten) break;
-        // 换一张：能让向听变差最好；哪张都换不差（几个搭子互相顶替）时，先横着换一张，打散手牌再说
-        const swap = (i: number, need: number) => {
-          const old = kindOf(w.live[i]);
-          return (t: TileId) => {
-            if (kindOf(t) === old) return false;
-            counts[old]--;
-            counts[kindOf(t)]++;
-            const ok = shanten(counts) >= need;
-            counts[kindOf(t)]--;
-            counts[old]++;
-            return ok;
-          };
-        };
-        const order = g.rng.shuffle(idx.slice());
-        if (order.some((i) => w.bringToLive(i, swap(i, sh + 1), g.rng, (j) => j >= 52))) continue;
-        if (!order.some((i) => w.bringToLive(i, swap(i, sh), g.rng, (j) => j >= 52))) break;
-      }
+      if (!worsen(g, idx)) g.dealFallback(seat, () => worsen(g, idx));
     }
-    // 配牌是她定的：锁住，后面动配牌的能力（比如霞的绝一门）不能再改。发牌时锁自动解开
-    for (let i = 0; i < 52; i++) w.locked.add(w.live[i], 'awai');
   },
 
   onRoundStart(g, seat) {

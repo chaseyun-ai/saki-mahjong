@@ -8,6 +8,12 @@ import type { TileId } from '../engine/tiles';
 // 1. 被锁住的牌（怜看到的、能力预定的）谁都不能动。
 // 2. 控场的能力按 priority 从小到大先动，后动的不能违反先动的定下的规矩（DrawRule）。
 // 3. 摸牌的人自己的能力（beforeDraw）最后动，只能在前面的人留下的牌里挑。
+//
+// 配牌（每局开头）分两步：
+// 1. dealRules：所有人先把对配牌的规矩定下来（DealRule），这一步不动牌。
+// 2. beforeDeal：按 priority 依次调整牌山。任何一次换牌都不能让别人的任何一条规矩变差，所以能兼容的规矩会一起满足。
+//    调整不下去时可以降级（g.dealFallback）：只顾比自己先动的人的规矩。
+//    全部调整完，配牌的 52 张统一锁定，然后发牌。
 
 export const PRIORITY = {
   awai: 10,
@@ -24,6 +30,15 @@ export interface DrawRule {
   deny: (t: TileId) => boolean;
 }
 
+// 控场能力对某一家配牌定的规矩。bad 是这手配牌离规矩还差多少，0 是满足
+export interface DealRule {
+  seat: number; // 定规矩的人
+  ability: string;
+  text: string;
+  target: number; // 管哪一家的配牌
+  bad: (hand: TileId[]) => number;
+}
+
 export interface Ability {
   id: string;
   name: string;
@@ -31,6 +46,9 @@ export interface Ability {
   // 越小越先动，没写算 PRIORITY.self
   priority?: number;
   // 配牌之前：牌山已经洗好、骰子掷完，live 的前 52 张还没发（g.dealIndices 给出每家会拿到哪几张）
+  // 第一步：定配牌的规矩，不动牌
+  dealRules?(g: Game, seat: number): DealRule[] | void;
+  // 第二步：调整牌山。g.dealRules 里别人的规矩全都生效：换牌不能让任何一条变差（Wall.guard 把关）
   beforeDeal?(g: Game, seat: number): void;
   onRoundStart?(g: Game, seat: number): void;
   // 任何人摸牌之前（包括自己）。可以整理牌山，也可以给这次摸牌定规矩

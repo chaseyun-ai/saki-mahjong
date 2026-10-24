@@ -57,19 +57,35 @@ describe('石户霞', () => {
     expect(checkedDraws).toBeGreaterThan(100);
   }, 120000);
 
-  it('和大星淡同场：淡定的配牌霞不能改（配牌锁住），淡的配牌照样听牌', async () => {
+  it('和大星淡同场：两边的配牌规矩一起满足，淡的配牌照样听牌、别人照样 5 向听以上、别人手里没有霞的花色', async () => {
     const { AWAI } = await import('../src/abilities/awai');
     const saved = { ...AWAI };
     Object.assign(AWAI, { circleChance: 1, cornerKanChance: 1 });
     try {
       const both = ['kasumi', 'awai', 'nodoka', 'saki'].map((id) => CHARACTERS.find((c) => c.id === id)!);
       let checked = 0;
-      for (let seed = 1; seed <= 6; seed++) {
+      let unmet = 0;
+      for (let seed = 1; seed <= 8; seed++) {
         const g = new Game({ seed, players: both.map((c) => ({ name: c.id, ability: c.ability })) });
         g.onEvent((e) => {
-          if (e.type !== 'roundStart' || kasumiSuit(g, 0) === null) return;
-          expect(shanten(toCounts(g.players[1].hand))).toBe(0);
+          const suit = kasumiSuit(g, 0);
+          if (e.type !== 'roundStart' || suit === null) return;
           checked++;
+          // 没满足的规矩都记在 dealUnmet 里，而且和手牌对得上
+          for (const r of g.dealRules) {
+            const hand = g.players[r.target].hand.filter((t) => t !== g.players[r.target].drawn);
+            expect(r.bad(hand) > 0).toBe(g.dealUnmet.includes(r));
+          }
+          if (g.dealUnmet.length) {
+            unmet++;
+            return;
+          }
+          expect(shanten(toCounts(g.players[1].hand))).toBe(0);
+          for (const p of g.players) {
+            if (p.seat === 0) continue;
+            expect(p.hand.some(inSuit(suit))).toBe(false);
+            if (p.seat !== 1) expect(shanten(toCounts(p.hand.filter((t) => t !== p.drawn)))).toBeGreaterThanOrEqual(AWAI.safeShanten);
+          }
         });
         let steps = 0;
         while (g.phase !== 'gameEnd' && ++steps < 20000) {
@@ -81,7 +97,10 @@ describe('石户霞', () => {
           g.act(s, chooseAction(g, s, both[s].ai));
         }
       }
-      expect(checked).toBeGreaterThan(0);
+      console.log({ checked, unmet });
+      expect(checked).toBeGreaterThan(5);
+      // 两边能兼容时应该都满足，降级只是少数
+      expect(unmet).toBeLessThan(checked * 0.2);
     } finally {
       Object.assign(AWAI, saved);
     }
