@@ -6,7 +6,7 @@ import { TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
-import { FACES, Face, MODEL_URLS, portraitUrl } from '../ui3d/looks';
+import { FACES, Face, MODEL_URLS, cutinUrl, portraitUrl } from '../ui3d/looks';
 import { backHtml, tileHtml } from './tile';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
@@ -168,16 +168,15 @@ export class App {
       this.timer = null;
     }
     if (g.phase === 'roundEnd' || g.phase === 'gameEnd') {
-      // 3D 牌桌先让大家看清倒牌和特效，再弹结算
+      // 3D 牌桌先让大家看清倒牌和特效，再弹结算。2.5D 和牌照雀魂，宣言后 3.4 秒进结算
       this.render();
       const wins = g.roundResult?.wins.length ?? 0;
-      this.timer = window.setTimeout(
-        () => {
-          this.showResult = true;
-          this.render();
-        },
-        this.mode !== '2d' ? (wins ? 2400 : 1400) + this.busyMs() : 0,
-      );
+      const wait =
+        this.mode === '2d' ? 0 : this.mode === '25d' && wins ? Math.max(3400, this.busyMs() + 900) : (wins ? 2400 : 1400) + this.busyMs();
+      this.timer = window.setTimeout(() => {
+        this.showResult = true;
+        this.render();
+      }, wait);
       return;
     }
     const waiting = g.waitingSeats();
@@ -679,8 +678,10 @@ export class App {
             .map((s) => `<span class="${r.tenpai[s] ? 'yes' : ''}">${this.chars[s].name}：${r.tenpai[s] ? '听牌' : '未听'}</span>`)
             .join('')}</div>`
         : '';
+    // 2.5D 的和牌结算左边放和牌的人的立绘（雀魂那样）
+    const art = this.mode === '25d' && r.wins.length > 0;
     return `
-      <div class="modal"><div class="result">
+      <div class="modal"><div class="result${art ? ' with-art' : ''}">
         ${title}${wins}${tenpai}
         ${this.deltasHtml(r)}
         ${this.traceHtml()}
@@ -705,13 +706,16 @@ export class App {
     const ura = w.uraIndicators.length
       ? `<div class="ura">里宝牌指示牌 ${w.uraIndicators.map((t) => tileHtml(t, { size: 'mini' })).join('')}</div>`
       : '';
+    const art = this.mode === '25d' ? `<div class="win-art"><img src="${cutinUrl(this.chars[w.seat].id)}" alt="" onerror="this.remove()" /></div>` : '';
     return `
       <div class="win" style="--c:${this.chars[w.seat].color}">
+        ${art}<div class="win-body">
         <h2>${this.chars[w.seat].name} ${how}</h2>
         <div class="win-hand">${hand}<span class="gap"></span>${tileHtml(w.tile, { size: 'pond', classes: ['win-tile'] })}<span class="gap"></span>${this.meldsHtml(w.melds, w.seat)}</div>
         ${ura}
         <div class="yaku-list">${yaku.join('')}</div>
         <div class="summary">${summary} ${points}</div>
+        </div>
       </div>`;
   }
 

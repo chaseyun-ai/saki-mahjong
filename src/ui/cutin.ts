@@ -5,13 +5,14 @@ import { cutinUrl } from '../ui3d/looks';
 
 export type CutinKind = 'call' | 'kan' | 'riichi' | 'win' | 'ability';
 
-// 进场、停留、退场各多少秒（雀魂碰的立绘停约 0.45 秒，立直约 0.6 秒）
+// 进场、停留、退场各多少秒（雀魂碰的立绘停约 0.45 秒，立直约 0.6 秒，和牌的大字约 0.7 秒；
+// 和牌的切入放完牌桌上才劈闪电，见 table3d.ts 的 REVEAL_DELAY_25D）
 const TIMING: Record<CutinKind, [number, number, number]> = {
   call: [0.16, 0.5, 0.2],
   kan: [0.16, 0.55, 0.2],
   riichi: [0.16, 0.6, 0.24],
   ability: [0.16, 0.6, 0.24],
-  win: [0.2, 0.85, 0.3],
+  win: [0.2, 0.7, 0.25],
 };
 
 // 正在放的比新来的重要（比如和牌时来了个能力），新来的就不放了

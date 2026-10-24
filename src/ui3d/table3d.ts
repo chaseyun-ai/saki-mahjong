@@ -68,6 +68,10 @@ const DEAL_END = DEAL_SORT + SORT_TILT + 0.15;
 const REVEAL_DELAY = 0.7;
 const TOPPLE_TIME = 0.24;
 const TOPPLE_STAGGER = 0.07;
+// 2.5D 照雀魂的节奏：“荣和/自摸”的切入放完，1.2 秒闪电打在和的那张牌上，1.4 秒倒牌，倒得也快一些
+const REVEAL_DELAY_25D = 1.4;
+const BOLT_LEAD = 0.2;
+const TOPPLE_STAGGER_25D = 0.03;
 
 // 用手搬牌的动作：伸手、拿起来移过去、放下停一下、收手（秒）
 interface HandTiming {
@@ -111,7 +115,9 @@ interface RevealState {
   at: number; // 开始倒牌的时间
   fxAt: number; // 倒完、放和牌特效的时间
   fxDone: boolean;
-  wins: { seat: number; tsumo: boolean }[];
+  boltAt: number | null; // 闪电打在和的那张牌上的时间（3D 不放闪电），放过了就是 null
+  stagger: number; // 一张张往下倒，相邻两张隔多久
+  wins: { seat: number; tsumo: boolean; tile: TileId }[];
   topple: Map<TileId, { at: number; from: Placement | null }>;
 }
 
@@ -859,18 +865,28 @@ export class Table3D {
   private startReveal(g: Game): void {
     const r = g.roundResult;
     if (!r) return;
-    const at = this.now + (r.wins.length ? REVEAL_DELAY : 0.3);
+    const flat = this.style === '25d';
+    const at = this.now + (r.wins.length ? (flat ? REVEAL_DELAY_25D : REVEAL_DELAY) : 0.3);
+    const stagger = flat ? TOPPLE_STAGGER_25D : TOPPLE_STAGGER;
     let fxAt = at;
     const shown = this.revealSeats(g);
     for (const [s, win] of shown) {
       const n = g.players[s].hand.length + (win !== null && !g.players[s].hand.includes(win) ? 1 : 0);
       const wave = (LOOKS[this.lastSync?.view.ids[s] ?? '']?.reveal ?? 'wave') === 'wave';
-      fxAt = Math.max(fxAt, at + (wave ? (n - 1) * TOPPLE_STAGGER : 0) + TOPPLE_TIME + 0.1);
+      fxAt = Math.max(fxAt, at + (wave ? (n - 1) * stagger : 0) + TOPPLE_TIME + 0.1);
     }
     // 被荣和的立直不成立，还没拿出来的立直棒不拿了
     this.handAnims = this.handAnims.filter((a) => a.kind !== 'stick');
     for (const d of this.drawers) d.open = 0;
-    this.reveal = { at, fxAt, fxDone: false, wins: r.wins.map((w) => ({ seat: w.seat, tsumo: w.from === null })), topple: new Map() };
+    this.reveal = {
+      at,
+      fxAt,
+      fxDone: false,
+      boltAt: flat && r.wins.length ? at - BOLT_LEAD : null,
+      stagger,
+      wins: r.wins.map((w) => ({ seat: w.seat, tsumo: w.from === null, tile: w.tile })),
+      topple: new Map(),
+    };
     for (const w of r.wins) {
       if (w.from === null) continue;
       const a = this.handAnims.find((x) => x.seat === w.from && x.kind === 'tile');
@@ -1069,7 +1085,7 @@ export class Table3D {
       let x = row.x0;
       const z = row.z + 0.3 * row.hs;
       const topple = (t: TileId, i: number) => {
-        if (!rv.topple.has(t)) rv.topple.set(t, { at: rv.at + (wave ? i * TOPPLE_STAGGER : 0), from: null });
+        if (!rv.topple.has(t)) rv.topple.set(t, { at: rv.at + (wave ? i * rv.stagger : 0), from: null });
       };
       tiles.forEach((t, i) => {
         out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * row.hs, z, FACE_UP, 0, row.hs));
@@ -1556,10 +1572,22 @@ export class Table3D {
     return true;
   }
 
-  // 倒牌：每张牌绕着靠桌子中心那条底边往前倒，倒下去越来越快
+  // 倒牌：每张牌绕着靠桌子中心那条底边往前倒，倒下去越来越快。2.5D 倒牌前先有闪电打在和的那张牌上
+  // （荣和是牌河里放铳的那张，自摸是手里摸到的那张）
   private animateReveal(): void {
     const rv = this.reveal;
     if (!rv) return;
+    if (rv.boltAt !== null && this.now >= rv.boltAt) {
+      rv.boltAt = null;
+      for (const w of rv.wins) {
+        const at = this.tiles[w.tile].group.position.clone();
+        // 从画面上沿（靠中间一点）斜着劈下来：起点和那张牌一样远，牌在画面上方时闪电也不会大半截出了画面
+        const p = at.clone().project(this.camera);
+        const top = new THREE.Vector3(p.x * 0.3, 1.08, p.z).unproject(this.camera);
+        this.effects.bolt(top, at, FX_GOLD, this.camera.position);
+      }
+      this.shake = 0.5;
+    }
     if (!rv.fxDone && this.now >= rv.fxAt) {
       rv.fxDone = true;
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);

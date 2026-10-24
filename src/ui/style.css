@@ -890,6 +890,92 @@ button {
   color: var(--gold);
 }
 
+/* 2.5D 的和牌结算：左边是和牌的人的立绘，站在角色颜色的底色上，从左边滑进来 */
+.result.with-art {
+  width: 860px;
+  animation: result-in 0.3s ease-out both;
+}
+
+.with-art .win {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  gap: 18px;
+  border-left: none;
+  padding-left: 0;
+}
+
+.win-art {
+  position: relative;
+  min-height: 250px;
+  border-radius: 12px;
+  overflow: hidden;
+  border-left: 4px solid var(--c);
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--c) 70%, #000) 0%,
+    color-mix(in srgb, var(--c) 28%, #000) 65%,
+    rgba(0, 0, 0, 0.2) 100%
+  );
+}
+
+.win-art img {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 100%;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+  animation: result-art 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) 0.05s both;
+}
+
+@keyframes result-in {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+}
+
+@keyframes result-art {
+  from {
+    opacity: 0;
+    translate: -40% 0;
+  }
+}
+
+/* 窄屏（手机竖着拿）：立绘缩成一条，只露上半身 */
+@media (max-width: 640px) {
+  .with-art .win {
+    grid-template-columns: 92px 1fr;
+    gap: 10px;
+  }
+
+  .win-art {
+    min-height: 150px;
+  }
+
+  .win-art img {
+    left: -22%;
+    width: 144%;
+  }
+}
+
+/* 矮屏（手机横着拿）：立绘窄一点，结算内容多露一些 */
+@media (max-height: 480px) {
+  .with-art .win {
+    grid-template-columns: 140px 1fr;
+  }
+
+  .win-art {
+    min-height: 170px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .result.with-art,
+  .win-art img {
+    animation-duration: 0.01s;
+  }
+}
+
 .tenpai-list {
   display: flex;
   justify-content: center;
@@ -1348,6 +1434,10 @@ button {
 .hud .result {
   max-height: 90vh;
   width: min(640px, calc(100vw - 32px));
+}
+
+.hud .result.with-art {
+  width: min(860px, calc(100vw - 32px));
 }
 
 /* ---------- 立直、鸣牌、和牌的大字特效 ---------- */
