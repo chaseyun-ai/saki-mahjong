@@ -1461,26 +1461,31 @@ button {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
+/* 四家的头像放在画面四个角：自己左下、下家右下、对家右上、上家左上（逆时针转一圈，和座位顺序一样） */
 .seat-frame.bottom {
   left: 24px;
-  bottom: 21%;
+  bottom: 16px;
 }
 
-/* 左右两家放在偏上的位置：下半边是上家的副露 */
 .seat-frame.left {
   left: 24px;
-  top: 24%;
+  top: 16px;
 }
 
 .seat-frame.right {
   right: 24px;
-  top: 24%;
+  bottom: 16px;
 }
 
-/* 对家的头像框放在右上角，和雀魂一样（左上角是能力说明） */
 .seat-frame.top {
-  top: 12px;
+  top: 16px;
   right: 24px;
+}
+
+/* 怜的一巡先见：左上角上家头像的右边 */
+.hud .ability-panel.foresight-only {
+  left: 140px;
+  top: 16px;
 }
 
 /* 横过来的手机、竖着的手机：头像框缩小 */
@@ -1515,24 +1520,24 @@ button {
     right: 10px;
   }
 
-  .seat-frame.top {
+  .seat-frame.top,
+  .seat-frame.left {
+    top: 6px;
+  }
+
+  .seat-frame.bottom,
+  .seat-frame.right {
+    bottom: 6px;
+  }
+
+  .hud .ability-panel.foresight-only {
+    left: 84px;
     top: 6px;
   }
 }
 
-/* 竖着的手机：桌子在画面中间，上下都空着。左右两家的头像框放到桌子上方，自己的放到桌子下方 */
+/* 竖着的手机：桌子在画面中间，上下都空着，头像照样放四个角 */
 @media (orientation: portrait) and (max-width: 600px) {
-  .seat-frame.left,
-  .seat-frame.right {
-    top: auto;
-    bottom: calc(50% + 54vw);
-  }
-
-  .seat-frame.bottom {
-    bottom: auto;
-    top: calc(50% + 54vw);
-  }
-
   .stage3d.flat .hud .hint {
     bottom: auto;
     top: calc(50% + 54vw);

@@ -55,8 +55,9 @@ export function defaultCutinArt(id: string, kind: string): { url: string; wide: 
 }
 
 // 试玩页“素材”页面里换上的图（src/ui/skins.ts 读写），盖过上面的默认图。
-// face 头像框平时的头像，blank 放铳和终局没拿第一时的“懵逼”，riichi 立直切入，win 鸣牌和和牌切入，result 结算画面
-export type SkinSlot = 'face' | 'blank' | 'riichi' | 'win' | 'result';
+// face 头像框平时的头像，blank 放铳和终局没拿第一时的“懵逼”，riichi 立直切入，call 鸣牌（吃碰杠）切入，
+// win 和牌切入，ability 能力发动切入，result 结算画面
+export type SkinSlot = 'face' | 'blank' | 'riichi' | 'call' | 'win' | 'ability' | 'result';
 export interface SkinArt {
   url: string;
   w: number;
@@ -77,14 +78,19 @@ export function portraitUrl(id: string, face: Face): string {
 
 // 切入图：kind 是切入的种类（riichi、call、kan、win、ability），结算画面用 result
 export function cutinArt(id: string, kind: string): { url: string; wide: boolean } {
+  // 鸣牌没单独换就用和牌的，结算没单独换也用和牌的
   const own =
     kind === 'riichi'
       ? skinOf(id, 'riichi')
-      : kind === 'call' || kind === 'kan' || kind === 'win'
-        ? skinOf(id, 'win')
-        : kind === 'result'
-          ? (skinOf(id, 'result') ?? skinOf(id, 'win'))
-          : undefined;
+      : kind === 'call' || kind === 'kan'
+        ? (skinOf(id, 'call') ?? skinOf(id, 'win'))
+        : kind === 'win'
+          ? skinOf(id, 'win')
+          : kind === 'ability'
+            ? skinOf(id, 'ability')
+            : kind === 'result'
+              ? (skinOf(id, 'result') ?? skinOf(id, 'win'))
+              : undefined;
   // 宽比高大一截的算横图，切入时画小一点、大字挪到旁边
   return own ? { url: own.url, wide: own.w > own.h * 1.1 } : defaultCutinArt(id, kind);
 }

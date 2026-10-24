@@ -422,7 +422,7 @@ export class App {
     hud.innerHTML = `
       ${plates}
       ${this.myAreaHtml(false, !flat)}
-      ${this.abilityPanelHtml()}
+      ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       ${this.showResult ? this.resultHtml() : ''}`;
     this.renderToasts();
     this.table3d.sync(g, {
@@ -643,14 +643,18 @@ export class App {
     return `<div class="waits"><div class="waits-title">${title}${info.furiten ? '<span class="furiten">振听</span>' : ''}</div><div class="wait-list">${tiles}</div></div>`;
   }
 
-  private abilityPanelHtml(): string {
+  // 2.5D 不放能力说明，只在能力有东西要给玩家看时（怜的一巡先见）放一个小框
+  private foresightHtml(): string {
+    const c = this.chars[this.me];
+    const extra = this.foresightBox();
+    return extra ? `<div class="ability-panel foresight-only" style="--c:${c.color}">${extra}</div>` : '';
+  }
+
+  private foresightBox(): string {
     const g = this.game!;
     const c = this.chars[this.me];
-    if (!c.ability) {
-      return `<div class="ability-panel" style="--c:${c.color}"><div class="ab-name">无能力</div><div class="ab-desc">不受影响，专心打牌。</div></div>`;
-    }
     let extra = '';
-    const fs = c.ability.foresight?.(g, this.me);
+    const fs = c.ability?.foresight?.(g, this.me);
     if (fs) {
       extra = `<div class="foresight"><div class="fs-title">${fs.title}</div>${fs.draws
         .map(
@@ -659,6 +663,16 @@ export class App {
         )
         .join('')}<div class="fs-note">有人鸣牌时顺序会变</div></div>`;
     }
+    return extra;
+  }
+
+  private abilityPanelHtml(): string {
+    const g = this.game!;
+    const c = this.chars[this.me];
+    if (!c.ability) {
+      return `<div class="ability-panel" style="--c:${c.color}"><div class="ab-name">无能力</div><div class="ab-desc">不受影响，专心打牌。</div></div>`;
+    }
+    const extra = this.foresightBox();
     const lost = (g.abilityState[this.me] as { lost?: boolean }).lost;
     return `
       <div class="ability-panel" style="--c:${c.color}">
