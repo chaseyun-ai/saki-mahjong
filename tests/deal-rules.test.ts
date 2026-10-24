@@ -13,7 +13,7 @@ function probe(id: string, priority: number, target: number, deny: (t: TileId) =
     name: id,
     description: '',
     priority,
-    dealRules(g, seat): DealRule[] {
+    dealRules(_g, seat): DealRule[] {
       return [{ seat, ability: id, text: id, target: (seat + target) % 4, bad: (hand) => hand.filter(deny).length }];
     },
     beforeDeal(g, seat) {
