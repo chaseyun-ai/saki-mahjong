@@ -1,8 +1,10 @@
 import type { AiStyle } from '../abilities/characters';
 import { isDoraTile } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
-import { kokushiShanten, shanten } from '../engine/shanten';
+import { evaluateWin } from '../engine/score';
+import { kokushiShanten, shanten, waitingKinds } from '../engine/shanten';
 import {
+  EAST,
   KIND_COUNT,
   Kind,
   TileId,
@@ -191,9 +193,57 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (riichi && best.sh === 0) {
     const c = counts.slice();
     c[kindOf(best.a.tile)]--;
+    if (style.foresightRiichi) {
+      // 怜：先见到下一巡摸的牌正好和牌才立直（一发自摸），否则默听
+      if (nextDraw === undefined) return best.a;
+      c[kindOf(nextDraw)]++;
+      return shanten(c, p.melds.length) === -1 ? riichi : best.a;
+    }
+    if (style.keepDora && !kuroMustRiichi(g, seat, p.hand.filter((t) => t !== best.a.tile))) return best.a;
     if (ukeire(c, p.melds.length, visible) > 0) return riichi;
   }
   return best.a;
+}
+
+// 玄：立直以后只能摸切，宝牌聚集送来的宝牌全得打掉，能力当场失效。所以听牌了默听为主，非进攻不可时才立直：
+// 这一局能力已经没了；默听荣和不到 3900 点（没役只能自摸，或者太便宜，靠立直加番）；最后一局不是第一、默听和了也追不上。
+// hand 是打掉这张以后的 13 张
+const KURO_DAMA_MIN = 3900;
+function kuroMustRiichi(g: Game, seat: number, hand: TileId[]): boolean {
+  if ((g.abilityState[seat] as { lost?: boolean }).lost) return true;
+  const p = g.players[seat];
+  const waits = waitingKinds(toCounts(hand), p.melds.length);
+  const discarded = new Set([...p.discards.map((d) => kindOf(d.tile)), ...g.players[seat].hand.filter((t) => !hand.includes(t)).map(kindOf)]);
+  const furiten = waits.some((k) => discarded.has(k));
+  const dora = g.wall.visibleDoraIndicators().map(kindOf);
+  // 默听荣和最多能拿多少点（振听、没役是 0）
+  let best = 0;
+  if (!furiten) {
+    for (const k of waits) {
+      const tile = k * 4 + 1;
+      const r = evaluateWin({
+        closed: [...hand, tile],
+        melds: p.melds,
+        winTile: tile,
+        tsumo: false,
+        seatWind: g.seatWind(seat),
+        roundWind: EAST + g.roundWind,
+        isDealer: seat === g.dealer,
+        riichi: false,
+        doubleRiichi: false,
+        ippatsu: false,
+        doraIndicators: dora,
+      });
+      if (r) best = Math.max(best, r.ron);
+    }
+  }
+  if (best < KURO_DAMA_MIN) return true;
+  if (g.roundNumber === 3) {
+    const top = Math.max(...g.players.filter((q) => q.seat !== seat).map((q) => q.score));
+    const gain = best + g.honba * 300 + g.riichiSticks * 1000;
+    if (p.score <= top && p.score + gain <= top) return true;
+  }
+  return false;
 }
 
 // ---------- 别人打牌后 ----------

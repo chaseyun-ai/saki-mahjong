@@ -103,6 +103,8 @@ export class Game {
   honba = 0;
   riichiSticks = 0;
   wall!: Wall;
+  // 开局掷的两颗骰子，决定从哪里开牌（只影响牌山的摆放，不影响摸牌顺序）
+  dice: [number, number] = [1, 1];
 
   phase: Phase = 'turn';
   turn = 0;
@@ -192,6 +194,7 @@ export class Game {
 
   private startRound(): void {
     this.wall = new Wall(this.rng);
+    this.dice = [this.rng.int(6) + 1, this.rng.int(6) + 1];
     for (const p of this.players) {
       p.hand = [];
       p.melds = [];

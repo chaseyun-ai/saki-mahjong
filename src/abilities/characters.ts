@@ -8,6 +8,7 @@ export interface AiStyle {
   kanEager: boolean; // 能杠就杠
   keepDora: boolean; // 尽量不打宝牌
   useForesight: boolean; // 根据先见决定要不要鸣牌
+  foresightRiichi: boolean; // 只在先见到下一巡自摸时才立直，否则默听
 }
 
 export interface Character {
@@ -19,7 +20,7 @@ export interface Character {
   ai: AiStyle;
 }
 
-const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false };
+const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -44,7 +45,8 @@ export const CHARACTERS: Character[] = [
     school: '千里山女子',
     color: '#6f8fc9',
     ability: tokiAbility,
-    ai: { ...baseAi, useForesight: true },
+    // 原作里怜一立直就一发自摸：她看得见下一张，只在确定能和的时候才立直
+    ai: { ...baseAi, useForesight: true, foresightRiichi: true },
   },
   {
     id: 'nodoka',
