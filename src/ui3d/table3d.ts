@@ -199,7 +199,7 @@ export class Table3D {
   private pointer = new THREE.Vector2(-9, -9);
   private hovered: TileId | null = null;
   // 副露的间距：组与组之间多留多少、手牌和副露之间至少留多少（调试面板和截图比较方案时会改）
-  meldSpacing = { group: 0.3, hand: 0.25 };
+  meldSpacing = { group: 0.1, hand: 0.25 };
   // 抬起来的那张牌原本的位置：鼠标还在这里就算还指着它（不然指着牌下沿时，牌一抬就指不到、一落又指到，来回抽搐）
   private hoverRest: { id: TileId; at: Placement } | null = null;
   // 鼠标移上移下的那两张牌，这一小会儿抬起、放下要快（雀魂一帧就到位）
@@ -1000,6 +1000,18 @@ export class Table3D {
     return { pos, quat, scale };
   }
 
+  // 座位本地坐标里 z0 那一排的 x0，在 z1 那一排上画面横向位置相同的 x（按镜头的默认位置算）
+  private sameScreenX(seat: number, me: number, x0: number, z0: number, z1: number): number {
+    const cam = this.camera.clone();
+    cam.position.copy(this.rest.pos);
+    cam.lookAt(this.rest.look);
+    cam.updateMatrixWorld();
+    const sx = (x: number, z: number) => this.toWorld(seat, me, x, 0, z, STANDING).pos.project(cam).x;
+    const a = sx(0, z1);
+    const b = sx(1, z1) - a;
+    return Math.abs(b) < 1e-6 ? x0 : (sx(x0, z0) - a) / b;
+  }
+
   private placeSeat(g: Game, s: number, me: number, out: Map<TileId, Placement>): void {
     const p = g.players[s];
     const mine = s === me;
@@ -1058,8 +1070,11 @@ export class Table3D {
     // 宽度总按“手牌 + 摸到的那张”算，不管现在手里有没有摸到的牌：
     // 这样摸牌、打牌时这一排不左右挪，打掉摸到的牌其他牌也原地不动（和雀魂一样）
     const width = (13 - 3 * p.melds.length + 1) * step + 0.5;
-    // 副露多了手牌往左让，和副露之间留一点缝
-    const shift = p.melds.length ? Math.max(0, width / 2 - (mx - this.meldSpacing.hand)) : 0;
+    // 副露多了手牌往左让，和副露之间留一点缝。自己的手牌离镜头近、看起来更往外，
+    // 按画面上对齐：手牌右沿在画面上正好落在第一组副露左边一点
+    const edge = mx - this.meldSpacing.hand;
+    const handEdge = mine ? this.sameScreenX(s, me, edge, this.dim.meldZ, this.dim.handZ + (hs - 1) * 1.2) : edge;
+    const shift = p.melds.length ? Math.max(0, width / 2 - handEdge) : 0;
     let x = -width / 2 - shift + TILE_W / 2;
     const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : STANDING;
     const y = tilting ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
