@@ -11,7 +11,7 @@ export const tokiAbility: Ability = {
   description: '平时能看到自己下一巡摸到的牌；花体力“看下一巡”时，能看到这一巡每家会打什么、有没有人鸣牌或和牌。接下来一巡的牌，其他人的能力无法改变。',
 
   afterDraw(g) {
-    for (const t of g.wall.live.slice(0, FORESIGHT_TILES)) g.wall.locked.add(t);
+    for (const t of g.wall.live.slice(0, FORESIGHT_TILES)) g.wall.locked.add(t, 'toki');
   },
 
   // 只给她自己下一张：第几张轮到她，就是牌山里的第几张

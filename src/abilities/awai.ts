@@ -110,7 +110,7 @@ export const awaiAbility: Ability = {
       const fourth = w.live.find((t, i) => kindOf(t) === plan.kan && !mine.has(i));
       if (slot !== null && fourth !== undefined && w.bringToLive(slot, (t) => t === fourth, g.rng)) {
         st.corner = fourth;
-        w.locked.add(fourth);
+        w.locked.add(fourth, 'awai');
       }
       // 杠里要用的指示牌先藏在后面的里宝牌里：开局时牌山里一定还有，等到转角时可能早被摸光了
       const indicator = (t: TileId) => doraFromIndicator(kindOf(t)) === plan.kan;
@@ -144,7 +144,7 @@ export const awaiAbility: Ability = {
       }
     }
     // 配牌是她定的：锁住，后面动配牌的能力（比如霞的绝一门）不能再改。发牌时锁自动解开
-    for (let i = 0; i < 52; i++) w.locked.add(w.live[i]);
+    for (let i = 0; i < 52; i++) w.locked.add(w.live[i], 'awai');
   },
 
   onRoundStart(g, seat) {

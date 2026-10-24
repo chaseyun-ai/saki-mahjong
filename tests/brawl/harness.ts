@@ -70,7 +70,7 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
   const problem = (msg: string) => {
     if (stats.problems.length < 50) stats.problems.push(`${tag} ${g.roundLabel()} ${msg}`);
   };
-  const lockPos = new Map<TileId, number>();
+  const lockPos = new Map<TileId, { pos: number; who: string }>();
 
   g.onEvent((e) => {
     if (e.type === 'roundStart') lockPos.clear();
@@ -122,13 +122,16 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
     const tiles = tilesInPlay(g);
     if (tiles.length !== TILE_COUNT || new Set(tiles).size !== TILE_COUNT) problem(`牌数不对：${tiles.length} 张，${new Set(tiles).size} 种`);
     // 锁住的牌：从摸牌起点数第几张，锁住以后不能变
+    // 解开过的锁不算：能力的主人可以改主意（比如衣换了听牌重新安排海底），换了一批人锁就从新位置算起
     const front = g.wall.frontDrawn;
     g.wall.live.forEach((t, k) => {
       if (!g.wall.locked.has(t)) return;
-      const pos = lockPos.get(t);
-      if (pos === undefined) lockPos.set(t, front + k);
-      else if (pos !== front + k) problem(`锁住的牌 ${t} 被挪了：第 ${pos} 张 → 第 ${front + k} 张`);
+      const who = g.wall.locked.ownersOf(t).join();
+      const was = lockPos.get(t);
+      if (was === undefined || was.who !== who) lockPos.set(t, { pos: front + k, who });
+      else if (was.pos !== front + k) problem(`锁住的牌 ${t} 被挪了：第 ${was.pos} 张 → 第 ${front + k} 张（${who}）`);
     });
+    for (const t of [...lockPos.keys()]) if (!g.wall.locked.has(t)) lockPos.delete(t);
   }
   stats.games++;
 }

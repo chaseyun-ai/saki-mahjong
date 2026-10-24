@@ -37,7 +37,7 @@ const awaiProbe: Ability = {
     if (k === undefined || k === 0) return;
     if (g.wall.bringToLive(k, (t) => kindOf(t) === kind, g.rng) && kindOf(g.wall.live[k]) === kind) {
       st.corner = g.wall.live[k];
-      g.wall.locked.add(st.corner);
+      g.wall.locked.add(st.corner, 'probe');
     }
   },
 };
@@ -53,7 +53,7 @@ const koromoProbe: Ability = {
     const last = w.live.length - 1;
     const waits = g.waits(seat);
     if (waits.length && last > 4 && g.drawerOf(last) === seat && !w.locked.has(w.live[last])) {
-      if (w.bringToLive(last, (t) => waits.includes(kindOf(t)), g.rng)) w.locked.add(w.live[last]);
+      if (w.bringToLive(last, (t) => waits.includes(kindOf(t)), g.rng)) w.locked.add(w.live[last], 'probe');
     }
     if (drawer === seat) return;
     const p = g.players[drawer];

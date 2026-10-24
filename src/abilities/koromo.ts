@@ -74,11 +74,11 @@ export const koromoAbility: Ability = {
       // 听的牌变了（换了听、吃碰过）就重新安排
       const planned = st.haitei !== undefined && w.live[last] === st.haitei && waits.includes(kindOf(st.haitei));
       if (st.lucky && !planned) {
-        if (st.haitei !== undefined && w.live[last] === st.haitei) w.locked.delete(st.haitei);
+        if (st.haitei !== undefined && w.live[last] === st.haitei) w.locked.delete(st.haitei, 'koromo');
         st.haitei = undefined;
         if (!w.locked.has(w.live[last]) && w.bringToLive(last, (t) => waits.includes(kindOf(t)), g.rng)) {
           st.haitei = w.live[last];
-          w.locked.add(st.haitei);
+          w.locked.add(st.haitei, 'koromo');
         }
       }
     }

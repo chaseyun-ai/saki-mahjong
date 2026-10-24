@@ -1,6 +1,40 @@
 import { Rng } from './rng';
 import { TILE_COUNT, TileId } from './tiles';
 
+// 锁住的牌，记着是谁锁的：一张牌可以被好几个人锁，各人只能解开自己的锁，全解开才算没锁。被摸走时所有锁一起解开
+export class Locks {
+  private owners = new Map<TileId, Set<string>>();
+
+  has(t: TileId): boolean {
+    return this.owners.has(t);
+  }
+
+  add(t: TileId, owner: string): void {
+    const set = this.owners.get(t) ?? new Set<string>();
+    set.add(owner);
+    this.owners.set(t, set);
+  }
+
+  // 没写 owner：所有锁一起解开（牌被摸走、挪进王牌区时）
+  delete(t: TileId, owner?: string): void {
+    if (owner === undefined) {
+      this.owners.delete(t);
+      return;
+    }
+    const set = this.owners.get(t);
+    set?.delete(owner);
+    if (set?.size === 0) this.owners.delete(t);
+  }
+
+  ownersOf(t: TileId): string[] {
+    return [...(this.owners.get(t) ?? [])].sort();
+  }
+
+  [Symbol.iterator](): IterableIterator<TileId> {
+    return this.owners.keys();
+  }
+}
+
 // 牌山：前 122 张是可摸的牌（live[0] 是下一张），后 14 张是王牌
 // 能力只能交换没公开的牌，牌的总数永远是 136
 
@@ -13,7 +47,7 @@ export class Wall {
   overflow: TileId[] = [];
   doraRevealed = 1;
   // 被锁住的牌（园城寺怜看到的、能力预定好的），谁都不能再移动它们
-  locked = new Set<TileId>();
+  locked = new Locks();
   // 控场能力给这一次摸牌定的规矩：为真的牌不能换到下一张摸的位置（live[0] 或 rinshan[0]）
   deny: ((t: TileId) => boolean) | null = null;
 
