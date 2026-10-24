@@ -148,7 +148,7 @@ export class App {
     // 对手从其余角色里随机抽三个，座位也随机
     const others = new Rng(seed ^ 0x5a17).shuffle(CHARACTERS.filter((c) => c.id !== charId)).slice(0, 3);
     this.chars = [mine, ...others];
-    this.game = new Game({ seed, startScore: START_SCORE, players: this.chars.map((c) => ({ name: c.name, ability: c.ability })) });
+    this.game = new Game({ seed, startScore: START_SCORE, players: this.chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) });
     this.trace = new AbilityTrace(this.game);
     this.game.onEvent((e) => this.onGameEvent(e));
     this.toasts = [];
@@ -398,6 +398,11 @@ export class App {
     }
     if (el.dataset.ui === 'riichi') {
       this.riichiMode = !this.riichiMode;
+      this.render();
+      return;
+    }
+    if (el.dataset.ui === 'skill') {
+      if (this.game && !this.vision) this.chars[this.me].ability?.pressSkill?.(this.game, this.me);
       this.render();
       return;
     }
@@ -805,11 +810,24 @@ export class App {
     return `<div class="waits"><div class="waits-title">${title}${info.furiten ? '<span class="furiten">振听</span>' : ''}</div><div class="wait-list">${tiles}</div></div>`;
   }
 
-  // 2.5D 不放能力说明，只在能力有东西要给玩家看时（怜的一巡先见）放一个小框
+  // 2.5D 不放能力说明，只在能力有东西要给玩家看时（怜的一巡先见、淡和霞的技能按钮）放一个小框
   private foresightHtml(): string {
     const c = this.chars[this.me];
-    const extra = this.foresightBox();
+    const extra = this.foresightBox() + this.skillBox();
     return extra ? `<div class="ability-panel foresight-only" style="--c:${c.color}">${extra}</div>` : '';
+  }
+
+  // 主动开的技能：能量条和开关按钮（演算中不显示）
+  private skillBox(): string {
+    const g = this.game!;
+    const ab = this.chars[this.me].ability;
+    const b = !this.vision && ab?.skill?.(g, this.me);
+    if (!b) return '';
+    const meter = b.meter
+      ? `<span class="stamina energy" title="能量"><i style="width:${(b.meter.value / b.meter.max) * 100}%"></i></span><span class="st-num">${b.meter.value}</span>`
+      : '';
+    return `<div class="foresight skill"><div class="fs-title">${ab!.name}${meter}</div>
+      <button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button></div>`;
   }
 
   // 怜的一巡先见：平时只有自己下一张摸牌；玩家操作怜时还有体力条和“看下一巡”按钮，演算中换成演算的经过和“退出”
@@ -860,7 +878,7 @@ export class App {
     if (!c.ability) {
       return `<div class="ability-panel" style="--c:${c.color}"><div class="ab-name">无能力</div><div class="ab-desc">不受影响，专心打牌。</div></div>`;
     }
-    const extra = this.foresightBox();
+    const extra = this.foresightBox() + this.skillBox();
     const lost = (g.abilityState[this.me] as { lost?: boolean }).lost;
     const badge = c.ability.badge?.(g, this.me);
     return `

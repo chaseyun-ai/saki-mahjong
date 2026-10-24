@@ -8,7 +8,7 @@ import { doraFromIndicator, kindOf, toCounts } from '../src/engine/tiles';
 
 // 能力每局都发动，方便检查
 const saved = { ...AWAI };
-beforeAll(() => Object.assign(AWAI, { circleChance: 1, cornerKanChance: 1 }));
+beforeAll(() => Object.assign(AWAI, { onCost: 0, aiLeadChance: 1, cornerKanChance: 1 }));
 afterAll(() => Object.assign(AWAI, saved));
 
 const lineup = ['awai', 'saki', 'nodoka', 'kuro'].map((id) => CHARACTERS.find((c) => c.id === id)!);

@@ -60,6 +60,19 @@ export interface Ability {
   badge?(g: Game, seat: number): string | null;
   // 给界面显示的额外信息（比如先见到的牌）
   foresight?(g: Game, seat: number): Foresight | null;
+  // 玩家操作这个角色时的技能按钮（g.manual[seat] 为真时由玩家决定，否则能力自己按电脑的规矩决定）
+  skill?(g: Game, seat: number): SkillButton | null;
+  pressSkill?(g: Game, seat: number): void;
+}
+
+export interface SkillButton {
+  label: string;
+  note: string;
+  enabled: boolean;
+  // 能量条（没有就不画）
+  meter?: { value: number; max: number };
+  // 开启中（按钮高亮）
+  active?: boolean;
 }
 
 export interface Foresight {

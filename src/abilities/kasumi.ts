@@ -3,6 +3,7 @@ import { TileId, kindOf, suitOf } from '../engine/tiles';
 import { PRIORITY, type Ability } from './types';
 
 // 石户霞（永水）：平时以防守为主。落后时请神上身，之后整场都回不到平时（没有人给她“净化”）。
+// 电脑的霞一落后就请神；玩家操作她时由玩家在落后时按按钮请神，下一局开局生效。
 // 请神以后每局开局定一种花色：配牌时别人手里的这种花色被换走，之后别人也摸不到（绝一门），
 // 她自己摸牌时容易摸到这种花色和字牌。岭上牌不受影响，所以咲的杠能绕过去。
 export const KASUMI = {
@@ -12,6 +13,7 @@ export const KASUMI = {
 
 interface KasumiGameState {
   summoned?: boolean;
+  want?: boolean; // 玩家按了请神，下一局开局请神
 }
 interface KasumiState {
   suit?: number; // 这一局绝掉的花色：0 万、1 筒、2 索
@@ -26,20 +28,20 @@ export function kasumiSuit(g: Game, seat: number): number | null {
   return stateOf(g, seat).suit ?? null;
 }
 
+const isBehind = (g: Game, seat: number) => g.players.some((p) => p.seat !== seat && p.score > g.players[seat].score);
+
 const inSuit = (suit: number) => (t: TileId) => kindOf(t) < 27 && suitOf(kindOf(t)) === suit;
 
 export const kasumiAbility: Ability = {
   id: 'kasumi',
   name: '请神·绝一门',
-  description: `落后时请神上身，之后整场都不退。请神后每局定一种花色：别人的配牌里没有这种花色，摸牌也摸不到（岭上牌除外）；她自己摸牌有 ${KASUMI.drawChance * 100}% 的概率摸到这种花色或字牌。`,
+  description: `落后时请神上身（玩家操作时自己按按钮），之后整场都不退。请神后每局定一种花色：别人的配牌里没有这种花色，摸牌也摸不到（岭上牌除外）；她自己摸牌有 ${KASUMI.drawChance * 100}% 的概率摸到这种花色或字牌。`,
   priority: PRIORITY.kasumi,
 
   // 请神：选她配牌里最多的花色（按洗好的牌算，还没人动过），别人的配牌里不能有这种花色
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);
-    const me = g.players[seat].score;
-    const behind = g.players.some((p) => p.seat !== seat && p.score > me);
-    if (!gs.summoned && !behind) return;
+    if (!gs.summoned && !(g.manual[seat] ? gs.want : isBehind(g, seat))) return;
     const first = !gs.summoned;
     gs.summoned = true;
     const per = [0, 0, 0];
@@ -70,6 +72,20 @@ export const kasumiAbility: Ability = {
         if (!swap()) g.dealFallback(seat, swap);
       }
     }
+  },
+
+  skill(g, seat) {
+    const gs = gameStateOf(g, seat);
+    if (gs.summoned) return { label: '已请神', note: '整场都不退', enabled: false, active: true };
+    if (gs.want) return { label: '取消请神', note: '下一局开局请神', enabled: true, active: true };
+    const ok = isBehind(g, seat);
+    return { label: '请神', note: ok ? '下一局开局请神，之后整场都不退' : '落后时才能请神', enabled: ok };
+  },
+
+  pressSkill(g, seat) {
+    const gs = gameStateOf(g, seat);
+    if (gs.summoned) return;
+    gs.want = gs.want ? false : isBehind(g, seat);
   },
 
   onRoundStart(g, seat) {

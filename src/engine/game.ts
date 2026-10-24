@@ -82,6 +82,8 @@ export type GameEvent =
 export interface PlayerConfig {
   name: string;
   ability?: Ability | null;
+  // 玩家操作的座位：能主动开关技能的能力听玩家的，不替玩家做决定
+  manual?: boolean;
 }
 
 export interface GameOptions {
@@ -99,6 +101,8 @@ export class Game {
   // 能力的私有状态，按座位存：abilityState 每局清空，abilityGameState 整场都在
   abilityState: Record<string, unknown>[] = [{}, {}, {}, {}];
   abilityGameState: Record<string, unknown>[] = [{}, {}, {}, {}];
+  // 哪些座位是玩家操作的（见 PlayerConfig.manual）
+  manual: boolean[] = [false, false, false, false];
 
   roundWind = 0; // 0 东场，1 南场
   roundNumber = 0; // 0-3，等于庄家座位
@@ -150,6 +154,7 @@ export class Game {
       kuikaeBan: [],
     }));
     this.abilities = opts.players.map((p) => p.ability ?? null);
+    this.manual = opts.players.map((p) => !!p.manual);
     this.startRound();
   }
 

@@ -826,6 +826,21 @@ button {
   cursor: default;
 }
 
+/* 淡的能量条、霞的请神 */
+.stamina.energy i {
+  background: linear-gradient(90deg, #f2b84b, #ffe29a);
+}
+
+.foresight.skill .deep-btn {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 18%, transparent);
+  color: #fff;
+}
+
+.foresight.skill .deep-btn.active {
+  background: color-mix(in srgb, var(--c) 45%, transparent);
+}
+
 .foresight.deep {
   gap: 3px;
 }
