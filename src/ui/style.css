@@ -832,9 +832,21 @@ button {
 }
 
 .foresight.skill .deep-btn {
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
   border-color: var(--c);
   background: color-mix(in srgb, var(--c) 18%, transparent);
   color: #fff;
+}
+
+.skill-on {
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: #1a1206;
+  background: var(--gold);
 }
 
 .foresight.skill .deep-btn.active {

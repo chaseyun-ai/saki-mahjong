@@ -864,7 +864,7 @@ export class App {
     const meter = b.meter
       ? `<span class="stamina energy" title="能量"><i style="width:${(b.meter.value / b.meter.max) * 100}%"></i></span><span class="st-num">${b.meter.value}</span>`
       : '';
-    return `<div class="foresight skill"><div class="fs-title">${ab!.name}${meter}</div>
+    return `<div class="foresight skill"><div class="fs-title">${ab!.name}${b.active ? '<span class="skill-on">开启中</span>' : ''}${meter}</div>
       <button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button></div>`;
   }
 
