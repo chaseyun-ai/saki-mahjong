@@ -16,6 +16,7 @@ npm install
 npm run dev      # 打开终端里显示的地址
 npm test         # 规则和整场模拟测试
 npx vite-node scripts/balance.ts 300   # 让电脑打 300 场，统计各角色成绩
+npx vite-node scripts/brawl.ts 30      # 能力大乱斗：角色池任选四人，每种组合打 30 场，检查能力碰撞
 ```
 
 ## 代码结构
@@ -28,6 +29,10 @@ npx vite-node scripts/balance.ts 300   # 让电脑打 300 场，统计各角色�
 | `src/ui` | 对局控制、按钮和结算界面，以及 2D 牌桌 |
 | `src/ui3d` | Three.js 3D 牌桌：立体麻将牌、牌河、副露、控制台、占位人物 |
 | `tests` | 算分、向听和整场模拟测试 |
+
+能力能挂的时机和“谁说了算”的顺序写在 `src/abilities/types.ts`：配牌之前、任何人摸牌之前（控场的人可以给这次摸牌定规矩，比如“这张不许摸”）、自己摸牌前后、打牌后，还能换里宝牌，规则引擎会算牌山转角（`Game.cornerIndices`）。锁住的牌谁都不能动；控场的人按 priority 先动，摸牌的人自己的能力最后动，后动的不能违反先定的规矩，和座位无关。
+
+能力大乱斗（`tests/brawl.test.ts`）每一步检查牌数、锁住的牌、控场规矩。还没做出来的控场角色先用 `tests/brawl/probes.ts` 里的探针顶替。
 
 能力的强度参数在各自文件顶部（比如 `src/abilities/saki.ts` 的 `RINSHAN_WIN_CHANCE`），改数字就能调平衡。
 

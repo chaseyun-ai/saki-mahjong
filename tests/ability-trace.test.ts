@@ -38,7 +38,7 @@ const noAbilities: PlayerConfig[] = CHARACTERS.map((c) => ({ name: c.name }));
 // 四个电脑打完一整场。trace 为真时挂上记录员，每局结束时收下这一局的记录
 function play(seed: number, players = withAbilities, trace = true) {
   const g = new Game({ seed, players });
-  const tracer = trace ? new AbilityTrace(g, seed) : null;
+  const tracer = trace ? new AbilityTrace(g) : null;
   const rounds: { entries: TraceEntry[]; wall: Wall }[] = [];
   const calls: string[][] = [];
   let roundCalls: string[] = [];

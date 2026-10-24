@@ -1,6 +1,7 @@
 import { CHARACTERS, Character } from '../abilities/characters';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
+import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
@@ -124,7 +125,7 @@ export class App {
     this.root.innerHTML = `
       <div class="select-screen">
         <h1>超能力麻将</h1>
-        <p class="subtitle">选择你的角色，其余三位由电脑操作。东风战，赤宝牌 3 张。</p>
+        <p class="subtitle">选择你的角色，对手从其余角色里随机抽三位，由电脑操作。东风战，赤宝牌 3 张。</p>
         <div class="mode-switch">
           <button class="${this.mode === '25d' ? 'on' : ''}" data-ui="mode-25d">2.5D 牌桌</button>
           <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 实验</button>
@@ -143,11 +144,12 @@ export class App {
 
   private startGame(charId: string): void {
     const mine = CHARACTERS.find((c) => c.id === charId)!;
-    const others = CHARACTERS.filter((c) => c.id !== charId);
-    this.chars = [mine, ...others];
     const seed = Math.floor(Math.random() * 2 ** 31);
+    // 对手从其余角色里随机抽三个，座位也随机
+    const others = new Rng(seed ^ 0x5a17).shuffle(CHARACTERS.filter((c) => c.id !== charId)).slice(0, 3);
+    this.chars = [mine, ...others];
     this.game = new Game({ seed, startScore: START_SCORE, players: this.chars.map((c) => ({ name: c.name, ability: c.ability })) });
-    this.trace = new AbilityTrace(this.game, seed);
+    this.trace = new AbilityTrace(this.game);
     this.game.onEvent((e) => this.onGameEvent(e));
     this.toasts = [];
     this.faces = [];

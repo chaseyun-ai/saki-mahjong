@@ -1,4 +1,4 @@
-import type { Ability } from '../abilities/types';
+import { PRIORITY, type Ability, type DrawRule } from '../abilities/types';
 import { Rng } from './rng';
 import { Meld, WinResult, evaluateWin } from './score';
 import { shanten, waitingKinds } from './shanten';
@@ -12,7 +12,7 @@ import {
   kindOf,
   toCounts,
 } from './tiles';
-import { Wall } from './wall';
+import { Wall, isCornerDraw } from './wall';
 
 export type Action =
   | { type: 'discard'; tile: TileId; riichi?: boolean }
@@ -75,7 +75,8 @@ export type GameEvent =
   | { type: 'draw'; seat: number }
   | { type: 'discard'; seat: number; tile: TileId; riichi: boolean }
   | { type: 'call'; seat: number; call: string }
-  | { type: 'ability'; seat: number; ability: string; text: string }
+  // target：能力作用在谁的摸牌上（没写就是发动能力的人自己）
+  | { type: 'ability'; seat: number; ability: string; text: string; target?: number }
   | { type: 'roundEnd'; result: RoundResult };
 
 export interface PlayerConfig {
@@ -118,6 +119,8 @@ export class Game {
   kanBy: number[] = [];
   noCallsYet = true;
   roundResult: RoundResult | null = null;
+  // 这一局发完配牌、庄家还没摸第一张时牌山的样子（给能力痕迹对照用）
+  dealtWall: { live: TileId[]; rinshan: TileId[] } = { live: [], rinshan: [] };
   events: GameEvent[] = [];
   private eventListeners: ((e: GameEvent) => void)[] = [];
 
@@ -190,6 +193,41 @@ export class Game {
     return this.kanBy.length;
   }
 
+  // 有能力的座位，按“谁说了算”的顺序：priority 小的先动；一样时从庄家起按座位
+  abilityOrder(): number[] {
+    const pri = (s: number) => this.abilities[s]?.priority ?? PRIORITY.self;
+    return [0, 1, 2, 3]
+      .map((k) => (this.dealer + k) % 4)
+      .filter((s) => this.abilities[s])
+      .sort((a, b) => pri(a) - pri(b));
+  }
+
+  // 配牌时 seat 会拿到 live 里的哪几张（配牌前调用才有意义）：从庄家起一人一张，发 13 圈
+  dealIndices(seat: number): number[] {
+    const rel = (seat - this.dealer + 4) % 4;
+    return Array.from({ length: 13 }, (_, i) => i * 4 + rel);
+  }
+
+  // 下一张牌（live[0]）谁摸：假设没人鸣牌
+  nextDrawer(): number {
+    if (this.phase === 'turn') return (this.turn + 1) % 4;
+    return ((this.lastDiscard?.seat ?? this.turn) + 1) % 4;
+  }
+
+  // live[k] 会被谁摸到：假设没人鸣牌、没人开杠
+  drawerOf(k: number): number {
+    return (this.nextDrawer() + k) % 4;
+  }
+
+  // 牌山转角：live 里哪些位置是一排牌山的最后一张（摸完就拐弯）。从前往后
+  cornerIndices(): number[] {
+    const sum = this.dice[0] + this.dice[1];
+    const front = this.wall.frontDrawn;
+    const out: number[] = [];
+    for (let k = 0; k < this.wall.live.length; k++) if (isCornerDraw(this.dealer, sum, front + k)) out.push(k);
+    return out;
+  }
+
   // ---------- 一局的流程 ----------
 
   private startRound(): void {
@@ -218,13 +256,15 @@ export class Game {
     this.kanBy = [];
     this.noCallsYet = true;
     this.roundResult = null;
+    for (const s of this.abilityOrder()) this.abilities[s]!.beforeDeal?.(this, s);
     for (let i = 0; i < 13; i++) {
       for (let k = 0; k < 4; k++) {
         this.players[(this.dealer + k) % 4].hand.push(this.wall.draw());
       }
     }
+    this.dealtWall = { live: this.wall.live.slice(), rinshan: this.wall.rinshan.slice() };
     this.emit({ type: 'roundStart', label: this.roundLabel() });
-    for (let s = 0; s < 4; s++) this.abilities[s]?.onRoundStart?.(this, s);
+    for (const s of this.abilityOrder()) this.abilities[s]!.onRoundStart?.(this, s);
     this.drawFor(this.dealer, false);
   }
 
@@ -233,7 +273,7 @@ export class Game {
       this.exhaustiveDraw();
       return;
     }
-    this.abilities[seat]?.beforeDraw?.(this, seat, rinshan);
+    this.applyDrawAbilities(seat, rinshan);
     const tile = rinshan ? this.wall.drawRinshan() : this.wall.draw();
     const p = this.players[seat];
     p.hand.push(tile);
@@ -244,6 +284,39 @@ export class Game {
     this.phase = 'turn';
     this.emit({ type: 'draw', seat });
     this.abilities[seat]?.afterDraw?.(this, seat);
+  }
+
+  // 摸牌前：控场的人按顺序先动、定规矩，摸牌的人自己的能力最后动，最后把违反规矩的牌换走
+  private applyDrawAbilities(seat: number, rinshan: boolean): void {
+    const w = this.wall;
+    const rules: DrawRule[] = [];
+    const union = (n: number) => (n === 0 ? null : (t: TileId) => rules.slice(0, n).some((r) => r.deny(t)));
+    for (const s of this.abilityOrder()) {
+      const a = this.abilities[s]!;
+      if (!a.beforeAnyDraw) continue;
+      w.deny = union(rules.length);
+      const r = a.beforeAnyDraw(this, s, seat, rinshan);
+      if (r) rules.push(r);
+    }
+    w.deny = union(rules.length);
+    this.abilities[seat]?.beforeDraw?.(this, seat, rinshan);
+    w.deny = null;
+    if (rules.length === 0) return;
+    const next = () => (rinshan ? w.rinshan[0] : w.live[0]);
+    const before = next();
+    if (before === undefined || !rules.some((r) => r.deny(before))) return;
+    // 换不出同时满足所有规矩的牌时，先满足先定的规矩
+    let n = rules.length;
+    for (; n > 0; n--) {
+      const deny = union(n)!;
+      if (!deny(before)) return;
+      const ok = rinshan ? w.bringToRinshan((t) => !deny(t), this.rng) : w.bringToLive(0, (t) => !deny(t), this.rng);
+      if (ok) break;
+    }
+    if (next() === before) return;
+    for (const r of rules.slice(0, n)) {
+      if (r.deny(before)) this.emit({ type: 'ability', seat: r.seat, ability: r.ability, text: r.text, target: seat });
+    }
   }
 
   private isFirstTurn(seat: number): boolean {
