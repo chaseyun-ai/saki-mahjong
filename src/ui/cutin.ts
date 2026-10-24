@@ -1,4 +1,4 @@
-import { cutinUrl } from '../ui3d/looks';
+import { cutinArt } from '../ui3d/looks';
 
 // 切入演出：角色立绘和大字从画面一侧滑进来，停一下再滑走（雀魂碰牌、立直时的那种）。
 // 只是画面效果：不挡点击，不等它放完牌局就往下走。
@@ -37,12 +37,13 @@ export class Cutins {
     this.clear();
     const [enter, hold, leave] = TIMING[c.kind];
     const el = document.createElement('div');
-    el.className = `cutin ${c.pos} ${c.kind}`;
+    const art = cutinArt(c.id, c.kind);
+    el.className = `cutin ${c.pos} ${c.kind}${art.wide ? ' wide' : ''}`;
     el.style.setProperty('--c', c.color);
     el.style.setProperty('--in', `${enter}s`);
     el.style.setProperty('--hold', `${hold}s`);
     el.style.setProperty('--out', `${leave}s`);
-    el.innerHTML = `<div class="band"></div><img class="art" src="${cutinUrl(c.id)}" alt="" onerror="this.remove()" /><div class="word"><span>${c.word}</span></div>`;
+    el.innerHTML = `<div class="band"></div><img class="art" src="${art.url}" alt="" onerror="this.remove()" /><div class="word"><span>${c.word}</span></div>`;
     this.layer.appendChild(el);
     const timer = window.setTimeout(() => this.clear(), (enter + hold + leave) * 1000);
     this.current = { el, kind: c.kind, timer };

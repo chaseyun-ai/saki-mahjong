@@ -6,7 +6,7 @@ import { TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
-import { FACES, Face, MODEL_URLS, cutinUrl, portraitUrl } from '../ui3d/looks';
+import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl } from '../ui3d/looks';
 import { backHtml, tileHtml } from './tile';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
@@ -263,20 +263,13 @@ export class App {
     return !!this.cutins?.show({ pos: POS[seat], id: c.id, color: c.color, word, kind });
   }
 
-  // 头像立绘跟着牌局换：立直→“认真”（到这局结束）；鸣牌→“和牌”亮一下；发动能力→认真一下；
-  // 和牌→“和牌”；放铳→“懵逼”；都留到下一局开始。终局没拿第一的也“懵逼”（见出牌处理）
+  // 头像框平时一直是头像；立直、鸣牌、和牌换的是切入图（见 looks.ts 的 cutinArt）。
+  // 只有放铳的人头像变“懵逼”，留到下一局开始；终局没拿第一的也“懵逼”（见“继续”按钮）
   private updateFaces(e: GameEvent): void {
     const set = (s: number, face: Face, secs = Infinity) => (this.faces[s] = { face, until: Date.now() + secs * 1000 });
     if (e.type === 'roundStart') this.faces = [];
-    else if (e.type === 'discard' && e.riichi) set(e.seat, 'serious');
-    else if (e.type === 'call') set(e.seat, 'happy', 2.5);
-    else if (e.type === 'ability') set(e.seat, 'serious', 2);
     else if (e.type === 'roundEnd') {
-      const r = e.result;
-      for (let s = 0; s < 4; s++) {
-        if (r.wins.some((w) => w.seat === s)) set(s, 'happy');
-        else if (r.wins.some((w) => w.from === s)) set(s, 'surprised');
-      }
+      for (let s = 0; s < 4; s++) if (e.result.wins.some((w) => w.from === s)) set(s, 'surprised');
     }
     // 有限时的表情到点后重画一次，换回原来的表情
     const next = Math.min(...this.faces.map((f) => f?.until ?? Infinity).filter((t) => t > Date.now()));
@@ -287,8 +280,7 @@ export class App {
   private faceOf(s: number): Face {
     const f = this.faces[s];
     if (f && Date.now() < f.until) return f.face;
-    // 立直中的人一直认真
-    return this.game?.players[s].riichi && this.game.phase !== 'roundEnd' ? 'serious' : 'neutral';
+    return 'neutral';
   }
 
   private toast(seat: number, text: string, big: boolean, kind = ''): void {
@@ -703,7 +695,7 @@ export class App {
     const ura = w.uraIndicators.length
       ? `<div class="ura">里宝牌指示牌 ${w.uraIndicators.map((t) => tileHtml(t, { size: 'mini' })).join('')}</div>`
       : '';
-    const art = this.mode === '25d' ? `<div class="win-art"><img src="${cutinUrl(this.chars[w.seat].id)}" alt="" onerror="this.remove()" /></div>` : '';
+    const art = this.mode === '25d' ? `<div class="win-art"><img src="${cutinArt(this.chars[w.seat].id, 'win').url}" alt="" onerror="this.remove()" /></div>` : '';
     return `
       <div class="win" style="--c:${this.chars[w.seat].color}">
         ${art}<div class="win-body">

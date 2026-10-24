@@ -1679,6 +1679,20 @@ button {
   left: calc(3vw + var(--art) * 0.62);
 }
 
+/* 手绘的横图（宽是高的 1.35 倍）：画小一点，大字放在图靠画面中间的那一侧 */
+.cutin.wide {
+  --art: min(50vh, 46vw);
+}
+
+.cutin.wide .word {
+  right: calc(3vw + var(--art) * 1.2);
+}
+
+.cutin.wide.left .word {
+  right: auto;
+  left: calc(3vw + var(--art) * 1.2);
+}
+
 .cutin .word span {
   display: inline-block;
   font-size: min(15vh, 17vw);

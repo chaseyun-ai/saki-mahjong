@@ -42,6 +42,17 @@ export type Face = (typeof FACES)[number];
 export const portraitUrl = (id: string, face: Face): string => `portraits/${id}-${face}.webp`;
 export const cutinUrl = (id: string): string => `portraits/${id}-cutin.webp`;
 
+// 有手绘的角色，立直、鸣牌、和牌的切入（和结算画面）换成手绘图：立直用“认真”，鸣牌和和牌用“和牌”。
+// 手绘图是横图，wide 为 true；没有手绘的用上面模型渲染的竖图
+const CUTIN_ART: Record<string, { riichi?: string; win?: string }> = {
+  saki: { riichi: 'portraits/saki-cutin-riichi.webp', win: 'portraits/saki-cutin-win.webp' },
+};
+export function cutinArt(id: string, kind: string): { url: string; wide: boolean } {
+  const art = CUTIN_ART[id];
+  const url = kind === 'riichi' ? art?.riichi : kind === 'call' || kind === 'kan' || kind === 'win' ? art?.win : undefined;
+  return url ? { url, wide: true } : { url: cutinUrl(id), wide: false };
+}
+
 function hslToRgb(h: number, s: number, l: number, out: [number, number, number]): void {
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
   const p = 2 * l - q;
