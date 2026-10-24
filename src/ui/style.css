@@ -144,6 +144,7 @@ button {
 /* ---------- 牌桌 ---------- */
 
 .stage {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
@@ -759,6 +760,175 @@ button {
 .fs-note {
   font-size: 10px;
   color: var(--ink-quiet);
+}
+
+/* 怜的体力条和“看下一巡” */
+.fs-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stamina {
+  flex: 1;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.stamina i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #3fd38a, #9df5c3);
+  transition: width 0.4s;
+}
+
+.st-num {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-quiet);
+  min-width: 20px;
+  text-align: right;
+}
+
+.deep-btn {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #3fd38a;
+  background: rgba(63, 211, 138, 0.18);
+  color: #c9ffe2;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.deep-btn small {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.deep-btn:hover:not(:disabled) {
+  background: rgba(63, 211, 138, 0.32);
+}
+
+.deep-btn:disabled {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: var(--ink-quiet);
+  cursor: default;
+}
+
+.foresight.deep {
+  gap: 3px;
+}
+
+.deep-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+/* 每种打法：下面一道颜色，红是放铳，橙是会被鸣，绿是能和 */
+.deep-pick {
+  padding: 2px 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+}
+
+.deep-pick.deal {
+  border-bottom-color: #ff5a4f;
+}
+
+.deep-pick.called {
+  border-bottom-color: #ffb03a;
+}
+
+.deep-pick.win {
+  border-bottom-color: #3fd38a;
+}
+
+.deep-pick.on {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.deep-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #c9ffe2;
+}
+
+.fs-act {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fs-row b {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fs-row.hot {
+  background: rgba(255, 176, 58, 0.22);
+}
+
+.fs-row.bad {
+  background: rgba(255, 90, 79, 0.35);
+}
+
+.fs-row.good {
+  background: rgba(63, 211, 138, 0.3);
+}
+
+.fs-row.quiet {
+  color: var(--ink-quiet);
+}
+
+/* 看下一巡时视野变绿：牌桌褪成一片绿（像原作里怜看未来的画面），四周再压一圈绿 */
+.three,
+.stage .table {
+  transition: filter 0.5s;
+}
+
+.stage3d.deep .three,
+.stage.deep .table {
+  filter: grayscale(1) sepia(1) hue-rotate(80deg) saturate(1.6) brightness(0.9);
+}
+
+.stage3d::after,
+.stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(20, 140, 80, 0.45) 100%);
+}
+
+.stage3d.deep::after,
+.stage.deep::after {
+  opacity: 1;
+}
+
+/* 绿圈压在牌桌上，手牌、头像、按钮在它上面 */
+.stage3d .hud {
+  z-index: 1;
 }
 
 /* ---------- 提示 ---------- */
@@ -1533,6 +1703,26 @@ button {
   .hud .ability-panel.foresight-only {
     left: 84px;
     top: 6px;
+    width: 196px;
+    padding: 6px 8px;
+    /* 看下一巡的结果长了也不压到手牌上，多出来的往下滚 */
+    max-height: calc(100% - 128px);
+    overflow-y: auto;
+  }
+
+  .foresight.deep .tile.t-mini {
+    width: 16px;
+    height: 22px;
+    font-size: 8px;
+  }
+
+  .foresight.deep .fs-row {
+    padding: 1px 4px;
+    font-size: 11px;
+  }
+
+  .foresight.deep .deep-pick {
+    padding: 1px 1px 3px;
   }
 }
 
