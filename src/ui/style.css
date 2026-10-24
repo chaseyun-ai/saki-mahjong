@@ -1246,51 +1246,63 @@ button {
 
 .seat-frame {
   position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px 5px 5px;
+}
+
+/* 头像框就是立绘本身：放大的竖图，角色颜色的边，轮到谁出牌谁发金光 */
+.seat-frame .portrait {
+  position: relative;
+  width: 100px;
+  height: 121px;
+  display: grid;
+  place-items: center;
   border-radius: 12px;
-  background: rgba(6, 16, 18, 0.62);
-  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
+  border: 2px solid color-mix(in srgb, var(--c) 80%, white);
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--c) 70%, white) 0%, var(--c) 55%, color-mix(in srgb, var(--c) 55%, black) 100%);
+  color: #fff;
+  font-size: 46px;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   transition: box-shadow 0.2s, border-color 0.2s;
 }
 
-.seat-frame.active {
+.seat-frame.active .portrait {
   border-color: var(--gold);
-  box-shadow: 0 0 0 2px rgba(240, 195, 90, 0.35), 0 0 18px color-mix(in srgb, var(--c) 60%, transparent);
+  box-shadow: 0 0 0 2px rgba(240, 195, 90, 0.4), 0 0 20px color-mix(in srgb, var(--c) 70%, transparent);
 }
 
-.seat-frame .portrait {
-  position: relative;
-  width: 58px;
-  height: 58px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  border: 2px solid color-mix(in srgb, var(--c) 80%, white);
-  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--c) 70%, white) 0%, var(--c) 55%, color-mix(in srgb, var(--c) 55%, black) 100%);
-  color: #fff;
-  font-size: 30px;
-  font-weight: 700;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+/* 立直了：头像框底下一根立直棒 */
+.seat-frame .rstick {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: -7px;
+  transform: translateX(-50%);
+  width: 76%;
+  height: 7px;
+  border-radius: 4px;
+  background: radial-gradient(circle, #e0413a 0 2.6px, transparent 3px), #f4f1e8;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.seat-frame.riichi .portrait {
+  border-color: #ff6a5e;
 }
 
 .seat-frame .wind {
   position: absolute;
   z-index: 1;
-  left: -6px;
-  top: -6px;
-  width: 22px;
-  height: 22px;
+  left: -7px;
+  top: -7px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
   border-radius: 50%;
   background: #10292c;
   border: 1px solid var(--gold);
   color: var(--gold);
-  font-size: 12px;
+  font-size: 14px;
   text-shadow: none;
 }
 
@@ -1340,17 +1352,11 @@ button {
 
 /* 横过来的手机、竖着的手机：头像框缩小 */
 @media (max-height: 500px), (max-width: 600px) {
-  .seat-frame {
-    gap: 6px;
-    padding: 3px 8px 3px 3px;
-    border-radius: 9px;
-  }
-
   .seat-frame .portrait {
-    width: 36px;
-    height: 36px;
-    font-size: 19px;
-    border-radius: 7px;
+    width: 62px;
+    height: 75px;
+    font-size: 28px;
+    border-radius: 9px;
   }
 
   .seat-frame .wind {
@@ -1361,22 +1367,9 @@ button {
     top: -5px;
   }
 
-  .seat-frame .pname {
-    font-size: 11px;
-  }
-
-  .seat-frame .pability {
-    display: none;
-  }
-
-  .seat-frame .pts {
-    font-size: 12px;
-  }
-
-  .seat-frame .stick {
-    width: 40px;
+  .seat-frame .rstick {
     height: 5px;
-    margin-top: 2px;
+    bottom: -5px;
   }
 
   .seat-frame.left,

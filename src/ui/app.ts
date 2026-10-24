@@ -263,22 +263,19 @@ export class App {
     return !!this.cutins?.show({ pos: POS[seat], id: c.id, color: c.color, word, kind });
   }
 
-  // 头像跟着牌局换表情：立直时认真到这局结束，牌被吃碰杠吓一跳，发动能力认真一下，
-  // 和牌的人开心、放铳和掉分的人难过，留到下一局开始
+  // 头像立绘跟着牌局换：立直→“认真”（到这局结束）；鸣牌→“和牌”亮一下；发动能力→认真一下；
+  // 和牌→“和牌”；放铳→“懵逼”；都留到下一局开始。终局没拿第一的也“懵逼”（见出牌处理）
   private updateFaces(e: GameEvent): void {
-    const g = this.game!;
     const set = (s: number, face: Face, secs = Infinity) => (this.faces[s] = { face, until: Date.now() + secs * 1000 });
     if (e.type === 'roundStart') this.faces = [];
     else if (e.type === 'discard' && e.riichi) set(e.seat, 'serious');
-    else if (e.type === 'call') {
-      const from = g.players[e.seat].melds.at(-1)?.from;
-      if (from !== undefined && from !== e.seat) set(from, 'surprised', 2);
-    } else if (e.type === 'ability') set(e.seat, 'serious', 2);
+    else if (e.type === 'call') set(e.seat, 'happy', 2.5);
+    else if (e.type === 'ability') set(e.seat, 'serious', 2);
     else if (e.type === 'roundEnd') {
       const r = e.result;
       for (let s = 0; s < 4; s++) {
         if (r.wins.some((w) => w.seat === s)) set(s, 'happy');
-        else if (r.wins.some((w) => w.from === s) || r.deltas[s] < 0) set(s, 'sad');
+        else if (r.wins.some((w) => w.from === s)) set(s, 'surprised');
       }
     }
     // 有限时的表情到点后重画一次，换回原来的表情
@@ -330,6 +327,11 @@ export class App {
     if (el.dataset.ui === 'next') {
       this.showResult = false;
       g.nextRound();
+      // 终局：没拿到第一的都“懵逼”
+      if (g.phase === 'gameEnd') {
+        const rank = g.ranking();
+        for (let i = 1; i < 4; i++) this.faces[rank[i]] = { face: 'surprised', until: Infinity };
+      }
       this.step();
       return;
     }
@@ -431,15 +433,10 @@ export class App {
     const c = this.chars[s];
     const p = g.players[s];
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? 'active' : '';
+    // 只放立绘（名字、技能、点数都不放了：点数看中间的仪表盘，技能看左上角的能力说明）
     return `
-      <div class="seat-frame ${POS[s]} ${active}" style="--c:${c.color}">
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${portraitUrl(c.id, this.faceOf(s))}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span></div>
-        <div class="info">
-          <div class="pname">${c.name}</div>
-          <div class="pability">${c.ability?.name ?? '无能力'}</div>
-          <div class="pts">${p.score}</div>
-          ${p.riichi ? '<div class="stick"></div>' : ''}
-        </div>
+      <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}" style="--c:${c.color}">
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${portraitUrl(c.id, this.faceOf(s))}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}</div>
       </div>`;
   }
 
