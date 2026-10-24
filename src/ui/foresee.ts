@@ -1,10 +1,10 @@
 import { chooseAction } from '../ai/ai';
 import type { AiStyle } from '../abilities/characters';
 import type { Game, RoundResult } from '../engine/game';
-import { TileId, isRed, kindOf } from '../engine/tiles';
+import type { TileId } from '../engine/tiles';
 
-// 怜“看下一巡”：把牌局复制一份，假设她打出某张牌、之后都不鸣牌，让电脑照常往下打一巡，
-// 记下每家打了什么、有没有人鸣牌或和牌，一直到她下一次摸牌（或者这一局结束）。
+// 怜“看下一巡”（演算）：把牌局复制一份，她在复制品上打出一张牌、之后都不鸣牌，电脑照常往下打一巡，
+// 一直到她下一次摸牌（或者这一局结束）。界面把复制品放到牌桌上演出来，退出时换回真的牌局。
 // 牌局和电脑的随机数都是种子定好的，复制品里发生的就是真的会发生的事（只要她真的不鸣牌）。
 // 只在复制品上动手，真正的牌局一点不碰。
 
@@ -17,14 +17,7 @@ export type SeenStep =
   | { kind: 'draw'; tile: TileId }
   | { kind: 'end'; result: RoundResult };
 
-export interface Vision {
-  tile: TileId;
-  steps: SeenStep[];
-  dealIn: boolean; // 打这张会放铳
-  called: boolean; // 打这张会被吃碰杠
-  canRon: boolean; // 这一巡里她能荣和别人
-  tsumo: boolean; // 下一张自己摸到就能自摸
-}
+export type CanRon = Extract<SeenStep, { kind: 'canRon' }>;
 
 // 深拷贝：Map、Set、数组、带类的对象（牌山、随机数）都复制，函数（能力）共用
 function cloneDeep<T>(v: T, seen = new Map<unknown, unknown>()): T {
@@ -62,18 +55,44 @@ export function cloneGame(g: Game): Game {
   return c;
 }
 
-// 她（seat）在自己的回合打出 tile 之后的一巡。ai 是四个座位电脑的打法（她自己那格不用）
-export function foresee(g: Game, seat: number, tile: TileId, riichi: boolean, ai: AiStyle[]): Vision {
+// 演算到哪了：复制品 c 从第 start 个事件起发生的事，按顺序；rons 是她能荣和却没和的那几次（插在那张牌打出之后）
+export function readSteps(c: Game, start: number, seat: number, rons: CanRon[]): SeenStep[] {
+  const left = [...rons];
+  const seen: SeenStep[] = [];
+  for (const e of c.events.slice(start)) {
+    if (e.type === 'discard') {
+      seen.push({ kind: 'discard', seat: e.seat, tile: e.tile, riichi: e.riichi });
+      if (left[0]?.tile === e.tile && left[0].from === e.seat) seen.push(left.shift()!);
+    } else if (e.type === 'call') seen.push({ kind: 'call', seat: e.seat, call: e.call });
+    else if (e.type === 'ability') seen.push({ kind: 'ability', seat: e.seat, text: e.text });
+    else if (e.type === 'draw' && e.seat === seat) {
+      const t = c.players[seat].drawn;
+      if (t !== null) seen.push({ kind: 'draw', tile: t });
+    } else if (e.type === 'roundEnd') seen.push({ kind: 'end', result: e.result });
+  }
+  return seen;
+}
+
+// 演算一巡结束了没有：一局结束了，或者她已经打过牌、又轮到她
+export function rehearsalOver(c: Game, start: number, seat: number): boolean {
+  if (c.phase === 'roundEnd' || c.phase === 'gameEnd') return true;
+  return c.phase === 'turn' && c.turn === seat && c.events.length > start;
+}
+
+// 她这次能荣和吗（演算里她一律不和，先记下来）
+export function canRonNow(c: Game, seat: number): CanRon | null {
+  if (c.phase !== 'calls' || !c.lastDiscard || !c.legalActions(seat).some((a) => a.type === 'ron')) return null;
+  return { kind: 'canRon', tile: c.lastDiscard.tile, from: c.lastDiscard.seat };
+}
+
+// 不用界面，一口气演算完：她（seat）打出 tile 之后的一巡。ai 是四个座位电脑的打法（她自己那格不用）
+export function foresee(g: Game, seat: number, tile: TileId, riichi: boolean, ai: AiStyle[]): SeenStep[] {
   const c = cloneGame(g);
   const start = c.events.length;
-  // 她能荣和的时候（复制品里的事件不带这个，另外记）
-  const rons: Extract<SeenStep, { kind: 'canRon' }>[] = [];
-  const v: Vision = { tile, steps: [], dealIn: false, called: false, canRon: false, tsumo: false };
+  const rons: CanRon[] = [];
   c.act(seat, { type: 'discard', tile, riichi });
   // 一巡最多也就几十步，防万一
-  for (let guard = 0; guard < 60; guard++) {
-    if (c.phase === 'roundEnd' || c.phase === 'gameEnd') break;
-    if (c.phase === 'turn' && c.turn === seat) break;
+  for (let guard = 0; guard < 60 && !rehearsalOver(c, start, seat); guard++) {
     if (c.phase === 'turn') {
       c.act(c.turn, chooseAction(c, c.turn, ai[c.turn]));
       continue;
@@ -81,44 +100,10 @@ export function foresee(g: Game, seat: number, tile: TileId, riichi: boolean, ai
     // 别人打牌后：电脑先回应（和真的牌局一样的顺序），她自己一律不鸣
     for (const s of c.waitingSeats()) if (s !== seat) c.act(s, chooseAction(c, s, ai[s]));
     if (c.phase === 'calls' && c.waitingSeats().includes(seat)) {
-      if (c.legalActions(seat).some((a) => a.type === 'ron') && c.lastDiscard) {
-        rons.push({ kind: 'canRon', tile: c.lastDiscard.tile, from: c.lastDiscard.seat });
-        v.canRon = true;
-      }
+      const r = canRonNow(c, seat);
+      if (r) rons.push(r);
       c.act(seat, { type: 'pass' });
     }
   }
-  // 按发生顺序记下来；她的“能荣和”插在那张牌打出之后
-  const seen: SeenStep[] = [];
-  for (const e of c.events.slice(start)) {
-    if (e.type === 'discard') {
-      seen.push({ kind: 'discard', seat: e.seat, tile: e.tile, riichi: e.riichi });
-      if (rons[0]?.tile === e.tile && rons[0].from === e.seat) seen.push(rons.shift()!);
-    } else if (e.type === 'call') {
-      seen.push({ kind: 'call', seat: e.seat, call: e.call });
-      if (e.seat !== seat) v.called = true;
-    } else if (e.type === 'ability') seen.push({ kind: 'ability', seat: e.seat, text: e.text });
-    else if (e.type === 'draw' && e.seat === seat) {
-      const t = c.players[seat].drawn;
-      if (t !== null) seen.push({ kind: 'draw', tile: t });
-    } else if (e.type === 'roundEnd') {
-      seen.push({ kind: 'end', result: e.result });
-      if (e.result.wins.some((w) => w.from === seat)) v.dealIn = true;
-    }
-  }
-  v.steps = seen;
-  if (c.phase === 'turn' && c.turn === seat) v.tsumo = c.legalActions(seat).some((a) => a.type === 'tsumo');
-  return v;
+  return readSteps(c, start, seat, rons);
 }
-
-// 手里每种能打的牌各看一遍（同一种牌打哪张结果都一样，赤五单算）
-export function foreseeAll(g: Game, seat: number, tiles: TileId[], riichi: boolean, ai: AiStyle[]): Map<string, Vision> {
-  const out = new Map<string, Vision>();
-  for (const t of tiles) {
-    const key = visionKey(t);
-    if (!out.has(key)) out.set(key, foresee(g, seat, t, riichi, ai));
-  }
-  return out;
-}
-
-export const visionKey = (t: TileId): string => `${kindOf(t)}-${isRed(t)}`;

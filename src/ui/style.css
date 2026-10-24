@@ -830,39 +830,6 @@ button {
   gap: 3px;
 }
 
-.deep-picks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin-bottom: 4px;
-}
-
-/* 每种打法：下面一道颜色，红是放铳，橙是会被鸣，绿是能和 */
-.deep-pick {
-  padding: 2px 2px 4px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  border-bottom: 3px solid transparent;
-  cursor: pointer;
-}
-
-.deep-pick.deal {
-  border-bottom-color: #ff5a4f;
-}
-
-.deep-pick.called {
-  border-bottom-color: #ffb03a;
-}
-
-.deep-pick.win {
-  border-bottom-color: #3fd38a;
-}
-
-.deep-pick.on {
-  background: rgba(255, 255, 255, 0.22);
-}
-
 .deep-head {
   display: flex;
   align-items: center;
@@ -897,6 +864,27 @@ button {
 
 .fs-row.quiet {
   color: var(--ink-quiet);
+}
+
+/* 怜演算时的头像框：绿光一明一暗 */
+.seat-frame.power .portrait,
+.seat-frame.power.active .portrait {
+  border-color: #6dffb0;
+  animation: power-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes power-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 14px 4px rgba(80, 255, 160, 0.7),
+      0 4px 14px rgba(0, 0, 0, 0.4);
+  }
+  50% {
+    box-shadow:
+      0 0 34px 12px rgba(80, 255, 160, 0.95),
+      0 4px 14px rgba(0, 0, 0, 0.4);
+  }
 }
 
 /* 看下一巡时视野变绿：牌桌褪成一片绿（像原作里怜看未来的画面），四周再压一圈绿 */
@@ -1719,10 +1707,6 @@ button {
   .foresight.deep .fs-row {
     padding: 1px 4px;
     font-size: 11px;
-  }
-
-  .foresight.deep .deep-pick {
-    padding: 1px 1px 3px;
   }
 }
 

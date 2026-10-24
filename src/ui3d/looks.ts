@@ -56,8 +56,8 @@ export function defaultCutinArt(id: string, kind: string): { url: string; wide: 
 
 // 试玩页“素材”页面里换上的图（src/ui/skins.ts 读写），盖过上面的默认图。
 // face 头像框平时的头像，blank 放铳和终局没拿第一时的“懵逼”，riichi 立直切入，call 鸣牌（吃碰杠）切入，
-// win 和牌切入，ability 能力发动切入，result 结算画面
-export type SkinSlot = 'face' | 'blank' | 'riichi' | 'call' | 'win' | 'ability' | 'result';
+// win 和牌切入，ability 能力发动切入，result 结算画面，power 能力发动时的头像（怜演算时眼睛发光）
+export type SkinSlot = 'face' | 'blank' | 'power' | 'riichi' | 'call' | 'win' | 'ability' | 'result';
 export interface SkinArt {
   url: string;
   w: number;
@@ -74,6 +74,12 @@ export function skinOf(id: string, slot: SkinSlot): SkinArt | undefined {
 export function portraitUrl(id: string, face: Face): string {
   const own = face === 'neutral' ? skinOf(id, 'face') : face === 'surprised' ? skinOf(id, 'blank') : undefined;
   return own?.url ?? defaultPortraitUrl(id, face);
+}
+
+// 能力发动时的头像：没换图就用“认真”的表情（头像框另外发光）
+export const defaultPowerPortraitUrl = (id: string): string => defaultPortraitUrl(id, 'serious');
+export function powerPortraitUrl(id: string): string {
+  return skinOf(id, 'power')?.url ?? defaultPowerPortraitUrl(id);
 }
 
 // 切入图：kind 是切入的种类（riichi、call、kan、win、ability），结算画面用 result

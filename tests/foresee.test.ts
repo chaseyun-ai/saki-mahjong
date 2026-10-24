@@ -16,7 +16,7 @@ describe('看下一巡', () => {
       const toki = CHARACTERS.findIndex((c) => c.id === 'toki');
       const log: GameEvent[] = [];
       g.onEvent((e) => log.push(e));
-      let watch: { from: number; steps: ReturnType<typeof foresee>['steps'] } | null = null;
+      let watch: { from: number; steps: ReturnType<typeof foresee> } | null = null;
       const settle = () => {
         if (!watch) return;
         const real = log.slice(watch.from).flatMap((e): object[] =>
@@ -46,10 +46,10 @@ describe('看下一巡', () => {
           if (g.turn === toki) settle();
           const a = chooseAction(g, g.turn, ai[g.turn]);
           if (g.turn === toki && a.type === 'discard') {
-            const v = foresee(g, toki, a.tile, !!a.riichi, ai);
-            if (v.dealIn) dealIns++;
-            if (v.called) calls++;
-            watch = { from: log.length, steps: v.steps };
+            const steps = foresee(g, toki, a.tile, !!a.riichi, ai);
+            if (steps.some((s) => s.kind === 'end' && s.result.wins.some((w) => w.from === toki))) dealIns++;
+            if (steps.some((s) => s.kind === 'call')) calls++;
+            watch = { from: log.length, steps };
           }
           g.act(g.turn, a);
           continue;

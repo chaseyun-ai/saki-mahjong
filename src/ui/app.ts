@@ -6,14 +6,14 @@ import { TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
-import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl } from '../ui3d/looks';
+import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl } from '../ui3d/looks';
 import { backHtml, tileHtml } from './tile';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
-import { Vision, foreseeAll, visionKey } from './foresee';
+import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -26,7 +26,7 @@ const AI_TURN_DELAY_25D = 620;
 const AI_CALL_DELAY = 250;
 // 开局点数，终局排名的 ± 从这里算
 const START_SCORE = 25000;
-// 怜“看下一巡”的体力：满 100，看一次 35，每局开始回 20
+// 怜“看下一巡”的体力：满 100，看一次 35，每局开始回 20。同一回合可以看两次，看第二次的话下一局不能用
 const STAMINA_MAX = 100;
 const DEEP_COST = 35;
 const STAMINA_REGEN = 20;
@@ -65,10 +65,16 @@ export class App {
   // 2.5D 的切入演出；能力的切入每局每种只放第一次（宝牌聚集这种一局会发动好多次），之后只出小字
   private cutins: Cutins | null = null;
   private cutinSeen = new Set<string>();
-  // 怜“看下一巡”：玩家操作怜时的体力；这一回合看到的（key 是哪个回合，visions 是每种打法之后的一巡）；现在看的是打哪张
+  // 怜“看下一巡”（演算）：玩家操作怜时的体力。
+  // 演算中 vision 不是 null：this.game 换成牌局的复制品放到牌桌上演，真的牌局和演算前的表情先存在 vision 里，退出时换回来。
+  // start：复制品从第几个事件开始是演算的；rons：演算里她能荣和却没和的那几次
   private stamina = STAMINA_MAX;
-  private deep: { key: string; riichi: boolean; visions: Map<string, Vision> } | null = null;
-  private deepPick: TileId | null = null;
+  private vision: { real: Game; start: number; rons: CanRon[]; faces: { face: Face; until: number }[] } | null = null;
+  // 这一回合（key）看了几次，上次演算的经过（退出以后留着给她看）
+  private looks: { key: string; count: number; last: string } = { key: '', count: 0, last: '' };
+  // 看第二次的惩罚：penaltyNext 等下一局开始变成 blocked，那一局不能用
+  private penaltyNext = false;
+  private blocked = false;
 
   // openLab：选人页上点"动作调试"时调用
   constructor(
@@ -143,7 +149,10 @@ export class App {
     this.toasts = [];
     this.faces = [];
     this.stamina = STAMINA_MAX;
-    this.deep = null;
+    this.vision = null;
+    this.looks = { key: '', count: 0, last: '' };
+    this.penaltyNext = false;
+    this.blocked = false;
     // 头像先下好，第一次换表情时不会空一下
     for (const c of this.chars) for (const f of FACES) new Image().src = portraitUrl(c.id, f);
     this.showResult = false;
@@ -189,6 +198,12 @@ export class App {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    // 怜的演算打完一巡（或者有人和了、倒了牌）就停在那里，等她点“退出”
+    const v = this.vision;
+    if (v && rehearsalOver(g, v.start, this.me)) {
+      this.render();
+      return;
+    }
     if (g.phase === 'roundEnd' || g.phase === 'gameEnd') {
       // 3D 牌桌先让大家看清倒牌和特效，再弹结算。2.5D 和牌照雀魂，宣言后 3.4 秒进结算
       this.render();
@@ -215,6 +230,16 @@ export class App {
       return;
     }
     this.render();
+    // 演算里她一律不鸣（能荣和的话记下来），牌落桌后直接过
+    if (v && g.phase === 'calls' && waiting.includes(this.me)) {
+      this.timer = window.setTimeout(() => {
+        const r = canRonNow(g, this.me);
+        if (r) v.rons.push(r);
+        g.act(this.me, { type: 'pass' });
+        this.step();
+      }, this.busyMs());
+      return;
+    }
     // 只剩自己要决定鸣不鸣：鸣牌按钮等那张牌落到牌河再弹出（雀魂落桌 0.15 秒内弹出）
     if (g.phase === 'calls' && this.busyMs() > 0) {
       this.timer = window.setTimeout(() => this.step(), this.busyMs());
@@ -249,6 +274,8 @@ export class App {
     if (e.type === 'roundStart') {
       this.cutinSeen.clear();
       this.stamina = Math.min(STAMINA_MAX, this.stamina + STAMINA_REGEN);
+      this.blocked = this.penaltyNext;
+      this.penaltyNext = false;
     }
     if (e.type === 'discard') {
       this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
@@ -362,24 +389,15 @@ export class App {
     }
     if (el.dataset.ui === 'riichi') {
       this.riichiMode = !this.riichiMode;
-      // 已经看过这一巡了：换成立直打法重新看一遍，不再扣体力
-      if (this.deepOn()) this.lookAhead();
       this.render();
       return;
     }
     if (el.dataset.ui === 'deep') {
-      if (this.canDeep()) {
-        this.stamina -= DEEP_COST;
-        this.lookAhead();
-        this.deepPick = g.players[this.me].drawn;
-        playChime();
-        this.render();
-      }
+      this.startVision();
       return;
     }
-    if (el.dataset.ui === 'deep-pick') {
-      this.deepPick = Number(el.dataset.k);
-      this.updateDeepSlot();
+    if (el.dataset.ui === 'deep-exit') {
+      this.exitVision();
       return;
     }
     if (el.dataset.tile !== undefined) {
@@ -432,7 +450,7 @@ export class App {
       ${this.myAreaHtml()}
       ${this.abilityPanelHtml()}
       ${this.showResult ? this.resultHtml() : ''}`;
-    document.querySelector('.stage')?.classList.toggle('deep', this.deepOn());
+    document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     this.freshDiscard = null;
     this.renderToasts();
   }
@@ -457,7 +475,7 @@ export class App {
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       ${this.showResult ? this.resultHtml() : ''}`;
     // 看下一巡时视野变绿
-    hud.parentElement?.classList.toggle('deep', this.deepOn());
+    hud.parentElement?.classList.toggle('deep', !!this.vision);
     this.renderToasts();
     this.table3d.sync(g, {
       me: this.me,
@@ -475,9 +493,12 @@ export class App {
     const p = g.players[s];
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? 'active' : '';
     // 只放立绘（名字、技能、点数都不放了：点数看中间的仪表盘，技能看左上角的能力说明）
+    // 怜演算时换成“能力发动头像”（眼睛发光），头像框发绿光
+    const power = s === this.me && !!this.vision;
+    const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
     return `
-      <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}" style="--c:${c.color}">
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${portraitUrl(c.id, this.faceOf(s))}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}</div>
+      <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}</div>
       </div>`;
   }
 
@@ -503,11 +524,6 @@ export class App {
     this.previewTile = id;
     const slot = document.querySelector('[data-r=waits]');
     if (slot) slot.innerHTML = this.waitsSlotHtml();
-    // 看下一巡时，鼠标停在哪张牌上就看打它之后的一巡（移开了还留着上一张）
-    if (id !== null && this.deepOn()) {
-      this.deepPick = id;
-      this.updateDeepSlot();
-    }
   }
 
   // ---------- 怜：看下一巡 ----------
@@ -527,55 +543,66 @@ export class App {
     return g.phase === 'turn' && g.turn === this.me && !this.showResult && this.discardable().size > 0;
   }
 
-  private deepOn(): boolean {
-    return !!this.deep && this.deep.key === this.turnKey() && this.myDiscardTurn();
-  }
-
   private canDeep(): boolean {
-    return this.isToki() && this.myDiscardTurn() && !this.deepOn() && this.stamina >= DEEP_COST;
+    const key = this.turnKey();
+    const count = this.looks.key === key ? this.looks.count : 0;
+    return this.isToki() && !this.vision && this.myDiscardTurn() && !this.blocked && count < 2 && this.stamina >= DEEP_COST;
   }
 
-  private lookAhead(): void {
+  // 发动：牌局复制一份放到牌桌上，她接着在复制品上出牌
+  private startVision(): void {
+    if (!this.canDeep()) return;
+    const real = this.game!;
+    const key = this.turnKey();
+    if (this.looks.key !== key) this.looks = { key, count: 0, last: '' };
+    if (++this.looks.count >= 2) this.penaltyNext = true;
+    this.stamina -= DEEP_COST;
+    const sim = cloneGame(real);
+    sim.onEvent((e) => this.onGameEvent(e));
+    this.vision = { real, start: sim.events.length, rons: [], faces: [...this.faces] };
+    this.game = sim;
+    playChime();
+    this.step();
+  }
+
+  // 退出：换回真的牌局，牌桌直接摆回去（不播动画），表情也换回来。演算的经过留在小框里
+  private exitVision(): void {
+    const v = this.vision;
+    if (!v) return;
+    this.looks.last = this.stepsHtml(this.visionSteps());
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.game = v.real;
+    this.faces = v.faces;
+    this.vision = null;
+    this.riichiMode = false;
+    this.cutins?.clear();
+    this.render();
+    this.table3d?.restore();
+    this.step();
+  }
+
+  private visionSteps(): SeenStep[] {
+    const v = this.vision;
+    return v ? readSteps(this.game!, v.start, this.me, v.rons) : [];
+  }
+
+  // 演算的经过，一行一件事
+  private stepsHtml(steps: SeenStep[]): string {
     const g = this.game!;
-    const tiles = [...this.discardable()];
-    this.deep = {
-      key: this.turnKey(),
-      riichi: this.riichiMode,
-      visions: foreseeAll(g, this.me, tiles, this.riichiMode, this.chars.map((c) => c.ai)),
-    };
-  }
-
-  private updateDeepSlot(): void {
-    const slot = document.querySelector('[data-r=deep]');
-    if (slot) slot.innerHTML = this.deepHtml();
-  }
-
-  // 看下一巡的结果：上面一排是每种打法（放铳红、被鸣橙、能荣和绿），点一张或者鼠标停在手牌上，下面列出打它之后的一巡
-  private deepHtml(): string {
-    const d = this.deep;
-    if (!d) return '';
-    const picks = [...d.visions.values()]
-      .sort((a, b) => a.tile - b.tile)
-      .map((v) => {
-        const mark = v.dealIn ? 'deal' : v.canRon || v.tsumo ? 'win' : v.called ? 'called' : '';
-        const on = this.deepPick !== null && visionKey(this.deepPick) === visionKey(v.tile) ? ' on' : '';
-        return `<button class="deep-pick ${mark}${on}" data-ui="deep-pick" data-k="${v.tile}">${tileHtml(v.tile, { size: 'mini' })}</button>`;
-      })
-      .join('');
-    const v = this.deepPick !== null ? d.visions.get(visionKey(this.deepPick)) : undefined;
     const name = (s: number) => (s === this.me ? '你' : this.chars[s].name);
-    const rows = (v?.steps ?? [])
-      .slice(1)
+    const tsumo = g.phase === 'turn' && g.turn === this.me && g.legalActions(this.me).some((a) => a.type === 'tsumo');
+    return steps
       .map((st) => {
         if (st.kind === 'discard')
-          return `<div class="fs-row"><span>${name(st.seat)}</span><span class="fs-act">${st.riichi ? '<b>立直</b> ' : ''}打 ${tileHtml(st.tile, { size: 'mini' })}</span></div>`;
+          return `<div class="fs-row${st.seat === this.me ? ' mine' : ''}"><span>${name(st.seat)}</span><span class="fs-act">${st.riichi ? '<b>立直</b> ' : ''}打 ${tileHtml(st.tile, { size: 'mini' })}</span></div>`;
         if (st.kind === 'call') return `<div class="fs-row hot"><span>${name(st.seat)}</span><b>${st.call}！</b></div>`;
         if (st.kind === 'ability') return `<div class="fs-row quiet"><span>${name(st.seat)}</span><span>${st.text}</span></div>`;
         if (st.kind === 'canRon') return `<div class="fs-row good"><span>你</span><b>能荣和 ${tileHtml(st.tile, { size: 'mini' })}</b></div>`;
         if (st.kind === 'draw')
-          return `<div class="fs-row mine"><span>你</span><span class="fs-act">${v!.tsumo ? '<b>自摸！</b> ' : ''}摸 ${tileHtml(st.tile, { size: 'mini' })}</span></div>`;
+          return `<div class="fs-row mine"><span>你</span><span class="fs-act">${tsumo ? '<b>自摸！</b> ' : ''}摸 ${tileHtml(st.tile, { size: 'mini' })}</span></div>`;
         const r = st.result;
-        if (r.kind !== 'win') return `<div class="fs-row quiet"><span>流局</span><span>${r.kind === 'exhaustive' ? '荒牌流局' : r.reason ?? ''}</span></div>`;
+        if (r.kind !== 'win') return `<div class="fs-row quiet"><span>流局</span><span>${r.kind === 'exhaustive' ? '荒牌流局' : (r.reason ?? '')}</span></div>`;
         return r.wins
           .map((w) => {
             const how = w.from === null ? '自摸' : w.from === this.me ? '荣和（你放铳）' : `荣和 ${name(w.from)}`;
@@ -584,8 +611,6 @@ export class App {
           .join('');
       })
       .join('');
-    const head = v ? `<div class="deep-head">打 ${tileHtml(v.tile, { size: 'mini' })} 之后：</div>` : '<div class="deep-head">点一张牌，看打它之后的一巡</div>';
-    return `<div class="deep-picks">${picks}</div>${head}${rows}`;
   }
 
   // 待和提示框：别人的回合显示现在听什么；自己的回合鼠标停在能听牌的牌上时，显示打掉它以后听什么
@@ -680,7 +705,8 @@ export class App {
   private myAreaHtml(withHand = true, withPlate = true): string {
     const g = this.game!;
     const p = g.players[this.me];
-    const legal = g.legalActions(this.me);
+    // 演算里只出牌（可以立直），不自摸、不杠、不鸣
+    const legal = this.vision ? g.legalActions(this.me).filter((a) => a.type === 'discard') : g.legalActions(this.me);
     const discardable = this.discardable();
     const sorted = p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b);
     // 能打的牌亮着，打出去能听牌的上面加个小三角
@@ -767,27 +793,46 @@ export class App {
     return extra ? `<div class="ability-panel foresight-only" style="--c:${c.color}">${extra}</div>` : '';
   }
 
-  // 怜的一巡先见：平时只有自己下一张摸牌；玩家操作怜时还有体力条和“看下一巡”按钮，看了以后换成这一巡的结果
+  // 怜的一巡先见：平时只有自己下一张摸牌；玩家操作怜时还有体力条和“看下一巡”按钮，演算中换成演算的经过和“退出”
   private foresightBox(): string {
     const g = this.game!;
     const c = this.chars[this.me];
     const fs = c.ability?.foresight?.(g, this.me);
-    if (!fs) return '';
+    if (!fs && !this.vision) return '';
     const toki = this.isToki();
-    const deep = this.deepOn();
     const stamina = toki
       ? `<span class="stamina" title="体力"><i style="width:${(this.stamina / STAMINA_MAX) * 100}%"></i></span><span class="st-num">${this.stamina}</span>`
       : '';
-    const mine = fs.draws.find((d) => d.seat === this.me);
-    const enough = this.stamina >= DEEP_COST;
-    const btn =
-      toki && this.myDiscardTurn()
-        ? `<button class="deep-btn" data-ui="deep" ${enough ? '' : 'disabled'}>看下一巡<small>${enough ? `体力 -${DEEP_COST}` : '体力不够'}</small></button>`
+    const title = `<div class="fs-title">${fs?.title ?? '一巡先见'}${stamina}</div>`;
+    const v = this.vision;
+    if (v) {
+      const over = rehearsalOver(g, v.start, this.me);
+      const head = g.events.length === v.start ? '演算中：选一张牌打出去' : over ? '演算结束' : '演算中……';
+      return `<div class="foresight deep">${title}<div class="deep-head">${head}</div>${this.stepsHtml(this.visionSteps())}
+        <button class="deep-btn" data-ui="deep-exit">退出演算</button>
+        <div class="fs-note">演算里你不鸣牌；退出后牌局恢复原样</div></div>`;
+    }
+    const mine = fs?.draws.find((d) => d.seat === this.me);
+    let btn = '';
+    if (toki && this.myDiscardTurn()) {
+      const count = this.looks.key === this.turnKey() ? this.looks.count : 0;
+      const [label, note] =
+        this.blocked
+          ? ['看下一巡', '这一局用不了']
+          : count >= 2
+            ? ['看下一巡', '这回合不能再看了']
+            : this.stamina < DEEP_COST
+              ? [count ? '再看一次' : '看下一巡', '体力不够']
+              : count
+                ? ['再看一次', `体力 -${DEEP_COST}，下一局不能用`]
+                : ['看下一巡', `体力 -${DEEP_COST}`];
+      btn = `<button class="deep-btn" data-ui="deep" ${this.canDeep() ? '' : 'disabled'}>${label}<small>${note}</small></button>`;
+    }
+    const last =
+      this.looks.last && this.looks.key === this.turnKey() && this.myDiscardTurn()
+        ? `<div class="deep-head">上次演算</div>${this.looks.last}`
         : '';
-    const body = deep
-      ? `<div data-r="deep">${this.deepHtml()}</div><div class="fs-note">假设你不鸣牌</div>`
-      : `${mine ? `<div class="fs-row mine"><span>你下一张</span>${tileHtml(mine.tile, { size: 'mini' })}</div>` : ''}${btn}<div class="fs-note">有人鸣牌时顺序会变</div>`;
-    return `<div class="foresight${deep ? ' deep' : ''}"><div class="fs-title">${fs.title}${stamina}</div>${body}</div>`;
+    return `<div class="foresight">${title}${mine ? `<div class="fs-row mine"><span>你下一张</span>${tileHtml(mine.tile, { size: 'mini' })}</div>` : ''}${btn}${last}<div class="fs-note">有人鸣牌时顺序会变</div></div>`;
   }
 
   private abilityPanelHtml(): string {

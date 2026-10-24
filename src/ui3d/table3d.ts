@@ -567,6 +567,13 @@ export class Table3D {
     }
   }
 
+  // 怜的演算退出：牌桌直接摆回现在的牌局（不播动画），演算里的倒牌、拉开的抽屉都收掉。先 sync 真的牌局再调
+  restore(): void {
+    this.reveal = null;
+    for (const d of this.drawers) d.open = 0;
+    this.snap();
+  }
+
   // 现在的牌桌尺寸
   get layout(): TableLayout {
     return { ...this.tableLayout };

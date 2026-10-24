@@ -1,5 +1,5 @@
 import { CHARACTERS } from '../abilities/characters';
-import { SkinSlot, cutinArt, defaultCutinArt, defaultPortraitUrl, portraitUrl, setSkins } from '../ui3d/looks';
+import { SkinSlot, cutinArt, defaultCutinArt, defaultPortraitUrl, defaultPowerPortraitUrl, portraitUrl, powerPortraitUrl, setSkins } from '../ui3d/looks';
 
 // 素材页：页面主人在试玩页里给每个角色换头像、切入图、结算图，不用改代码。
 // 图存在试玩页自己的存储里（assets），哪个格子用哪张图记在 db 的 skins/<角色 id> 里：
@@ -23,6 +23,7 @@ const runtime = (): Runtime | null => (window as unknown as { claude?: Runtime }
 export const SLOTS: { slot: SkinSlot; label: string; hint: string }[] = [
   { slot: 'face', label: '头像', hint: '头像框里平时的样子，竖图（宽:高 约 3:4）' },
   { slot: 'blank', label: '懵逼', hint: '放铳、终局没拿第一时的头像，竖图' },
+  { slot: 'power', label: '能力发动头像', hint: '发动能力时的头像（比如怜演算时眼睛发光），竖图' },
   { slot: 'riichi', label: '立直切入', hint: '立直时滑进来的图，透明背景最好' },
   { slot: 'call', label: '鸣牌切入', hint: '吃碰杠时滑进来的图，不换就用“和牌切入”' },
   { slot: 'win', label: '和牌切入', hint: '荣和、自摸时滑进来的图' },
@@ -110,12 +111,14 @@ export class SkinEditor {
   private current(id: string, slot: SkinSlot): string {
     if (slot === 'face') return portraitUrl(id, 'neutral');
     if (slot === 'blank') return portraitUrl(id, 'surprised');
+    if (slot === 'power') return powerPortraitUrl(id);
     return cutinArt(id, slot).url;
   }
 
   private fallback(id: string, slot: SkinSlot): string {
     if (slot === 'face') return defaultPortraitUrl(id, 'neutral');
     if (slot === 'blank') return defaultPortraitUrl(id, 'surprised');
+    if (slot === 'power') return defaultPowerPortraitUrl(id);
     return defaultCutinArt(id, slot).url;
   }
 
@@ -124,7 +127,7 @@ export class SkinEditor {
       const cells = SLOTS.map(({ slot, label, hint }) => {
         const own = !!docs[c.id]?.[slot];
         const shown = this.current(c.id, slot);
-        const tall = slot === 'face' || slot === 'blank';
+        const tall = slot === 'face' || slot === 'blank' || slot === 'power';
         return `
           <div class="skin-slot${own ? ' own' : ''}">
             <div class="skin-img${tall ? ' tall' : ''}"><img src="${shown}" alt="" onerror="this.src='${this.fallback(c.id, slot)}'" /></div>
