@@ -427,16 +427,15 @@ export class Game {
       p.melds.every((m) => m.type === 'ankan') &&
       p.score >= 1000 &&
       this.wall.remaining >= 4;
-    const seenKinds = new Set<string>();
+    // 同一种牌每一张都能当立直宣言牌（包括刚摸到的那张），向听只算一次
+    const tenpaiAfter = new Map<string, boolean>();
     for (const t of p.hand) {
       if (p.kuikaeBan.includes(kindOf(t))) continue;
       out.push({ type: 'discard', tile: t });
       if (!canRiichi) continue;
       const key = `${kindOf(t)}-${isRed(t)}`;
-      if (seenKinds.has(key)) continue;
-      seenKinds.add(key);
-      const rest = p.hand.filter((x) => x !== t);
-      if (shanten(toCounts(rest), p.melds.length) === 0) out.push({ type: 'discard', tile: t, riichi: true });
+      if (!tenpaiAfter.has(key)) tenpaiAfter.set(key, shanten(toCounts(p.hand.filter((x) => x !== t)), p.melds.length) === 0);
+      if (tenpaiAfter.get(key)) out.push({ type: 'discard', tile: t, riichi: true });
     }
     return out;
   }
