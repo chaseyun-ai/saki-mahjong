@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CHARACTERS } from '../src/abilities/characters';
+import { CHARACTERS as ALL } from '../src/abilities/characters';
+
+// 原来的四个人：咲、玄、怜、和
+const CHARACTERS = ALL.slice(0, 4);
 import { chooseAction } from '../src/ai/ai';
 import { Game, PlayerConfig } from '../src/engine/game';
 import { TileId, doraFromIndicator, isRed, kindOf } from '../src/engine/tiles';

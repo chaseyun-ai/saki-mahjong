@@ -65,15 +65,15 @@ export class Wall {
     return 122 - this.live.length - this.overflow.length;
   }
 
-  // 在牌山里找一张符合条件、没被锁定的牌，换到 live[target] 的位置
-  bringToLive(target: number, pred: (t: TileId) => boolean, rng: Rng): boolean {
+  // 在牌山里找一张符合条件、没被锁定的牌，换到 live[target] 的位置。from：只从 live 的这些位置里找
+  bringToLive(target: number, pred: (t: TileId) => boolean, rng: Rng, from?: (i: number) => boolean): boolean {
     if (target >= this.live.length || this.locked.has(this.live[target])) return false;
     const deny = target === 0 ? this.deny : null;
     const ok = (t: TileId) => pred(t) && !deny?.(t);
     if (ok(this.live[target])) return true;
     const cands: number[] = [];
     for (let i = 0; i < this.live.length; i++) {
-      if (i === target || this.locked.has(this.live[i])) continue;
+      if (i === target || this.locked.has(this.live[i]) || (from && !from(i))) continue;
       if (ok(this.live[i])) cands.push(i);
     }
     if (cands.length === 0) return false;
@@ -101,13 +101,17 @@ export class Wall {
     return true;
   }
 
-  // 把符合条件的牌换成第 i 张里宝牌指示牌（还没翻开，和了时才看得到）。来源是牌山和岭上牌
-  bringToUra(i: number, pred: (t: TileId) => boolean, rng: Rng): boolean {
+  // 把符合条件的牌换成第 i 张里宝牌指示牌（还没翻开，和了时才看得到）。来源是牌山、岭上牌和后面的里宝牌指示牌
+  // from：牌山里只从这些位置找
+  bringToUra(i: number, pred: (t: TileId) => boolean, rng: Rng, from?: (j: number) => boolean): boolean {
     if (i >= this.uraIndicators.length || this.locked.has(this.uraIndicators[i])) return false;
     if (pred(this.uraIndicators[i])) return true;
     const cands: { src: TileId[]; i: number }[] = [];
+    this.uraIndicators.forEach((t, j) => {
+      if (j > i && !this.locked.has(t) && pred(t)) cands.push({ src: this.uraIndicators, i: j });
+    });
     this.live.forEach((t, j) => {
-      if (!this.locked.has(t) && pred(t)) cands.push({ src: this.live, i: j });
+      if (!this.locked.has(t) && (!from || from(j)) && pred(t)) cands.push({ src: this.live, i: j });
     });
     this.rinshan.forEach((t, j) => {
       if (!this.locked.has(t) && pred(t)) cands.push({ src: this.rinshan, i: j });

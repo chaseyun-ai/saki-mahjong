@@ -1,3 +1,4 @@
+import { AWAI } from '../abilities/awai';
 import type { Game, GameEvent } from '../engine/game';
 import { TileId, kindOf } from '../engine/tiles';
 import { waitInfo } from './waitInfo';
@@ -191,10 +192,18 @@ export interface TraceLine {
   html: string;
 }
 
+// 不换牌的能力消息，有的换个说法更好懂
+const NOTE_TEXT: Record<string, (who: string) => string> = {
+  'awai-绝对安全圈': (who) => `${who}展开了绝对安全圈：另外三家的配牌都在 ${AWAI.safeShanten} 向听以上。`,
+};
+
 // 把一条记录写成解说的一句话。name：座位的名字；tile：一张牌的样子（结算画面用小牌图）
 export function traceLine(x: TraceEntry, name: (seat: number) => string, tile: (t: TileId) => string): TraceLine {
   const who = name(x.seat);
-  if (x.kind === 'note') return { turn: x.turn, tag: '能力', cls: 'ability', html: `${who}${x.text}。` };
+  if (x.kind === 'note') {
+    const html = NOTE_TEXT[`${x.ability}-${x.text}`]?.(who) ?? `${who}${x.text}。`;
+    return { turn: x.turn, tag: '能力', cls: 'ability', html };
+  }
   if (x.kind === 'nearMiss') {
     return { turn: x.turn, tag: '差一点', cls: 'miss', html: `要不是${name(x.by)}这一${x.call}，${who}下一次摸牌就能自摸 ${tile(x.tile)}。` };
   }
@@ -214,10 +223,17 @@ export function traceLine(x: TraceEntry, name: (seat: number) => string, tile: (
     html = `${who}开杠，岭上牌本来是 ${tile(x.expected)}，翻上来的却是 ${tile(x.got)}。${from}`;
   } else {
     const got =
-      x.text === '宝牌聚集' ? `宝牌 ${tile(x.got)}` : x.text === '杠的气息' ? `能开杠的 ${tile(x.got)}` : tile(x.got);
+      x.text === '宝牌聚集'
+        ? `宝牌 ${tile(x.got)}`
+        : x.text === '杠的气息'
+          ? `能开杠的 ${tile(x.got)}`
+          : x.text === '杠里'
+            ? `和了牌 ${tile(x.got)}`
+            : tile(x.got);
     html = `${who}本来该摸 ${tile(x.expected)}，摸到的却是${got}。${from}`;
     if (x.by !== null) html = `${name(x.by)}的「${x.text}」：${html}`;
     if (x.ability === 'saki' && x.text === null) html += '对子悄悄长成了刻子，没有人察觉。';
+    if (x.ability === 'awai' && x.text === null) html += '她在等转角暗杠，和了牌先往后放一放。';
   }
   if (x.madeWin) html += '这一张正好和了。';
   if (x.lostWin) html += `被换走的那张，本来能让${who}直接自摸。`;

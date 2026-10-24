@@ -29,9 +29,11 @@ export const LOOKS: Record<string, Look> = {
   kuro: { model: 'models/vroid-shino.v2.glb', hair: '#2b2326', eyes: '#8e3b2e', hairContrast: 0.5, reveal: 'slam', pose: 'edge', upsideDown: true },
   // 园城寺怜：深灰蓝短发、暗红色眼睛
   toki: { model: 'models/vroid-f.v2.glb', hair: '#353b4a', eyes: '#93333a', hairContrast: 0.6, reveal: 'wave', pose: 'crossed' },
+  // 大星淡：金色长发、金色眼睛
+  awai: { model: 'models/vroid-g.v2.glb', hair: '#f0cf72', eyes: '#c99a2e', reveal: 'slam', pose: 'lap' },
 };
 
-// 牌桌上要用到的全部模型文件（每局四个座位正好是这四个角色）
+// 牌桌上要用到的全部模型文件
 export const MODEL_URLS = [...new Set(Object.values(LOOKS).map((l) => l.model))];
 
 // 头像的五种表情：平常、开心、难过、吃惊、认真

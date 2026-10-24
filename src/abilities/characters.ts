@@ -1,3 +1,4 @@
+import { awaiAbility } from './awai';
 import { kuroAbility } from './kuro';
 import { sakiAbility } from './saki';
 import { tokiAbility } from './toki';
@@ -9,6 +10,7 @@ export interface AiStyle {
   keepDora: boolean; // 尽量不打宝牌
   useForesight: boolean; // 根据先见决定要不要鸣牌
   foresightRiichi: boolean; // 只在先见到下一巡自摸时才立直，否则默听
+  cornerKan: boolean; // 大星淡：等转角暗杠，之前不荣和、不拆暗刻
 }
 
 export interface Character {
@@ -20,7 +22,7 @@ export interface Character {
   ai: AiStyle;
 }
 
-const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false };
+const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -55,6 +57,14 @@ export const CHARACTERS: Character[] = [
     color: '#9b7fc4',
     ability: null,
     ai: { ...baseAi, mistakeRate: 0 },
+  },
+  {
+    id: 'awai',
+    name: '大星淡',
+    school: '白糸台高中',
+    color: '#e3b23c',
+    ability: awaiAbility,
+    ai: { ...baseAi, cornerKan: true },
   },
 ];
 

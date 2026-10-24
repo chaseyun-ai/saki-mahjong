@@ -24,6 +24,7 @@ const CUTIN: Record<string, CutinPose> = {
   nodoka: { hand: [-0.02, 0.28, -0.18], face: 'serious' },
   kuro: { hand: [0.2, 0.42, -0.36], face: 'happy' },
   toki: { hand: [0.17, 0.55, -0.12], face: 'neutral', extra: { relaxed: 0.5 } },
+  awai: { hand: [0.24, 0.4, -0.32], face: 'happy' },
 };
 
 const BUST = 256;

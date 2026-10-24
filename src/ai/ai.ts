@@ -1,4 +1,5 @@
 import type { AiStyle } from '../abilities/characters';
+import { awaiWaitingForCorner } from '../abilities/awai';
 import { isDoraTile } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
@@ -178,6 +179,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const keep = cands.filter((x) => !isDoraTile(g, x.a.tile));
     if (keep.length) cands.splice(0, cands.length, ...keep, ...cands.filter((x) => !keep.includes(x)));
   }
+  // 淡：等转角暗杠，暗刻不拆
+  const kanKind = style.cornerKan ? awaiWaitingForCorner(g, seat) : null;
+  if (kanKind !== null) {
+    const keep = cands.filter((x) => kindOf(x.a.tile) !== kanKind);
+    if (keep.length) cands.splice(0, cands.length, ...keep);
+  }
   let best = cands[0];
 
   // 别人立直而自己离听牌还远：弃和
@@ -258,7 +265,8 @@ function hasYakuhaiMeld(g: Game, seat: number): boolean {
 function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Action {
   const pass = legal.find((a) => a.type === 'pass')!;
   const ron = legal.find((a) => a.type === 'ron');
-  if (ron) return ron;
+  // 淡：等转角暗杠自摸，不荣和
+  if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null)) return ron;
 
   const p = g.players[seat];
   const tile = g.lastDiscard!.tile;

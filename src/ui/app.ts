@@ -297,6 +297,8 @@ export class App {
     } else if (e.type === 'ability') {
       // 玄的宝牌聚集、怜的一巡先见像被动一样一直开着（原作里大家都知道），不放切入也不出字；
       // 玄打出宝牌、能力失效时出一行小字。咲的杠的气息、岭上开花：这一局第一次放切入，之后只出小字
+      // 控场能力换掉别人要摸的牌：悄悄换，结算时能力痕迹里再讲
+      if (e.target !== undefined && e.target !== e.seat) return;
       if (e.ability === 'kuro') {
         if (e.text !== '宝牌聚集') this.toast(e.seat, e.text, false);
         return;
