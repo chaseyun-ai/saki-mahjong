@@ -33,6 +33,8 @@ export const LOOKS: Record<string, Look> = {
   awai: { model: 'models/vroid-g.v2.glb', hair: '#f0cf72', eyes: '#c99a2e', reveal: 'slam', pose: 'lap' },
   // 石户霞：黑色长发、紫色眼睛
   kasumi: { model: 'models/vroid-shino.v2.glb', hair: '#2a2433', eyes: '#7a5c9e', hairContrast: 0.5, reveal: 'wave', pose: 'lap' },
+  // 天江衣：金色头发、红色眼睛
+  koromo: { model: 'models/vroid-f.v2.glb', hair: '#efd27a', eyes: '#b83a3a', reveal: 'wave', pose: 'lap' },
 };
 
 // 牌桌上要用到的全部模型文件

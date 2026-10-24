@@ -1,5 +1,6 @@
 import { awaiAbility } from './awai';
 import { kasumiAbility } from './kasumi';
+import { koromoAbility } from './koromo';
 import { kuroAbility } from './kuro';
 import { sakiAbility } from './saki';
 import { tokiAbility } from './toki';
@@ -14,6 +15,7 @@ export interface AiStyle {
   cornerKan: boolean; // 大星淡：等转角暗杠，之前不荣和、不拆暗刻
   suitFocus: boolean; // 石户霞：请神后先打别的花色，做绝掉的那门和字牌
   defensive: boolean; // 别人立直、自己没听牌就弃和
+  haitei: boolean; // 天江衣：听牌后靠吃碰把海底挪到自己，海底不是自己的就不立直
 }
 
 export interface Character {
@@ -25,7 +27,7 @@ export interface Character {
   ai: AiStyle;
 }
 
-const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false };
+const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -76,6 +78,14 @@ export const CHARACTERS: Character[] = [
     color: '#5a8f7b',
     ability: kasumiAbility,
     ai: { ...baseAi, suitFocus: true, defensive: true },
+  },
+  {
+    id: 'koromo',
+    name: '天江衣',
+    school: '龙门渊高中',
+    color: '#c0504d',
+    ability: koromoAbility,
+    ai: { ...baseAi, haitei: true },
   },
 ];
 

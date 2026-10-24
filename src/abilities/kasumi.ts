@@ -75,6 +75,11 @@ export const kasumiAbility: Ability = {
     return { seat, ability: 'kasumi', text: '绝一门', deny: inSuit(suit) };
   },
 
+  badge(g, seat) {
+    const suit = stateOf(g, seat).suit;
+    return suit === undefined ? null : `绝${'万筒索'[suit]}`;
+  },
+
   // 自己摸牌：容易摸到这种花色和字牌
   beforeDraw(g, seat, rinshan) {
     const suit = stateOf(g, seat).suit;

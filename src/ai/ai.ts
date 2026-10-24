@@ -300,6 +300,19 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     p.hand.filter((t) => isYaochu(kindOf(t))).length <= 1;
   const yakuSecured = hasYakuhaiMeld(g, seat);
 
+  // 衣：听牌了、海底不是自己的，找一手吃碰把海底挪到自己（海底摸月本身就是役）
+  if (style.haitei && !p.riichi && g.waits(seat).length) {
+    const last = g.wall.live.length - 1;
+    if (last >= 4 && (g.lastDiscard!.seat + 1 + last) % 4 !== seat && (seat + 1 + last) % 4 === seat) {
+      for (const a of legal) {
+        if (a.type !== 'pon' && a.type !== 'chi') continue;
+        const c = counts.slice();
+        for (const t of a.tiles) c[kindOf(t)]--;
+        if (shanten(c, p.melds.length + 1) === 0) return a;
+      }
+    }
+  }
+
   let best: Action = pass;
   let bestSh = cur;
   for (const a of legal) {

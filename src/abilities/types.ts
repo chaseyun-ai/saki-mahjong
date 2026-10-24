@@ -38,6 +38,8 @@ export interface Ability {
   beforeDraw?(g: Game, seat: number, rinshan: boolean): void;
   afterDraw?(g: Game, seat: number): void;
   afterDiscard?(g: Game, seat: number, tile: TileId): void;
+  // 头像框上的小标签（比如衣的月相、霞绝掉的花色），没有就是 null
+  badge?(g: Game, seat: number): string | null;
   // 给界面显示的额外信息（比如先见到的牌）
   foresight?(g: Game, seat: number): Foresight | null;
 }

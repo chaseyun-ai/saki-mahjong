@@ -514,9 +514,10 @@ export class App {
     // 怜演算时换成“能力发动头像”（眼睛发光），头像框发绿光
     const power = s === this.me && !!this.vision;
     const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
+    const badge = c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}</div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}</div>
       </div>`;
   }
 
@@ -861,9 +862,10 @@ export class App {
     }
     const extra = this.foresightBox();
     const lost = (g.abilityState[this.me] as { lost?: boolean }).lost;
+    const badge = c.ability.badge?.(g, this.me);
     return `
       <div class="ability-panel" style="--c:${c.color}">
-        <div class="ab-name">${c.ability.name}${lost ? '<span class="lost">本局失效</span>' : ''}</div>
+        <div class="ab-name">${c.ability.name}${lost ? '<span class="lost">本局失效</span>' : ''}${badge ? `<span class="ab-badge">${badge}</span>` : ''}</div>
         <div class="ab-desc">${c.ability.description}</div>
         ${extra}
       </div>`;
