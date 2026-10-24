@@ -12,6 +12,7 @@ import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
+import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -75,6 +76,11 @@ export class App {
     // 大字特效用的书法字体先下好，免得第一次立直时字还没出来
     document.fonts?.load('1em "Ma Shan Zheng"', '立直碰吃杠荣和自摸暗加宝牌聚集岭上开花一巡先见的气息').catch(() => {});
     this.renderSelect();
+    // 素材页里换了图：牌局里重画头像框，选人页重画一遍
+    onSkinsChange(() => {
+      if (this.game) this.render();
+      else if (this.root.querySelector('.select-screen')) this.renderSelect();
+    });
     // 调试用：?debug 时可以在控制台里直接触发牌局事件看特效
     if (location.search.includes('debug')) (window as unknown as { app: App }).app = this;
   }
@@ -106,10 +112,15 @@ export class App {
           <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 实验</button>
           <button class="${this.mode === '2d' ? 'on' : ''}" data-ui="mode-2d">2D 牌桌</button>
         </div>
-        <button class="lab-entry" data-ui="lab">动作调试</button>
+        <button class="lab-entry" data-ui="lab">动作调试</button><span id="skin-entry"></span>
         <div class="char-grid">${cards}</div>
         <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物由 VRoid 官方 CC0 示例模型改色</p>
       </div>`;
+    // 能换素材的人（页面主人）才看得到“素材”入口
+    void canEditSkins().then((ok) => {
+      const slot = this.root.querySelector('#skin-entry');
+      if (ok && slot) slot.innerHTML = '<button class="lab-entry" data-ui="skins">素材</button>';
+    });
   }
 
   private startGame(charId: string): void {
@@ -307,6 +318,10 @@ export class App {
     }
     if (el.dataset.ui === 'lab') {
       this.openLab();
+      return;
+    }
+    if (el.dataset.ui === 'skins') {
+      new SkinEditor(this.root, () => this.renderSelect());
       return;
     }
     if (el.dataset.ui === 'mode-25d' || el.dataset.ui === 'mode-3d' || el.dataset.ui === 'mode-2d') {
@@ -695,7 +710,7 @@ export class App {
     const ura = w.uraIndicators.length
       ? `<div class="ura">里宝牌指示牌 ${w.uraIndicators.map((t) => tileHtml(t, { size: 'mini' })).join('')}</div>`
       : '';
-    const art = this.mode === '25d' ? `<div class="win-art"><img src="${cutinArt(this.chars[w.seat].id, 'win').url}" alt="" onerror="this.remove()" /></div>` : '';
+    const art = this.mode === '25d' ? `<div class="win-art"><img src="${cutinArt(this.chars[w.seat].id, 'result').url}" alt="" onerror="this.remove()" /></div>` : '';
     return `
       <div class="win" style="--c:${this.chars[w.seat].color}">
         ${art}<div class="win-body">

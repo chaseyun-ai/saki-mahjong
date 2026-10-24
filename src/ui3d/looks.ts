@@ -38,8 +38,8 @@ export const MODEL_URLS = [...new Set(Object.values(LOOKS).map((l) => l.model))]
 export const FACES = ['neutral', 'happy', 'sad', 'surprised', 'serious'] as const;
 export type Face = (typeof FACES)[number];
 
-// 头像和切入立绘的图片（scripts/render-portraits.mjs 用模型渲染出来的；以后有手绘图，按同样的文件名换掉就行）
-export const portraitUrl = (id: string, face: Face): string => `portraits/${id}-${face}.webp`;
+// 头像和切入立绘的默认图片（scripts/render-portraits.mjs 用模型渲染出来的，咲的换成了手绘）
+export const defaultPortraitUrl = (id: string, face: Face): string => `portraits/${id}-${face}.webp`;
 export const cutinUrl = (id: string): string => `portraits/${id}-cutin.webp`;
 
 // 有手绘的角色，立直、鸣牌、和牌的切入（和结算画面）换成手绘图：立直用“认真”，鸣牌和和牌用“和牌”。
@@ -47,10 +47,46 @@ export const cutinUrl = (id: string): string => `portraits/${id}-cutin.webp`;
 const CUTIN_ART: Record<string, { riichi?: string; win?: string }> = {
   saki: { riichi: 'portraits/saki-cutin-riichi.webp', win: 'portraits/saki-cutin-win.webp' },
 };
-export function cutinArt(id: string, kind: string): { url: string; wide: boolean } {
+export function defaultCutinArt(id: string, kind: string): { url: string; wide: boolean } {
   const art = CUTIN_ART[id];
-  const url = kind === 'riichi' ? art?.riichi : kind === 'call' || kind === 'kan' || kind === 'win' ? art?.win : undefined;
+  const k = kind === 'result' ? 'win' : kind;
+  const url = k === 'riichi' ? art?.riichi : k === 'call' || k === 'kan' || k === 'win' ? art?.win : undefined;
   return url ? { url, wide: true } : { url: cutinUrl(id), wide: false };
+}
+
+// 试玩页“素材”页面里换上的图（src/ui/skins.ts 读写），盖过上面的默认图。
+// face 头像框平时的头像，blank 放铳和终局没拿第一时的“懵逼”，riichi 立直切入，win 鸣牌和和牌切入，result 结算画面
+export type SkinSlot = 'face' | 'blank' | 'riichi' | 'win' | 'result';
+export interface SkinArt {
+  url: string;
+  w: number;
+  h: number;
+}
+let skins: Record<string, Partial<Record<SkinSlot, SkinArt>>> = {};
+export function setSkins(next: typeof skins): void {
+  skins = next;
+}
+export function skinOf(id: string, slot: SkinSlot): SkinArt | undefined {
+  return skins[id]?.[slot];
+}
+
+export function portraitUrl(id: string, face: Face): string {
+  const own = face === 'neutral' ? skinOf(id, 'face') : face === 'surprised' ? skinOf(id, 'blank') : undefined;
+  return own?.url ?? defaultPortraitUrl(id, face);
+}
+
+// 切入图：kind 是切入的种类（riichi、call、kan、win、ability），结算画面用 result
+export function cutinArt(id: string, kind: string): { url: string; wide: boolean } {
+  const own =
+    kind === 'riichi'
+      ? skinOf(id, 'riichi')
+      : kind === 'call' || kind === 'kan' || kind === 'win'
+        ? skinOf(id, 'win')
+        : kind === 'result'
+          ? (skinOf(id, 'result') ?? skinOf(id, 'win'))
+          : undefined;
+  // 宽比高大一截的算横图，切入时画小一点、大字挪到旁边
+  return own ? { url: own.url, wide: own.w > own.h * 1.1 } : defaultCutinArt(id, kind);
 }
 
 function hslToRgb(h: number, s: number, l: number, out: [number, number, number]): void {
