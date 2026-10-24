@@ -143,6 +143,8 @@ export const awaiAbility: Ability = {
         if (!order.some((i) => w.bringToLive(i, swap(i, sh), g.rng, (j) => j >= 52))) break;
       }
     }
+    // 配牌是她定的：锁住，后面动配牌的能力（比如霞的绝一门）不能再改。发牌时锁自动解开
+    for (let i = 0; i < 52; i++) w.locked.add(w.live[i]);
   },
 
   onRoundStart(g, seat) {

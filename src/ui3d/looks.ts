@@ -31,6 +31,8 @@ export const LOOKS: Record<string, Look> = {
   toki: { model: 'models/vroid-f.v2.glb', hair: '#353b4a', eyes: '#93333a', hairContrast: 0.6, reveal: 'wave', pose: 'crossed' },
   // 大星淡：金色长发、金色眼睛
   awai: { model: 'models/vroid-g.v2.glb', hair: '#f0cf72', eyes: '#c99a2e', reveal: 'slam', pose: 'lap' },
+  // 石户霞：黑色长发、紫色眼睛
+  kasumi: { model: 'models/vroid-shino.v2.glb', hair: '#2a2433', eyes: '#7a5c9e', hairContrast: 0.5, reveal: 'wave', pose: 'lap' },
 };
 
 // 牌桌上要用到的全部模型文件

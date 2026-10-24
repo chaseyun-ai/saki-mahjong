@@ -195,6 +195,10 @@ export interface TraceLine {
 // 不换牌的能力消息，有的换个说法更好懂
 const NOTE_TEXT: Record<string, (who: string) => string> = {
   'awai-绝对安全圈': (who) => `${who}展开了绝对安全圈：另外三家的配牌都在 ${AWAI.safeShanten} 向听以上。`,
+  'kasumi-请神': (who) => `${who}落后了，请神上身。之后整场都不会退。`,
+  ...Object.fromEntries(
+    ['万', '筒', '索'].map((s) => [`kasumi-绝一门·${s}子`, (who: string) => `${who}这一局绝了${s}子：别人的配牌里没有，摸也摸不到。`]),
+  ),
 };
 
 // 把一条记录写成解说的一句话。name：座位的名字；tile：一张牌的样子（结算画面用小牌图）

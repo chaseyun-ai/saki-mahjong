@@ -1,4 +1,5 @@
 import { awaiAbility } from './awai';
+import { kasumiAbility } from './kasumi';
 import { kuroAbility } from './kuro';
 import { sakiAbility } from './saki';
 import { tokiAbility } from './toki';
@@ -11,6 +12,8 @@ export interface AiStyle {
   useForesight: boolean; // 根据先见决定要不要鸣牌
   foresightRiichi: boolean; // 只在先见到下一巡自摸时才立直，否则默听
   cornerKan: boolean; // 大星淡：等转角暗杠，之前不荣和、不拆暗刻
+  suitFocus: boolean; // 石户霞：请神后先打别的花色，做绝掉的那门和字牌
+  defensive: boolean; // 别人立直、自己没听牌就弃和
 }
 
 export interface Character {
@@ -22,7 +25,7 @@ export interface Character {
   ai: AiStyle;
 }
 
-const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false };
+const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -65,6 +68,14 @@ export const CHARACTERS: Character[] = [
     color: '#e3b23c',
     ability: awaiAbility,
     ai: { ...baseAi, cornerKan: true },
+  },
+  {
+    id: 'kasumi',
+    name: '石户霞',
+    school: '永水女子',
+    color: '#5a8f7b',
+    ability: kasumiAbility,
+    ai: { ...baseAi, suitFocus: true, defensive: true },
   },
 ];
 

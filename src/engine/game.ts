@@ -96,8 +96,9 @@ export class Game {
   rng: Rng;
   players: PlayerState[];
   abilities: (Ability | null)[];
-  // 能力的私有状态，按座位存
+  // 能力的私有状态，按座位存：abilityState 每局清空，abilityGameState 整场都在
   abilityState: Record<string, unknown>[] = [{}, {}, {}, {}];
+  abilityGameState: Record<string, unknown>[] = [{}, {}, {}, {}];
 
   roundWind = 0; // 0 东场，1 南场
   roundNumber = 0; // 0-3，等于庄家座位

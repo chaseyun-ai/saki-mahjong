@@ -1,5 +1,6 @@
 import type { AiStyle } from '../abilities/characters';
 import { awaiWaitingForCorner } from '../abilities/awai';
+import { kasumiSuit } from '../abilities/kasumi';
 import { isDoraTile } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
@@ -172,7 +173,11 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk });
   }
 
-  const attackOrder = (x: Cand, y: Cand) => x.sh - y.sh || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
+  // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌
+  const suit = style.suitFocus ? kasumiSuit(g, seat) : null;
+  const keep = (c: Cand) => (suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit) ? 1 : 0);
+  const attackOrder = (x: Cand, y: Cand) =>
+    x.sh - y.sh || keep(x) - keep(y) || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
   cands.sort(attackOrder);
   // 玄：只要还有别的牌可打，就不打宝牌
   if (style.keepDora) {
@@ -190,7 +195,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 别人立直而自己离听牌还远：弃和
   if (threats(g, seat).length && best.sh >= 1) {
     const safest = [...cands].sort((x, y) => x.risk - y.risk || attackOrder(x, y));
-    if (best.sh >= 2 || best.risk >= 6) best = safest[0];
+    if (best.sh >= 2 || best.risk >= 6 || style.defensive) best = safest[0];
   }
 
   if (cands.length > 1 && g.rng.chance(style.mistakeRate) && cands[1].sh === best.sh) best = cands[1];
