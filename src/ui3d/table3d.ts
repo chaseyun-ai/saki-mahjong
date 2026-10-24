@@ -1158,10 +1158,10 @@ export class Table3D {
     c.strokeRect(8, 8, S - 16, S - 16);
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    // 中间的液晶小屏
+    // 中间的液晶小屏：窄一点，给四边的点数让出位置，不被上家、下家的数码管压到
     c.fillStyle = '#0d1a14';
     c.beginPath();
-    c.roundRect(S / 2 - 132, S / 2 - 112, 264, 196, 14);
+    c.roundRect(S / 2 - 120, S / 2 - 112, 240, 196, 14);
     c.fill();
     c.strokeStyle = 'rgba(120,255,190,0.18)';
     c.lineWidth = 2;
@@ -1198,23 +1198,23 @@ export class Table3D {
       // 风位：亮着的是正在出牌的人
       c.fillStyle = active ? '#ffc861' : '#1c2125';
       c.beginPath();
-      c.roundRect(-196, 148, 56, 56, 8);
+      c.roundRect(-196, 162, 56, 56, 8);
       c.fill();
       c.fillStyle = active ? '#1a1206' : view.colors[s];
       c.font = "700 36px 'PingFang SC','Microsoft YaHei',sans-serif";
-      c.fillText(WIND_CN[g.seatWind(s) - 27], -168, 177);
+      c.fillText(WIND_CN[g.seatWind(s) - 27], -168, 191);
       // 点数：数码管
       c.fillStyle = '#120708';
       c.beginPath();
-      c.roundRect(-126, 146, 300, 60, 8);
+      c.roundRect(-126, 160, 300, 60, 8);
       c.fill();
-      sevenSeg(c, String(p.score).padStart(6, ' '), 24, 176, 42, p.score < 0 ? '#5fd0ff' : '#ff4a2e');
+      sevenSeg(c, String(p.score).padStart(6, ' '), 24, 190, 42, p.score < 0 ? '#5fd0ff' : '#ff4a2e');
       if (p.riichi) {
         c.fillStyle = '#f7f3ea';
-        c.fillRect(-70, 122, 140, 12);
+        c.fillRect(-70, 136, 140, 12);
         c.fillStyle = '#c0392b';
         c.beginPath();
-        c.arc(0, 128, 5, 0, Math.PI * 2);
+        c.arc(0, 142, 5, 0, Math.PI * 2);
         c.fill();
       }
       c.restore();
