@@ -198,6 +198,10 @@ export class Table3D {
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2(-9, -9);
   private hovered: TileId | null = null;
+  // 副露的间距：组与组之间多留多少、手牌和副露之间至少留多少（调试面板和截图比较方案时会改）
+  meldSpacing = { group: 0.3, hand: 0.25 };
+  // 抬起来的那张牌原本的位置：鼠标还在这里就算还指着它（不然指着牌下沿时，牌一抬就指不到、一落又指到，来回抽搐）
+  private hoverRest: { id: TileId; at: Placement } | null = null;
   // 鼠标移上移下的那两张牌，这一小会儿抬起、放下要快（雀魂一帧就到位）
   private hoverSnap: { ids: TileId[]; until: number } = { ids: [], until: 0 };
   private clickable = new Set<TileId>();
@@ -1020,7 +1024,7 @@ export class Table3D {
         }
         x += w + GAP;
       }
-      mx -= 0.3;
+      mx -= this.meldSpacing.group;
     }
 
     // 手牌：自己的稍微后仰朝向镜头，别人的立着背对我们
@@ -1055,7 +1059,7 @@ export class Table3D {
     // 这样摸牌、打牌时这一排不左右挪，打掉摸到的牌其他牌也原地不动（和雀魂一样）
     const width = (13 - 3 * p.melds.length + 1) * step + 0.5;
     // 副露多了手牌往左让，和副露之间留一点缝
-    const shift = p.melds.length ? Math.max(0, width / 2 - (mx - 0.25)) : 0;
+    const shift = p.melds.length ? Math.max(0, width / 2 - (mx - this.meldSpacing.hand)) : 0;
     let x = -width / 2 - shift + TILE_W / 2;
     const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : STANDING;
     const y = tilting ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
@@ -1067,6 +1071,7 @@ export class Table3D {
     const place = (t: TileId | null) => {
       const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
       const yaw = fan ? (-fan * (x + shift)) / (width / 2) : 0;
+      if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, rot, yaw, hs) };
       if (t !== null && p.hand.includes(t)) out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
       x += step;
     };
@@ -1427,7 +1432,26 @@ export class Table3D {
     const hit = this.raycaster.intersectObjects(cands, true)[0];
     let o: THREE.Object3D | null = hit?.object ?? null;
     while (o && o.userData.tileId === undefined) o = o.parent;
-    return o ? (o.userData.tileId as TileId) : null;
+    if (o) return o.userData.tileId as TileId;
+    return this.stillOnHovered() ? this.hovered : null;
+  }
+
+  // 什么都没指到时：鼠标还落在抬起的那张牌原本的位置上，就继续算指着它
+  private stillOnHovered(): boolean {
+    const rest = this.hoverRest;
+    if (this.hovered === null || rest?.id !== this.hovered || !this.clickable.has(rest.id)) return false;
+    const g = this.tiles[rest.id].group;
+    const saved = { pos: g.position.clone(), quat: g.quaternion.clone(), scale: g.scale.clone() };
+    g.position.copy(rest.at.pos);
+    g.quaternion.copy(rest.at.quat);
+    g.scale.setScalar(rest.at.scale);
+    g.updateMatrixWorld(true);
+    const hit = this.raycaster.intersectObject(g, true).length > 0;
+    g.position.copy(saved.pos);
+    g.quaternion.copy(saved.quat);
+    g.scale.copy(saved.scale);
+    g.updateMatrixWorld(true);
+    return hit;
   }
 
   // 摸牌：沿弧线从牌山飞到手里
