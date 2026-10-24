@@ -35,6 +35,8 @@ export const LOOKS: Record<string, Look> = {
   kasumi: { model: 'models/vroid-shino.v2.glb', hair: '#2a2433', eyes: '#7a5c9e', hairContrast: 0.5, reveal: 'wave', pose: 'lap' },
   // 天江衣：金色头发、红色眼睛
   koromo: { model: 'models/vroid-f.v2.glb', hair: '#efd27a', eyes: '#b83a3a', reveal: 'wave', pose: 'lap' },
+  // 爱宕洋榎：先占位，借咲的模型换成深棕色头发、棕色眼睛
+  hiroe: { model: 'models/vroid-e.v2.glb', hair: '#4a2c22', eyes: '#7a4e2a', hairContrast: 0.6, reveal: 'slam', pose: 'edge' },
 };
 
 // 牌桌上要用到的全部模型文件

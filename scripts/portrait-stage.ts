@@ -27,6 +27,7 @@ const CUTIN: Record<string, CutinPose> = {
   awai: { hand: [0.24, 0.4, -0.32], face: 'happy' },
   kasumi: { hand: [0.12, 0.3, -0.2], face: 'neutral', extra: { relaxed: 0.6 } },
   koromo: { hand: [0.2, 0.5, -0.3], face: 'happy' },
+  hiroe: { hand: [0.22, 0.36, -0.3], face: 'happy' },
 };
 
 const BUST = 256;

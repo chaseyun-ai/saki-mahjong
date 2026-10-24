@@ -1,9 +1,10 @@
 import { CHARACTERS, Character } from '../abilities/characters';
+import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
-import { TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
+import { Kind, TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
@@ -78,6 +79,9 @@ export class App {
   private looks: { key: string; count: number; last: string } = { key: '', count: 0, last: '' };
   // 看第二次的惩罚：penaltyNext 等下一局开始变成 blocked，那一局不能用
   private penaltyNext = false;
+  // 洋榎的提醒：这一回合（key）第一张、第二张指到的危险牌种；danger 按事件数缓存
+  private say: { key: string; first: Kind | null; second: Kind | null } = { key: '', first: null, second: null };
+  private dangerCache: { at: number; kinds: Set<Kind> } = { at: -1, kinds: new Set() };
   private blocked = false;
 
   // openLab：选人页上点"动作调试"时调用
@@ -463,6 +467,7 @@ export class App {
       ${[0, 1, 2, 3].map((s) => this.pondHtml(s)).join('')}
       ${this.myAreaHtml()}
       ${this.abilityPanelHtml()}
+      <div class="hiroe-say" data-r="say">${this.sayText()}</div>
       ${this.showResult ? this.resultHtml() : ''}`;
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     this.freshDiscard = null;
@@ -480,13 +485,14 @@ export class App {
       : [1, 2, 3]
           .map((s) => {
             const c = this.chars[s];
-            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
+            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
           })
           .join('');
     hud.innerHTML = `
       ${plates}
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
+      <div class="hiroe-say" data-r="say">${this.sayText()}</div>
       ${this.showResult ? this.resultHtml() : ''}`;
     // 看下一巡时视野变绿
     hud.parentElement?.classList.toggle('deep', !!this.vision);
@@ -522,7 +528,7 @@ export class App {
     const badge = c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}</div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}</div>
       </div>`;
   }
 
@@ -548,6 +554,38 @@ export class App {
     this.previewTile = id;
     const slot = document.querySelector('[data-r=waits]');
     if (slot) slot.innerHTML = this.waitsSlotHtml();
+    const say = document.querySelector('[data-r=say]');
+    if (say) say.innerHTML = this.sayText();
+  }
+
+  // ---------- 洋榎：读牌 ----------
+
+  private isHiroe(): boolean {
+    return this.chars[this.me]?.id === 'hiroe';
+  }
+
+  // 听牌的人头像旁边的灯：牌越大越亮（只给操作洋榎的玩家看）
+  private bulbHtml(s: number): string {
+    const g = this.game!;
+    if (!this.isHiroe() || s === this.me || this.vision || (g.phase !== 'turn' && g.phase !== 'calls')) return '';
+    const r = readTenpai(g, s);
+    return r ? `<span class="bulb lv${bulbLevel(r.value)}" title="听牌了"></span>` : '';
+  }
+
+  // 指着会放铳的牌时她的提醒：第一张“有点不妙”，第二张不一样的“恐怕也不行”，再往后不说了
+  private sayText(): string {
+    const g = this.game!;
+    if (!this.isHiroe() || this.vision || !this.myDiscardTurn() || this.previewTile === null) return '';
+    if (this.dangerCache.at !== g.events.length) this.dangerCache = { at: g.events.length, kinds: dangerKinds(g, this.me) };
+    const k = kindOf(this.previewTile);
+    if (!this.dangerCache.kinds.has(k)) return '';
+    const key = this.turnKey();
+    if (this.say.key !== key) this.say = { key, first: null, second: null };
+    const st = this.say;
+    if (st.first === null) st.first = k;
+    else if (st.second === null && k !== st.first) st.second = k;
+    const text = k === st.first ? '这张牌有点不妙啊' : k === st.second ? '这张恐怕也不行' : '';
+    return text ? `<div class="say-bubble">${text}</div>` : '';
   }
 
   // ---------- 怜：看下一巡 ----------
@@ -701,7 +739,7 @@ export class App {
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="nameplate">
-          <div class="avatar">${c.name.slice(-1)}</div>
+          <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}</div>
           <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div>
         </div>
         <div class="ohand">${backs}</div>

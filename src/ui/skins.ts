@@ -85,10 +85,28 @@ export async function canEditSkins(): Promise<boolean> {
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
-// 素材页
+// 上次在素材页看的是哪个角色（只是方便，存不了就算了）
+const SEL_KEY = 'skin-editor-char';
+function loadSel(): string | null {
+  try {
+    return localStorage.getItem(SEL_KEY);
+  } catch {
+    return null;
+  }
+}
+function saveSel(id: string): void {
+  try {
+    localStorage.setItem(SEL_KEY, id);
+  } catch {
+    // 存不了就不存
+  }
+}
+
+// 素材页：上面一排角色（带已换几张），下面只放选中角色的格子，人多了也不用一直往下划
 export class SkinEditor {
   private status = '';
   private busy = false;
+  private sel = CHARACTERS.some((c) => c.id === loadSel()) ? loadSel()! : CHARACTERS[0].id;
 
   constructor(
     private root: HTMLElement,
@@ -123,7 +141,14 @@ export class SkinEditor {
   }
 
   private render = (): void => {
-    const rows = CHARACTERS.map((c) => {
+    const tabs = CHARACTERS.map((c) => {
+      const n = SLOTS.filter(({ slot }) => docs[c.id]?.[slot]).length;
+      return `<button class="skin-tab${c.id === this.sel ? ' on' : ''}" data-skin-tab="${c.id}" style="--c:${c.color}">
+          <span class="skin-tab-face"><img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></span>
+          <span class="skin-tab-name">${c.name}</span>${n ? `<span class="skin-mark">已换 ${n}</span>` : ''}
+        </button>`;
+    }).join('');
+    const rows = CHARACTERS.filter((c) => c.id === this.sel).map((c) => {
       const cells = SLOTS.map(({ slot, label, hint }) => {
         const own = !!docs[c.id]?.[slot];
         const shown = this.current(c.id, slot);
@@ -149,15 +174,22 @@ export class SkinEditor {
         </div>
         <p class="subtitle">点“换图”选一张图（PNG、JPG、WebP、GIF，透明背景用 PNG），马上生效，所有打开试玩页的人都会看到。“恢复默认”换回原来的图。</p>
         <p class="skin-status">${esc(this.status)}</p>
+        <div class="skin-tabs">${tabs}</div>
         ${rows}
       </div>`;
   };
 
   private onClick = (e: Event): void => {
-    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-skin-back],[data-skin-reset]');
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-skin-back],[data-skin-reset],[data-skin-tab]');
     if (!el) return;
     if (el.dataset.skinBack !== undefined) {
       this.close();
+      return;
+    }
+    if (el.dataset.skinTab) {
+      this.sel = el.dataset.skinTab;
+      saveSel(this.sel);
+      this.render();
       return;
     }
     const [id, slot] = el.dataset.skinReset!.split(':') as [string, SkinSlot];

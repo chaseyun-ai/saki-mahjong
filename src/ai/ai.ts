@@ -1,5 +1,6 @@
 import type { AiStyle } from '../abilities/characters';
 import { awaiWaitingForCorner } from '../abilities/awai';
+import { dangerKinds } from '../abilities/hiroe';
 import { kasumiSuit } from '../abilities/kasumi';
 import { isDoraTile } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
@@ -149,7 +150,11 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     uke: number;
     val: number;
     risk: number;
+    hit: number; // 洋榎：读出来别人和得了这张
+    trap: number; // 洋榎：听牌时听的是自己打过的牌的筋（引っ掛け）
   };
+  const readDanger = style.reads ? dangerKinds(g, seat) : null;
+  const myDiscards = new Set(p.discards.map((d) => kindOf(d.tile)));
   const cands: Cand[] = [];
   const seen = new Set<string>();
   for (const a of discards) {
@@ -170,14 +175,23 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       sh2 = shanten(c, p.melds.length);
       c[kindOf(nextDraw)]--;
     }
-    cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk });
+    const hit = readDanger?.has(kindOf(a.tile)) ? 1 : 0;
+    let trap = 0;
+    if (style.trapWait && sh === 0) {
+      const out = new Set([...myDiscards, kindOf(a.tile)]);
+      const suji = (w: Kind) => w < 27 && [-3, 3].some((d) => w % 9 + d >= 0 && w % 9 + d <= 8 && out.has(w + d));
+      trap = waitingKinds(c, p.melds.length).some(suji) ? 1 : 0;
+    }
+    cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, trap });
   }
 
   // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌
   const suit = style.suitFocus ? kasumiSuit(g, seat) : null;
   const keep = (c: Cand) => (suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit) ? 1 : 0);
+  // 洋榎听牌时：两种听法都有牌可和，挑引っ掛け的
+  const trapOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.trap - x.trap : 0);
   const attackOrder = (x: Cand, y: Cand) =>
-    x.sh - y.sh || keep(x) - keep(y) || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
+    x.hit - y.hit || x.sh - y.sh || keep(x) - keep(y) || trapOrder(x, y) || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
   cands.sort(attackOrder);
   // 玄：只要还有别的牌可打，就不打宝牌
   if (style.keepDora) {
@@ -212,6 +226,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       return shanten(c, p.melds.length) === -1 ? riichi : best.a;
     }
     if (style.keepDora && !kuroMustRiichi(g, seat, p.hand.filter((t) => t !== best.a.tile))) return best.a;
+    // 洋榎：有役、默听也够大就默听，别人看不出她听牌了
+    if (style.damaMin && damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) >= style.damaMin) return best.a;
     if (ukeire(c, p.melds.length, visible) > 0) return riichi;
   }
   return best.a;
@@ -223,6 +239,19 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 const KURO_DAMA_MIN = 3900;
 function kuroMustRiichi(g: Game, seat: number, hand: TileId[]): boolean {
   if ((g.abilityState[seat] as { lost?: boolean }).lost) return true;
+  const p = g.players[seat];
+  const best = damaRon(g, seat, hand);
+  if (best < KURO_DAMA_MIN) return true;
+  if (g.roundNumber === 3) {
+    const top = Math.max(...g.players.filter((q) => q.seat !== seat).map((q) => q.score));
+    const gain = best + g.honba * 300 + g.riichiSticks * 1000;
+    if (p.score <= top && p.score + gain <= top) return true;
+  }
+  return false;
+}
+
+// 默听荣和最多能拿多少点（振听、没役是 0）。hand 是打掉一张以后的 13 张
+function damaRon(g: Game, seat: number, hand: TileId[]): number {
   const p = g.players[seat];
   const waits = waitingKinds(toCounts(hand), p.melds.length);
   const discarded = new Set([...p.discards.map((d) => kindOf(d.tile)), ...g.players[seat].hand.filter((t) => !hand.includes(t)).map(kindOf)]);
@@ -249,13 +278,7 @@ function kuroMustRiichi(g: Game, seat: number, hand: TileId[]): boolean {
       if (r) best = Math.max(best, r.ron);
     }
   }
-  if (best < KURO_DAMA_MIN) return true;
-  if (g.roundNumber === 3) {
-    const top = Math.max(...g.players.filter((q) => q.seat !== seat).map((q) => q.score));
-    const gain = best + g.honba * 300 + g.riichiSticks * 1000;
-    if (p.score <= top && p.score + gain <= top) return true;
-  }
-  return false;
+  return best;
 }
 
 // ---------- 别人打牌后 ----------

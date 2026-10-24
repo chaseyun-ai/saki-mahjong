@@ -1348,6 +1348,59 @@ button {
   color: var(--gold);
 }
 
+/* 角色一排：点哪个看哪个；滚动时贴在顶上 */
+.skin-tabs {
+  position: sticky;
+  top: -24px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 1100px;
+  margin: 0 auto 14px;
+  padding: 10px 0;
+  background: #0f2a2f;
+}
+
+.skin-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.skin-tab.on {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 35%, transparent);
+  font-weight: 700;
+}
+
+.skin-tab-face {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--c);
+}
+
+.skin-tab-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 15%;
+}
+
+.skin-tab .skin-mark {
+  margin-left: 0;
+}
+
 .skin-row {
   margin: 0 auto 18px;
   max-width: 1100px;
@@ -2133,5 +2186,98 @@ button {
     font-size: 10px;
     padding: 0 5px;
     bottom: 4px;
+  }
+}
+
+/* ---------- 洋榎：听牌的灯、危险牌的提醒 ---------- */
+
+.bulb {
+  position: absolute;
+  z-index: 3;
+  right: -9px;
+  top: -9px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 236, 170, 0.7);
+  background: radial-gradient(circle at 40% 35%, #fffbe6 0%, #ffd75e 45%, #c98a12 100%);
+  pointer-events: none;
+}
+
+.bulb.lv1 {
+  opacity: 0.35;
+  box-shadow: 0 0 3px rgba(255, 214, 90, 0.5);
+}
+
+.bulb.lv2 {
+  opacity: 0.55;
+  box-shadow: 0 0 7px rgba(255, 214, 90, 0.7);
+}
+
+.bulb.lv3 {
+  opacity: 0.75;
+  box-shadow: 0 0 12px 2px rgba(255, 214, 90, 0.8);
+}
+
+.bulb.lv4 {
+  opacity: 0.9;
+  box-shadow: 0 0 18px 5px rgba(255, 220, 100, 0.9);
+}
+
+.bulb.lv5 {
+  opacity: 1;
+  box-shadow: 0 0 26px 9px rgba(255, 230, 120, 1);
+  animation: bulb-flicker 1.2s ease-in-out infinite;
+}
+
+/* 右边两家的头像贴着画面右边：灯放在靠桌子的一侧 */
+.seat-frame.right .bulb,
+.seat-frame.top .bulb,
+.nameplate.float.right .bulb {
+  right: auto;
+  left: -9px;
+}
+
+@keyframes bulb-flicker {
+  50% {
+    box-shadow: 0 0 34px 12px rgba(255, 240, 150, 1);
+  }
+}
+
+.hiroe-say {
+  position: absolute;
+  z-index: 20;
+  left: 136px;
+  bottom: 150px;
+  pointer-events: none;
+}
+
+.say-bubble {
+  position: relative;
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: #fffdf5;
+  color: #3a2a1a;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  animation: say-pop 0.18s ease-out;
+}
+
+.say-bubble::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  bottom: -8px;
+  border: 8px solid transparent;
+  border-bottom: 0;
+  border-top-color: #fffdf5;
+}
+
+@keyframes say-pop {
+  from {
+    transform: scale(0.8) translateY(6px);
+    opacity: 0;
   }
 }

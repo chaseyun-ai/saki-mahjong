@@ -1,4 +1,5 @@
 import { awaiAbility } from './awai';
+import { hiroeAbility } from './hiroe';
 import { kasumiAbility } from './kasumi';
 import { koromoAbility } from './koromo';
 import { kuroAbility } from './kuro';
@@ -16,6 +17,9 @@ export interface AiStyle {
   suitFocus: boolean; // 石户霞：请神后先打别的花色，做绝掉的那门和字牌
   defensive: boolean; // 别人立直、自己没听牌就弃和
   haitei: boolean; // 天江衣：听牌后靠吃碰把海底挪到自己，海底不是自己的就不立直
+  reads: boolean; // 爱宕洋榎：读得出别人听什么，不打别人和得了的牌
+  trapWait: boolean; // 爱宕洋榎：听牌时挑引っ掛け（自己打过的牌的筋）的听法
+  damaMin: number; // 有役、默听荣和至少这么多就不立直（0 是不看）
 }
 
 export interface Character {
@@ -27,7 +31,7 @@ export interface Character {
   ai: AiStyle;
 }
 
-const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false };
+const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0 };
 
 export const CHARACTERS: Character[] = [
   {
@@ -86,6 +90,14 @@ export const CHARACTERS: Character[] = [
     color: '#c0504d',
     ability: koromoAbility,
     ai: { ...baseAi, haitei: true },
+  },
+  {
+    id: 'hiroe',
+    name: '爱宕洋榎',
+    school: '姬松高中',
+    color: '#d9733f',
+    ability: hiroeAbility,
+    ai: { ...baseAi, reads: true, trapWait: true, damaMin: 3900 },
   },
 ];
 
