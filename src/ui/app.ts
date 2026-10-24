@@ -26,7 +26,7 @@ const AI_TURN_DELAY_25D = 620;
 const AI_CALL_DELAY = 250;
 // 自己立直后摸切：摸到的牌飞到空中要多久（和牌桌的摸牌飞行一样），在空中停多久（毫秒）
 const AIR_FLIGHT = 250;
-const AIR_PAUSE = 450;
+const AIR_PAUSE = 250;
 // 开局点数，终局排名的 ± 从这里算
 const START_SCORE = 25000;
 // 怜“看下一巡”的体力：满 100，看一次 35，每局开始回 20。同一回合可以看两次，看第二次的话下一局不能用

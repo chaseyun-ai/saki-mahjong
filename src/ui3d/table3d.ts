@@ -92,9 +92,19 @@ const STICK_DROP_HEIGHT = 3;
 const DRAW_FLIGHT = 0.25;
 // 上一张打出的牌落桌后，隔这么久下一家才摸牌（雀魂约 0.15 秒）
 const DRAW_GAP = 0.1;
-// 立直后摸切：摸到的牌停在空中的位置（手牌上方多高、往桌子中间挪多少，按手牌大小放大）
-const AIR_LIFT = 1.5;
-const AIR_IN = 1.0;
+// 立直后摸切：摸到的牌停在空中的样子，像右手把牌拿起来看一眼。
+// dx 往右挪、lift 抬多高、inward 往桌子中间挪（负数往镜头这边），都按手牌大小放大；
+// tilt 比手牌多仰多少、yaw 往左转、roll 歪多少（弧度），scale 再放大多少
+export interface AirPose {
+  dx: number;
+  lift: number;
+  inward: number;
+  tilt: number;
+  yaw: number;
+  roll: number;
+  scale: number;
+}
+const AIR_POSE: AirPose = { dx: 0.2, lift: 2.4, inward: 0.4, tilt: -0.9, yaw: 0.15, roll: -0.1, scale: 1.2 };
 
 // 鸣牌、立直、和牌的特效颜色
 const FX_GOLD = '#ffd36b';
@@ -246,6 +256,8 @@ export class Table3D {
   private resizer = new ResizeObserver(() => this.resize());
   // 牌桌尺寸（可调的参数）和由它算出来的各处位置
   private tableLayout: TableLayout = { ...DEFAULT_LAYOUT };
+  // 立直摸切那张牌在空中的样子（调试时可以改）
+  airPose: AirPose = { ...AIR_POSE };
   private dim: TableDims = tableDims(this.tableLayout);
   private tableGroup: THREE.Group | null = null;
   private tableMats: TableMaterials | null = null;
@@ -1062,8 +1074,10 @@ export class Table3D {
     if (drawn !== null) {
       x += 0.5;
       if (mine && drawn === this.lastSync?.view.airDraw && p.hand.includes(drawn)) {
-        const yaw = fan ? (-fan * (x + shift)) / (width / 2) : 0;
-        out.set(drawn, this.toWorld(s, me, x, y + AIR_LIFT * hs, hz - AIR_IN * hs, rot, yaw, hs));
+        const a = this.airPose;
+        const yaw = (fan ? (-fan * (x + shift)) / (width / 2) : 0) + a.yaw;
+        const tilt = new THREE.Euler(rot.x + a.tilt, 0, a.roll);
+        out.set(drawn, this.toWorld(s, me, x + a.dx * hs, y + a.lift * hs, hz - a.inward * hs, tilt, yaw, hs * a.scale));
       } else place(drawn);
     }
 
