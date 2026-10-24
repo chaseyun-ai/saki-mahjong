@@ -24,6 +24,9 @@ const AI_TURN_DELAY = 550;
 const AI_TURN_DELAY_3D = 360;
 const AI_TURN_DELAY_25D = 620;
 const AI_CALL_DELAY = 250;
+// 自己立直后摸切：摸到的牌飞到空中要多久（和牌桌的摸牌飞行一样），在空中停多久（毫秒）
+const AIR_FLIGHT = 250;
+const AIR_PAUSE = 450;
 // 开局点数，终局排名的 ± 从这里算
 const START_SCORE = 25000;
 // 怜“看下一巡”的体力：满 100，看一次 35，每局开始回 20。同一回合可以看两次，看第二次的话下一局不能用
@@ -97,7 +100,7 @@ export class App {
       else if (this.root.querySelector('.select-screen')) this.renderSelect();
     });
     // 调试用：?debug 时可以在控制台里直接触发牌局事件看特效
-    if (location.search.includes('debug')) (window as unknown as { app: App }).app = this;
+    if (location.search.includes('debug')) Object.assign(window, { app: this, chooseAction });
   }
 
   // ---------- 选角色 ----------
@@ -253,10 +256,12 @@ export class App {
       return;
     }
     if (g.phase === 'turn' && g.turn === this.me) {
-      // 立直后没有别的选择时自动摸切
+      // 立直后没有别的选择时自动摸切。3D、2.5D 牌桌上这张牌不进手牌，飞到手牌上方停一下（AIR_PAUSE），直接打进牌河：
+      // 等它从牌山出发（busyMs）、飞完，再停一下
       const legal = g.legalActions(this.me);
       if (g.players[this.me].riichi && legal.length === 1) {
-        this.timer = window.setTimeout(() => this.playerAct(legal[0]), 600);
+        const wait = this.table3d ? this.busyMs() + AIR_FLIGHT + AIR_PAUSE : 600;
+        this.timer = window.setTimeout(() => this.playerAct(legal[0]), wait);
       }
     }
   }
@@ -288,16 +293,16 @@ export class App {
       playCall();
       this.bigFx(e.seat, e.call, e.call.includes('杠') ? 'kan' : 'call');
     } else if (e.type === 'ability') {
+      // 玄的宝牌聚集、怜的一巡先见像被动一样一直开着（原作里大家都知道），不放切入也不出字；
+      // 玄打出宝牌、能力失效时出一行小字。咲的杠的气息、岭上开花：这一局第一次放切入，之后只出小字
+      if (e.ability === 'kuro') {
+        if (e.text !== '宝牌聚集') this.toast(e.seat, e.text, false);
+        return;
+      }
       playChime();
-      // 宝牌聚集、杠的气息、岭上开花：这一局第一次发动放切入，之后只出小字。能力失效的消息只出小字
       const key = `${e.seat}-${e.text}`;
-      const fresh = e.ability !== 'kuro' || e.text === '宝牌聚集';
-      if (!(fresh && !this.cutinSeen.has(key) && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
+      if (!(!this.cutinSeen.has(key) && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
       this.cutinSeen.add(key);
-    } else if (e.type === 'draw' && this.chars[e.seat].id === 'toki' && !this.cutinSeen.has(`${e.seat}-一巡先见`)) {
-      // 一巡先见一直开着，没有发动的时机：每局她第一次摸牌时放一次
-      this.cutinSeen.add(`${e.seat}-一巡先见`);
-      this.cutin(e.seat, '一巡先见', 'ability');
     } else if (e.type === 'roundEnd') {
       if (e.result.wins.length) playWin();
       for (const w of e.result.wins) this.bigFx(w.seat, w.from === null ? '自摸' : '荣和', 'win');
@@ -483,7 +488,16 @@ export class App {
       colors: this.chars.map((c) => c.color),
       ids: this.chars.map((c) => c.id),
       marked: new Set(this.showResult ? [] : this.preview.keys()),
+      airDraw: this.airDraw(),
     });
+  }
+
+  // 自己立直后摸到、和不了也杠不了的那张（只能摸切）：牌桌上让它停在空中
+  private airDraw(): TileId | null {
+    const g = this.game!;
+    const p = g.players[this.me];
+    if (g.phase !== 'turn' || g.turn !== this.me || !p.riichi || this.showResult) return null;
+    return g.legalActions(this.me).length === 1 ? p.drawn : null;
   }
 
   // 2.5D 的头像框：头像（先用名字的最后一个字占位）、风位、名字、能力、分数；立直了挂一根立直棒，轮到谁谁亮

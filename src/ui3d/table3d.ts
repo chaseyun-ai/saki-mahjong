@@ -92,6 +92,9 @@ const STICK_DROP_HEIGHT = 3;
 const DRAW_FLIGHT = 0.25;
 // 上一张打出的牌落桌后，隔这么久下一家才摸牌（雀魂约 0.15 秒）
 const DRAW_GAP = 0.1;
+// 立直后摸切：摸到的牌停在空中的位置（手牌上方多高、往桌子中间挪多少，按手牌大小放大）
+const AIR_LIFT = 1.5;
+const AIR_IN = 1.0;
 
 // 鸣牌、立直、和牌的特效颜色
 const FX_GOLD = '#ffd36b';
@@ -170,6 +173,7 @@ export interface SyncView {
   colors: string[];
   ids: string[];
   marked?: Set<TileId>; // 上方加个小三角的手牌（打出去能听牌的）
+  airDraw?: TileId | null; // 自己立直后摸到、和不了的那张：不进手牌，停在手牌上方的空中，接着直接打进牌河
 }
 
 export class Table3D {
@@ -1057,7 +1061,10 @@ export class Table3D {
     hand.forEach(place);
     if (drawn !== null) {
       x += 0.5;
-      place(drawn);
+      if (mine && drawn === this.lastSync?.view.airDraw && p.hand.includes(drawn)) {
+        const yaw = fan ? (-fan * (x + shift)) / (width / 2) : 0;
+        out.set(drawn, this.toWorld(s, me, x, y + AIR_LIFT * hs, hz - AIR_IN * hs, rot, yaw, hs));
+      } else place(drawn);
     }
 
     // 牌河：六张一行，立直牌横放
