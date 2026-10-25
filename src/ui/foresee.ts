@@ -2,6 +2,9 @@ import { chooseAction } from '../ai/ai';
 import type { AiStyle } from '../abilities/characters';
 import type { Game, RoundResult } from '../engine/game';
 import type { TileId } from '../engine/tiles';
+import { cloneGame } from '../engine/clone';
+
+export { cloneGame };
 
 // 怜“看下一巡”（演算）：把牌局复制一份，她在复制品上打出一张牌、之后都不鸣牌，电脑照常往下打一巡，
 // 一直到她下一次摸牌（或者这一局结束）。界面把复制品放到牌桌上演出来，退出时换回真的牌局。
@@ -18,42 +21,6 @@ export type SeenStep =
   | { kind: 'end'; result: RoundResult };
 
 export type CanRon = Extract<SeenStep, { kind: 'canRon' }>;
-
-// 深拷贝：Map、Set、数组、带类的对象（牌山、随机数）都复制，函数（能力）共用
-function cloneDeep<T>(v: T, seen = new Map<unknown, unknown>()): T {
-  if (v === null || typeof v !== 'object') return v;
-  if (seen.has(v)) return seen.get(v) as T;
-  let out: unknown;
-  if (Array.isArray(v)) {
-    const a: unknown[] = [];
-    seen.set(v, a);
-    for (const x of v) a.push(cloneDeep(x, seen));
-    out = a;
-  } else if (v instanceof Map) {
-    const m = new Map();
-    seen.set(v, m);
-    for (const [k, x] of v) m.set(cloneDeep(k, seen), cloneDeep(x, seen));
-    out = m;
-  } else if (v instanceof Set) {
-    const s = new Set();
-    seen.set(v, s);
-    for (const x of v) s.add(cloneDeep(x, seen));
-    out = s;
-  } else {
-    const o = Object.create(Object.getPrototypeOf(v)) as Record<string, unknown>;
-    seen.set(v, o);
-    for (const k of Object.keys(v)) o[k] = cloneDeep((v as Record<string, unknown>)[k], seen);
-    out = o;
-  }
-  return out as T;
-}
-
-export function cloneGame(g: Game): Game {
-  const c = cloneDeep(g);
-  // 复制品不通知界面
-  (c as unknown as { eventListeners: unknown[] }).eventListeners = [];
-  return c;
-}
 
 // 演算到哪了：复制品 c 从第 start 个事件起发生的事，按顺序；rons 是她能荣和却没和的那几次（插在那张牌打出之后）
 export function readSteps(c: Game, start: number, seat: number, rons: CanRon[]): SeenStep[] {

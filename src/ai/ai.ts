@@ -1,6 +1,7 @@
 import type { AiStyle } from '../abilities/characters';
 import { awaiWaitingForCorner } from '../abilities/awai';
 import { dangerKinds } from '../abilities/hiroe';
+import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
 import { isDoraTile } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
@@ -140,9 +141,6 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (p.riichi) return discards[0];
 
   const visible = visibleCounts(g, seat);
-  // 怜：知道自己下一巡会摸到什么，把它算进来
-  const fs = style.useForesight ? g.abilities[seat]?.foresight?.(g, seat) : null;
-  const nextDraw = fs?.draws.find((d) => d.seat === seat)?.tile;
   type Cand = {
     a: Extract<Action, { type: 'discard' }>;
     sh: number;
@@ -169,12 +167,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (style.keepDora && isDoraTile(g, a.tile)) val += 20;
     const ts = threats(g, seat);
     const risk = ts.length ? Math.max(...ts.map((t) => danger(g, t, kindOf(a.tile), visible))) : 0;
-    let sh2 = sh;
-    if (nextDraw !== undefined) {
-      c[kindOf(nextDraw)]++;
-      sh2 = shanten(c, p.melds.length);
-      c[kindOf(nextDraw)]--;
-    }
+    const sh2 = sh;
     const hit = readDanger?.has(kindOf(a.tile)) ? 1 : 0;
     let trap = 0;
     if (style.trapWait && sh === 0) {
@@ -193,6 +186,22 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const attackOrder = (x: Cand, y: Cand) =>
     x.hit - y.hit || x.sh - y.sh || keep(x) - keep(y) || trapOrder(x, y) || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
   cands.sort(attackOrder);
+  // 怜：假设打掉现在最想打的那张，演算自己下一次摸到什么，按它重排。
+  // 失误先掷（随机数用掉的时刻和别人一样），再演算：演算拿到的随机数和之后真的牌局一致
+  let slip: boolean | null = null;
+  if (style.useForesight) {
+    slip = cands.length > 1 && g.rng.chance(style.mistakeRate);
+    const t = forecastNextDraw(g, seat, { discard: cands[0].a.tile });
+    if (t !== null) {
+      for (const x of cands) {
+        const c = counts.slice();
+        c[kindOf(x.a.tile)]--;
+        c[kindOf(t)]++;
+        x.sh2 = shanten(c, p.melds.length);
+      }
+      cands.sort(attackOrder);
+    }
+  }
   // 玄：只要还有别的牌可打，就不打宝牌
   if (style.keepDora) {
     const keep = cands.filter((x) => !isDoraTile(g, x.a.tile));
@@ -212,7 +221,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (best.sh >= 2 || best.risk >= 6 || style.defensive) best = safest[0];
   }
 
-  if (cands.length > 1 && g.rng.chance(style.mistakeRate) && cands[1].sh === best.sh) best = cands[1];
+  const slipped = slip ?? (cands.length > 1 && g.rng.chance(style.mistakeRate));
+  if (slipped && cands[1].sh === best.sh) best = cands[1];
 
   // 能立直就立直
   const riichi = discards.find((a) => a.riichi && kindOf(a.tile) === kindOf(best.a.tile));
@@ -220,8 +230,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const c = counts.slice();
     c[kindOf(best.a.tile)]--;
     if (style.foresightRiichi) {
-      // 怜：先见到下一巡摸的牌正好和牌才立直（一发自摸），否则默听
-      if (nextDraw === undefined) return best.a;
+      // 怜：先见到立直以后下一次摸的牌正好和牌才立直（一发自摸），否则默听
+      const nextDraw = forecastNextDraw(g, seat, { discard: riichi.tile, riichi: true });
+      if (nextDraw === null) return best.a;
       c[kindOf(nextDraw)]++;
       return shanten(c, p.melds.length) === -1 ? riichi : best.a;
     }
@@ -307,11 +318,10 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 
   // 怜：先见到自己下一张有用的话，就不鸣牌打乱顺序
   if (style.useForesight) {
-    const fs = g.abilities[seat]?.foresight?.(g, seat);
-    const mine = fs?.draws.find((d) => d.seat === seat);
-    if (mine) {
+    const mine = forecastNextDraw(g, seat);
+    if (mine !== null) {
       const c = counts.slice();
-      c[kindOf(mine.tile)]++;
+      c[kindOf(mine)]++;
       if (shanten(c, p.melds.length) < cur) return pass;
     }
   }

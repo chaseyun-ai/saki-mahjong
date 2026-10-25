@@ -3,6 +3,7 @@ import { MOON_PHASES } from '../abilities/koromo';
 import type { Game, GameEvent } from '../engine/game';
 import { TileId, kindOf } from '../engine/tiles';
 import { waitInfo } from './waitInfo';
+import { tokiSeen } from '../abilities/toki';
 
 // 能力痕迹：牌局进行时在旁边记下牌山被动过的地方，一局结束在结算画面里讲给玩家听。
 // 只看不碰：自己留一份牌山本来的顺序，每次有人摸牌就拿实际摸到的和本来该摸的对一下。
@@ -161,7 +162,8 @@ export class AbilityTrace {
     const skipped = Array.from({ length: shift - 1 }, (_, i) => (from + 1 + i) % 4);
     const next = g.wall.live.slice(0, 4);
     const tokiSeat = g.abilities.findIndex((a) => a?.id === 'toki');
-    const foresight = tokiSeat >= 0 && next.some((t) => g.wall.locked.has(t)) ? tokiSeat : null;
+    const seen = tokiSeat >= 0 ? tokiSeen(g, tokiSeat) : [];
+    const foresight = next.some((t) => seen.includes(t)) ? tokiSeat : null;
     this.entries.push({
       kind: 'shift',
       seat,

@@ -58,8 +58,8 @@ export interface Ability {
   afterDiscard?(g: Game, seat: number, tile: TileId): void;
   // 头像框上的小标签（比如衣的月相、霞绝掉的花色），没有就是 null
   badge?(g: Game, seat: number): string | null;
-  // 给界面显示的额外信息（比如先见到的牌）
-  foresight?(g: Game, seat: number): Foresight | null;
+  // 能看到自己下一次摸到的牌（怜）。看到的是哪张由 src/ai/forecast.ts 在复制的牌局上演算
+  foresight?: { title: string };
   // 玩家操作这个角色时的技能按钮（g.manual[seat] 为真时由玩家决定，否则能力自己按电脑的规矩决定）
   skill?(g: Game, seat: number): SkillButton | null;
   pressSkill?(g: Game, seat: number): void;
@@ -73,10 +73,4 @@ export interface SkillButton {
   meter?: { value: number; max: number };
   // 开启中（按钮高亮）
   active?: boolean;
-}
-
-export interface Foresight {
-  title: string;
-  // 依次是谁会摸到哪张牌（假设没人鸣牌）
-  draws: { seat: number; tile: TileId }[];
 }

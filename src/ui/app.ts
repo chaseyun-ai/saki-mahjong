@@ -16,6 +16,7 @@ import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
+import { ForecastCache } from '../ai/forecast';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -76,7 +77,10 @@ export class App {
   private stamina = STAMINA_MAX;
   private vision: { real: Game; start: number; rons: CanRon[]; faces: { face: Face; until: number }[] } | null = null;
   // 这一回合（key）看了几次，上次演算的经过（退出以后留着给她看）
-  private looks: { key: string; count: number; last: string } = { key: '', count: 0, last: '' };
+  // at：上次演算是在第几个事件时看的，之后有人鸣牌、开杠（事件变了）就不再显示
+  private looks: { key: string; count: number; last: string; at: number } = { key: '', count: 0, last: '', at: -1 };
+  // 怜的“你下一张”：按局面缓存的演算结果
+  private forecast = new ForecastCache();
   // 看第二次的惩罚：penaltyNext 等下一局开始变成 blocked，那一局不能用
   private penaltyNext = false;
   // 洋榎的提醒：这一回合（key）第一张、第二张指到的危险牌种；danger 按事件数缓存
@@ -159,7 +163,7 @@ export class App {
     this.faces = [];
     this.stamina = STAMINA_MAX;
     this.vision = null;
-    this.looks = { key: '', count: 0, last: '' };
+    this.looks = { key: '', count: 0, last: '', at: -1 };
     this.penaltyNext = false;
     this.blocked = false;
     // 头像先下好，第一次换表情时不会空一下
@@ -556,6 +560,8 @@ export class App {
     if (slot) slot.innerHTML = this.waitsSlotHtml();
     const say = document.querySelector('[data-r=say]');
     if (say) say.innerHTML = this.sayText();
+    const fs = document.querySelector('[data-r=fs]');
+    if (fs && this.game && !this.vision) fs.innerHTML = this.nextDrawHtml();
   }
 
   // ---------- 洋榎：读牌 ----------
@@ -616,7 +622,7 @@ export class App {
     if (!this.canDeep()) return;
     const real = this.game!;
     const key = this.turnKey();
-    if (this.looks.key !== key) this.looks = { key, count: 0, last: '' };
+    if (this.looks.key !== key) this.looks = { key, count: 0, last: '', at: -1 };
     if (++this.looks.count >= 2) this.penaltyNext = true;
     this.stamina -= DEEP_COST;
     const sim = cloneGame(real);
@@ -632,6 +638,7 @@ export class App {
     const v = this.vision;
     if (!v) return;
     this.looks.last = this.stepsHtml(this.visionSteps());
+    this.looks.at = v.real.events.length;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.game = v.real;
@@ -872,8 +879,8 @@ export class App {
   private foresightBox(): string {
     const g = this.game!;
     const c = this.chars[this.me];
-    const fs = c.ability?.foresight?.(g, this.me);
-    if (!fs && !this.vision) return '';
+    const fs = c.ability?.foresight;
+    if (!this.vision && (!fs || (g.phase !== 'turn' && g.phase !== 'calls'))) return '';
     const toki = this.isToki();
     const stamina = toki
       ? `<span class="stamina" title="体力"><i style="width:${(this.stamina / STAMINA_MAX) * 100}%"></i></span><span class="st-num">${this.stamina}</span>`
@@ -887,7 +894,6 @@ export class App {
         <button class="deep-btn" data-ui="deep-exit">退出演算</button>
         <div class="fs-note">演算里你不鸣牌；退出后牌局恢复原样</div></div>`;
     }
-    const mine = fs?.draws.find((d) => d.seat === this.me);
     let btn = '';
     if (toki && this.myDiscardTurn()) {
       const count = this.looks.key === this.turnKey() ? this.looks.count : 0;
@@ -904,10 +910,31 @@ export class App {
       btn = `<button class="deep-btn" data-ui="deep" ${this.canDeep() ? '' : 'disabled'}>${label}<small>${note}</small></button>`;
     }
     const last =
-      this.looks.last && this.looks.key === this.turnKey() && this.myDiscardTurn()
+      this.looks.last && this.looks.key === this.turnKey() && this.looks.at === g.events.length && this.myDiscardTurn()
         ? `<div class="deep-head">上次演算</div>${this.looks.last}`
         : '';
-    return `<div class="foresight">${title}${mine ? `<div class="fs-row mine"><span>你下一张</span>${tileHtml(mine.tile, { size: 'mini' })}</div>` : ''}${btn}${last}<div class="fs-note">有人鸣牌时顺序会变</div></div>`;
+    return `<div class="foresight">${title}<div data-r="fs">${this.nextDrawHtml()}</div>${btn}${last}<div class="fs-note">别人的能力已经算在里面；有人鸣牌、开杠时重新算</div></div>`;
+  }
+
+  // “你下一张”：在复制的牌局上演算（见 src/ai/forecast.ts），按现在的局面缓存，局面一变就重新算。
+  // 轮到自己打牌时，下一张可能取决于打哪张：指着哪张就算打它；没指着时打哪张都一样才直接给
+  private nextDrawHtml(): string {
+    const g = this.game!;
+    const row = (body: string) => `<div class="fs-row mine"><span>你下一张</span>${body}</div>`;
+    let tile: TileId | null;
+    if (this.myDiscardTurn()) {
+      const riichi = this.riichiMode;
+      if (this.previewTile !== null && this.discardable().has(this.previewTile)) {
+        tile = this.forecast.get(g, this.me, { discard: this.previewTile, riichi });
+      } else {
+        const byKind = new Map<string, TileId>();
+        for (const t of this.discardable()) byKind.set(`${kindOf(t)}-${isRed(t)}`, t);
+        const all = [...byKind.values()].map((t) => this.forecast.get(g, this.me, { discard: t, riichi }));
+        if (all.some((t) => t === null || kindOf(t) !== kindOf(all[0]!) || isRed(t) !== isRed(all[0]!))) return row('<small>指着要打的牌看看</small>');
+        tile = all[0] ?? null;
+      }
+    } else tile = this.forecast.get(g, this.me);
+    return row(tile === null ? '<small>看不清</small>' : tileHtml(tile, { size: 'mini' }));
   }
 
   private abilityPanelHtml(): string {

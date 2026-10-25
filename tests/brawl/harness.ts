@@ -7,7 +7,7 @@ import { TILE_COUNT, TileId } from '../../src/engine/tiles';
 
 // 能力大乱斗：从角色池里任选四个坐下，打完整场，每一步都检查：
 // - 牌总数还是 136 张，没有重复
-// - 被锁住的牌（怜看到的、能力预定的）位置没被换
+// - 被锁住的牌（能力预定的）位置没被换
 // - 控场能力定的规矩：只要还有别的牌可换，摸到的牌就不违反（先定的规矩优先）
 // - 摸牌的规矩只在摸牌那一刻有效，不会漏到别的时候
 // - 不报错，整场能打完，点数守恒
@@ -49,20 +49,24 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
   // 记下控场能力给这一次摸牌定的规矩，摸牌时对账
   let rules: DrawRule[] = [];
   let lockedBefore: Set<TileId> | null = null;
+  // 只记正式牌局的：怜的演算在复制品上也会走一遍摸牌流程
+  let real: Game | null = null;
   const wrap = (a: Ability | null): Ability | null => {
     if (!a?.beforeAnyDraw) return a;
     const inner = a.beforeAnyDraw.bind(a);
     return {
       ...a,
       beforeAnyDraw(g, seat, drawer, rinshan) {
-        if (!lockedBefore) lockedBefore = new Set(g.wall.locked);
+        const mine = g === real;
+        if (mine && !lockedBefore) lockedBefore = new Set(g.wall.locked);
         const r = inner(g, seat, drawer, rinshan);
-        if (r) rules.push(r);
+        if (r && mine) rules.push(r);
         return r;
       },
     };
   };
   const g = new Game({ seed, players: seats.map((c) => ({ name: c.name, ability: wrap(c.ability) })) });
+  real = g;
   // 第一局庄家的第一张在建牌局时就摸了，那时还没开始对账
   rules = [];
   lockedBefore = null;
