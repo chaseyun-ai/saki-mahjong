@@ -105,6 +105,8 @@ export class Game {
   // 哪些座位是玩家操作的（见 PlayerConfig.manual）
   manual: boolean[] = [false, false, false, false];
 
+  // 第几局（从 1 起，每开一局加一，连庄也算）；发牌前等玩家选技能时还是上一局的
+  round = 0;
   roundWind = 0; // 0 东场，1 南场
   roundNumber = 0; // 0-3，等于庄家座位
   honba = 0;
@@ -195,9 +197,20 @@ export class Game {
     return waitingKinds(toCounts(p.hand), p.melds.length);
   }
 
-  // 能力允不允许这家现在和牌（照的照魔镜那一局不和）
+  // 能力允不允许这家现在和牌（照的照魔镜那一局不和）。这是自己给自己的限制，被封印也照样
   canWin(seat: number): boolean {
     return this.abilities[seat]?.canWin?.(this, seat) ?? true;
+  }
+
+  // 这家的能力这一局被别人封印了没有（爽的霍亚乌神威）。round 不写是现在这一局（发牌前是马上要开的那一局）
+  isSealed(seat: number, round = this.phase === 'predeal' ? this.round + 1 : this.round): boolean {
+    return this.abilities.some((a, o) => o !== seat && !!a?.seals?.(this, o, round));
+  }
+
+  // 这一局起作用的能力：被封印的算没有
+  active(seat: number): Ability | null {
+    const a = this.abilities[seat];
+    return a && !this.isSealed(seat, this.round) ? a : null;
   }
 
   isFuriten(seat: number): boolean {
@@ -216,7 +229,7 @@ export class Game {
     const pri = (s: number) => this.abilities[s]?.priority ?? PRIORITY.self;
     return [0, 1, 2, 3]
       .map((k) => (this.dealer + k) % 4)
-      .filter((s) => this.abilities[s])
+      .filter((s) => this.active(s))
       .sort((a, b) => pri(a) - pri(b));
   }
 
@@ -293,6 +306,9 @@ export class Game {
   // ---------- 一局的流程 ----------
 
   private startRound(): void {
+    this.round++;
+    // 发牌前等玩家选技能的那一段结束了（不然 isSealed 之类会以为还在等下一局）
+    if (this.phase === 'predeal') this.phase = 'turn';
     this.wall = new Wall(this.rng);
     this.dice = [this.rng.int(6) + 1, this.rng.int(6) + 1];
     for (const p of this.players) {
@@ -321,12 +337,13 @@ export class Game {
     // 配牌：先由所有人定规矩，再依次调整（换牌不能让任何一条规矩变差），最后统一锁定、发牌
     const order = this.abilityOrder();
     this.dealRules = [];
-    for (const s of order) this.dealRules.push(...(this.abilities[s]!.dealRules?.(this, s) ?? []));
+    // 爽的霍亚乌在她自己的 dealRules 里定下来（她最先动），后面被封印的人就不再出手
+    for (const s of order) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []));
     this.wall.guard = (changes) => this.dealChangeOk(changes);
     try {
       for (const s of order) {
         this.dealActor = s;
-        this.abilities[s]!.beforeDeal?.(this, s);
+        this.active(s)?.beforeDeal?.(this, s);
       }
     } finally {
       this.wall.guard = null;
@@ -341,7 +358,7 @@ export class Game {
     }
     this.dealtWall = { live: this.wall.live.slice(), rinshan: this.wall.rinshan.slice() };
     this.emit({ type: 'roundStart', label: this.roundLabel() });
-    for (const s of this.abilityOrder()) this.abilities[s]!.onRoundStart?.(this, s);
+    for (const s of this.abilityOrder()) this.active(s)!.onRoundStart?.(this, s);
     this.drawFor(this.dealer, false);
   }
 
@@ -360,7 +377,7 @@ export class Game {
     this.turn = seat;
     this.phase = 'turn';
     this.emit({ type: 'draw', seat });
-    this.abilities[seat]?.afterDraw?.(this, seat);
+    this.active(seat)?.afterDraw?.(this, seat);
   }
 
   // 摸牌前：控场的人按顺序先动、定规矩，摸牌的人自己的能力最后动，最后把违反规矩的牌换走
@@ -369,14 +386,14 @@ export class Game {
     const rules: DrawRule[] = [];
     const union = (n: number) => (n === 0 ? null : (t: TileId) => rules.slice(0, n).some((r) => r.deny(t)));
     for (const s of this.abilityOrder()) {
-      const a = this.abilities[s]!;
+      const a = this.active(s)!;
       if (!a.beforeAnyDraw) continue;
       w.deny = union(rules.length);
       const r = a.beforeAnyDraw(this, s, seat, rinshan);
       if (r) rules.push(r);
     }
     w.deny = union(rules.length);
-    this.abilities[seat]?.beforeDraw?.(this, seat, rinshan);
+    this.active(seat)?.beforeDraw?.(this, seat, rinshan);
     w.deny = null;
     if (rules.length === 0) return;
     const next = () => (rinshan ? w.rinshan[0] : w.live[0]);
@@ -543,7 +560,7 @@ export class Game {
     this.rinshanDraw = false;
     this.lastDiscard = { seat, tile };
     this.emit({ type: 'discard', seat, tile, riichi });
-    this.abilities[seat]?.afterDiscard?.(this, seat, tile);
+    this.active(seat)?.afterDiscard?.(this, seat, tile);
     while (this.pendingDora > 0) {
       this.wall.revealDora();
       this.pendingDora--;
@@ -884,7 +901,7 @@ export class Game {
 
   // 玩家操作的座位有发牌前技能可选，就先停在 predeal 等玩家（电脑在 dealRules 里自己决定）
   private startOrWait(): void {
-    const ask = this.manual.some((m, s) => m && (this.abilities[s]?.preDeal?.(this, s) ?? []).some((o) => o.enabled));
+    const ask = this.manual.some((m, s) => m && !this.isSealed(s, this.round + 1) && (this.abilities[s]?.preDeal?.(this, s) ?? []).some((o) => o.enabled));
     if (ask) this.phase = 'predeal';
     else this.startRound();
   }

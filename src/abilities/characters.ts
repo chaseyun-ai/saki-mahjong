@@ -6,6 +6,7 @@ import { kuroAbility } from './kuro';
 import { mihokoAbility } from './mihoko';
 import { nellyAbility } from './nelly';
 import { sakiAbility } from './saki';
+import { sawayaAbility } from './sawaya';
 import { teruAbility } from './teru';
 import { tokiAbility } from './toki';
 import type { Ability } from './types';
@@ -129,6 +130,14 @@ export const CHARACTERS: Character[] = [
     color: '#c2185b',
     ability: nellyAbility,
     ai: { ...baseAi, mistakeRate: 0.03, waves: true },
+  },
+  {
+    id: 'sawaya',
+    name: '狮子原爽',
+    school: '有珠山高中',
+    color: '#7a8fa6',
+    ability: sawayaAbility,
+    ai: { ...baseAi },
   },
 ];
 

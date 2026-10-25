@@ -2515,3 +2515,9 @@ button {
   gap: 1px;
   margin-top: 2px;
 }
+
+/* 被爽的霍亚乌封印 */
+.skill-on.sealed {
+  background: #6b7a8c;
+  color: #fff;
+}

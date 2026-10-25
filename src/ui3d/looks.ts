@@ -42,6 +42,8 @@ export const LOOKS: Record<string, Look> = {
   mihoko: { model: 'models/vroid-g.v2.glb', hair: '#a8784a', eyes: '#3f6fb8', reveal: 'wave', pose: 'lap' },
   // 涅莉：先占位，借淡的长发模型换成淡金色头发、红色眼睛（眼里有火）
   nelly: { model: 'models/vroid-g.v2.glb', hair: '#e9dcb0', eyes: '#c0392b', reveal: 'slam', pose: 'crossed' },
+  // 狮子原爽：先占位，借咲的短发模型换成深灰蓝色头发、灰蓝色眼睛
+  sawaya: { model: 'models/vroid-e.v2.glb', hair: '#4a5068', eyes: '#5c7a8f', hairContrast: 0.6, reveal: 'wave', pose: 'edge' },
   teru: { model: 'models/vroid-f.v2.glb', hair: '#9a5a3c', eyes: '#8a3a2a', hairContrast: 0.7, reveal: 'slam', pose: 'edge' },
 };
 

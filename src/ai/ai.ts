@@ -155,7 +155,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     hit: number; // 洋榎：读出来别人和得了这张
     trap: number; // 洋榎：听牌时听的是自己打过的牌的筋（引っ掛け）
   };
-  const readDanger = style.reads || (style.mirror && teruMirrored(g, seat)) || (style.eye && mihokoEyeOpen(g, seat)) ? dangerKinds(g, seat) : null;
+  // 被爽的霍亚乌封印时读不了牌
+  const sealed = g.isSealed(seat);
+  const readDanger = !sealed && (style.reads || (style.mirror && teruMirrored(g, seat)) || (style.eye && mihokoEyeOpen(g, seat))) ? dangerKinds(g, seat) : null;
   const myDiscards = new Set(p.discards.map((d) => kindOf(d.tile)));
   const cands: Cand[] = [];
   const seen = new Set<string>();
@@ -193,7 +195,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 怜：假设打掉现在最想打的那张，演算自己下一次摸到什么，按它重排。
   // 失误先掷（随机数用掉的时刻和别人一样），再演算：演算拿到的随机数和之后真的牌局一致
   let slip: boolean | null = null;
-  if (style.useForesight) {
+  if (style.useForesight && !sealed) {
     slip = cands.length > 1 && g.rng.chance(style.mistakeRate);
     const t = forecastNextDraw(g, seat, { discard: cands[0].a.tile });
     if (t !== null) {
@@ -242,7 +244,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (riichi && best.sh === 0) {
     const c = counts.slice();
     c[kindOf(best.a.tile)]--;
-    if (style.foresightRiichi) {
+    if (style.foresightRiichi && !sealed) {
       // 怜：先见到立直以后下一次摸的牌正好和牌才立直（一发自摸），否则默听
       const nextDraw = forecastNextDraw(g, seat, { discard: riichi.tile, riichi: true });
       if (nextDraw === null) return best.a;
@@ -341,7 +343,7 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (kan && style.kanEager) return kan;
 
   // 怜：先见到自己下一张有用的话，就不鸣牌打乱顺序
-  if (style.useForesight) {
+  if (style.useForesight && !g.isSealed(seat)) {
     const mine = forecastNextDraw(g, seat);
     if (mine !== null) {
       const c = counts.slice();

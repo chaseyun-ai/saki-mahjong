@@ -646,7 +646,7 @@ export class App {
     // 怜演算时换成“能力发动头像”（眼睛发光），头像框发绿光
     const power = s === this.me && !!this.vision;
     const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
-    const badge = c.ability?.badge?.(g, s);
+    const badge = c.ability && g.isSealed(s) ? '封印' : c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
         <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.mirrorHtml(s)}</div>
@@ -684,7 +684,7 @@ export class App {
   // ---------- 洋榎：读牌 ----------
 
   private isHiroe(): boolean {
-    return this.chars[this.me]?.id === 'hiroe';
+    return this.chars[this.me]?.id === 'hiroe' && !this.game?.isSealed(this.me);
   }
 
   // 听牌的人头像旁边的灯：牌越大越亮（只给操作洋榎的玩家看）
@@ -727,7 +727,7 @@ export class App {
   // 照魔镜看过以后，别人头像上的镜子：指着（手机上点）看这家能力现在的状态
   private mirrorHtml(s: number): string {
     const g = this.game!;
-    if (this.chars[this.me]?.id !== 'teru' || s === this.me || !teruMirrored(g, this.me)) return '';
+    if (this.chars[this.me]?.id !== 'teru' || s === this.me || !teruMirrored(g, this.me) || g.isSealed(this.me)) return '';
     const c = this.chars[s];
     const lines = c.ability ? c.ability.insight?.(g, s) ?? [c.ability.description] : ['没有能力，只靠牌效和防守'];
     const name = c.ability ? c.ability.name : '无能力';
@@ -758,7 +758,7 @@ export class App {
   // ---------- 怜：看下一巡 ----------
 
   private isToki(): boolean {
-    return this.chars[this.me]?.id === 'toki';
+    return this.chars[this.me]?.id === 'toki' && !this.game?.isSealed(this.me);
   }
 
   // 这一回合：同一局、牌山剩的张数和自己打过的张数都没变
@@ -1027,6 +1027,7 @@ export class App {
   private skillBox(): string {
     const g = this.game!;
     const ab = this.chars[this.me].ability;
+    if (ab && g.isSealed(this.me)) return `<div class="foresight skill"><div class="fs-title">${ab.name}<span class="skill-on sealed">被封印</span></div><div class="fs-note skill-state">狮子原爽的霍亚乌神威封印了别人的能力，这一局能力不起作用</div></div>`;
     const b = !this.vision && ab?.skill?.(g, this.me);
     if (!b) return '';
     const meter = b.meter
@@ -1089,7 +1090,7 @@ export class App {
   private foresightBox(): string {
     const g = this.game!;
     const c = this.chars[this.me];
-    const fs = c.ability?.foresight;
+    const fs = g.isSealed(this.me) ? undefined : c.ability?.foresight;
     if (!this.vision && (!fs || (g.phase !== 'turn' && g.phase !== 'calls'))) return '';
     const toki = this.isToki();
     const stamina = toki
