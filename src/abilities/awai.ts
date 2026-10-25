@@ -24,7 +24,7 @@ export const AWAI = {
   safeShanten: 5,
   safeTurns: 4,
   // 技能开着的那一局，有多大概率配到双立直的牌、准备转角暗杠
-  cornerKanChance: 0.2,
+  cornerKanChance: 1,
 };
 
 interface AwaiGameState {
@@ -160,7 +160,7 @@ function worsen(g: Game, idx: number[]): boolean {
 export const awaiAbility: Ability = {
   id: 'awai',
   name: '绝对安全圈',
-  description: `能量 ${AWAI.energyMax} 点，不回复。技能开着的每一局开局扣 ${AWAI.onCost} 点，开着时主动关掉扣 ${AWAI.offCost} 点。开着的那一局展开绝对安全圈：另外三家的配牌至少 ${AWAI.safeShanten} 向听，没人鸣牌的话前 ${AWAI.safeTurns} 巡也摸不到有用的牌；其中 ${AWAI.cornerKanChance * 100}% 的局她自己配牌就听牌、可以双立直，手里的暗刻在牌山最后一个转角前开暗杠，杠里四张都是里宝牌，下一张就是和了牌。`,
+  description: `能量 ${AWAI.energyMax} 点，不回复。技能开着的每一局开局扣 ${AWAI.onCost} 点，开着时主动关掉扣 ${AWAI.offCost} 点。开着的那一局展开绝对安全圈：另外三家的配牌至少 ${AWAI.safeShanten} 向听，没人鸣牌的话前 ${AWAI.safeTurns} 巡也摸不到有用的牌；${AWAI.cornerKanChance >= 1 ? '' : `其中 ${AWAI.cornerKanChance * 100}% 的局`}她自己配牌就听牌、可以双立直，手里的暗刻在牌山最后一个转角前开暗杠，杠里四张都是里宝牌，下一张就是和了牌。`,
   priority: PRIORITY.awai,
 
   // 技能开着就扣能量、展开安全圈：另外三家的配牌至少 safeShanten 向听
