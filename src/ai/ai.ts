@@ -5,6 +5,10 @@ import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
 import { koromoCanShift } from '../abilities/koromo';
 import { mihokoEyeOpen, mihokoSafeKinds } from '../abilities/mihoko';
+import { akoDistance, akoSense } from '../abilities/ako';
+import { seikoFish } from '../abilities/seiko';
+import { warmKind } from '../abilities/yu';
+import { yuukiActive } from '../abilities/yuuki';
 import { NELLY, nellyDeclared, nellyLuck, nellySuit } from '../abilities/nelly';
 import { TERU, teruKeeps, teruMirrored, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
@@ -93,9 +97,17 @@ function teamCareful(g: Game, seat: number): boolean {
 }
 
 // 要防的人：立直的、副露三组以上的（团体赛里小心的时候两组就防）
+// 诚子鸣了两次也要防（再鸣一次就必和）；憧鸣过牌以后靠距离感看得出谁听牌了
 function threats(g: Game, seat: number): number[] {
   const melds = teamCareful(g, seat) ? 2 : 3;
-  return [0, 1, 2, 3].filter((s) => s !== seat && (g.players[s].riichi || g.players[s].melds.length >= melds));
+  const sense = g.abilities[seat]?.id === 'ako' && akoSense(g, seat);
+  return [0, 1, 2, 3].filter((s) => {
+    if (s === seat) return false;
+    const p = g.players[s];
+    if (p.riichi) return true;
+    if (sense) return akoDistance(g, s) === 0;
+    return p.melds.length >= melds || (g.abilities[s]?.id === 'seiko' && seikoFish(g, s) >= 2);
+  });
 }
 
 function danger(g: Game, threat: number, k: Kind, visible: number[]): number {
@@ -201,7 +213,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 
   // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌；涅莉的宣言局也一样，留下做的那门花色
   const suit = style.suitFocus ? kasumiSuit(g, seat) : style.waves ? nellySuit(g, seat) : null;
-  const keep = (c: Cand) => (suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit) ? 1 : 0);
+  // 宥：同样向听时留暖色牌
+  const keep = (c: Cand) =>
+    (suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) || (style.warm && warmKind(kindOf(c.a.tile))) ? 1 : 0;
   // 洋榎听牌时：两种听法都有牌可和，挑引っ掛け的
   const trapOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.trap - x.trap : 0);
   const attackOrder = (x: Cand, y: Cand) =>
@@ -251,7 +265,10 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const dora = (x: Cand) => (style.keepDora && isDoraTile(g, x.a.tile) ? 1 : 0);
     const safest = [...cands].sort((x, y) => dora(x) - dora(y) || x.hit - y.hit || x.risk - y.risk || attackOrder(x, y));
     // 涅莉运势很差的局不拼；这一局和不了（被七姐妹封住、照魔镜那一局）也不拼
-    if (best.sh >= 2 || best.risk >= 6 || style.defensive || (style.waves && nellyLuck(g, seat) <= -2) || !g.canWin(seat) || careful) best = safest[0];
+    // 优希：东风之神在的局一向听也拼，南场以防守为主
+    const yuukiPush = style.eastWind && yuukiActive(g, seat) && best.sh <= 1 && g.canWin(seat);
+    const yuukiFold = style.eastWind && !yuukiActive(g, seat);
+    if (!yuukiPush && (best.sh >= 2 || best.risk >= 6 || style.defensive || yuukiFold || (style.waves && nellyLuck(g, seat) <= -2) || !g.canWin(seat) || careful)) best = safest[0];
   }
 
   const slipped = slip ?? (cands.length > 1 && g.rng.chance(style.mistakeRate));
@@ -479,17 +496,22 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     }
   }
 
+  // 诚子：对子多、还没吃过，就奔对对和，能碰就碰（碰了不退向听也碰，多钓一条鱼）
+  const pairs = counts.filter((n) => n >= 2).length;
+  const toitoi = style.fish && p.melds.every((m) => m.type !== 'chi') && pairs + p.melds.length >= 4;
   let best: Action = pass;
   let bestSh = cur;
   for (const a of legal) {
     if (a.type !== 'pon' && a.type !== 'chi') continue;
-    if (a.type === 'pon' && !(yakuhai || tanyaoOk || yakuSecured)) continue;
+    if (a.type === 'pon' && !(yakuhai || tanyaoOk || yakuSecured || toitoi)) continue;
     if (a.type === 'chi' && !(tanyaoOk || yakuSecured)) continue;
-    if (a.type === 'chi' && !yakuSecured && cur > 2) continue;
+    if (a.type === 'chi' && toitoi) continue;
+    // 憧：速攻，向听多也吃
+    if (a.type === 'chi' && !yakuSecured && cur > 2 && !style.speed) continue;
     const c = counts.slice();
     for (const t of a.tiles) c[kindOf(t)]--;
     const sh = shanten(c, p.melds.length + 1);
-    if (sh < bestSh) {
+    if (sh < bestSh || (style.fish && a.type === 'pon' && sh <= cur && best === pass)) {
       best = a;
       bestSh = sh;
     }

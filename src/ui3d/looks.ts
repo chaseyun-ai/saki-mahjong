@@ -45,6 +45,14 @@ export const LOOKS: Record<string, Look> = {
   // 狮子原爽：先占位，借咲的短发模型换成深灰蓝色头发、灰蓝色眼睛
   sawaya: { model: 'models/vroid-e.v2.glb', hair: '#4a5068', eyes: '#5c7a8f', hairContrast: 0.6, reveal: 'wave', pose: 'edge' },
   teru: { model: 'models/vroid-f.v2.glb', hair: '#9a5a3c', eyes: '#8a3a2a', hairContrast: 0.7, reveal: 'slam', pose: 'edge' },
+  // 片冈优希：先占位，借怜的短发模型换成浅棕色头发、棕色眼睛
+  yuuki: { model: 'models/vroid-f.v2.glb', hair: '#c9925a', eyes: '#8a5a2a', reveal: 'slam', pose: 'edge' },
+  // 松实宥：先占位，借玄的长发模型换成红棕色头发、红褐色眼睛；和玄一样牌河倒过来摆
+  yu: { model: 'models/vroid-shino.v2.glb', hair: '#7a3a34', eyes: '#9a4a3a', hairContrast: 0.6, reveal: 'wave', pose: 'lap', upsideDown: true },
+  // 新子憧：先占位，借和的长发模型换成黑色头发、棕色眼睛
+  ako: { model: 'models/vroid-g.v2.glb', hair: '#2e2628', eyes: '#7a5040', hairContrast: 0.5, reveal: 'slam', pose: 'edge' },
+  // 亦野诚子：先占位，借咲的短发模型换成墨绿色头发、深绿色眼睛
+  seiko: { model: 'models/vroid-e.v2.glb', hair: '#2f4a3e', eyes: '#3e6a50', hairContrast: 0.6, reveal: 'slam', pose: 'crossed' },
 };
 
 // 牌桌上要用到的全部模型文件

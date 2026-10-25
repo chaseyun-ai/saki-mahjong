@@ -1,5 +1,6 @@
 import { CHARACTERS, Character } from '../abilities/characters';
 import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
+import { akoDistance, akoSense } from '../abilities/ako';
 import { teruMirrored } from '../abilities/teru';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { kuroLost } from '../abilities/kuro';
@@ -688,7 +689,7 @@ export class App {
       : [1, 2, 3]
           .map((s) => {
             const c = this.chars[s];
-            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.mirrorHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
+            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
           })
           .join('');
     hud.innerHTML = `
@@ -733,7 +734,7 @@ export class App {
     return `
       <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.mirrorHtml(s)}</div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
       </div>`;
   }
 
@@ -763,6 +764,17 @@ export class App {
     if (say) say.innerHTML = this.sayText();
     const fs = document.querySelector('[data-r=fs]');
     if (fs && this.game && !this.vision) fs.innerHTML = this.nextDrawHtml();
+  }
+
+  // ---------- 憧：距离感 ----------
+
+  // 鸣过牌以后，别人头像旁边的点：离听牌还差几步（听牌了亮「听」），不显示听什么
+  private distHtml(s: number): string {
+    const g = this.game!;
+    if (this.chars[this.me]?.id !== 'ako' || s === this.me || !akoSense(g, this.me) || (g.phase !== 'turn' && g.phase !== 'calls')) return '';
+    const d = akoDistance(g, s);
+    const inner = d === 0 ? '听' : '●'.repeat(Math.min(3, d));
+    return `<span class="dist${d === 0 ? ' tenpai' : ''}" title="距离感：${d === 0 ? '听牌了' : `还差 ${d} 步`}">${inner}</span>`;
   }
 
   // ---------- 洋榎：读牌 ----------
@@ -971,7 +983,7 @@ export class App {
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="nameplate">
-          <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.mirrorHtml(s)}</div>
+          <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
           <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div>
         </div>
         <div class="ohand">${backs}</div>

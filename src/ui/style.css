@@ -2294,6 +2294,31 @@ button {
   }
 }
 
+/* ---------- 憧：距离感 ---------- */
+
+.dist {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: rgba(20, 24, 32, 0.8);
+  color: #f6a6c8;
+  font-size: 10px;
+  letter-spacing: 2px;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dist.tenpai {
+  color: #fff;
+  background: #e86aa6;
+  font-weight: 700;
+}
+
 /* ---------- 洋榎：听牌的灯、危险牌的提醒 ---------- */
 
 .bulb {

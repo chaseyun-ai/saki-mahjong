@@ -8,6 +8,10 @@ import { nellyAbility } from './nelly';
 import { sakiAbility } from './saki';
 import { SAWAYA_SKILLS, sawayaAbility } from './sawaya';
 import { teruAbility } from './teru';
+import { akoAbility } from './ako';
+import { seikoAbility } from './seiko';
+import { yuAbility } from './yu';
+import { yuukiAbility } from './yuuki';
 import { tokiAbility } from './toki';
 import type { Ability } from './types';
 
@@ -27,7 +31,11 @@ export interface AiStyle {
   mirror: boolean; // 宫永照：照魔镜看过以后读得出别人听什么（和 reads 一样防守）
   streak: boolean; // 宫永照：连和中不够大的和了先不和，等更大的
   eye: boolean; // 福路美穗子：睁眼后，立直的人手里没有的花色当安全牌
-  waves: boolean; // 涅莉：运势很差（-2 以下）的局以防守为主
+  waves: boolean; // 涅莉：运势很差（-2 以下）的局以防守为主；宣言局门清做大、不弃和
+  eastWind: boolean; // 片冈优希：东场（或吃了塔可饼）全力进攻，南场以防守为主
+  warm: boolean; // 松实宥：同样向听时留暖色牌
+  speed: boolean; // 新子憧：能鸣就鸣；鸣过以后用距离感看谁听牌了
+  fish: boolean; // 亦野诚子：能碰就碰，对子多时奔对对和
 }
 
 export interface Character {
@@ -43,7 +51,7 @@ export interface Character {
   skillArts?: { id: string; name: string }[];
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -155,6 +163,42 @@ export const CHARACTERS: Character[] = [
     ability: sawayaAbility,
     skillArts: SAWAYA_SKILLS.filter((k) => k.ready).map(({ id, name }) => ({ id, name })),
     ai: { ...baseAi },
+  },
+  {
+    id: 'yuuki',
+    cost: 3,
+    name: '片冈优希',
+    school: '清澄高中',
+    color: '#f0a020',
+    ability: yuukiAbility,
+    ai: { ...baseAi, eastWind: true },
+  },
+  {
+    id: 'yu',
+    cost: 2,
+    name: '松实宥',
+    school: '阿知贺女子学院',
+    color: '#e0603a',
+    ability: yuAbility,
+    ai: { ...baseAi, mistakeRate: 0.05, warm: true },
+  },
+  {
+    id: 'ako',
+    cost: 1,
+    name: '新子憧',
+    school: '阿知贺女子学院',
+    color: '#e86aa6',
+    ability: akoAbility,
+    ai: { ...baseAi, speed: true },
+  },
+  {
+    id: 'seiko',
+    cost: 2,
+    name: '亦野诚子',
+    school: '白糸台高中',
+    color: '#3a8fd0',
+    ability: seikoAbility,
+    ai: { ...baseAi, fish: true },
   },
 ];
 
