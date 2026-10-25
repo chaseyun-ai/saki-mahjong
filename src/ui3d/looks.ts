@@ -38,6 +38,10 @@ export const LOOKS: Record<string, Look> = {
   // 爱宕洋榎：先占位，借咲的模型换成深棕色头发、棕色眼睛
   hiroe: { model: 'models/vroid-e.v2.glb', hair: '#4a2c22', eyes: '#7a4e2a', hairContrast: 0.6, reveal: 'slam', pose: 'edge' },
   // 宫永照：先占位，借怜的短发模型换成红棕色头发、暗红色眼睛
+  // 福路美穗子：先占位，借和的长发模型换成浅栗色头发、蓝色眼睛
+  mihoko: { model: 'models/vroid-g.v2.glb', hair: '#a8784a', eyes: '#3f6fb8', reveal: 'wave', pose: 'lap' },
+  // 涅莉：先占位，借淡的长发模型换成淡金色头发、红色眼睛（眼里有火）
+  nelly: { model: 'models/vroid-g.v2.glb', hair: '#e9dcb0', eyes: '#c0392b', reveal: 'slam', pose: 'crossed' },
   teru: { model: 'models/vroid-f.v2.glb', hair: '#9a5a3c', eyes: '#8a3a2a', hairContrast: 0.7, reveal: 'slam', pose: 'edge' },
 };
 

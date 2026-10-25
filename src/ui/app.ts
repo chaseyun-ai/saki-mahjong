@@ -1,12 +1,14 @@
 import { CHARACTERS, Character } from '../abilities/characters';
-import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
+import { bulbLevel, dangerKinds, readOthers, readTenpai } from '../abilities/hiroe';
 import { teruMirrored } from '../abilities/teru';
+import { mihokoEyeOpen } from '../abilities/mihoko';
 import { kuroLost } from '../abilities/kuro';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
-import { Kind, TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
+import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf, toCounts } from '../engine/tiles';
+import { shanten } from '../engine/shanten';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
@@ -695,6 +697,31 @@ export class App {
     return `<span class="bulb lv${lv}" title="听牌了：${BULB_NAMES[lv - 1]}">${bulbSvg(lv)}</span>`;
   }
 
+  // ---------- 美穗子：右眼 ----------
+
+  private eyeOpen(): boolean {
+    const g = this.game!;
+    return this.chars[this.me]?.id === 'mihoko' && mihokoEyeOpen(g, this.me) && (g.phase === 'turn' || g.phase === 'calls');
+  }
+
+  // 右眼睁开时：三家的手牌（刚摸的那张放最后）和听牌
+  private eyeBox(): string {
+    if (!this.eyeOpen() || this.vision) return '';
+    const g = this.game!;
+    const rows = [1, 2, 3]
+      .map((d) => (this.me + d) % 4)
+      .map((s) => {
+        const p = g.players[s];
+        const tiles = [...p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b), ...(p.drawn !== null ? [p.drawn] : [])];
+        const r = readTenpai(g, s);
+        const sh = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
+        const state = r ? `<b class="eye-tenpai">听 ${r.ron.length ? r.ron.map(kindLabel).join('') : '（振听或没役）'}</b>` : `<span>${sh} 向听</span>`;
+        return `<div class="eye-row"><div class="eye-head"><span>${this.chars[s].name}</span>${state}</div><div class="eye-hand">${tiles.map((t) => tileHtml(t, { size: 'mini' })).join('')}</div></div>`;
+      })
+      .join('');
+    return `<div class="foresight eye"><div class="fs-title">三家的手牌</div>${rows}</div>`;
+  }
+
   // ---------- 照：照魔镜 ----------
 
   // 照魔镜看过以后，别人头像上的镜子：指着（手机上点）看这家能力现在的状态
@@ -710,6 +737,11 @@ export class App {
   // 指着会放铳的牌时她的提醒：第一张“有点不妙”，第二张不一样的“恐怕也不行”，再往后不说了
   private sayText(): string {
     const g = this.game!;
+    if (this.eyeOpen() && !this.vision && this.myDiscardTurn() && this.previewTile !== null) {
+      const k = kindOf(this.previewTile);
+      const who = readOthers(g, this.me).filter((r) => r.ron.includes(k));
+      return who.length ? `<div class="say-bubble">这张会被${who.map((r) => this.chars[r.seat].name).join('、')}荣和</div>` : '';
+    }
     if (!this.isHiroe() || this.vision || !this.myDiscardTurn() || this.previewTile === null) return '';
     if (this.dangerCache.at !== g.events.length) this.dangerCache = { at: g.events.length, kinds: dangerKinds(g, this.me) };
     const k = kindOf(this.previewTile);
@@ -987,7 +1019,7 @@ export class App {
   // 2.5D 不放能力说明，只在能力有东西要给玩家看时（怜的一巡先见、淡和霞的技能按钮）放一个小框
   private foresightHtml(): string {
     const c = this.chars[this.me];
-    const extra = this.foresightBox() + this.skillBox();
+    const extra = this.foresightBox() + this.skillBox() + this.eyeBox();
     return extra ? `<div class="ability-panel foresight-only" style="--c:${c.color}">${extra}</div>` : '';
   }
 
@@ -1121,7 +1153,7 @@ export class App {
     if (!c.ability) {
       return `<div class="ability-panel" style="--c:${c.color}"><div class="ab-name">无能力</div><div class="ab-desc">不受影响，专心打牌。</div></div>`;
     }
-    const extra = this.foresightBox() + this.skillBox();
+    const extra = this.foresightBox() + this.skillBox() + this.eyeBox();
     const lost = c.ability.id === 'kuro' && kuroLost(g, this.me);
     const badge = c.ability.badge?.(g, this.me);
     return `

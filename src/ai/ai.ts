@@ -4,6 +4,8 @@ import { dangerKinds } from '../abilities/hiroe';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
 import { koromoCanShift } from '../abilities/koromo';
+import { mihokoEyeOpen, mihokoFeedKinds } from '../abilities/mihoko';
+import { nellyRiding } from '../abilities/nelly';
 import { TERU, teruKeeps, teruMirrored, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
@@ -153,7 +155,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     hit: number; // 洋榎：读出来别人和得了这张
     trap: number; // 洋榎：听牌时听的是自己打过的牌的筋（引っ掛け）
   };
-  const readDanger = style.reads || (style.mirror && teruMirrored(g, seat)) ? dangerKinds(g, seat) : null;
+  const readDanger = style.reads || (style.mirror && teruMirrored(g, seat)) || (style.eye && mihokoEyeOpen(g, seat)) ? dangerKinds(g, seat) : null;
   const myDiscards = new Set(p.discards.map((d) => kindOf(d.tile)));
   const cands: Cand[] = [];
   const seen = new Set<string>();
@@ -219,12 +221,21 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 
   // 别人立直而自己离听牌还远：弃和
   if (threats(g, seat).length && best.sh >= 1) {
-    const safest = [...cands].sort((x, y) => x.risk - y.risk || attackOrder(x, y));
-    if (best.sh >= 2 || best.risk >= 6 || style.defensive) best = safest[0];
+    const safest = [...cands].sort((x, y) => x.hit - y.hit || x.risk - y.risk || attackOrder(x, y));
+    // 涅莉蓄浪的局不拼
+    if (best.sh >= 2 || best.risk >= 6 || style.defensive || (style.waves && !nellyRiding(g, seat))) best = safest[0];
+  }
+
+  // 美穗子：庄家连庄或领先、自己离和牌还远，就打一张便宜的和了牌给闲家，把庄家拉下来
+  if (style.eye && best.sh >= 2) {
+    const feed = mihokoFeedKinds(g, seat);
+    const gift = cands.find((x) => feed.has(kindOf(x.a.tile)));
+    if (gift) return gift.a;
   }
 
   const slipped = slip ?? (cands.length > 1 && g.rng.chance(style.mistakeRate));
-  if (slipped && cands[1].sh === best.sh) best = cands[1];
+  // 读得出别人听什么时，失误也不会失误到放铳的牌上
+  if (slipped && cands[1].sh === best.sh && cands[1].hit <= best.hit) best = cands[1];
 
   // 能立直就立直
   const riichi = discards.find((a) => a.riichi && kindOf(a.tile) === kindOf(best.a.tile));

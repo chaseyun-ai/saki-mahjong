@@ -3,6 +3,8 @@ import { hiroeAbility } from './hiroe';
 import { kasumiAbility } from './kasumi';
 import { koromoAbility } from './koromo';
 import { kuroAbility } from './kuro';
+import { mihokoAbility } from './mihoko';
+import { nellyAbility } from './nelly';
 import { sakiAbility } from './saki';
 import { teruAbility } from './teru';
 import { tokiAbility } from './toki';
@@ -23,6 +25,8 @@ export interface AiStyle {
   damaMin: number; // 有役、默听荣和至少这么多就不立直（0 是不看）
   mirror: boolean; // 宫永照：照魔镜看过以后读得出别人听什么（和 reads 一样防守）
   streak: boolean; // 宫永照：连和中不够大的和了先不和，等更大的
+  eye: boolean; // 福路美穗子：睁眼那一局照看到的听牌防守，该送牌时送牌
+  waves: boolean; // 涅莉：蓄浪的局以防守为主
 }
 
 export interface Character {
@@ -34,7 +38,7 @@ export interface Character {
   ai: AiStyle;
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -109,6 +113,22 @@ export const CHARACTERS: Character[] = [
     color: '#a8324a',
     ability: teruAbility,
     ai: { ...baseAi, mistakeRate: 0.03, mirror: true, streak: true },
+  },
+  {
+    id: 'mihoko',
+    name: '福路美穗子',
+    school: '风越女子',
+    color: '#3f9fb5',
+    ability: mihokoAbility,
+    ai: { ...baseAi, mistakeRate: 0.02, defensive: true, eye: true },
+  },
+  {
+    id: 'nelly',
+    name: '涅莉·薇萨拉兹',
+    school: '临海女子',
+    color: '#c2185b',
+    ability: nellyAbility,
+    ai: { ...baseAi, mistakeRate: 0.03, waves: true },
   },
 ];
 

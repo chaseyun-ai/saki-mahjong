@@ -19,6 +19,7 @@ export const PRIORITY = {
   awai: 10,
   koromo: 20,
   kasumi: 30,
+  nelly: 40,
   self: 100,
 };
 
