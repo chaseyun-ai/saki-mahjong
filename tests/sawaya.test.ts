@@ -126,4 +126,27 @@ describe('狮子原爽', () => {
     expect(redDraws).toBeGreaterThan(100);
     expect(yellowHands).toBeGreaterThan(5);
   }, 120000);
+
+  it('电脑的爽：霍亚乌不单独用；动手的局叠着用；最后一局把剩下的用掉', () => {
+    let hoyau = 0;
+    let stacked = 0;
+    let acted = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+      const g = play(seed, LINEUPS[seed % 4], (g, me) => {
+        g.onEvent((e) => {
+          if (e.type !== 'roundStart') return;
+          const on = ['red', 'white', 'yellow', 'pakoro', 'akkoro', 'hoyau', 'huri'].filter((id) => sawayaOn(g, me, id as never));
+          if (on.includes('hoyau')) {
+            hoyau++;
+            expect(on.length).toBeGreaterThan(1);
+          }
+          if (on.length) acted++;
+          if (on.length > 1) stacked++;
+        });
+      });
+      expect(g.phase).toBe('gameEnd');
+    }
+    expect(hoyau).toBeGreaterThan(3);
+    expect(stacked / acted).toBeGreaterThan(0.5);
+  }, 120000);
 });

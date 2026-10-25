@@ -1,5 +1,6 @@
 import type { Game } from '../engine/game';
-import { TileId, isHonor, isWind, kindOf, numOf, suitOf } from '../engine/tiles';
+import { shanten } from '../engine/shanten';
+import { TileId, isHonor, isWind, kindOf, numOf, suitOf, toCounts } from '../engine/tiles';
 import { PRIORITY, type Ability, type DealRule, type PreDealOption } from './types';
 
 // 狮子原爽（有珠山）：发牌前召唤五色云和阿伊努的神威（kamuy），可以叠着用。
@@ -17,7 +18,6 @@ export const SAWAYA = {
   hoyauRounds: 2,
   drawChance: 0.5, // 云、神威让她摸到想要的牌的概率
   akkoroChance: 0.7,
-  aiLeadChance: 0.3, // 电脑的爽领先时也放云的概率
 };
 
 type SkillId = 'red' | 'white' | 'yellow' | 'black' | 'fifth' | 'pakoro' | 'akkoro' | 'hoyau' | 'huri';
@@ -68,28 +68,84 @@ function blocked(g: Game, seat: number, id: SkillId): string | null {
 const leader = (g: Game, seat: number) =>
   [0, 1, 2, 3].filter((s) => s !== seat && g.binds(seat, s)).sort((a, b) => g.players[b].score - g.players[a].score)[0];
 
-// 电脑的爽：配牌正合某朵云时放出来（每朵一场一次，不合就留着）；不领先时门槛低一些，
-// 最后两局把剩下的云用掉。落后很多或到了最后一局叫一个神威
+// 电脑的爽：每局先算这一局值不值得动手，动手就叠着用（云 + 增幅的神威），不动手就全留着。
+// - 值不值得：坐庄、落后、配牌正合某朵云、到了最后两局、剩下的云和神威比剩下的局多，都加分；
+//   同桌有攒着最后几局的人（涅莉）时前半场也加分，先把优势拿到手
+// - 动手时：挑最合的云；万子多叫阿科罗、客风多叫胡里；配牌已经好、能做大牌就叫帕科罗对准领先的那家；
+//   同桌能封的控场对手有两个以上才叫霍亚乌，而且一定和云或攻击的神威一起出
+// - 最后两局把剩下的都用掉
+export const SAWAYA_AI = {
+  act: 3, // 「值不值得」到这个分就动手
+  behindPer: 8000, // 落后多少点加 1 分
+  pakoroShanten: 2, // 配牌几向听以内算好
+};
+
+// 能被霍亚乌封住、而且会控场的对手（只读牌的洋榎、美穗子不算；照、玄封不了）
+const CONTROL_FREE = ['hiroe', 'mihoko'];
+const controllers = (g: Game, seat: number) =>
+  [0, 1, 2, 3].filter((s) => s !== seat && g.abilities[s] && !CONTROL_FREE.includes(g.abilities[s]!.id) && g.binds(seat, s) && !g.abilities[s]!.immune && !g.abilities[s]!.absolute);
+
+// 同桌有没有把运势攒到最后几局的人
+const lateHeavy = (g: Game, seat: number) => [0, 1, 2, 3].some((s) => s !== seat && g.abilities[s]?.id === 'nelly');
+
 function aiPicks(g: Game, seat: number): SkillId[] {
-  const out: SkillId[] = [];
   const ok = (id: SkillId) => blocked(g, seat, id) === null;
+  const ready = SAWAYA_SKILLS.filter((k) => ok(k.id)).map((k) => k.id);
+  if (!ready.length) return [];
   const me = g.players[seat].score;
   const top = Math.max(...g.players.filter((p) => p.seat !== seat).map((p) => p.score));
+  const total = g.format === 'team' ? 8 : 4;
+  const slot = g.roundWind * 4 + g.roundNumber;
+  const roundsLeft = Math.max(1, total - slot);
   const late = g.isLastRounds(2);
-  if (me <= top || late || g.rng.chance(SAWAYA.aiLeadChance)) {
-    const hand = g.dealHand(seat).map(kindOf);
-    // 配牌里合这朵云的牌数、合得上的门槛
-    const fit: [SkillId, number, number][] = [
-      ['red', hand.filter(isHonor).length, 4],
-      ['white', hand.filter((k) => k < 27 && suitOf(k) === 2).length, 6],
-      ['yellow', hand.filter((k) => k < 27 && numOf(k) <= 4).length, 8],
-    ];
-    const cloud = fit.filter(([id, n, need]) => ok(id) && (late || n >= need)).sort((a, b) => b[1] / b[2] - a[1] / a[2])[0];
-    if (cloud) out.push(cloud[0]);
-  }
-  if (top - me >= 8000 || (g.isLastRounds(1) && me <= top)) {
-    const kamuy = (['hoyau', 'akkoro', 'pakoro', 'huri'] as SkillId[]).find(ok);
-    if (kamuy) out.push(kamuy);
+  const dealer = seat === g.dealer;
+
+  const hand = g.dealHand(seat).map(kindOf);
+  const man = hand.filter((k) => k < 9).length;
+  const guestWinds = hand.filter((k) => isWind(k) && k !== g.seatWind(seat)).length;
+  // 配牌里合这朵云的牌数、合得上的门槛
+  const fit: [SkillId, number, number][] = [
+    ['red', hand.filter(isHonor).length, 4],
+    ['white', hand.filter((k) => k < 27 && suitOf(k) === 2).length, 6],
+    ['yellow', hand.filter((k) => k < 27 && numOf(k) <= 4).length, 8],
+  ];
+  const clouds = fit.filter(([id]) => ok(id)).sort((a, b) => b[1] / b[2] - a[1] / a[2]);
+  const bestFit = clouds.length ? clouds[0][1] / clouds[0][2] : 0;
+  const sh = shanten(toCounts(g.dealHand(seat)), 0);
+
+  let worth = 0;
+  if (dealer) worth += 1.5;
+  worth += Math.max(0, (top - me) / SAWAYA_AI.behindPer);
+  if (bestFit >= 1) worth += 1.5;
+  if (sh <= SAWAYA_AI.pakoroShanten) worth += 0.5;
+  if (lateHeavy(g, seat) && slot < total / 2) worth += 1;
+  if (ready.length >= roundsLeft * 2) worth += 2;
+  if (me > top + 16000 && !late) worth -= 1.5;
+  if (!late && worth < SAWAYA_AI.act) return [];
+
+  const out: SkillId[] = [];
+  // 云：最后两局合不合都放，平时要差不多合得上
+  const cloud = clouds.find(([, n, need]) => late || n >= need * 0.75);
+  if (cloud) out.push(cloud[0]);
+  // 增幅的神威：阿科罗和白云冲突（一个要万子一个要索子）
+  if (ok('akkoro') && out[0] !== 'white' && (man >= 4 || (late && man >= 2))) out.push('akkoro');
+  if (ok('huri') && (guestWinds >= 2 || (out[0] === 'red' && guestWinds >= 1) || (late && guestWinds >= 1))) out.push('huri');
+  // 帕科罗：配牌好、能做大牌（或者有云、神威撑着）的局，对准领先的那家
+  const big = out.length >= 2 || (out.length >= 1 && sh <= SAWAYA_AI.pakoroShanten);
+  if (ok('pakoro') && leader(g, seat) !== undefined && (big || (late && out.length >= 1))) out.push('pakoro');
+  // 霍亚乌：不单独用
+  if (ok('hoyau') && out.length && (controllers(g, seat).length >= 2 || (late && controllers(g, seat).length >= 1))) out.push('hoyau');
+  // 最后一局：剩下的全放（霍亚乌没人可封就算了）
+  if (g.isLastRounds(1)) {
+    for (const id of ready) {
+      if (out.includes(id)) continue;
+      if (id === 'white' && out.includes('akkoro')) continue;
+      if (id === 'akkoro' && out.includes('white')) continue;
+      if (id === 'hoyau' && !controllers(g, seat).length) continue;
+      if (id === 'pakoro' && leader(g, seat) === undefined) continue;
+      if (['red', 'white', 'yellow'].includes(id) && out.some((x) => ['red', 'white', 'yellow'].includes(x))) continue;
+      out.push(id);
+    }
   }
   return out;
 }
