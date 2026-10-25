@@ -7,12 +7,15 @@ import type { Ability } from './types';
 // 爱宕洋榎（姬松）：读牌。没有控场，牌山一张都不动。
 // 她看得出谁听牌了、听哪几张、大概有多大：
 // - 玩家操作她时：指着会放铳的牌冒气泡；听牌的人头像旁边亮一盏灯，牌越大越亮（见 src/ui/app.ts）
-// - 电脑的洋榎：照读出来的听牌防守，不打别人和得了的牌；自己听牌时挑引っ掛け的听法；有役、默听够大就不立直
+// - 电脑的洋榎：照读出来的听牌防守，不打别人和得了的牌；自己听牌时挑引っ掛け的听法；有役、默听够大就不立直。
+//   别人听着大牌、自己又和不了时，会故意放一个便宜的铳给第三家把这一局结束掉（差し込み，见 src/ai/ai.ts）
 
 export interface TenpaiRead {
   seat: number;
   // 这几种牌打出去他能荣和（振听、没役的不算）
   ron: Kind[];
+  // 和 ron 一一对应：打这张给他荣和要付多少（不算本场、里宝）
+  pay: number[];
   // 估计能和多大：几种和了牌里最大的那个（荣和、自摸取大的，不算里宝）
   value: number;
 }
@@ -31,6 +34,7 @@ export function readTenpai(g: Game, seat: number): TenpaiRead | null {
   if (!waits.length) return null;
   const furiten = p.furitenTemp || p.furitenRiichi || p.discards.some((d) => waits.includes(kindOf(d.tile)));
   const ron: Kind[] = [];
+  const pay: number[] = [];
   let value = 0;
   for (const k of waits) {
     // 用一张不在他手里的普通牌当和了牌
@@ -48,12 +52,15 @@ export function readTenpai(g: Game, seat: number): TenpaiRead | null {
       doraIndicators: g.wall.visibleDoraIndicators().map(kindOf),
     };
     const r = evaluateWin({ ...ctx, tsumo: false });
-    if (r && r.ron > 0 && !furiten) ron.push(k);
+    if (r && r.ron > 0 && !furiten) {
+      ron.push(k);
+      pay.push(r.ron);
+    }
     const t = evaluateWin({ ...ctx, tsumo: true });
     const tsumo = t ? (seat === g.dealer ? t.tsumoOtherPays * 3 : t.tsumoDealerPays + t.tsumoOtherPays * 2) : 0;
     value = Math.max(value, r?.ron ?? 0, tsumo);
   }
-  return value > 0 ? { seat, ron, value } : null;
+  return value > 0 ? { seat, ron, pay, value } : null;
 }
 
 // 除了 seat 自己，听牌的人

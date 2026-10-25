@@ -1,10 +1,10 @@
 import type { AiStyle } from '../abilities/characters';
 import { awaiWaitingForCorner } from '../abilities/awai';
-import { dangerKinds } from '../abilities/hiroe';
+import { dangerKinds, readOthers } from '../abilities/hiroe';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
 import { koromoCanShift } from '../abilities/koromo';
-import { mihokoSafeKinds } from '../abilities/mihoko';
+import { mihokoEyeOpen, mihokoSafeKinds } from '../abilities/mihoko';
 import { nellyLuck } from '../abilities/nelly';
 import { TERU, teruKeeps, teruMirrored, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
@@ -167,7 +167,10 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   };
   // 被爽的霍亚乌封印时读不了牌
   const sealed = g.isSealed(seat);
-  const readDanger = !sealed && (style.reads || (style.mirror && teruMirrored(g, seat))) ? dangerKinds(g, seat) : null;
+  // 读得出别人听什么：洋榎、照魔镜看过以后的照、睁开右眼的电脑美穗子（玩家操作的美穗子只看得到花色）
+  const eyeReads = style.eye && mihokoEyeOpen(g, seat) && !g.manual[seat];
+  const reader = !sealed && (style.reads || eyeReads || (style.mirror && teruMirrored(g, seat)));
+  const readDanger = reader ? dangerKinds(g, seat) : null;
   // 美穗子睁眼：立直的人手里没有的花色是安全牌
   const eyeSafe = style.eye && !sealed ? new Map(threats(g, seat).map((t) => [t, mihokoSafeKinds(g, seat, t)])) : null;
   const myDiscards = new Set(p.discards.map((d) => kindOf(d.tile)));
@@ -233,6 +236,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   }
   let best = cands[0];
 
+  // 洋榎、美穗子：别人听着大牌、自己和不了时，故意放一个便宜的铳给第三家（照从来不放）
+  if (reader && (style.reads || style.eye)) {
+    const feed = sashikomi(g, seat, best.sh, cands.map((x) => x.a.tile));
+    if (feed !== null) return cands.find((x) => x.a.tile === feed)!.a;
+  }
+
   // 别人立直而自己离听牌还远：弃和。团体赛里少失点就是帮队伍：一向听就弃，听牌了手里这张也危险也弃
   const careful = teamCareful(g, seat);
   if (threats(g, seat).length && (best.sh >= 1 || !g.canWin(seat) || (careful && best.risk >= 6))) {
@@ -270,6 +279,75 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (ukeire(c, p.melds.length, visible) > 0) return riichi;
   }
   return best.a;
+}
+
+// ---------- 差し込み ----------
+
+// 原作里洋榎放给摇杏 3900，躲开竹井久 18000 的自摸。读得出牌的人才做得到：
+// 有人听着大牌（SASHI.big 以上），自己离和牌还远（或者这一局和不了），
+// 就挑一张只有第三家和得了、他和得不贵（SASHI.cheap 以内）的牌打出去，把这一局结束掉。
+// 放之前比一比：放铳以后的局面和大牌自摸以后的局面，哪个对自己（团体赛就是自己队）的名次、和第一的差距更好
+export const SASHI = {
+  big: 12000, // 多大算大牌
+  cheap: 3900, // 最多放多少
+  live: 2, // 大牌的和了牌还剩几张（自己看不到的）才值得躲
+};
+
+// 局面好坏：名次靠前、离第一近
+function standing(scores: number[], seat: number): number {
+  const me = scores[seat];
+  const rank = scores.filter((v, s) => s !== seat && v > me).length;
+  const top = Math.max(...scores.filter((_, s) => s !== seat));
+  return -8000 * rank + Math.min(0, me - top) + (me < 0 ? -30000 : 0);
+}
+
+// 返回要打的那张（tiles 里的），不放就是 null
+function sashikomi(g: Game, seat: number, sh: number, tiles: TileId[]): TileId | null {
+  if (sh <= 0 && g.canWin(seat)) return null;
+  const reads = readOthers(g, seat);
+  const visible = visibleCounts(g, seat);
+  const threat = reads
+    .filter((r) => r.value >= SASHI.big && waitsLeft(g, r.seat, visible) >= SASHI.live)
+    .sort((a, b) => b.value - a.value)[0];
+  if (!threat) return null;
+  const scores = g.players.map((p) => p.score);
+  // 大牌自摸以后
+  const dealer = g.dealer;
+  const after = scores.slice();
+  for (let s = 0; s < 4; s++) {
+    if (s === threat.seat) continue;
+    const share = threat.seat === dealer ? threat.value / 3 : s === dealer ? threat.value / 2 : threat.value / 4;
+    after[s] -= share;
+    after[threat.seat] += share;
+  }
+  const keep = standing(after, seat);
+  const honba = g.honba * 300;
+  let pick: { tile: TileId; score: number } | null = null;
+  for (const r of reads) {
+    if (r.seat === threat.seat) continue;
+    r.ron.forEach((k, i) => {
+      const pay = r.pay[i] + honba;
+      if (r.pay[i] > SASHI.cheap) return;
+      // 别人（包括大牌）也和得了这张就不行：一炮多响
+      if (reads.some((o) => o.seat !== r.seat && o.ron.includes(k))) return;
+      const tile = tiles.find((t) => kindOf(t) === k);
+      if (tile === undefined) return;
+      const fed = scores.slice();
+      fed[seat] -= pay;
+      fed[r.seat] += pay + g.riichiSticks * 1000;
+      const score = standing(fed, seat);
+      if (score > keep && (!pick || score > pick.score)) pick = { tile, score };
+    });
+  }
+  return pick === null ? null : (pick as { tile: TileId }).tile;
+}
+
+// 他的和了牌还剩几张（seat 看不到的）
+function waitsLeft(g: Game, target: number, visible: number[]): number {
+  const p = g.players[target];
+  const hand = (p.hand.length + 3 * p.melds.length) % 3 === 2 && p.drawn !== null ? p.hand.filter((t) => t !== p.drawn) : p.hand;
+  const own = toCounts(hand);
+  return waitingKinds(own, p.melds.length).reduce((n, k) => n + Math.max(0, 4 - visible[k] - own[k]), 0);
 }
 
 // 玄：立直以后只能摸切，宝牌聚集送来的宝牌全得打掉，能力当场失效。所以听牌了默听为主，非进攻不可时才立直：

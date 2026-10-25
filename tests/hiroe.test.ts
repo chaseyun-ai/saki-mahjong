@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { bulbLevel, dangerKinds, readTenpai } from '../src/abilities/hiroe';
-import { chooseAction } from '../src/ai/ai';
+import { bulbLevel, dangerKinds, readOthers, readTenpai } from '../src/abilities/hiroe';
+import { SASHI, chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { kindOf } from '../src/engine/tiles';
 
@@ -52,12 +52,43 @@ describe('爱宕洋榎：读牌', () => {
           const safe = g.legalActions(0).some((x) => x.type === 'discard' && !danger.has(kindOf(x.tile)));
           if (danger.size && safe) {
             checked++;
-            expect(danger.has(kindOf(a.tile))).toBe(false);
+            // 放铳只能是差し込み：有人听着大牌，而且这张他和不了
+            if (danger.has(kindOf(a.tile))) {
+              const reads = readOthers(g, 0);
+              const big = reads.filter((r) => r.value >= SASHI.big);
+              expect(big.length).toBeGreaterThan(0);
+              expect(big.some((r) => r.ron.includes(kindOf(a.tile)))).toBe(false);
+            }
           }
         }
         g.act(s, a);
       }
     }
     expect(checked).toBeGreaterThan(10);
+  });
+
+  it('差し込み：有人听着大牌、自己和不了时，放一个便宜的铳给第三家', () => {
+    for (const id of ['hiroe', 'mihoko']) {
+      const g = new Game({ seed: 3, players: [id, 'a', 'b', 'c'].map((n, i) => ({ name: n, ability: i === 0 ? byId(id).ability : null })) });
+      // 一家：九莲宝灯 1112345678999m
+      g.players[1].hand = [0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 8, 8].map((k, i) => k * 4 + (i % 3));
+      // 另一家：123s 456s 789p 白白白 + 5p 单骑，荣和很便宜
+      g.players[2].hand = [...ids([18, 19, 20, 21, 22, 23, 15, 16, 17]), ...[1, 2, 3].map((i) => 31 * 4 + i), 13 * 4 + 3];
+      // 自己：离听牌很远，手里有 5p
+      g.players[0].hand = [13, 27, 28, 29, 30, 32, 33, 9, 11, 19, 24, 26, 10, 21].map((k) => k * 4);
+      for (const p of g.players) {
+        p.melds = [];
+        p.discards = [];
+      }
+      g.players[0].drawn = g.players[0].hand[13];
+      g.phase = 'turn';
+      g.turn = 0;
+      if (id === 'mihoko') (g.abilityState[0] as { open?: boolean }).open = true;
+      const cheap = readTenpai(g, 2)!;
+      expect(cheap.ron).toEqual([13]);
+      expect(cheap.pay[0]).toBeLessThanOrEqual(SASHI.cheap);
+      const a = chooseAction(g, 0, byId(id).ai);
+      expect(a.type === 'discard' && kindOf(a.tile)).toBe(13);
+    }
   });
 });
