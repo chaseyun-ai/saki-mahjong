@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { NELLY, nellyAiPlan, nellyBlocked, nellyLuck, nellyPlanError, nellySisters } from '../src/abilities/nelly';
+import { NELLY, nellyAiPlan, nellyBlocked, nellyDeclared, nellyLuck, nellyPlanError, nellySisters, nellySuit } from '../src/abilities/nelly';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
-import { toCounts } from '../src/engine/tiles';
+import { kindOf, toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -44,12 +44,18 @@ function play(seed: number, ids: string[], setup: (g: Game, me: number) => void,
 const label = (g: Game) => g.roundWind * 4 + g.roundNumber;
 
 describe('涅莉·薇萨拉兹', () => {
-  it('运势加起来是 0；电脑前面负、最后两局正；玩家分的照用，同一局连庄沿用', () => {
+  it('运势加起来是 0；电脑把 +6 压在南场（东风战是东场）坐庄那局；玩家分的照用，同一局连庄沿用', () => {
     for (const n of [4, 8]) {
-      const plan = nellyAiPlan(n);
-      expect(plan.reduce((a, b) => a + b, 0)).toBe(0);
-      expect(nellyPlanError(plan)).toBeNull();
-      expect(plan.at(-1)).toBeGreaterThan(0);
+      for (let d = 0; d < 4; d++) {
+        for (const eastToo of [false, true]) {
+          const plan = nellyAiPlan(n, d, eastToo);
+          expect(plan.reduce((a, b) => a + b, 0)).toBe(0);
+          expect(nellyPlanError(plan)).toBeNull();
+          expect(plan[n === 8 ? 4 + d : d]).toBe(6);
+          if (n === 8) expect(plan[d]).toBe(eastToo ? NELLY.declare : plan[d]);
+          expect(plan.filter((v) => v > 0).length).toBe(n === 8 && eastToo ? 2 : 1);
+        }
+      }
     }
     expect(nellyPlanError([1, 0, 0, 0])).not.toBeNull();
     expect(nellyPlanError([NELLY.min - 1, 0, 0, -NELLY.min + 1])).not.toBeNull();
@@ -73,7 +79,7 @@ describe('涅莉·薇萨拉兹', () => {
     }
   }, 120000);
 
-  it('七姐妹：只在运势为正的局用，一场最多 7 次，封住的人这一局和不了，每用一次运势减 1', () => {
+  it('七姐妹：只在运势为正的局用，一场最多 7 次，封住的人这一局和不了，顺流的局每用一次运势减 1，宣言局不扣', () => {
     let used = 0;
     for (let seed = 1; seed <= 24; seed++) {
       play(
@@ -81,16 +87,17 @@ describe('涅莉·薇萨拉兹', () => {
         LINEUPS[seed % 4],
         (g, me) => {
           let before = 0;
+          // 每个事件之后记一下运势（第一局的庄家第一次摸牌在 roundStart 之前）
           g.onEvent((e) => {
-            if (e.type === 'roundStart') before = nellyLuck(g, me);
             if (e.type === 'ability' && e.seat === me && e.text === '七姐妹') {
               used++;
               expect(before).toBeGreaterThan(0);
-              expect(nellyLuck(g, me)).toBe(before - 1);
+              expect(nellyLuck(g, me)).toBe(before >= NELLY.declare ? before : before - 1);
               before = nellyLuck(g, me);
               expect(nellySisters(g, me)).toBeGreaterThanOrEqual(0);
             }
             if (e.type === 'roundEnd') for (const w of e.result.wins) expect(nellyBlocked(g, me)).not.toContain(w.seat);
+            before = nellyLuck(g, me);
           });
         },
         { format: 'team' },
@@ -99,7 +106,7 @@ describe('涅莉·薇萨拉兹', () => {
     expect(used).toBeGreaterThan(2);
   }, 120000);
 
-  it('运势正的局摸牌明显比负的局顺', () => {
+  it('运势正的局摸牌明显比负的局顺（还没听牌时）', () => {
     const stat = { up: [0, 0], down: [0, 0] };
     for (let seed = 1; seed <= 20; seed++) {
       play(
@@ -112,6 +119,8 @@ describe('涅莉·薇萨拉兹', () => {
             if (!v) return;
             const p = g.players[me];
             const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
+            // 宣言局听牌以后先换花色，不算
+            if (before <= 0) return;
             const s = v > 0 ? stat.up : stat.down;
             s[0]++;
             if (shanten(toCounts(p.hand), p.melds.length) < before) s[1]++;
@@ -123,5 +132,48 @@ describe('涅莉·薇萨拉兹', () => {
     console.log(stat);
     expect(stat.up[0]).toBeGreaterThan(100);
     expect(stat.up[1] / stat.up[0]).toBeGreaterThan(stat.down[1] / stat.down[0] + 0.1);
+  }, 120000);
+});
+
+describe('涅莉的宣言局', () => {
+  it('宣言局：配牌偏向一种花色、几乎都能和、和得大；电脑的涅莉不挂运势标志', () => {
+    let rounds = 0;
+    let wins = 0;
+    let big = 0;
+    let suitTiles = 0;
+    let tiles = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      play(
+        seed,
+        LINEUPS[seed % 4],
+        (g, me) => {
+          let decl = false;
+          g.onEvent((e) => {
+            if (e.type === 'roundStart') {
+              decl = nellyDeclared(g, me);
+              expect(g.abilities[me]!.badge!(g, me)).toBeNull();
+              if (!decl) return;
+              rounds++;
+              const suit = nellySuit(g, me)!;
+              const nums = g.players[me].hand.filter((t) => kindOf(t) < 27);
+              tiles += nums.length;
+              suitTiles += nums.filter((t) => Math.floor(kindOf(t) / 9) === suit).length;
+            }
+            if (e.type === 'roundEnd' && decl) {
+              const w = e.result.wins.find((x) => x.seat === me);
+              if (w) {
+                wins++;
+                if (e.result.deltas[me] >= 16000) big++;
+              }
+            }
+          });
+        },
+        { format: 'team' },
+      );
+    }
+    expect(rounds).toBeGreaterThan(10);
+    expect(suitTiles / tiles).toBeGreaterThan(0.6);
+    expect(wins / rounds).toBeGreaterThan(0.4);
+    expect(big / wins).toBeGreaterThan(0.6);
   }, 120000);
 });

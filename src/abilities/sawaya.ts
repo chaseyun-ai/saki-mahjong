@@ -77,7 +77,7 @@ const leader = (g: Game, seat: number) =>
 export const SAWAYA_AI = {
   act: 3, // 「值不值得」到这个分就动手
   behindPer: 8000, // 落后多少点加 1 分
-  pakoroShanten: 2, // 配牌几向听以内算好
+  pakoroShanten: 3, // 配牌几向听以内算好
 };
 
 // 能被霍亚乌封住、而且会控场的对手（只读牌的洋榎、美穗子不算；照、玄封不了）
@@ -123,18 +123,28 @@ function aiPicks(g: Game, seat: number): SkillId[] {
   if (me > top + 16000 && !late) worth -= 1.5;
   if (!late && worth < SAWAYA_AI.act) return [];
 
+  // 这一局放几样：剩下的平摊到剩下的局，至少两样（云 + 一个神威），坐庄多一样
+  const budget = Math.max(2, Math.ceil(ready.length / roundsLeft)) + (dealer ? 1 : 0);
   const out: SkillId[] = [];
   // 云：最后两局合不合都放，平时要差不多合得上
   const cloud = clouds.find(([, n, need]) => late || n >= need * 0.75);
   if (cloud) out.push(cloud[0]);
-  // 增幅的神威：阿科罗和白云冲突（一个要万子一个要索子）
-  if (ok('akkoro') && out[0] !== 'white' && (man >= 4 || (late && man >= 2))) out.push('akkoro');
-  if (ok('huri') && (guestWinds >= 2 || (out[0] === 'red' && guestWinds >= 1) || (late && guestWinds >= 1))) out.push('huri');
-  // 帕科罗：配牌好、能做大牌（或者有云、神威撑着）的局，对准领先的那家
-  const big = out.length >= 2 || (out.length >= 1 && sh <= SAWAYA_AI.pakoroShanten);
-  if (ok('pakoro') && leader(g, seat) !== undefined && (big || (late && out.length >= 1))) out.push('pakoro');
-  // 霍亚乌：不单独用
-  if (ok('hoyau') && out.length && (controllers(g, seat).length >= 2 || (late && controllers(g, seat).length >= 1))) out.push('hoyau');
+  // 神威按合不合排：阿科罗和白云冲突（一个要万子一个要索子）；帕科罗要配牌好、能做大牌，对准领先的那家；
+  // 霍亚乌不单独用，能封的控场对手越多越值
+  const ctrl = controllers(g, seat).length;
+  const kamuy: [SkillId, number][] = [];
+  if (ok('akkoro') && out[0] !== 'white' && (man >= 3 || (late && man >= 2))) kamuy.push(['akkoro', man / 4]);
+  if (ok('huri') && (guestWinds >= 2 || (out[0] === 'red' && guestWinds >= 1) || (late && guestWinds >= 1))) kamuy.push(['huri', guestWinds / 2 + (out[0] === 'red' ? 0.5 : 0)]);
+  if (ok('pakoro') && leader(g, seat) !== undefined && (sh <= SAWAYA_AI.pakoroShanten || late)) kamuy.push(['pakoro', 1 + (dealer ? 0.5 : 0)]);
+  if (ok('hoyau') && (ctrl >= 2 || (late && ctrl >= 1))) kamuy.push(['hoyau', ctrl / 2]);
+  kamuy.sort((a, b) => b[1] - a[1]);
+  for (const [id] of kamuy) {
+    if (out.length >= budget) break;
+    if (id === 'hoyau' && !out.length && kamuy.length < 2) continue;
+    out.push(id);
+  }
+  // 霍亚乌不单独用
+  if (out.length === 1 && out[0] === 'hoyau') out.pop();
   // 最后一局：剩下的全放（霍亚乌没人可封就算了）
   if (g.isLastRounds(1)) {
     for (const id of ready) {

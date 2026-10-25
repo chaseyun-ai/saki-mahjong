@@ -5,7 +5,7 @@ import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
 import { koromoCanShift } from '../abilities/koromo';
 import { mihokoEyeOpen, mihokoSafeKinds } from '../abilities/mihoko';
-import { nellyLuck } from '../abilities/nelly';
+import { NELLY, nellyDeclared, nellyLuck, nellySuit } from '../abilities/nelly';
 import { TERU, teruKeeps, teruMirrored, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
@@ -130,7 +130,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const find = (t: Action['type']) => legal.find((a) => a.type === t);
 
   const tsumo = find('tsumo');
-  if (tsumo && !(style.streak && teruWaits(g, seat, true))) return tsumo;
+  if (tsumo && !(style.streak && teruWaits(g, seat, true)) && !(style.waves && nellyHolds(g, seat, true))) return tsumo;
 
   const kyuushu = find('kyuushu');
   if (kyuushu && kokushiShanten(toCounts(p.hand)) > 2) return kyuushu;
@@ -199,8 +199,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, trap });
   }
 
-  // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌
-  const suit = style.suitFocus ? kasumiSuit(g, seat) : null;
+  // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌；涅莉的宣言局也一样，留下做的那门花色
+  const suit = style.suitFocus ? kasumiSuit(g, seat) : style.waves ? nellySuit(g, seat) : null;
   const keep = (c: Cand) => (suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit) ? 1 : 0);
   // 洋榎听牌时：两种听法都有牌可和，挑引っ掛け的
   const trapOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.trap - x.trap : 0);
@@ -244,7 +244,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 
   // 别人立直而自己离听牌还远：弃和。团体赛里少失点就是帮队伍：一向听就弃，听牌了手里这张也危险也弃
   const careful = teamCareful(g, seat);
-  if (threats(g, seat).length && (best.sh >= 1 || !g.canWin(seat) || (careful && best.risk >= 6))) {
+  // 涅莉的宣言局不弃和
+  const declared = style.waves && nellyDeclared(g, seat) && g.canWin(seat);
+  if (!declared && threats(g, seat).length && (best.sh >= 1 || !g.canWin(seat) || (careful && best.risk >= 6))) {
     // 玄弃和也不打宝牌（还有别的牌可打时）
     const dora = (x: Cand) => (style.keepDora && isDoraTile(g, x.a.tile) ? 1 : 0);
     const safest = [...cands].sort((x, y) => dora(x) - dora(y) || x.hit - y.hit || x.risk - y.risk || attackOrder(x, y));
@@ -272,6 +274,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       return shanten(c, p.melds.length) === -1 ? riichi : best.a;
     }
     if (style.keepDora && !kuroMustRiichi(g, seat, p.hand.filter((t) => t !== best.a.tile))) return best.a;
+    // 涅莉的宣言局：手里还有别的花色就先不立直，接着换牌往大里做
+    if (declared && suit !== null && g.wall.remaining > NELLY.declLate && p.hand.some((t) => t !== best.a.tile && kindOf(t) < 27 && Math.floor(kindOf(t) / 9) !== suit)) return best.a;
     // 衣：海底不是自己的、这一局也没法再挪给自己，就不立直，留着吃碰把海底挪过来（打掉这张以后，最后一张轮到谁：从下家起数）
     if (style.haitei && (seat + 1 + g.wall.live.length - 1) % 4 !== seat && !koromoCanShift(g, seat)) return best.a;
     // 洋榎：有役、默听也够大就默听，别人看不出她听牌了
@@ -399,6 +403,15 @@ function damaRon(g: Game, seat: number, hand: TileId[]): number {
 }
 
 // 照：这一手和了接不上连和（比上一次小），牌山还多，就先不和、等更大的
+// 涅莉的宣言局：牌还不够大（不到 NELLY.declMin），牌山还多，就先不和
+function nellyHolds(g: Game, seat: number, tsumo: boolean): boolean {
+  if (!nellyDeclared(g, seat) || g.wall.remaining <= NELLY.declLate) return false;
+  const p = g.players[seat];
+  const tile = tsumo ? p.drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
+  const r = g.winResult(seat, tile, tsumo);
+  return !!r && teruWinValue(r, tsumo, seat === g.dealer) < NELLY.declMin;
+}
+
 function teruWaits(g: Game, seat: number, tsumo: boolean): boolean {
   if (g.wall.remaining <= TERU.aiForceWin) return false;
   const p = g.players[seat];
@@ -420,7 +433,9 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const pass = legal.find((a) => a.type === 'pass')!;
   const ron = legal.find((a) => a.type === 'ron');
   // 淡：等转角暗杠自摸，不荣和
-  if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false))) return ron;
+  if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false))) return ron;
+  // 涅莉的宣言局不鸣牌，门清做大
+  if (style.waves && nellyDeclared(g, seat)) return pass;
 
   const p = g.players[seat];
   const tile = g.lastDiscard!.tile;

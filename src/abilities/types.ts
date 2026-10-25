@@ -51,6 +51,8 @@ export interface Ability {
   // 别人的能力动不了她：不被封印，别人对她的配牌、摸牌定的规矩不算，别人换牌也换不到她的配牌（宫永照）。
   // 只有 absolute 的能力还管得到她
   immune?: boolean;
+  // 开局必定坐庄（片冈优希）：她是起家
+  firstDealer?: boolean;
   // 作者钦定最高（松实玄的宝牌）：不被封印，她定的规矩连 immune 的人也要守
   absolute?: boolean;
   // 配牌之前：牌山已经洗好、骰子掷完，live 的前 52 张还没发（g.dealIndices 给出每家会拿到哪几张）

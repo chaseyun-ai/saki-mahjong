@@ -117,7 +117,8 @@ export class Game {
   // 第几局（从 1 起，每开一局加一，连庄也算）；发牌前等玩家选技能时还是上一局的
   round = 0;
   roundWind = 0; // 0 东场，1 南场
-  roundNumber = 0; // 0-3，等于庄家座位
+  roundNumber = 0; // 0-3，东 1 局是 0
+  firstDealer = 0; // 起家（东 1 局的庄家）：平时是 0 号位，片冈优希在场时是她
   honba = 0;
   riichiSticks = 0;
   wall!: Wall;
@@ -166,6 +167,7 @@ export class Game {
       kuikaeBan: [],
     }));
     this.abilities = opts.players.map((p) => p.ability ?? null);
+    this.firstDealer = Math.max(0, this.abilities.findIndex((a) => a?.firstDealer));
     this.manual = opts.players.map((p) => !!p.manual);
     this.format = opts.format ?? 'east';
     this.riichiSticks = opts.riichiSticks ?? 0;
@@ -175,7 +177,12 @@ export class Game {
   // ---------- 查询 ----------
 
   get dealer(): number {
-    return this.roundNumber;
+    return (this.firstDealer + this.roundNumber) % 4;
+  }
+
+  // 这个人在每一圈的第几局坐庄（0–3）
+  dealerRound(seat: number): number {
+    return (seat - this.firstDealer + 4) % 4;
   }
 
   roundLabel(): string {
