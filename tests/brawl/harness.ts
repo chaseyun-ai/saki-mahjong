@@ -43,6 +43,24 @@ export function combos<T>(pool: T[], k: number): T[][] {
   return [...combos(rest, k - 1).map((c) => [head, ...c]), ...combos(rest, k)];
 }
 
+// 角色多了以后全部组合打不完：挑一部分，保证任意两个人都同桌过，再按顺序补到 limit 个
+export function sampleCombos<T>(pool: T[], k: number, limit: number): T[][] {
+  const all = combos(pool, k);
+  if (all.length <= limit) return all;
+  const order = new Rng(20240611).shuffle(all.map((_, i) => i));
+  const met = new Set<string>();
+  const pairs = (c: T[]) => c.flatMap((a, i) => c.slice(i + 1).map((b) => `${pool.indexOf(a)}-${pool.indexOf(b)}`));
+  const picked: number[] = [];
+  for (const i of order) {
+    if (pairs(all[i]).some((p) => !met.has(p))) {
+      picked.push(i);
+      pairs(all[i]).forEach((p) => met.add(p));
+    }
+  }
+  for (const i of order) if (picked.length < limit && !picked.includes(i)) picked.push(i);
+  return picked.sort((a, b) => a - b).map((i) => all[i]);
+}
+
 export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): void {
   // 座位也打乱，结果不能靠谁坐哪
   const seats = new Rng(seed * 7919).shuffle([...chars]);

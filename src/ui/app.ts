@@ -1,5 +1,6 @@
 import { CHARACTERS, Character } from '../abilities/characters';
 import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
+import { teruMirrored } from '../abilities/teru';
 import { kuroLost } from '../abilities/kuro';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
@@ -603,7 +604,7 @@ export class App {
       : [1, 2, 3]
           .map((s) => {
             const c = this.chars[s];
-            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
+            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.mirrorHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
           })
           .join('');
     hud.innerHTML = `
@@ -646,7 +647,7 @@ export class App {
     const badge = c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}</div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.mirrorHtml(s)}</div>
       </div>`;
   }
 
@@ -692,6 +693,18 @@ export class App {
     if (!r) return '';
     const lv = bulbLevel(r.value);
     return `<span class="bulb lv${lv}" title="听牌了：${BULB_NAMES[lv - 1]}">${bulbSvg(lv)}</span>`;
+  }
+
+  // ---------- 照：照魔镜 ----------
+
+  // 照魔镜看过以后，别人头像上的镜子：指着（手机上点）看这家能力现在的状态
+  private mirrorHtml(s: number): string {
+    const g = this.game!;
+    if (this.chars[this.me]?.id !== 'teru' || s === this.me || !teruMirrored(g, this.me)) return '';
+    const c = this.chars[s];
+    const lines = c.ability ? c.ability.insight?.(g, s) ?? [c.ability.description] : ['没有能力，只靠牌效和防守'];
+    const name = c.ability ? c.ability.name : '无能力';
+    return `<span class="mirror" tabindex="0" aria-label="照魔镜：${c.name}">镜<span class="mirror-pop"><b>${c.name} · ${name}</b>${lines.map((l) => `<span>${l}</span>`).join('')}</span></span>`;
   }
 
   // 指着会放铳的牌时她的提醒：第一张“有点不妙”，第二张不一样的“恐怕也不行”，再往后不说了
@@ -862,7 +875,7 @@ export class App {
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="nameplate">
-          <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}</div>
+          <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.mirrorHtml(s)}</div>
           <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div>
         </div>
         <div class="ohand">${backs}</div>

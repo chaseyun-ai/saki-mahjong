@@ -50,4 +50,8 @@ export const kuroAbility: Ability = {
   badge(g, seat) {
     return kuroLost(g, seat) ? '宝牌不再来' : null;
   },
+
+  insight(g, seat) {
+    return [kuroLost(g, seat) ? '打出过宝牌，这一整场宝牌不再来' : `宝牌还在聚集：每次摸牌 ${DRAW_CHANCE * 100}% 摸到宝牌，她不会打宝牌`];
+  },
 };

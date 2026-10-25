@@ -63,6 +63,10 @@ export interface Ability {
   // 发牌前可以选的技能：玩家操作时，发牌前弹出来让玩家选（选好调 setPreDeal）；电脑在 dealRules 里自己决定
   preDeal?(g: Game, seat: number): PreDealOption[];
   setPreDeal?(g: Game, seat: number, picked: string[]): void;
+  // 这一刻能不能和牌（照的照魔镜那一局和不了）。没写算能
+  canWin?(g: Game, seat: number): boolean;
+  // 别人看得穿的这家能力状态（照的照魔镜），一行一条；没写就只显示能力名
+  insight?(g: Game, seat: number): string[];
   // 玩家操作这个角色时的技能按钮（g.manual[seat] 为真时由玩家决定，否则能力自己按电脑的规矩决定）
   skill?(g: Game, seat: number): SkillButton | null;
   pressSkill?(g: Game, seat: number): void;

@@ -1,7 +1,7 @@
 import type { Game } from '../engine/game';
 import { Rng } from '../engine/rng';
 import { shanten, waitingKinds } from '../engine/shanten';
-import { KIND_COUNT, Kind, TileId, doraFromIndicator, kindOf, toCounts } from '../engine/tiles';
+import { KIND_COUNT, Kind, TileId, doraFromIndicator, kindLabel, kindOf, toCounts } from '../engine/tiles';
 import { isCornerDraw } from '../engine/wall';
 import { PRIORITY, type Ability } from './types';
 
@@ -210,6 +210,14 @@ export const awaiAbility: Ability = {
     const st = stateOf(g, seat);
     const on = [st.circle && '绝对安全圈', st.tenpai && '天听'].filter(Boolean).join('、');
     return { label: '', note: on ? `这一局：${on}` : '这一局没发动技能', enabled: false, meter: { value: awaiEnergy(g, seat), max: AWAI.energyMax }, active: !!on };
+  },
+
+  insight(g, seat) {
+    const st = stateOf(g, seat);
+    const on = [st.circle && '绝对安全圈', st.tenpai && '天听'].filter(Boolean).join('、');
+    const out = [`能量 ${awaiEnergy(g, seat)}/${AWAI.energyMax}`, on ? `这一局：${on}` : '这一局没发动技能'];
+    if (st.kanKind !== undefined && !st.kanned) out.push(`等转角暗杠：${kindLabel(st.kanKind)}`);
+    return out;
   },
 
   beforeDeal(g, seat) {

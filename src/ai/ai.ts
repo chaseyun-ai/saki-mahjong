@@ -4,6 +4,7 @@ import { dangerKinds } from '../abilities/hiroe';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
 import { koromoCanShift } from '../abilities/koromo';
+import { TERU, teruKeeps, teruMirrored, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
@@ -117,7 +118,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const find = (t: Action['type']) => legal.find((a) => a.type === t);
 
   const tsumo = find('tsumo');
-  if (tsumo) return tsumo;
+  if (tsumo && !(style.streak && teruWaits(g, seat, true))) return tsumo;
 
   const kyuushu = find('kyuushu');
   if (kyuushu && kokushiShanten(toCounts(p.hand)) > 2) return kyuushu;
@@ -152,7 +153,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     hit: number; // 洋榎：读出来别人和得了这张
     trap: number; // 洋榎：听牌时听的是自己打过的牌的筋（引っ掛け）
   };
-  const readDanger = style.reads ? dangerKinds(g, seat) : null;
+  const readDanger = style.reads || (style.mirror && teruMirrored(g, seat)) ? dangerKinds(g, seat) : null;
   const myDiscards = new Set(p.discards.map((d) => kindOf(d.tile)));
   const cands: Cand[] = [];
   const seen = new Set<string>();
@@ -295,6 +296,15 @@ function damaRon(g: Game, seat: number, hand: TileId[]): number {
   return best;
 }
 
+// 照：这一手和了接不上连和（比上一次小），牌山还多，就先不和、等更大的
+function teruWaits(g: Game, seat: number, tsumo: boolean): boolean {
+  if (g.wall.remaining <= TERU.aiForceWin) return false;
+  const p = g.players[seat];
+  const tile = tsumo ? p.drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
+  const r = g.winResult(seat, tile, tsumo);
+  return !!r && !teruKeeps(g, seat, teruWinValue(r, tsumo, seat === g.dealer));
+}
+
 // ---------- 别人打牌后 ----------
 
 function hasYakuhaiMeld(g: Game, seat: number): boolean {
@@ -308,7 +318,7 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const pass = legal.find((a) => a.type === 'pass')!;
   const ron = legal.find((a) => a.type === 'ron');
   // 淡：等转角暗杠自摸，不荣和
-  if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null)) return ron;
+  if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false))) return ron;
 
   const p = g.players[seat];
   const tile = g.lastDiscard!.tile;

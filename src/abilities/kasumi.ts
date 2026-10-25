@@ -107,6 +107,12 @@ export const kasumiAbility: Ability = {
     return { seat, ability: 'kasumi', text: '绝一门', deny: inSuit(suit) };
   },
 
+  insight(g, seat) {
+    const suit = stateOf(g, seat).suit;
+    if (!gameStateOf(g, seat).summoned) return ['还没请神（落后时会请）'];
+    return [suit === undefined ? '已请神' : `已请神，这一局绝${'万筒索'[suit]}子，自己容易摸到${'万筒索'[suit]}子和字牌`];
+  },
+
   badge(g, seat) {
     const suit = stateOf(g, seat).suit;
     return suit === undefined ? null : `绝${'万筒索'[suit]}`;

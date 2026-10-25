@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { combos, newStats, playBrawl } from './brawl/harness';
+import { newStats, playBrawl, sampleCombos } from './brawl/harness';
 import { brawlPool } from './brawl/probes';
 
 const GAMES = Number(process.env.BRAWL_GAMES ?? 2);
 
 describe('能力大乱斗', () => {
   const pool = brawlPool();
-  const all = combos(pool, 4);
+  // 全部组合太多时只打一部分（任意两人都同桌过）
+  const all = sampleCombos(pool, 4, 60);
 
-  it('角色池里任选四个，组合数对得上', () => {
-    expect(all.length).toBe(pool.length === 7 ? 35 : all.length);
+  it('挑出来的组合里任意两个人都同桌过', () => {
+    for (const a of pool) for (const b of pool) if (a !== b) expect(all.some((c) => c.includes(a) && c.includes(b))).toBe(true);
   });
 
   it(`每种组合打 ${GAMES} 场：牌数、锁住的牌、控场的规矩都不出错`, async () => {

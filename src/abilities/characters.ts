@@ -4,6 +4,7 @@ import { kasumiAbility } from './kasumi';
 import { koromoAbility } from './koromo';
 import { kuroAbility } from './kuro';
 import { sakiAbility } from './saki';
+import { teruAbility } from './teru';
 import { tokiAbility } from './toki';
 import type { Ability } from './types';
 
@@ -20,6 +21,8 @@ export interface AiStyle {
   reads: boolean; // 爱宕洋榎：读得出别人听什么，不打别人和得了的牌
   trapWait: boolean; // 爱宕洋榎：听牌时挑引っ掛け（自己打过的牌的筋）的听法
   damaMin: number; // 有役、默听荣和至少这么多就不立直（0 是不看）
+  mirror: boolean; // 宫永照：照魔镜看过以后读得出别人听什么（和 reads 一样防守）
+  streak: boolean; // 宫永照：连和中不够大的和了先不和，等更大的
 }
 
 export interface Character {
@@ -31,7 +34,7 @@ export interface Character {
   ai: AiStyle;
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0 };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -98,6 +101,14 @@ export const CHARACTERS: Character[] = [
     color: '#d9733f',
     ability: hiroeAbility,
     ai: { ...baseAi, reads: true, trapWait: true, damaMin: 3900 },
+  },
+  {
+    id: 'teru',
+    name: '宫永照',
+    school: '白糸台高中',
+    color: '#a8324a',
+    ability: teruAbility,
+    ai: { ...baseAi, mistakeRate: 0.03, mirror: true, streak: true },
   },
 ];
 

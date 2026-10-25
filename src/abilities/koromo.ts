@@ -128,6 +128,14 @@ export const koromoAbility: Ability = {
     }
   },
 
+  insight(g, seat) {
+    const moon = koromoMoon(g, seat);
+    const st = stateOf(g, seat);
+    const out = [moon ? `今晚是${moon.name}，能力是满月时的 ${Math.round(moon.power * 100)}%` : '月相还没出来'];
+    out.push(st.lucky === undefined ? '这一局还没听牌' : st.lucky ? (st.shifted ? '这一局海底已经挪给了她' : '这一局听牌了，海底会是她的和了牌') : '这一局海底没发动');
+    return out;
+  },
+
   badge(g, seat) {
     const moon = koromoMoon(g, seat);
     return moon ? `${moon.icon} ${moon.name}` : null;

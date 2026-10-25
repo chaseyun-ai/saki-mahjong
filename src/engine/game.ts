@@ -195,6 +195,11 @@ export class Game {
     return waitingKinds(toCounts(p.hand), p.melds.length);
   }
 
+  // 能力允不允许这家现在和牌（照的照魔镜那一局不和）
+  canWin(seat: number): boolean {
+    return this.abilities[seat]?.canWin?.(this, seat) ?? true;
+  }
+
   isFuriten(seat: number): boolean {
     const p = this.players[seat];
     if (p.furitenTemp || p.furitenRiichi) return true;
@@ -403,7 +408,7 @@ export class Game {
     const p = this.players[seat];
     const out: Action[] = [];
     if (p.drawn !== null) {
-      if (this.winResult(seat, p.drawn, true)) out.push({ type: 'tsumo' });
+      if (this.canWin(seat) && this.winResult(seat, p.drawn, true)) out.push({ type: 'tsumo' });
       if (this.isFirstTurn(seat)) {
         const kinds = new Set(p.hand.map(kindOf));
         if (YAOCHU_KINDS.filter((k) => kinds.has(k)).length >= 9) out.push({ type: 'kyuushu' });
@@ -552,7 +557,7 @@ export class Game {
       if (o === seat) continue;
       const q = this.players[o];
       const opts: Action[] = [];
-      if (this.winResult(o, tile, false)) opts.push({ type: 'ron' });
+      if (this.canWin(o) && this.winResult(o, tile, false)) opts.push({ type: 'ron' });
       if (this.wall.remaining > 0 && !q.riichi) {
         const same = q.hand.filter((t) => kindOf(t) === kind);
         for (const pair of distinctPairs(same)) opts.push({ type: 'pon', tiles: pair });
@@ -728,7 +733,7 @@ export class Game {
     this.responses.clear();
     for (let o = 0; o < 4; o++) {
       if (o === seat) continue;
-      if (this.winResult(o, tile, false)) this.pending.set(o, [{ type: 'ron' }, { type: 'pass' }]);
+      if (this.canWin(o) && this.winResult(o, tile, false)) this.pending.set(o, [{ type: 'ron' }, { type: 'pass' }]);
     }
     if (this.pending.size > 0) {
       this.phase = 'calls';

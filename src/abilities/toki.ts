@@ -24,6 +24,10 @@ export const tokiAbility: Ability = {
   description: '平时能看到自己下一次摸到的牌（别人的能力已经算在里面；有人鸣牌、开杠时会变）；花体力“看下一巡”时，能看到这一巡每家会打什么、有没有人鸣牌或和牌。',
   foresight: { title: '一巡先见' },
 
+  insight() {
+    return ['看得见自己下一次摸什么；电脑的怜只在看到一发自摸时才立直'];
+  },
+
   afterDraw(g, seat) {
     (g.abilityState[seat] as TokiState).seen = g.wall.live.slice(0, FORESIGHT_TILES);
   },

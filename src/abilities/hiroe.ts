@@ -19,6 +19,8 @@ export interface TenpaiRead {
 
 // 一家的听牌（手里 13 张时才读得出来；刚摸牌、还没打的那一刻按摸牌前的 13 张读）
 export function readTenpai(g: Game, seat: number): TenpaiRead | null {
+  // 这一局和不了牌的（照的照魔镜）不算听牌
+  if (!g.canWin(seat)) return null;
   const p = g.players[seat];
   let hand = p.hand;
   if ((hand.length + 3 * p.melds.length) % 3 === 2) {
@@ -73,4 +75,8 @@ export const hiroeAbility: Ability = {
   id: 'hiroe',
   name: '读牌',
   description: '不动牌山，只读牌：看得出谁听牌了、牌有多大（听牌的人头像旁边亮灯，牌越大越亮），指着会放铳的牌时她会提醒你。',
+
+  insight() {
+    return ['不动牌山，只读牌：看得出谁听牌、听什么、多大，不会打别人和得了的牌'];
+  },
 };

@@ -2415,3 +2415,74 @@ button {
   display: block;
   margin: 0 auto;
 }
+
+/* ---------- 照：照魔镜 ---------- */
+
+/* 别人头像左下角的镜子，指着（手机上点）弹出这家能力的状态 */
+.mirror {
+  position: absolute;
+  z-index: 4;
+  left: -10px;
+  bottom: -10px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid #f6e7b0;
+  background: radial-gradient(circle at 35% 30%, #fffdf4, #c9d6e8 55%, #7c8aa6);
+  color: #3b2a12;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 0 8px rgba(255, 240, 190, 0.7);
+  pointer-events: auto;
+  cursor: help;
+}
+
+.mirror-pop {
+  display: none;
+  position: absolute;
+  left: 30px;
+  top: 0;
+  width: 220px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #f6e7b0;
+  background: rgba(14, 22, 30, 0.94);
+  color: #e8eef2;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  text-align: left;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.mirror-pop b {
+  display: block;
+  color: #f6e7b0;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.mirror-pop span {
+  display: block;
+}
+
+.mirror:hover .mirror-pop,
+.mirror:focus .mirror-pop {
+  display: block;
+}
+
+/* 右边两家贴着画面右边：往左弹；下面的往上弹 */
+.seat-frame.right .mirror-pop,
+.seat-frame.top .mirror-pop,
+.nameplate.float.right .mirror-pop {
+  left: auto;
+  right: 30px;
+}
+
+.seat-frame.right .mirror-pop,
+.seat-frame.bottom .mirror-pop {
+  top: auto;
+  bottom: 0;
+}
