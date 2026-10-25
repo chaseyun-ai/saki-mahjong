@@ -245,6 +245,7 @@ export function traceLine(x: TraceEntry, name: (seat: number) => string, tile: (
     if (x.by !== null) html = `${name(x.by)}的「${x.text}」：${html}`;
     if (x.ability === 'saki' && x.text === null) html += '对子悄悄长成了刻子，没有人察觉。';
     if (x.ability === 'awai' && x.text === null) html += '她在等转角暗杠，和了牌先往后放一放。';
+    if (x.ability === 'kuro' && x.text === null) html += '她打出过宝牌，宝牌再也不来了。';
   }
   if (x.madeWin) html += '这一张正好和了。';
   if (x.lostWin) html += `被换走的那张，本来能让${who}直接自摸。`;

@@ -1,5 +1,6 @@
 import { CHARACTERS, Character } from '../abilities/characters';
 import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
+import { kuroLost } from '../abilities/kuro';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
 import { Rng } from '../engine/rng';
@@ -34,7 +35,7 @@ const AIR_PAUSE = 250;
 const START_SCORE = 25000;
 // 怜“看下一巡”的体力：满 100，看一次 35，每局开始回 20。同一回合可以看两次，看第二次的话下一局不能用
 const STAMINA_MAX = 100;
-const DEEP_COST = 35;
+const DEEP_COST = 15;
 const STAMINA_REGEN = 20;
 
 interface Toast {
@@ -169,6 +170,31 @@ export class App {
     // 头像先下好，第一次换表情时不会空一下
     for (const c of this.chars) for (const f of FACES) new Image().src = portraitUrl(c.id, f);
     this.showResult = false;
+    this.pdPicks = null;
+    this.tableBuilt = false;
+    // 第一局发牌前就要选技能：先在选角色的画面上弹出来，选好再建牌桌
+    if (this.game.phase === 'predeal') {
+      this.root.innerHTML = '<div class="select predeal-screen" id="predeal"></div>';
+      this.renderPredeal();
+      return;
+    }
+    this.buildTable();
+  }
+
+  private tableBuilt = false;
+
+  // 发牌前选技能的弹窗：牌桌建好以后盖在牌桌上，第一局时单独放
+  private renderPredeal(): void {
+    const slot = document.getElementById('predeal');
+    if (!this.tableBuilt && slot) {
+      slot.innerHTML = this.predealHtml();
+      return;
+    }
+    this.render();
+  }
+
+  private buildTable(): void {
+    this.tableBuilt = true;
     if (this.mode !== '2d') {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
       const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
@@ -186,7 +212,7 @@ export class App {
         if (name === 'land') playClick();
       };
       // 第一局在牌桌建好之前就开始了，补一次开局动画
-      this.table3d.onEvent({ type: 'roundStart', label: this.game.roundLabel() }, this.game);
+      this.table3d.onEvent({ type: 'roundStart', label: this.game!.roundLabel() }, this.game!);
     } else {
       this.root.innerHTML =
         '<div class="stage"><div class="table"><div id="table" style="display: contents"></div><div id="toasts"></div></div></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
@@ -215,6 +241,10 @@ export class App {
     const v = this.vision;
     if (v && rehearsalOver(g, v.start, this.me)) {
       this.render();
+      return;
+    }
+    if (g.phase === 'predeal') {
+      this.renderPredeal();
       return;
     }
     if (g.phase === 'roundEnd' || g.phase === 'gameEnd') {
@@ -409,6 +439,17 @@ export class App {
       this.render();
       return;
     }
+    if (el.dataset.ui === 'pd' && el.dataset.pd) {
+      const id = el.dataset.pd;
+      if (this.pdPicks?.has(id)) this.pdPicks.delete(id);
+      else this.pdPicks?.add(id);
+      this.renderPredeal();
+      return;
+    }
+    if (el.dataset.ui === 'pd-go') {
+      this.finishPredeal();
+      return;
+    }
     if (el.dataset.ui === 'skill') {
       if (this.game && !this.vision) this.chars[this.me].ability?.pressSkill?.(this.game, this.me);
       this.render();
@@ -472,7 +513,7 @@ export class App {
       ${this.myAreaHtml()}
       ${this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
-      ${this.showResult ? this.resultHtml() : ''}`;
+      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' ? this.predealHtml() : ''}`;
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     this.freshDiscard = null;
     this.renderToasts();
@@ -497,7 +538,7 @@ export class App {
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
-      ${this.showResult ? this.resultHtml() : ''}`;
+      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' ? this.predealHtml() : ''}`;
     // 看下一巡时视野变绿
     hud.parentElement?.classList.toggle('deep', !!this.vision);
     this.renderToasts();
@@ -871,8 +912,57 @@ export class App {
     const meter = b.meter
       ? `<span class="stamina energy" title="能量"><i style="width:${(b.meter.value / b.meter.max) * 100}%"></i></span><span class="st-num">${b.meter.value}</span>`
       : '';
-    return `<div class="foresight skill"><div class="fs-title">${ab!.name}${b.active ? '<span class="skill-on">开启中</span>' : ''}${meter}</div>
-      <button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button></div>`;
+    // 有按钮的技能（pressSkill）画按钮；发牌前选的技能（淡、霞）只显示状态
+    const body = ab!.pressSkill
+      ? `<button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button>`
+      : `<div class="fs-note skill-state">${b.note}</div>`;
+    return `<div class="foresight skill"><div class="fs-title">${ab!.name}${b.active ? '<span class="skill-on">发动中</span>' : ''}${meter}</div>${body}</div>`;
+  }
+
+  // ---------- 发牌前选技能（淡、霞） ----------
+
+  private pdPicks: Set<string> | null = null;
+
+  private predealHtml(): string {
+    const g = this.game!;
+    const ab = this.chars[this.me].ability;
+    const opts = ab?.preDeal?.(g, this.me) ?? [];
+    if (!this.pdPicks) this.pdPicks = new Set(opts.filter((o) => o.picked).map((o) => o.id));
+    const meter = ab?.skill?.(g, this.me)?.meter;
+    const spend = opts.filter((o) => this.pdPicks!.has(o.id)).reduce((sum, o) => sum + (o.cost ?? 0), 0);
+    const left = meter ? meter.value - spend : Infinity;
+    const rows = opts
+      .map((o) => {
+        const on = this.pdPicks!.has(o.id);
+        const affordable = on || (o.cost ?? 0) <= left;
+        const usable = o.enabled && affordable;
+        const note = !o.enabled ? (o.note ?? '') : !affordable ? '能量不够' : o.cost ? `能量 -${o.cost}` : '';
+        return `<button class="pd-opt${on ? ' on' : ''}" data-ui="pd" data-pd="${o.id}" ${usable ? '' : 'disabled'}>
+          <span class="pd-check">${on ? '✓' : ''}</span>
+          <span class="pd-text"><b>${o.name}</b><small>${o.desc}</small></span>
+          <span class="pd-note">${note}</span></button>`;
+      })
+      .join('');
+    const energy = meter
+      ? `<div class="pd-energy">能量 <span class="stamina energy"><i style="width:${(Math.max(0, left) / meter.max) * 100}%"></i></span> ${Math.max(0, left)} / ${meter.max}${spend ? `（这一局 -${spend}）` : ''}</div>`
+      : '';
+    return `<div class="modal"><div class="result predeal" style="--c:${this.chars[this.me].color}">
+        <h2>${g.roundLabel()} · 发牌前</h2>
+        <p class="pd-sub">选这一局要发动的技能（可以都不选）</p>
+        ${energy}
+        <div class="pd-list">${rows}</div>
+        <button class="primary" data-ui="pd-go">发牌</button>
+      </div></div>`;
+  }
+
+  // 选好了：交给能力，发牌。第一局时牌桌还没建，先建牌桌
+  private finishPredeal(): void {
+    const g = this.game!;
+    this.chars[this.me].ability?.setPreDeal?.(g, this.me, [...(this.pdPicks ?? [])]);
+    this.pdPicks = null;
+    g.deal();
+    if (!this.tableBuilt) this.buildTable();
+    else this.step();
   }
 
   // 怜的一巡先见：平时只有自己下一张摸牌；玩家操作怜时还有体力条和“看下一巡”按钮，演算中换成演算的经过和“退出”
@@ -944,11 +1034,11 @@ export class App {
       return `<div class="ability-panel" style="--c:${c.color}"><div class="ab-name">无能力</div><div class="ab-desc">不受影响，专心打牌。</div></div>`;
     }
     const extra = this.foresightBox() + this.skillBox();
-    const lost = (g.abilityState[this.me] as { lost?: boolean }).lost;
+    const lost = c.ability.id === 'kuro' && kuroLost(g, this.me);
     const badge = c.ability.badge?.(g, this.me);
     return `
       <div class="ability-panel" style="--c:${c.color}">
-        <div class="ab-name">${c.ability.name}${lost ? '<span class="lost">本局失效</span>' : ''}${badge ? `<span class="ab-badge">${badge}</span>` : ''}</div>
+        <div class="ab-name">${c.ability.name}${lost ? '<span class="lost">整场失效</span>' : ''}${badge ? `<span class="ab-badge">${badge}</span>` : ''}</div>
         <div class="ab-desc">${c.ability.description}</div>
         ${extra}
       </div>`;

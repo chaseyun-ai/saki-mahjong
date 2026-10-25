@@ -5,35 +5,40 @@ import { KIND_COUNT, Kind, TileId, doraFromIndicator, kindOf, toCounts } from '.
 import { isCornerDraw } from '../engine/wall';
 import { PRIORITY, type Ability } from './types';
 
-// 大星淡（白糸台）：
-// - 能量：整场 AWAI.energyMax 点，不回复。技能开着的每一局开局扣 AWAI.onCost 点；开着时主动关掉扣 AWAI.offCost 点。
-//   玩家操作她时由玩家开关（下一局起生效）；电脑一般不在领先时开，开了不主动关。能量不够这一局时自动关掉。
-// 技能开着的那一局：
-// - 绝对安全圈：配牌前把另外三家的配牌压到 AWAI.safeShanten 向听以上；没人鸣牌的话，前 AWAI.safeTurns 巡他们摸的牌也帮不上忙
-// - 双立直（其中 AWAI.cornerKanChance 的局）：她自己的配牌直接听牌，手里留一个暗刻
-// - 转角暗杠：暗刻的第四张放在牌山最后一个转角前、轮到她摸的位置（锁住，谁都动不了）。
+// 大星淡（白糸台）：十个技能，每局发牌前选这一局发动哪几个，各扣能量（整场 AWAI.energyMax 点，不回复）。
+// 玩家操作她时发牌前弹出来让玩家选；电脑一般不在领先时发动，能量够就两个都开。现在做了两个，其余八个先占位：
+// - 绝对安全圈（AWAI.circleCost）：配牌前把另外三家的配牌压到 AWAI.safeShanten 向听以上；没人鸣牌的话，前 AWAI.safeTurns 巡他们摸的牌也帮不上忙
+// - 天听（AWAI.tenpaiCost）：她自己的配牌直接听牌（双立直），手里留一个暗刻；
+//   暗刻的第四张放在牌山最后一个转角前、轮到她摸的位置（锁住，谁都动不了）。
 //   暗杠以后杠里指示牌指向这张，四张都是里宝牌；下一次摸牌就是和了牌。
 // 破法：有人鸣牌，摸牌顺序错开，那张第四张就轮不到她；被别人的能力挡住和了牌，也和不了。
 // 强度参数（测试和平衡脚本会临时改它们）
 export const AWAI = {
   energyMax: 100,
-  onCost: 20,
-  offCost: 30,
-  // 电脑的淡领先时也开技能的概率
+  circleCost: 10,
+  tenpaiCost: 15,
+  // 电脑的淡领先时也发动技能的概率
   aiLeadChance: 0.1,
   safeShanten: 5,
   safeTurns: 4,
-  // 技能开着的那一局，有多大概率配到双立直的牌、准备转角暗杠
-  cornerKanChance: 1,
 };
+
+// 十个技能：前两个做好了，其余占位
+export const AWAI_SKILLS: { id: string; name: string; desc: string; cost?: number }[] = [
+  { id: 'circle', name: '绝对安全圈', desc: `另外三家配牌至少 ${AWAI.safeShanten} 向听，没人鸣牌的话前 ${AWAI.safeTurns} 巡摸不到有用的牌` },
+  { id: 'tenpai', name: '天听', desc: '配牌就听牌、可以双立直；暗刻在最后一个转角前开暗杠，杠里四张都是里宝牌，下一张就是和了牌' },
+  ...Array.from({ length: 8 }, (_, i) => ({ id: `todo${i + 3}`, name: `技能 ${i + 3}`, desc: '待定' })),
+];
+const costOf = (id: string) => (id === 'circle' ? AWAI.circleCost : id === 'tenpai' ? AWAI.tenpaiCost : 0);
 
 interface AwaiGameState {
   energy?: number;
-  on?: boolean; // 技能开着（下一局开局扣能量、展开）
+  picks?: string[]; // 玩家选的这一局发动哪几个（也当下一局的默认）
 }
 
 interface AwaiState {
   circle?: boolean; // 这一局展开了绝对安全圈
+  tenpai?: boolean; // 这一局发动了天听
   kanKind?: Kind; // 暗刻是哪种牌
   corner?: TileId; // 放在转角的第四张
   kanned?: boolean; // 已经暗杠了
@@ -46,10 +51,9 @@ const gameStateOf = (g: Game, seat: number) => {
   return gs;
 };
 
-// 现在的能量和开关（界面用）
-export function awaiEnergy(g: Game, seat: number): { energy: number; on: boolean } {
-  const gs = gameStateOf(g, seat);
-  return { energy: gs.energy!, on: !!gs.on };
+// 现在的能量（界面用）
+export function awaiEnergy(g: Game, seat: number): number {
+  return gameStateOf(g, seat).energy!;
 }
 
 // 转角暗杠还有没有戏：第四张还在牌山里、还没杠（电脑的淡这时不荣和、不拆暗刻）
@@ -160,56 +164,63 @@ function worsen(g: Game, idx: number[]): boolean {
 export const awaiAbility: Ability = {
   id: 'awai',
   name: '绝对安全圈',
-  description: `能量 ${AWAI.energyMax} 点，不回复。技能开着的每一局开局扣 ${AWAI.onCost} 点，开着时主动关掉扣 ${AWAI.offCost} 点。开着的那一局展开绝对安全圈：另外三家的配牌至少 ${AWAI.safeShanten} 向听，没人鸣牌的话前 ${AWAI.safeTurns} 巡也摸不到有用的牌；${AWAI.cornerKanChance >= 1 ? '' : `其中 ${AWAI.cornerKanChance * 100}% 的局`}她自己配牌就听牌、可以双立直，手里的暗刻在牌山最后一个转角前开暗杠，杠里四张都是里宝牌，下一张就是和了牌。`,
+  description: `十个技能，每局发牌前选发动哪几个，各扣能量（整场 ${AWAI.energyMax} 点，不回复）。绝对安全圈（${AWAI.circleCost}）：另外三家的配牌至少 ${AWAI.safeShanten} 向听，没人鸣牌的话前 ${AWAI.safeTurns} 巡也摸不到有用的牌。天听（${AWAI.tenpaiCost}）：配牌就听牌、可以双立直，手里的暗刻在牌山最后一个转角前开暗杠，杠里四张都是里宝牌，下一张就是和了牌。其余八个技能待定。`,
   priority: PRIORITY.awai,
 
-  // 技能开着就扣能量、展开安全圈：另外三家的配牌至少 safeShanten 向听
+  // 这一局发动哪几个、扣能量；安全圈定规矩：另外三家的配牌至少 safeShanten 向听
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);
-    if (!g.manual[seat] && !gs.on && gs.energy! >= AWAI.onCost) {
-      // 电脑：落后或者平分就开；领先时一般不开
+    let picks: string[];
+    if (g.manual[seat]) picks = gs.picks ?? [];
+    else {
+      // 电脑：落后或者平分就发动；领先时一般不发动
       const me = g.players[seat].score;
       const leading = g.players.every((p) => p.seat === seat || p.score < me);
-      if (!leading || g.rng.chance(AWAI.aiLeadChance)) gs.on = true;
+      picks = !leading || g.rng.chance(AWAI.aiLeadChance) ? ['circle', 'tenpai'] : [];
     }
-    if (gs.on && gs.energy! < AWAI.onCost) gs.on = false;
-    if (!gs.on) return;
-    gs.energy! -= AWAI.onCost;
-    stateOf(g, seat).circle = true;
+    const st = stateOf(g, seat);
+    for (const id of picks) {
+      if (id !== 'circle' && id !== 'tenpai') continue;
+      if (gs.energy! < costOf(id)) continue;
+      gs.energy! -= costOf(id);
+      st[id] = true;
+    }
+    if (!st.circle) return;
     return [0, 1, 2, 3]
       .filter((s) => s !== seat)
       .map((s) => ({ seat, ability: 'awai', text: '绝对安全圈', target: s, bad: (hand: TileId[]) => Math.max(0, AWAI.safeShanten - shanten(toCounts(hand))) }));
   },
 
-  skill(g, seat) {
-    const { energy, on } = awaiEnergy(g, seat);
-    const meter = { value: energy, max: AWAI.energyMax };
-    if (on) {
-      const ok = energy >= AWAI.offCost;
-      return { label: '关掉安全圈', note: ok ? `能量 -${AWAI.offCost}，下一局起不再展开` : '能量不够关掉', enabled: ok, meter, active: true };
-    }
-    const ok = energy >= AWAI.onCost;
-    return { label: '开启安全圈', note: ok ? `下一局起每局开局 -${AWAI.onCost}` : '能量不够', enabled: ok, meter };
+  preDeal(g, seat) {
+    const gs = gameStateOf(g, seat);
+    return AWAI_SKILLS.map((k) => {
+      const ready = k.id === 'circle' || k.id === 'tenpai';
+      const cost = ready ? costOf(k.id) : undefined;
+      const enabled = ready && gs.energy! >= cost!;
+      return { id: k.id, name: k.name, desc: k.desc, cost, enabled, picked: enabled && !!gs.picks?.includes(k.id), note: ready ? (enabled ? undefined : '能量不够') : '还没做' };
+    });
   },
 
-  pressSkill(g, seat) {
-    const gs = gameStateOf(g, seat);
-    if (gs.on) {
-      if (gs.energy! < AWAI.offCost) return;
-      gs.energy! -= AWAI.offCost;
-      gs.on = false;
-    } else if (gs.energy! >= AWAI.onCost) gs.on = true;
+  setPreDeal(g, seat, picked) {
+    gameStateOf(g, seat).picks = picked.filter((id) => id === 'circle' || id === 'tenpai');
+  },
+
+  // 能量条和这一局发动了什么
+  skill(g, seat) {
+    const st = stateOf(g, seat);
+    const on = [st.circle && '绝对安全圈', st.tenpai && '天听'].filter(Boolean).join('、');
+    return { label: '', note: on ? `这一局：${on}` : '这一局没发动技能', enabled: false, meter: { value: awaiEnergy(g, seat), max: AWAI.energyMax }, active: !!on };
   },
 
   beforeDeal(g, seat) {
     const w = g.wall;
     const st = stateOf(g, seat);
-    if (!st.circle) return;
+    if (!st.circle && !st.tenpai) return;
     const mine = g.dealIndices(seat);
     const mineSet = new Set(mine);
     // 双立直的配牌：先找一手满足别人规矩的（规矩只看牌种，所以拿每种牌里的一张代表来算）
     let plan: { kinds: Kind[]; kan: Kind } | null = null;
-    if (g.rng.chance(AWAI.cornerKanChance)) {
+    if (st.tenpai) {
       const avail = toCounts(w.live);
       const others = g.dealRules.filter((r) => r.target === seat && r.seat !== seat);
       plan = planHand(avail, g.rng, (kinds) => others.every((r) => r.bad(kinds.map((k) => k * 4 + 1)) === 0));
@@ -238,7 +249,7 @@ export const awaiAbility: Ability = {
     }
     // 别人的配牌：把有用的牌换成没用的，换到发完牌以后的牌山里。别人的规矩（比如霞绝掉的花色）不能变差；
     // 这样打不到 safeShanten 时降级，不顾比她后动的人的规矩
-    for (let s = 0; s < 4; s++) {
+    for (let s = 0; s < 4 && st.circle; s++) {
       if (s === seat) continue;
       const idx = g.dealIndices(s);
       if (!worsen(g, idx)) g.dealFallback(seat, () => worsen(g, idx));
@@ -246,7 +257,9 @@ export const awaiAbility: Ability = {
   },
 
   onRoundStart(g, seat) {
-    if (stateOf(g, seat).circle) g.emit({ type: 'ability', seat, ability: 'awai', text: '绝对安全圈' });
+    const st = stateOf(g, seat);
+    if (st.circle) g.emit({ type: 'ability', seat, ability: 'awai', text: '绝对安全圈' });
+    if (st.tenpai && st.kanKind !== undefined) g.emit({ type: 'ability', seat, ability: 'awai', text: '天听' });
   },
 
   // 前几巡：别人摸到能减少向听的牌就换走

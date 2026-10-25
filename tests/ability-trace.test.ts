@@ -116,10 +116,16 @@ describe('能力痕迹', () => {
         for (const x of r.entries) {
           if (x.kind !== 'swap') continue;
           if (x.ability === 'kuro') {
-            kuro++;
-            expect(x.text).toBe('宝牌聚集');
+            // 宝牌聚集换来的是宝牌；打出过宝牌以后（整场失效）悄悄换走宝牌，换来的不是宝牌
             const dora = r.wall.visibleDoraIndicators().map((t) => doraFromIndicator(kindOf(t)));
-            expect(isRed(x.got) || dora.includes(kindOf(x.got))).toBe(true);
+            const isDora = isRed(x.got) || dora.includes(kindOf(x.got));
+            if (x.text === '宝牌聚集') {
+              kuro++;
+              expect(isDora).toBe(true);
+            } else {
+              expect(x.text).toBeNull();
+              expect(isDora).toBe(false);
+            }
           }
           if (x.rinshan) {
             rinshan++;

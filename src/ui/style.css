@@ -2293,3 +2293,111 @@ button {
     opacity: 0;
   }
 }
+
+/* ---------- 发牌前选技能（淡、霞） ---------- */
+
+.predeal-screen {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 50% 20%, #24606a, #0b1f23 70%);
+}
+
+.result.predeal {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  text-align: left;
+  border-color: color-mix(in srgb, var(--c) 60%, transparent);
+}
+
+.predeal h2 {
+  text-align: center;
+}
+
+.pd-sub {
+  margin: 0 0 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-quiet);
+}
+
+.pd-energy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.pd-energy .stamina {
+  max-width: 220px;
+}
+
+.pd-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.pd-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pd-opt.on {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 30%, transparent);
+}
+
+.pd-opt:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pd-check {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pd-opt.on .pd-check {
+  background: var(--c);
+  border-color: var(--c);
+}
+
+.pd-text {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.pd-text small {
+  font-size: 11px;
+  color: var(--ink-quiet);
+}
+
+.pd-note {
+  flex: none;
+  font-size: 11px;
+  color: var(--gold);
+}
+
+.predeal .primary {
+  display: block;
+  margin: 0 auto;
+}

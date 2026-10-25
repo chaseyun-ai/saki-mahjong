@@ -50,7 +50,8 @@ export interface PlayerState {
   kuikaeBan: Kind[];
 }
 
-export type Phase = 'turn' | 'calls' | 'roundEnd' | 'gameEnd';
+// predeal：发牌前等玩家选技能（玩家操作的座位有发牌前技能可选时），选好后调 deal()
+export type Phase = 'predeal' | 'turn' | 'calls' | 'roundEnd' | 'gameEnd';
 
 export interface WinInfo {
   seat: number;
@@ -155,7 +156,7 @@ export class Game {
     }));
     this.abilities = opts.players.map((p) => p.ability ?? null);
     this.manual = opts.players.map((p) => !!p.manual);
-    this.startRound();
+    this.startOrWait();
   }
 
   // ---------- 查询 ----------
@@ -873,7 +874,19 @@ export class Game {
         this.roundWind++;
       }
     }
-    this.startRound();
+    this.startOrWait();
+  }
+
+  // 玩家操作的座位有发牌前技能可选，就先停在 predeal 等玩家（电脑在 dealRules 里自己决定）
+  private startOrWait(): void {
+    const ask = this.manual.some((m, s) => m && (this.abilities[s]?.preDeal?.(this, s) ?? []).some((o) => o.enabled));
+    if (ask) this.phase = 'predeal';
+    else this.startRound();
+  }
+
+  // 玩家选好发牌前的技能（Ability.setPreDeal）以后发牌
+  deal(): void {
+    if (this.phase === 'predeal') this.startRound();
   }
 
   private finishGame(): void {

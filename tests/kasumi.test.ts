@@ -60,7 +60,7 @@ describe('石户霞', () => {
   it('和大星淡同场：两边的配牌规矩一起满足，淡的配牌照样听牌、别人照样 5 向听以上、别人手里没有霞的花色', async () => {
     const { AWAI } = await import('../src/abilities/awai');
     const saved = { ...AWAI };
-    Object.assign(AWAI, { onCost: 0, aiLeadChance: 1, cornerKanChance: 1 });
+    Object.assign(AWAI, { circleCost: 0, tenpaiCost: 0, aiLeadChance: 1 });
     try {
       const both = ['kasumi', 'awai', 'nodoka', 'saki'].map((id) => CHARACTERS.find((c) => c.id === id)!);
       let checked = 0;

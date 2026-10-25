@@ -3,7 +3,7 @@ import { awaiWaitingForCorner } from '../abilities/awai';
 import { dangerKinds } from '../abilities/hiroe';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
-import { isDoraTile } from '../abilities/kuro';
+import { isDoraTile, kuroLost } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
 import { kokushiShanten, shanten, waitingKinds } from '../engine/shanten';
@@ -237,6 +237,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       return shanten(c, p.melds.length) === -1 ? riichi : best.a;
     }
     if (style.keepDora && !kuroMustRiichi(g, seat, p.hand.filter((t) => t !== best.a.tile))) return best.a;
+    // 衣：海底不是自己的就不立直，留着吃碰把海底挪过来（打掉这张以后，最后一张轮到谁：从下家起数）
+    if (style.haitei && (seat + 1 + g.wall.live.length - 1) % 4 !== seat) return best.a;
     // 洋榎：有役、默听也够大就默听，别人看不出她听牌了
     if (style.damaMin && damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) >= style.damaMin) return best.a;
     if (ukeire(c, p.melds.length, visible) > 0) return riichi;
@@ -245,11 +247,11 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 }
 
 // 玄：立直以后只能摸切，宝牌聚集送来的宝牌全得打掉，能力当场失效。所以听牌了默听为主，非进攻不可时才立直：
-// 这一局能力已经没了；默听荣和不到 3900 点（没役只能自摸，或者太便宜，靠立直加番）；最后一局不是第一、默听和了也追不上。
+// 能力已经没了（打出过宝牌）；默听荣和不到 3900 点（没役只能自摸，或者太便宜，靠立直加番）；最后一局不是第一、默听和了也追不上。
 // hand 是打掉这张以后的 13 张
 const KURO_DAMA_MIN = 3900;
 function kuroMustRiichi(g: Game, seat: number, hand: TileId[]): boolean {
-  if ((g.abilityState[seat] as { lost?: boolean }).lost) return true;
+  if (kuroLost(g, seat)) return true;
   const p = g.players[seat];
   const best = damaRon(g, seat, hand);
   if (best < KURO_DAMA_MIN) return true;
@@ -333,10 +335,13 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     p.hand.filter((t) => isYaochu(kindOf(t))).length <= 1;
   const yakuSecured = hasYakuhaiMeld(g, seat);
 
-  // 衣：听牌了、海底不是自己的，找一手吃碰把海底挪到自己（海底摸月本身就是役）
-  if (style.haitei && !p.riichi && g.waits(seat).length) {
+  // 衣：听牌了、海底不是自己的，找一手吃碰把海底挪到自己（海底摸月本身就是役）；
+  // 海底已经是自己的，就不吃不碰，免得把它挪走
+  // 还差一步听牌时，能一手吃碰同时听牌、拿到海底的也鸣
+  if (style.haitei && !p.riichi && cur <= 1) {
     const last = g.wall.live.length - 1;
-    if (last >= 4 && (g.lastDiscard!.seat + 1 + last) % 4 !== seat && (seat + 1 + last) % 4 === seat) {
+    if (cur === 0 && (g.lastDiscard!.seat + 1 + last) % 4 === seat) return pass;
+    if (last >= 4 && (seat + 1 + last) % 4 === seat) {
       for (const a of legal) {
         if (a.type !== 'pon' && a.type !== 'chi') continue;
         const c = counts.slice();

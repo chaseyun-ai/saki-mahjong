@@ -60,9 +60,23 @@ export interface Ability {
   badge?(g: Game, seat: number): string | null;
   // 能看到自己下一次摸到的牌（怜）。看到的是哪张由 src/ai/forecast.ts 在复制的牌局上演算
   foresight?: { title: string };
+  // 发牌前可以选的技能：玩家操作时，发牌前弹出来让玩家选（选好调 setPreDeal）；电脑在 dealRules 里自己决定
+  preDeal?(g: Game, seat: number): PreDealOption[];
+  setPreDeal?(g: Game, seat: number, picked: string[]): void;
   // 玩家操作这个角色时的技能按钮（g.manual[seat] 为真时由玩家决定，否则能力自己按电脑的规矩决定）
   skill?(g: Game, seat: number): SkillButton | null;
   pressSkill?(g: Game, seat: number): void;
+}
+
+export interface PreDealOption {
+  id: string;
+  name: string;
+  desc: string;
+  cost?: number;
+  enabled: boolean;
+  // 默认勾上（比如上一局选过的）
+  picked: boolean;
+  note?: string;
 }
 
 export interface SkillButton {
