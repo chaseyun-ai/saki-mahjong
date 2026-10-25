@@ -70,4 +70,37 @@ describe('天江衣', () => {
     expect(leaks).toBeLessThan(checked * 0.05);
     expect(haitei).toBeGreaterThan(0);
   }, 120000);
+
+  it('听牌后海底挪给她：之后没人鸣牌开杠，最后一张一定她摸；有人鸣牌开杠就可能错开；牌数不变', () => {
+    let kept = 0;
+    let broken = 0;
+    let shifts = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+      play(seed, (g, me) => {
+        (g.abilityGameState[me] as { moon?: number }).moon = 4;
+        let shifted = false;
+        let disturbed = false;
+        g.onEvent((e) => {
+          if (e.type === 'roundStart') shifted = disturbed = false;
+          if (e.type === 'call' && shifted) disturbed = true;
+          if (e.type === 'ability' && e.text === '海底挪移') {
+            expect(shifted).toBe(false);
+            shifted = true;
+            shifts++;
+            const all = [...g.wall.allTiles(), ...g.players.flatMap((p) => [...p.hand, ...p.discards.map((d) => d.tile), ...p.melds.flatMap((m) => m.tiles)])];
+            expect(new Set(all).size).toBe(136);
+            expect(g.wall.allTiles().length).toBe(new Set(g.wall.allTiles()).size);
+          }
+          if (e.type !== 'draw' || !shifted || g.rinshanDraw || g.wall.remaining !== 0) return;
+          if (!disturbed) {
+            expect(e.seat).toBe(me);
+            kept++;
+          } else if (e.seat !== me) broken++;
+        });
+      });
+    }
+    console.log({ shifts, kept, broken });
+    expect(shifts).toBeGreaterThan(10);
+    expect(kept).toBeGreaterThan(0);
+  }, 120000);
 });

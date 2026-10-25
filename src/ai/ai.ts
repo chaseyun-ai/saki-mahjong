@@ -3,6 +3,7 @@ import { awaiWaitingForCorner } from '../abilities/awai';
 import { dangerKinds } from '../abilities/hiroe';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
+import { koromoCanShift } from '../abilities/koromo';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
@@ -237,8 +238,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       return shanten(c, p.melds.length) === -1 ? riichi : best.a;
     }
     if (style.keepDora && !kuroMustRiichi(g, seat, p.hand.filter((t) => t !== best.a.tile))) return best.a;
-    // 衣：海底不是自己的就不立直，留着吃碰把海底挪过来（打掉这张以后，最后一张轮到谁：从下家起数）
-    if (style.haitei && (seat + 1 + g.wall.live.length - 1) % 4 !== seat) return best.a;
+    // 衣：海底不是自己的、这一局也没法再挪给自己，就不立直，留着吃碰把海底挪过来（打掉这张以后，最后一张轮到谁：从下家起数）
+    if (style.haitei && (seat + 1 + g.wall.live.length - 1) % 4 !== seat && !koromoCanShift(g, seat)) return best.a;
     // 洋榎：有役、默听也够大就默听，别人看不出她听牌了
     if (style.damaMin && damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) >= style.damaMin) return best.a;
     if (ukeire(c, p.melds.length, visible) > 0) return riichi;

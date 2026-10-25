@@ -67,28 +67,62 @@ button {
 
 .char-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 240px));
+  grid-template-columns: repeat(auto-fill, 108px);
   justify-content: center;
-  gap: 16px;
-  margin-top: 24px;
+  gap: 14px;
+  max-width: 980px;
+  margin: 24px auto 0;
 }
 
 .char-card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  border: 2px solid color-mix(in srgb, var(--c) 60%, transparent);
-  background: color-mix(in srgb, var(--c) 14%, #10292e);
+  align-items: center;
+  gap: 8px;
+  border: 2px solid color-mix(in srgb, var(--c) 45%, transparent);
+  background: color-mix(in srgb, var(--c) 12%, #10292e);
   color: var(--ink);
   border-radius: 14px;
-  padding: 20px 16px;
-  text-align: left;
-  transition: transform 0.15s, box-shadow 0.15s;
+  padding: 12px 6px 10px;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
 
-.char-card:hover {
+.char-card:hover,
+.char-card.armed {
   transform: translateY(-4px);
+  border-color: var(--c);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--c) 40%, transparent);
+}
+
+.char-card .char-portrait {
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
+  font-size: 36px;
+  margin: 0;
+}
+
+.char-card .char-name {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.char-tip {
+  position: fixed;
+  z-index: 20;
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 2px solid var(--c);
+  background: color-mix(in srgb, var(--c) 10%, #0d2125);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  text-align: left;
+  pointer-events: none;
+}
+
+.char-tip[hidden] {
+  display: none;
 }
 
 .char-portrait,
@@ -2206,53 +2240,33 @@ button {
 .bulb {
   position: absolute;
   z-index: 3;
-  right: -9px;
-  top: -9px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 236, 170, 0.7);
-  background: radial-gradient(circle at 40% 35%, #fffbe6 0%, #ffd75e 45%, #c98a12 100%);
+  right: -16px;
+  top: -16px;
+  width: 34px;
+  height: 34px;
   pointer-events: none;
 }
 
-.bulb.lv1 {
-  opacity: 0.35;
-  box-shadow: 0 0 3px rgba(255, 214, 90, 0.5);
+.bulb svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.bulb.lv2 {
-  opacity: 0.55;
-  box-shadow: 0 0 7px rgba(255, 214, 90, 0.7);
-}
-
-.bulb.lv3 {
-  opacity: 0.75;
-  box-shadow: 0 0 12px 2px rgba(255, 214, 90, 0.8);
-}
-
-.bulb.lv4 {
-  opacity: 0.9;
-  box-shadow: 0 0 18px 5px rgba(255, 220, 100, 0.9);
-}
-
-.bulb.lv5 {
-  opacity: 1;
-  box-shadow: 0 0 26px 9px rgba(255, 230, 120, 1);
+.bulb.lv5 svg {
   animation: bulb-flicker 1.2s ease-in-out infinite;
 }
 
-/* 右边两家的头像贴着画面右边：灯放在靠桌子的一侧 */
+/* 右边两家的头像贴着画面右边，左上角又有门风：灯往框里收一点，不出屏幕 */
 .seat-frame.right .bulb,
 .seat-frame.top .bulb,
 .nameplate.float.right .bulb {
-  right: auto;
-  left: -9px;
+  right: -2px;
 }
 
 @keyframes bulb-flicker {
   50% {
-    box-shadow: 0 0 34px 12px rgba(255, 240, 150, 1);
+    opacity: 0.7;
   }
 }
 

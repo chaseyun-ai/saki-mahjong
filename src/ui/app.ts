@@ -46,6 +46,20 @@ interface Toast {
   kind: string; // riichi / call / kan / win 时有特效样式
 }
 
+// 洋榎的灯：颜色从白到紫，光芒条数就是档位
+const BULB_COLORS = ['#f4f1e0', '#ffd84a', '#ff9f2e', '#ff4a3a', '#c35bff'];
+const BULB_NAMES = ['一千多', '两三千', '五千左右', '满贯', '跳满以上'];
+function bulbSvg(lv: number): string {
+  const fill = BULB_COLORS[lv - 1];
+  const rays = Array.from({ length: lv }, (_, i) => {
+    const a = ((-90 + (i - (lv - 1) / 2) * 32) * Math.PI) / 180;
+    const x = (r: number) => (20 + Math.cos(a) * r).toFixed(1);
+    const y = (r: number) => (16 + Math.sin(a) * r).toFixed(1);
+    return `<line x1="${x(15)}" y1="${y(15)}" x2="${x(21)}" y2="${y(21)}" stroke="${fill}" stroke-width="2.6" stroke-linecap="round"/>`;
+  }).join('');
+  return `<svg viewBox="0 0 40 40" style="filter:drop-shadow(0 0 ${3 + lv * 3}px ${fill})">${rays}<path d="M20 4a11 11 0 0 0-6.5 19.8c1.3 1 2 2.3 2 3.7V30h9v-2.5c0-1.4.7-2.7 2-3.7A11 11 0 0 0 20 4z" fill="${fill}" stroke="#555" stroke-width="1.5"/><rect x="15" y="31" width="10" height="3" rx="1" fill="#9aa"/><rect x="16" y="35" width="8" height="2.6" rx="1.2" fill="#9aa"/></svg>`;
+}
+
 export class App {
   private root: HTMLElement;
   private game: Game | null = null;
@@ -100,6 +114,23 @@ export class App {
       const el = (e.target as HTMLElement).closest<HTMLElement>('.hand [data-tile]');
       this.hoverTile(el ? Number(el.dataset.tile) : null);
     });
+    // 选人页：鼠标停在卡片上看介绍；手指点的不算悬停（点一下看、再点开始，见 onClick）
+    root.addEventListener('pointerdown', (e) => (this.lastPointer = e.pointerType));
+    root.addEventListener('pointerover', (e) => {
+      if (this.game || e.pointerType !== 'mouse') return;
+      const card = (e.target as HTMLElement).closest<HTMLElement>('.char-card');
+      if (card) this.showCharTip(card);
+    });
+    root.addEventListener('pointerout', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      const card = (e.target as HTMLElement).closest<HTMLElement>('.char-card');
+      if (card && !card.contains(e.relatedTarget as Node)) this.showCharTip(null);
+    });
+    root.addEventListener('focusin', (e) => {
+      // 只管用键盘切过来的；点出来的焦点交给上面的指针事件
+      const card = (e.target as HTMLElement).closest<HTMLElement>('.char-card');
+      if (card?.matches(':focus-visible')) this.showCharTip(card);
+    });
     window.addEventListener('resize', () => this.fit());
     // 大字特效用的书法字体先下好，免得第一次立直时字还没出来
     document.fonts?.load('1em "Ma Shan Zheng"', '立直碰吃杠荣和自摸暗加宝牌聚集岭上开花一巡先见的气息').catch(() => {});
@@ -121,20 +152,18 @@ export class App {
     this.table3d = null;
     // 3D 牌桌要用的人物模型现在就开始在后台下载
     if (this.mode === '3d') preloadModels(MODEL_URLS);
+    // 卡片上只有头像和名字；学校、能力和介绍放在悬停时的浮窗里（见 showCharTip）
     const cards = CHARACTERS.map(
       (c) => `
-      <button class="char-card" data-pick="${c.id}" style="--c:${c.color}">
+      <button class="char-card" data-pick="${c.id}" style="--c:${c.color}" aria-label="${c.name}：${c.ability?.name ?? '无能力'}">
         <div class="char-portrait">${c.name.slice(-1)}<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></div>
         <div class="char-name">${c.name}</div>
-        <div class="char-school">${c.school}</div>
-        <div class="char-ability">${c.ability ? c.ability.name : '无能力'}</div>
-        <div class="char-desc">${c.ability ? c.ability.description : '不靠能力，只靠扎实的牌效和防守。电脑操作这个角色时不会失误。'}</div>
       </button>`,
     ).join('');
     this.root.innerHTML = `
       <div class="select-screen">
         <h1>超能力麻将</h1>
-        <p class="subtitle">选择你的角色，对手从其余角色里随机抽三位，由电脑操作。东风战，赤宝牌 3 张。</p>
+        <p class="subtitle">选择你的角色（鼠标停在头像上看能力，手机上点一下看、再点一下开始），对手从其余角色里随机抽三位，由电脑操作。东风战，赤宝牌 3 张。</p>
         <div class="mode-switch">
           <button class="${this.mode === '25d' ? 'on' : ''}" data-ui="mode-25d">2.5D 牌桌</button>
           <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 实验</button>
@@ -142,6 +171,7 @@ export class App {
         </div>
         <button class="lab-entry" data-ui="lab">动作调试</button><span id="skin-entry"></span>
         <div class="char-grid">${cards}</div>
+        <div class="char-tip" hidden></div>
         <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物由 VRoid 官方 CC0 示例模型改色</p>
       </div>`;
     // 能换素材的人（页面主人）才看得到“素材”入口
@@ -149,6 +179,44 @@ export class App {
       const slot = this.root.querySelector('#skin-entry');
       if (ok && slot) slot.innerHTML = '<button class="lab-entry" data-ui="skins">素材</button>';
     });
+  }
+
+  // 选人页的介绍浮窗：贴在卡片旁边，不出屏幕
+  private tipFor: string | null = null;
+  private lastPointer = 'mouse';
+  private showCharTip(card: HTMLElement | null): void {
+    const tip = this.root.querySelector<HTMLElement>('.char-tip');
+    if (!tip) return;
+    this.root.querySelectorAll('.char-card.armed').forEach((x) => x.classList.remove('armed'));
+    const c = card && CHARACTERS.find((x) => x.id === card.dataset.pick);
+    this.tipFor = c ? c.id : null;
+    if (!card || !c) {
+      tip.hidden = true;
+      return;
+    }
+    card.classList.add('armed');
+    tip.style.setProperty('--c', c.color);
+    tip.innerHTML = `
+      <div class="char-name">${c.name}</div>
+      <div class="char-school">${c.school}</div>
+      <div class="char-ability">${c.ability ? c.ability.name : '无能力'}</div>
+      <div class="char-desc">${c.ability ? c.ability.description : '不靠能力，只靠扎实的牌效和防守。电脑操作这个角色时不会失误。'}</div>`;
+    tip.hidden = false;
+    const r = card.getBoundingClientRect();
+    const w = tip.offsetWidth;
+    const h = tip.offsetHeight;
+    const gap = 10;
+    // 右边放得下放右边，不然放左边，都放不下就放卡片下面
+    let x = r.right + gap;
+    let y = r.top;
+    if (x + w > innerWidth - 8) x = r.left - gap - w;
+    if (x < 8) {
+      x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), innerWidth - 8 - w);
+      y = r.bottom + gap;
+      if (y + h > innerHeight - 8) y = r.top - gap - h;
+    }
+    tip.style.left = `${Math.round(x)}px`;
+    tip.style.top = `${Math.round(Math.min(Math.max(8, y), innerHeight - 8 - h))}px`;
   }
 
   private startGame(charId: string): void {
@@ -401,6 +469,11 @@ export class App {
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pick],[data-tile],[data-act],[data-ui]');
     if (!el) return;
     if (el.dataset.pick) {
+      // 手指点的：第一下只看介绍，再点同一个才开始
+      if (this.lastPointer === 'touch' && this.tipFor !== el.dataset.pick) {
+        this.showCharTip(el);
+        return;
+      }
       this.startGame(el.dataset.pick);
       return;
     }
@@ -616,7 +689,9 @@ export class App {
     const g = this.game!;
     if (!this.isHiroe() || s === this.me || this.vision || (g.phase !== 'turn' && g.phase !== 'calls')) return '';
     const r = readTenpai(g, s);
-    return r ? `<span class="bulb lv${bulbLevel(r.value)}" title="听牌了"></span>` : '';
+    if (!r) return '';
+    const lv = bulbLevel(r.value);
+    return `<span class="bulb lv${lv}" title="听牌了：${BULB_NAMES[lv - 1]}">${bulbSvg(lv)}</span>`;
   }
 
   // 指着会放铳的牌时她的提醒：第一张“有点不妙”，第二张不一样的“恐怕也不行”，再往后不说了

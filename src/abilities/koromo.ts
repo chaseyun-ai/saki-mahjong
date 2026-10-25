@@ -5,8 +5,9 @@ import { PRIORITY, type Ability } from './types';
 
 // 天江衣（龙门渊）：
 // - 一向听地狱：别人一向听、两向听时，进张常常被换走（已经听牌的人不受影响，所以压不住淡的双立直）
-// - 海底捞月：她听牌、牌山最后一张轮到她摸时，最后一张换成她的和了牌并锁住。
-//   有人鸣牌错开顺序、有人开杠把最后一张挪进王牌区，海底就换人摸了（原作里咲就是这样破的）
+// - 海底捞月：她听牌时，如果牌山最后一张不归她，把牌山末尾多出的一到三张挪进王牌区（和开杠补王牌一样），
+//   让最后一张正好轮到她（每局一次）；最后一张轮到她时，换成她的和了牌并锁住。
+//   之后有人鸣牌错开顺序、有人开杠把最后一张挪进王牌区，海底就换人摸了（原作里咲就是这样破的）
 // - 月相：每个半庄随机一个月相，越接近满月越强
 export const MOON_PHASES = [
   { name: '新月', icon: '🌑', power: 0.25 },
@@ -31,11 +32,18 @@ interface KoromoGameState {
 }
 interface KoromoState {
   lucky?: boolean; // 这一局海底掷过了没有：true 发动，false 没发动
+  shifted?: boolean; // 这一局已经把海底挪给自己过了
   haitei?: TileId; // 安排好的海底牌（锁住）
 }
 
 const gameStateOf = (g: Game, seat: number) => g.abilityGameState[seat] as KoromoGameState;
 const stateOf = (g: Game, seat: number) => g.abilityState[seat] as KoromoState;
+
+// 这一局还能不能把海底挪给自己（电脑的衣用来决定立不立直）
+export function koromoCanShift(g: Game, seat: number): boolean {
+  const st = stateOf(g, seat);
+  return !st.shifted && st.lucky !== false;
+}
 
 export function koromoMoon(g: Game, seat: number) {
   const m = gameStateOf(g, seat).moon;
@@ -45,7 +53,7 @@ export function koromoMoon(g: Game, seat: number) {
 export const koromoAbility: Ability = {
   id: 'koromo',
   name: '海底捞月',
-  description: `别人离听牌只差一两步时，摸到的进张常常被换走（一向听地狱，已经听牌的人不受影响）；她听牌时，如果牌山最后一张轮到她摸，那张就是和了牌。每个半庄随机一个月相，满月时一定发动，新月只剩四分之一。`,
+  description: `别人离听牌只差一两步时，摸到的进张常常被换走（一向听地狱，已经听牌的人不受影响）；她听牌时，牌山最后一张会挪到轮到她摸（每局一次，之后有人鸣牌、开杠还是会错开），那张就是和了牌。每个半庄随机一个月相，满月时一定发动，新月只剩四分之一。`,
   priority: PRIORITY.koromo,
 
   beforeDeal(g, seat) {
@@ -69,8 +77,19 @@ export const koromoAbility: Ability = {
     const last = w.live.length - 1;
     const lastDrawer = (drawer + (rinshan ? 1 : 0) + last) % 4;
     const waits = g.players[seat].hand.length % 3 === 1 ? g.waits(seat) : [];
-    if (waits.length && last >= 0 && lastDrawer === seat) {
-      st.lucky ??= g.rng.chance(KOROMO.haiteiChance * power);
+    if (waits.length && last >= 0) st.lucky ??= g.rng.chance(KOROMO.haiteiChance * power);
+    // 海底不归她：末尾多出的几张挪进王牌区，让最后一张轮到她（锁住的牌不挪；岭上摸牌时不动）
+    if (waits.length && st.lucky && !st.shifted && !rinshan && lastDrawer !== seat) {
+      const k = (lastDrawer - seat + 4) % 4;
+      const tail = w.live.slice(w.live.length - k);
+      if (last - k >= 4 && tail.every((t) => !w.locked.has(t))) {
+        w.overflow.push(...w.live.splice(w.live.length - k, k).reverse());
+        st.shifted = true;
+        g.emit({ type: 'ability', seat, ability: 'koromo', text: '海底挪移' });
+      }
+    }
+    if (waits.length && w.live.length - 1 >= 0 && (drawer + (rinshan ? 1 : 0) + w.live.length - 1) % 4 === seat) {
+      const last = w.live.length - 1;
       // 听的牌变了（换了听、吃碰过）就重新安排
       const planned = st.haitei !== undefined && w.live[last] === st.haitei && waits.includes(kindOf(st.haitei));
       if (st.lucky && !planned) {
