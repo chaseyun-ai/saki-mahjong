@@ -4,8 +4,8 @@ import { dangerKinds } from '../abilities/hiroe';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
 import { koromoCanShift } from '../abilities/koromo';
-import { mihokoEyeOpen, mihokoFeedKinds } from '../abilities/mihoko';
-import { nellyRiding } from '../abilities/nelly';
+import { mihokoSafeKinds } from '../abilities/mihoko';
+import { nellyLuck } from '../abilities/nelly';
 import { TERU, teruKeeps, teruMirrored, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
@@ -84,8 +84,18 @@ function tileValue(g: Game, seat: number, k: Kind, counts: number[]): number {
 
 // ---------- 防守 ----------
 
+// 团体赛（点数是队伍的点数）：没落后太多就以不放铳为先；落后很多才拼
+const TEAM_CHASE = 30000;
+function teamCareful(g: Game, seat: number): boolean {
+  if (g.format !== 'team') return false;
+  const top = Math.max(...g.players.filter((p) => p.seat !== seat).map((p) => p.score));
+  return top - g.players[seat].score < TEAM_CHASE;
+}
+
+// 要防的人：立直的、副露三组以上的（团体赛里小心的时候两组就防）
 function threats(g: Game, seat: number): number[] {
-  return [0, 1, 2, 3].filter((s) => s !== seat && (g.players[s].riichi || g.players[s].melds.length >= 3));
+  const melds = teamCareful(g, seat) ? 2 : 3;
+  return [0, 1, 2, 3].filter((s) => s !== seat && (g.players[s].riichi || g.players[s].melds.length >= melds));
 }
 
 function danger(g: Game, threat: number, k: Kind, visible: number[]): number {
@@ -157,7 +167,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   };
   // 被爽的霍亚乌封印时读不了牌
   const sealed = g.isSealed(seat);
-  const readDanger = !sealed && (style.reads || (style.mirror && teruMirrored(g, seat)) || (style.eye && mihokoEyeOpen(g, seat))) ? dangerKinds(g, seat) : null;
+  const readDanger = !sealed && (style.reads || (style.mirror && teruMirrored(g, seat))) ? dangerKinds(g, seat) : null;
+  // 美穗子睁眼：立直的人手里没有的花色是安全牌
+  const eyeSafe = style.eye && !sealed ? new Map(threats(g, seat).map((t) => [t, mihokoSafeKinds(g, seat, t)])) : null;
   const myDiscards = new Set(p.discards.map((d) => kindOf(d.tile)));
   const cands: Cand[] = [];
   const seen = new Set<string>();
@@ -172,7 +184,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     let val = tileValue(g, seat, kindOf(a.tile), counts);
     if (style.keepDora && isDoraTile(g, a.tile)) val += 20;
     const ts = threats(g, seat);
-    const risk = ts.length ? Math.max(...ts.map((t) => danger(g, t, kindOf(a.tile), visible))) : 0;
+    const risk = ts.length ? Math.max(...ts.map((t) => (eyeSafe?.get(t)?.has(kindOf(a.tile)) ? 0 : danger(g, t, kindOf(a.tile), visible)))) : 0;
     const sh2 = sh;
     const hit = readDanger?.has(kindOf(a.tile)) ? 1 : 0;
     let trap = 0;
@@ -221,27 +233,26 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   }
   let best = cands[0];
 
-  // 别人立直而自己离听牌还远：弃和
-  if (threats(g, seat).length && best.sh >= 1) {
-    const safest = [...cands].sort((x, y) => x.hit - y.hit || x.risk - y.risk || attackOrder(x, y));
-    // 涅莉蓄浪的局不拼
-    if (best.sh >= 2 || best.risk >= 6 || style.defensive || (style.waves && !nellyRiding(g, seat))) best = safest[0];
-  }
-
-  // 美穗子：庄家连庄或领先、自己离和牌还远，就打一张便宜的和了牌给闲家，把庄家拉下来
-  if (style.eye && best.sh >= 2) {
-    const feed = mihokoFeedKinds(g, seat);
-    const gift = cands.find((x) => feed.has(kindOf(x.a.tile)));
-    if (gift) return gift.a;
+  // 别人立直而自己离听牌还远：弃和。团体赛里少失点就是帮队伍：一向听就弃，听牌了手里这张也危险也弃
+  const careful = teamCareful(g, seat);
+  if (threats(g, seat).length && (best.sh >= 1 || !g.canWin(seat) || (careful && best.risk >= 6))) {
+    // 玄弃和也不打宝牌（还有别的牌可打时）
+    const dora = (x: Cand) => (style.keepDora && isDoraTile(g, x.a.tile) ? 1 : 0);
+    const safest = [...cands].sort((x, y) => dora(x) - dora(y) || x.hit - y.hit || x.risk - y.risk || attackOrder(x, y));
+    // 涅莉运势很差的局不拼；这一局和不了（被七姐妹封住、照魔镜那一局）也不拼
+    if (best.sh >= 2 || best.risk >= 6 || style.defensive || (style.waves && nellyLuck(g, seat) <= -2) || !g.canWin(seat) || careful) best = safest[0];
   }
 
   const slipped = slip ?? (cands.length > 1 && g.rng.chance(style.mistakeRate));
   // 读得出别人听什么时，失误也不会失误到放铳的牌上
-  if (slipped && cands[1].sh === best.sh && cands[1].hit <= best.hit) best = cands[1];
+  // 玄失误也不会失误到宝牌上
+  const doraSlip = style.keepDora && isDoraTile(g, cands[1]?.a.tile ?? -1) && !isDoraTile(g, best.a.tile);
+  if (slipped && cands[1].sh === best.sh && cands[1].hit <= best.hit && !doraSlip) best = cands[1];
 
   // 能立直就立直
   const riichi = discards.find((a) => a.riichi && kindOf(a.tile) === kindOf(best.a.tile));
-  if (riichi && best.sh === 0) {
+  // 这一局和不了时立直白扔 1000 点
+  if (riichi && best.sh === 0 && g.canWin(seat)) {
     const c = counts.slice();
     c[kindOf(best.a.tile)]--;
     if (style.foresightRiichi && !sealed) {
@@ -270,7 +281,7 @@ function kuroMustRiichi(g: Game, seat: number, hand: TileId[]): boolean {
   const p = g.players[seat];
   const best = damaRon(g, seat, hand);
   if (best < KURO_DAMA_MIN) return true;
-  if (g.roundNumber === 3) {
+  if (g.isLastRounds(1)) {
     const top = Math.max(...g.players.filter((q) => q.seat !== seat).map((q) => q.score));
     const gain = best + g.honba * 300 + g.riichiSticks * 1000;
     if (p.score <= top && p.score + gain <= top) return true;

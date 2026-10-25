@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Game, GameEvent } from '../engine/game';
-import { TILE_COUNT, TileId, WIND_CN } from '../engine/tiles';
+import { TILE_COUNT, TileId, WIND_CN, kindOf } from '../engine/tiles';
 import { meldLayout } from '../ui/meldLayout';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
 import { Avatar, modelProgress } from './avatar';
@@ -173,6 +173,7 @@ interface Placement {
 
 interface TileObj {
   group: THREE.Group;
+  back: THREE.Mesh;
   shown: boolean;
   target: Placement | null;
 }
@@ -184,6 +185,7 @@ export interface SyncView {
   ids: string[];
   marked?: Set<TileId>; // 上方加个小三角的手牌（打出去能听牌的）
   airDraw?: TileId | null; // 自己立直后摸到、和不了的那张：不进手牌，停在手牌上方的空中，接着直接打进牌河
+  tintBacks?: Set<TileId>; // 美穗子睁眼：这些牌的牌背按花色上色（万红、筒蓝、索绿、字牌白）
 }
 
 export class Table3D {
@@ -192,6 +194,8 @@ export class Table3D {
   camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
   private atlas = new FaceAtlas();
   private tiles: TileObj[] = [];
+  private backMat: THREE.Material | null = null;
+  private tintMats: THREE.Material[] = [];
   private faceGeoms: THREE.PlaneGeometry[] = [];
   private consoleCanvas = document.createElement('canvas');
   private consoleTex: THREE.CanvasTexture;
@@ -413,6 +417,11 @@ export class Table3D {
     const matte = this.style === '25d' ? 0.62 : 0;
     const bodyMat = new THREE.MeshStandardMaterial({ color: '#f6f1e3', roughness: matte || 0.35 });
     const backMat = new THREE.MeshStandardMaterial({ color: '#2f78a8', roughness: matte || 0.4 });
+    this.backMat = backMat;
+    // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
+    this.tintMats = ['#e0453a', '#3a6df0', '#2fb25a', '#f4f4f0'].map(
+      (c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.35, roughness: matte || 0.4 }),
+    );
     const faceMat = new THREE.MeshStandardMaterial({ map: this.atlas.texture, transparent: true, roughness: matte || 0.35 });
     for (let id = 0; id < TILE_COUNT; id++) {
       const group = new THREE.Group();
@@ -430,7 +439,7 @@ export class Table3D {
       group.userData.tileId = id;
       group.visible = false;
       this.scene.add(group);
-      this.tiles.push({ group, shown: false, target: null });
+      this.tiles.push({ group, back, shown: false, target: null });
     }
   }
 
@@ -973,6 +982,8 @@ export class Table3D {
       const t = this.tiles[id];
       const target = targets.get(id) ?? null;
       t.target = target;
+      const mat = view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
+      if (mat && t.back.material !== mat) t.back.material = mat;
       if (!target) {
         t.group.visible = false;
         t.shown = false;

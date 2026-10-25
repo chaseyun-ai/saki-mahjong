@@ -1,5 +1,5 @@
-import { CHARACTERS } from '../abilities/characters';
-import { SkinSlot, cutinArt, defaultCutinArt, defaultPortraitUrl, defaultPowerPortraitUrl, portraitUrl, powerPortraitUrl, setSkins } from '../ui3d/looks';
+import { CHARACTERS, type Character } from '../abilities/characters';
+import { SkinSlot, cutinArt, defaultCutinArt, defaultPortraitUrl, defaultPowerPortraitUrl, portraitUrl, powerPortraitUrl, setSkins, skinOf } from '../ui3d/looks';
 
 // 素材页：页面主人在试玩页里给每个角色换头像、切入图、结算图，不用改代码。
 // 图存在试玩页自己的存储里（assets），哪个格子用哪张图记在 db 的 skins/<角色 id> 里：
@@ -11,6 +11,7 @@ interface Stored {
   id: string;
   w: number;
   h: number;
+  video?: boolean;
 }
 type Doc = Partial<Record<SkinSlot, Stored>>;
 
@@ -31,7 +32,35 @@ export const SLOTS: { slot: SkinSlot; label: string; hint: string }[] = [
   { slot: 'result', label: '结算图', hint: '结算画面左边的图，不换就用“和牌切入”' },
 ];
 
+// 这个角色的全部格子：通用的几格，加上她单独的技能动画（Character.skillArts，比如爽的每朵云、每个神威）
+function slotsOf(c: Character): { slot: SkinSlot; label: string; hint: string; skill?: boolean }[] {
+  const skills = (c.skillArts ?? []).map((k) => ({
+    slot: `skill-${k.id}` as SkinSlot,
+    label: `${k.name}动画`,
+    hint: `发动${k.name}时放这一段，盖过“能力发动切入”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）`,
+    skill: true,
+  }));
+  return [...SLOTS, ...skills];
+}
+
 const TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+const VIDEO_TYPES = ['video/mp4', 'video/webm'];
+
+// 视频的宽高（读不出来就当竖图）
+function videoSize(file: File): Promise<{ w: number; h: number }> {
+  return new Promise((resolve) => {
+    const v = document.createElement('video');
+    const url = URL.createObjectURL(file);
+    const done = (w: number, h: number) => {
+      URL.revokeObjectURL(url);
+      resolve({ w, h });
+    };
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => done(v.videoWidth || 3, v.videoHeight || 4);
+    v.onerror = () => done(3, 4);
+    v.src = url;
+  });
+}
 
 let docs: Record<string, Doc> = {};
 const listeners = new Set<() => void>();
@@ -41,7 +70,7 @@ function apply(): void {
   const out: Parameters<typeof setSkins>[0] = {};
   for (const [id, doc] of Object.entries(docs)) {
     out[id] = {};
-    for (const [slot, v] of Object.entries(doc)) if (v?.id) out[id][slot as SkinSlot] = { url: '/_blob/' + v.id, w: v.w, h: v.h };
+    for (const [slot, v] of Object.entries(doc)) if (v?.id) out[id][slot as SkinSlot] = { url: '/_blob/' + v.id, w: v.w, h: v.h, video: v.video };
   }
   setSkins(out);
   for (const f of listeners) f();
@@ -130,6 +159,7 @@ export class SkinEditor {
     if (slot === 'face') return portraitUrl(id, 'neutral');
     if (slot === 'blank') return portraitUrl(id, 'surprised');
     if (slot === 'power') return powerPortraitUrl(id);
+    if (slot.startsWith('skill-')) return skinOf(id, slot)?.url ?? cutinArt(id, 'ability').url;
     return cutinArt(id, slot).url;
   }
 
@@ -137,29 +167,33 @@ export class SkinEditor {
     if (slot === 'face') return defaultPortraitUrl(id, 'neutral');
     if (slot === 'blank') return defaultPortraitUrl(id, 'surprised');
     if (slot === 'power') return defaultPowerPortraitUrl(id);
-    return defaultCutinArt(id, slot).url;
+    return defaultCutinArt(id, slot.startsWith('skill-') ? 'ability' : slot).url;
   }
 
   private render = (): void => {
     const tabs = CHARACTERS.map((c) => {
-      const n = SLOTS.filter(({ slot }) => docs[c.id]?.[slot]).length;
+      const n = slotsOf(c).filter(({ slot }) => docs[c.id]?.[slot]).length;
       return `<button class="skin-tab${c.id === this.sel ? ' on' : ''}" data-skin-tab="${c.id}" style="--c:${c.color}">
           <span class="skin-tab-face"><img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></span>
           <span class="skin-tab-name">${c.name}</span>${n ? `<span class="skin-mark">已换 ${n}</span>` : ''}
         </button>`;
     }).join('');
     const rows = CHARACTERS.filter((c) => c.id === this.sel).map((c) => {
-      const cells = SLOTS.map(({ slot, label, hint }) => {
+      const cells = slotsOf(c).map(({ slot, label, hint, skill }) => {
         const own = !!docs[c.id]?.[slot];
         const shown = this.current(c.id, slot);
         const tall = slot === 'face' || slot === 'blank' || slot === 'power';
+        const media = docs[c.id]?.[slot]?.video
+          ? `<video src="${shown}" muted autoplay loop playsinline></video>`
+          : `<img src="${shown}" alt="" onerror="this.src='${this.fallback(c.id, slot)}'" />`;
+        const accept = skill ? [...TYPES, ...VIDEO_TYPES] : TYPES;
         return `
-          <div class="skin-slot${own ? ' own' : ''}">
-            <div class="skin-img${tall ? ' tall' : ''}"><img src="${shown}" alt="" onerror="this.src='${this.fallback(c.id, slot)}'" /></div>
+          <div class="skin-slot${own ? ' own' : ''}${skill ? ' skill' : ''}">
+            <div class="skin-img${tall ? ' tall' : ''}">${media}</div>
             <div class="skin-label">${label}${own ? '<span class="skin-mark">已换</span>' : ''}</div>
             <div class="skin-hint">${esc(hint)}</div>
             <div class="skin-btns">
-              <label class="skin-btn">换图<input type="file" accept="${TYPES.join(',')}" data-skin-char="${c.id}" data-skin-slot="${slot}" ${this.busy ? 'disabled' : ''} /></label>
+              <label class="skin-btn">${skill ? '换动画' : '换图'}<input type="file" accept="${accept.join(',')}" data-skin-char="${c.id}" data-skin-slot="${slot}" ${this.busy ? 'disabled' : ''} /></label>
               ${own ? `<button class="skin-btn ghost" data-skin-reset="${c.id}:${slot}" ${this.busy ? 'disabled' : ''}>恢复默认</button>` : ''}
             </div>
           </div>`;
@@ -172,7 +206,7 @@ export class SkinEditor {
           <button class="lab-entry" data-skin-back>← 返回</button>
           <h1>素材</h1>
         </div>
-        <p class="subtitle">点“换图”选一张图（PNG、JPG、WebP、GIF，透明背景用 PNG），马上生效，所有打开试玩页的人都会看到。“恢复默认”换回原来的图。</p>
+        <p class="subtitle">点“换图”选一张图（PNG、JPG、WebP、GIF，透明背景用 PNG），马上生效，所有打开试玩页的人都会看到。“恢复默认”换回原来的图。有单独技能动画的角色（比如爽）下面还有每个技能的动画格，可以放 GIF 或视频。</p>
         <p class="skin-status">${esc(this.status)}</p>
         <div class="skin-tabs">${tabs}</div>
         ${rows}
@@ -205,7 +239,8 @@ export class SkinEditor {
   // 换图（file）或换回默认（null）
   private async save(id: string, slot: SkinSlot, file: File | null): Promise<void> {
     const name = CHARACTERS.find((c) => c.id === id)?.name ?? id;
-    const label = SLOTS.find((s) => s.slot === slot)?.label ?? slot;
+    const c = CHARACTERS.find((x) => x.id === id);
+    const label = (c ? slotsOf(c) : SLOTS).find((s) => s.slot === slot)?.label ?? slot;
     const assets = await assetsApi();
     const db = await connect();
     if (!assets || !db) {
@@ -220,12 +255,17 @@ export class SkinEditor {
     try {
       const next: Doc = { ...(docs[id] ?? {}) };
       if (file) {
-        const type = TYPES.includes(file.type) ? file.type : 'image/png';
-        const bmp = await createImageBitmap(file);
-        const { w, h } = { w: bmp.width, h: bmp.height };
-        bmp.close();
+        const video = VIDEO_TYPES.includes(file.type);
+        const type = video || TYPES.includes(file.type) ? file.type : 'image/png';
+        let size: { w: number; h: number };
+        if (video) size = await videoSize(file);
+        else {
+          const bmp = await createImageBitmap(file);
+          size = { w: bmp.width, h: bmp.height };
+          bmp.close();
+        }
         const up = await assets.upload(file, { type });
-        next[slot] = { id: up.id, w, h };
+        next[slot] = video ? { id: up.id, ...size, video: true } : { id: up.id, ...size };
       } else delete next[slot];
       await db.doc('skins/' + id).set(next);
       // 旧图已经没人用了，删掉省空间
@@ -237,7 +277,7 @@ export class SkinEditor {
         code === 'too_large'
           ? '图太大了（最多 20 MB），压缩一下再试。'
           : code === 'unsupported_type'
-            ? '这个格式用不了，换成 PNG、JPG、WebP 或 GIF。'
+            ? '这个格式用不了，图换成 PNG、JPG、WebP 或 GIF，视频换成 MP4 或 WebM。'
             : code === 'quota_or_state'
               ? '试玩页的存储满了，先把不用的图换回默认再试。'
               : `没换成功（${code ?? '图片打不开'}），过一会儿再试一次。`;

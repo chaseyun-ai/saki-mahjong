@@ -144,7 +144,7 @@ describe('宫永照', () => {
       });
     }
     expect(streakDraws).toBeGreaterThan(100);
-    expect(streakUseful / streakDraws).toBeGreaterThan(plainUseful / plainDraws + 0.2);
+    expect(streakUseful / streakDraws).toBeGreaterThan(plainUseful / plainDraws + 0.05);
     console.log({ streak: (streakUseful / streakDraws).toFixed(2), plain: (plainUseful / plainDraws).toFixed(2), smallSkipped });
   }, 120000);
 });

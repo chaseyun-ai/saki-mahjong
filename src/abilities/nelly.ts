@@ -1,88 +1,85 @@
 import type { Game } from '../engine/game';
 import { shanten } from '../engine/shanten';
 import { TileId, kindOf, toCounts } from '../engine/tiles';
-import { isDoraTile } from './kuro';
-import { PRIORITY, type Ability } from './types';
+import { PRIORITY, type Ability, type PreDealOption } from './types';
 
-// 涅莉·薇萨拉兹（临海女子）：看得见牌局的流势。
-// - 蓄浪（平时）：她的摸牌略差，电脑的涅莉以防守为主。这一局她没和牌，波涨一格；放铳再涨一格（吃的苦都是蓄力）
-// - 乘浪（发牌前选）：花掉全部的波，接下来几局（每两格一局）她的摸牌大幅变好、宝牌优先，别人的进张有时被换走
-// - 读流势：发牌前的界面写着这一局谁的配牌势头最好
-// 电脑的涅莉：前面蓄浪，波快满了或者到了最后一局再乘浪，在最后几局连续大和
+// 涅莉·薇萨拉兹（临海女子）：分配运势的人。
+// - 分配运势（开场）：给这一场的每一局（东风战东 1–4，团体赛东 1–南 4）各分一个运势值，加起来必须是 0。
+//   连庄、流局重打的局沿用同一局的值；南入以后多出来的局是 0。
+//   运势为正：摸牌常换成进张，越大越常，别人的进张也偶尔被换走；运势为负：她的进张有时被换走，电脑的涅莉这几局以防守为主
+// - 七姐妹：一场 7 次。别人要自摸时（下一张就是他的和了牌）用掉一次，这一局那家就和不了了（自摸、荣和都不行）。
+//   只能在她运势为正的局里用，每用一次这一局的运势减 1（七姐妹和摸牌变好是同一份运势）。照不受影响
+// 电脑的涅莉：前面的局负、最后几局正；七姐妹在运势为正时见到就用。玩家操作时开场自己分，七姐妹用技能按钮开关（默认开着）
 export const NELLY = {
-  waveMax: 6,
-  minRide: 2, // 至少几格才能乘浪
-  storeBad: 0.2, // 蓄浪时，摸到进张被换走的概率
-  rideGood: 0.5, // 乘浪时，摸牌换成进张的概率
-  rideDeny: 0.2, // 乘浪时，别人的进张被换走的概率
-  aiRideAt: 4, // 电脑的涅莉攒到几格就乘浪
+  min: -3, // 一局最少
+  max: 6, // 一局最多
+  goodPer: 0.15, // 运势每 +1，摸牌换成进张的概率加多少
+  goodMax: 0.75,
+  denyPer: 0.03, // 运势每 +1，别人的进张被换走的概率加多少
+  badPer: 0.06, // 运势每 -1，她的进张被换走的概率加多少
+  sisters: 7,
 };
 
 interface NellyGameState {
-  wave?: number;
-  ride?: number; // 乘浪还剩几局（包括这一局）
-  seen?: number; // g.events 里看到哪了
-  want?: boolean; // 玩家这一局选了乘浪
+  luck?: number[]; // 每一局（按东 1、东 2……排）的运势，开场分好
+  plan?: number[]; // 玩家在发牌前界面分的
+  sisters?: number; // 七姐妹还剩几次
+  off?: boolean; // 玩家把七姐妹关了
+  used?: number[]; // 每一局用掉的运势（七姐妹）
 }
 interface NellyState {
-  riding?: boolean; // 这一局在乘浪
-  first?: boolean; // 这一局刚开始乘浪
-  flow?: number; // 读流势：这一局配牌势头最好的座位
+  blocked?: number[]; // 这一局被七姐妹封住、和不了的人
 }
 
-const gameStateOf = (g: Game, seat: number) => g.abilityGameState[seat] as NellyGameState;
-const stateOf = (g: Game, seat: number) => g.abilityState[seat] as NellyState;
+const gameStateOf = (g: Game, seat: number) => {
+  const gs = g.abilityGameState[seat] as NellyGameState;
+  gs.sisters ??= NELLY.sisters;
+  gs.used ??= [];
+  return gs;
+};
+const stateOf = (g: Game, seat: number) => {
+  const st = g.abilityState[seat] as NellyState;
+  st.blocked ??= [];
+  return st;
+};
 
-export function nellyWave(g: Game, seat: number): number {
-  return gameStateOf(g, seat).wave ?? 0;
+// 这一场有几局可以分（东风战 4 局，团体赛 8 局）
+export const nellySlots = (g: Game) => (g.format === 'team' ? 8 : 4);
+const SLOT_NAMES = ['东1', '东2', '东3', '东4', '南1', '南2', '南3', '南4'];
+
+// 第几局（东 1 是 0）
+const slotOf = (g: Game) => g.roundWind * 4 + g.roundNumber;
+
+// 电脑的分法：前面的局都是 -1，攒下来的分给最后几局（东风战最后一局，团体赛南 3、南 4）
+export function nellyAiPlan(slots: number): number[] {
+  const late = Math.max(1, slots / 4);
+  const plan = new Array<number>(slots).fill(-1);
+  const pool = slots - late;
+  for (let i = 0; i < late; i++) plan[slots - late + i] = Math.floor(pool / late) + (i < pool % late ? 1 : 0);
+  return plan;
 }
 
-// 这一局在不在乘浪
-export function nellyRiding(g: Game, seat: number): boolean {
-  return !!stateOf(g, seat).riding;
+// 分法合不合规矩：不合给原因
+export function nellyPlanError(plan: number[]): string | null {
+  if (plan.some((v) => v < NELLY.min || v > NELLY.max)) return `每一局在 ${NELLY.min} 到 +${NELLY.max} 之间`;
+  const sum = plan.reduce((a, b) => a + b, 0);
+  return sum === 0 ? null : `加起来是 ${sum > 0 ? '+' : ''}${sum}，要正好是 0`;
 }
 
-// 乘浪能持续几局
-export const rideRounds = (wave: number) => Math.ceil(wave / 2);
-
-// 上一局的结算：没和牌涨一格，放铳再涨一格；乘浪的局数用掉一局。
-// 发牌前界面和配牌都会来算，同一局只算一次
-function settle(g: Game, seat: number): void {
+// 这一局的运势（用过七姐妹的已经扣掉）
+export function nellyLuck(g: Game, seat: number): number {
   const gs = gameStateOf(g, seat);
-  const from = gs.seen ?? 0;
-  gs.seen = g.events.length;
-  for (let i = g.events.length - 1; i >= from; i--) {
-    const e = g.events[i];
-    if (e.type !== 'roundEnd') continue;
-    if (gs.ride) gs.ride--;
-    else {
-      const won = e.result.wins.some((w) => w.seat === seat);
-      const dealtIn = e.result.wins.some((w) => w.from === seat);
-      gs.wave = Math.min(NELLY.waveMax, (gs.wave ?? 0) + (won ? 0 : 1) + (dealtIn ? 1 : 0));
-    }
-    return;
-  }
+  const i = slotOf(g);
+  return (gs.luck?.[i] ?? 0) - (gs.used![i] ?? 0);
 }
 
-// 读流势：这一局谁的配牌最好（按洗好的牌、没人动过时的向听算；配牌前调用）
-export function nellyFlow(g: Game): number {
-  let best = 0;
-  let bestSh = 99;
-  for (let s = 0; s < 4; s++) {
-    const sh = shanten(toCounts(g.dealHand(s)), 0);
-    if (sh < bestSh) {
-      best = s;
-      bestSh = sh;
-    }
-  }
-  return best;
+export function nellySisters(g: Game, seat: number): number {
+  return gameStateOf(g, seat).sisters!;
 }
 
-// 电脑的涅莉要不要乘浪
-function aiRide(g: Game, wave: number): boolean {
-  if (wave >= NELLY.aiRideAt) return true;
-  // 最后一局（东风战的东 4 局以后）有波就乘
-  return wave >= NELLY.minRide && (g.roundWind > 0 || g.roundNumber === 3);
+// 被七姐妹封住、这一局和不了的人
+export function nellyBlocked(g: Game, seat: number): number[] {
+  return stateOf(g, seat).blocked!;
 }
 
 const useful = (g: Game, seat: number) => {
@@ -97,89 +94,113 @@ const useful = (g: Game, seat: number) => {
   };
 };
 
+const fmt = (v: number) => (v > 0 ? `+${v}` : `${v}`);
+
 export const nellyAbility: Ability = {
   id: 'nelly',
-  name: '流势',
-  description: `看得见牌局的流势。平时蓄浪：摸牌略差，没和牌的局波涨一格，放铳再涨一格（最多 ${NELLY.waveMax} 格）。发牌前可以乘浪：花掉全部的波，之后几局（每两格一局）摸牌大幅变好、宝牌优先，别人的进张有时被换走。`,
+  name: '运势·七姐妹',
+  description: `开场给这一场的每一局分运势（每局 ${NELLY.min} 到 +${NELLY.max}，加起来是 0）：运势正的局摸牌顺，负的局摸牌差。七姐妹一场 ${NELLY.sisters} 次：运势为正的局里，别人要自摸时封住他，这一局他和不了；每用一次这一局运势减 1。`,
   priority: PRIORITY.nelly,
 
   dealRules(g, seat) {
-    settle(g, seat);
     const gs = gameStateOf(g, seat);
-    const st = stateOf(g, seat);
-    st.flow = nellyFlow(g);
-    const wave = gs.wave ?? 0;
-    if (!gs.ride && wave >= NELLY.minRide && (g.manual[seat] ? gs.want : aiRide(g, wave))) {
-      gs.ride = rideRounds(wave);
-      gs.wave = 0;
-      st.first = true;
-    }
-    gs.want = false;
-    st.riding = !!gs.ride;
+    if (gs.luck) return;
+    gs.luck = g.manual[seat] && gs.plan && !nellyPlanError(gs.plan) ? gs.plan : nellyAiPlan(nellySlots(g));
   },
 
   onRoundStart(g, seat) {
-    if (stateOf(g, seat).first) g.emit({ type: 'ability', seat, ability: 'nelly', text: '乘浪' });
+    const gs = gameStateOf(g, seat);
+    if (slotOf(g) === 0 && g.honba === 0) g.emit({ type: 'ability', seat, ability: 'nelly', text: '分配运势' });
+    const v = nellyLuck(g, seat);
+    if (v > 0 && gs.luck) g.emit({ type: 'ability', seat, ability: 'nelly', text: `运势 ${fmt(v)}` });
   },
 
-  // 乘浪：别人的进张有时被换走
+  // 别人摸牌：七姐妹（下一张就是他的和了牌时封住他）；运势为正时他的进张偶尔被换走
   beforeAnyDraw(g, seat, drawer, rinshan) {
-    if (drawer === seat || rinshan || !nellyRiding(g, seat) || !g.rng.chance(NELLY.rideDeny)) return;
-    return { seat, ability: 'nelly', text: '流势', deny: useful(g, drawer) };
+    if (drawer === seat) return;
+    const gs = gameStateOf(g, seat);
+    const st = stateOf(g, seat);
+    const v = nellyLuck(g, seat);
+    const next = rinshan ? g.wall.rinshan[0] : g.wall.live[0];
+    if (v > 0 && gs.sisters! > 0 && !gs.off && next !== undefined && g.binds(seat, drawer) && !st.blocked!.includes(drawer) && g.canWin(drawer)) {
+      const p = g.players[drawer];
+      const counts = toCounts(p.hand);
+      counts[kindOf(next)]++;
+      if (shanten(counts, p.melds.length) < 0) {
+        gs.sisters!--;
+        gs.used![slotOf(g)] = (gs.used![slotOf(g)] ?? 0) + 1;
+        st.blocked!.push(drawer);
+        g.emit({ type: 'ability', seat, ability: 'nelly', text: '七姐妹' });
+      }
+    }
+    if (rinshan || v <= 0 || !g.rng.chance(NELLY.denyPer * v)) return;
+    return { seat, ability: 'nelly', text: '运势', deny: useful(g, drawer) };
+  },
+
+  // 七姐妹封住的人这一局和不了
+  forbidsWin(g, seat, target) {
+    return nellyBlocked(g, seat).includes(target);
   },
 
   beforeDraw(g, seat, rinshan) {
     if (rinshan) return;
+    const v = nellyLuck(g, seat);
     const w = g.wall;
     const good = useful(g, seat);
-    if (nellyRiding(g, seat)) {
-      if (!g.rng.chance(NELLY.rideGood)) return;
-      if (good(w.live[0]) && isDoraTile(g, w.live[0])) return;
-      if (!w.bringToLive(0, (t) => good(t) && isDoraTile(g, t), g.rng) && !good(w.live[0])) w.bringToLive(0, good, g.rng);
-      return;
-    }
-    // 蓄浪：进张有时被换走
-    if (good(w.live[0]) && g.rng.chance(NELLY.storeBad)) w.bringToLive(0, (t) => !good(t), g.rng);
+    if (v > 0) {
+      if (g.rng.chance(Math.min(NELLY.goodMax, NELLY.goodPer * v)) && !good(w.live[0])) w.bringToLive(0, good, g.rng);
+    } else if (v < 0 && good(w.live[0]) && g.rng.chance(NELLY.badPer * -v)) w.bringToLive(0, (t) => !good(t), g.rng);
   },
 
-  preDeal(g, seat) {
-    settle(g, seat);
+  // 开场分运势
+  preDeal(g, seat): PreDealOption[] {
     const gs = gameStateOf(g, seat);
-    if (gs.ride) return [];
-    const wave = gs.wave ?? 0;
-    const ok = wave >= NELLY.minRide;
-    return [
-      {
-        id: 'ride',
-        name: '乘浪',
-        desc: `现在波 ${wave} 格，乘浪可以持续 ${rideRounds(wave)} 局：摸牌大幅变好、宝牌优先，别人的进张有时被换走`,
-        enabled: ok,
-        picked: false,
-        note: ok ? undefined : `波不到 ${NELLY.minRide} 格`,
-      },
-    ];
+    if (gs.luck) return [];
+    const plan = gs.plan ?? nellyAiPlan(nellySlots(g));
+    return plan.map((v, i) => ({
+      id: `luck${i}`,
+      name: SLOT_NAMES[i],
+      desc: '',
+      enabled: true,
+      picked: false,
+      stepper: { value: v, min: NELLY.min, max: NELLY.max },
+    }));
   },
 
-  setPreDeal(g, seat, picked) {
-    gameStateOf(g, seat).want = picked.includes('ride');
+  preDealCheck(_g, _seat, values) {
+    return nellyPlanError(Object.keys(values).sort().map((k) => values[k]));
+  },
+
+  setPreDeal(g, seat, _picked, values) {
+    if (!values) return;
+    const plan = Object.keys(values)
+      .filter((k) => k.startsWith('luck'))
+      .sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)))
+      .map((k) => values[k]);
+    gameStateOf(g, seat).plan = plan;
   },
 
   skill(g, seat) {
     const gs = gameStateOf(g, seat);
-    const flow = stateOf(g, seat).flow;
-    const read = flow === undefined ? '' : `；这一局势头最好的是${flow === seat ? '自己' : g.players[flow].name}`;
-    const note = (nellyRiding(g, seat) ? `乘浪中，还剩 ${gs.ride} 局` : '蓄浪中：没和牌的局波涨一格') + read;
-    return { label: '', note, enabled: false, meter: { value: nellyWave(g, seat), max: NELLY.waveMax }, active: nellyRiding(g, seat) };
+    const v = nellyLuck(g, seat);
+    const label = gs.off ? '七姐妹：关' : '七姐妹：开';
+    const note = `这一局运势 ${fmt(v)}；七姐妹还剩 ${gs.sisters} 次${v > 0 ? '' : '（运势为正的局才能用）'}`;
+    return { label, note, enabled: gs.sisters! > 0, meter: { value: gs.sisters!, max: NELLY.sisters }, active: v > 0 };
+  },
+
+  pressSkill(g, seat) {
+    const gs = gameStateOf(g, seat);
+    gs.off = !gs.off;
   },
 
   badge(g, seat) {
-    if (nellyRiding(g, seat)) return '乘浪';
-    const wave = nellyWave(g, seat);
-    return wave ? `波${wave}` : null;
+    const v = nellyLuck(g, seat);
+    return v ? `运${fmt(v)}` : null;
   },
 
   insight(g, seat) {
     const gs = gameStateOf(g, seat);
-    return [nellyRiding(g, seat) ? `乘浪中，还剩 ${gs.ride} 局：摸牌很顺，别人的进张有时被换走` : `蓄浪中，波 ${nellyWave(g, seat)}/${NELLY.waveMax} 格`];
+    const plan = gs.luck ? gs.luck.map((v, i) => `${SLOT_NAMES[i]} ${fmt(v - (gs.used![i] ?? 0))}`).join('，') : '还没分';
+    return [`运势：${plan}`, `七姐妹还剩 ${gs.sisters} 次`];
   },
 };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { MIHOKO, mihokoEnergy, mihokoEyeOpen } from '../src/abilities/mihoko';
+import { MIHOKO, mihokoEnergy, mihokoEyeOpen, mihokoSafeKinds } from '../src/abilities/mihoko';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 
@@ -13,23 +13,19 @@ const LINEUPS = [
   ['nodoka', 'saki', 'hiroe', 'mihoko'],
 ];
 
-function play(seed: number, ids: string[], setup: (g: Game, me: number) => void, manual = false) {
+// before：每一步行动前调用（玩家操作她时在这里按技能）
+function play(seed: number, ids: string[], opts: { manual?: boolean; setup?: (g: Game, me: number) => void; before?: (g: Game, me: number) => void }) {
   const seats = ids.map(byId);
   const me = ids.indexOf('mihoko');
-  const g = new Game({ seed, players: seats.map((c, i) => ({ name: c.id, ability: c.ability, manual: manual && i === me })) });
-  setup(g, me);
+  const g = new Game({ seed, players: seats.map((c, i) => ({ name: c.id, ability: c.ability, manual: !!opts.manual && i === me })) });
+  opts.setup?.(g, me);
   let steps = 0;
   while (g.phase !== 'gameEnd' && ++steps < 20000) {
     if (g.phase === 'roundEnd') {
       g.nextRound();
       continue;
     }
-    if (g.phase === 'predeal') {
-      // 玩家：体力够就每局都睁眼
-      g.abilities[me]!.setPreDeal!(g, me, ['eye']);
-      g.deal();
-      continue;
-    }
+    opts.before?.(g, me);
     const s = g.waitingSeats()[0];
     g.act(s, chooseAction(g, s, seats[s].ai));
   }
@@ -37,54 +33,74 @@ function play(seed: number, ids: string[], setup: (g: Game, me: number) => void,
 }
 
 describe('福路美穗子', () => {
-  it('睁眼花体力、每局回一点，体力不够睁不开；玩家选了才睁', () => {
+  it('玩家牌局中随时能睁眼：花体力、睁到这一局结束，体力不够睁不开', () => {
+    let opened = 0;
+    let refused = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      let opened = 0;
-      let before = MIHOKO.energyMax;
-      play(
-        seed,
-        LINEUPS[seed % 4],
-        (g, me) => {
+      play(seed, LINEUPS[seed % 4], {
+        manual: true,
+        setup: (g, me) => {
           g.onEvent((e) => {
-            // 一局结束就回体力
-            if (e.type === 'roundEnd') before = mihokoEnergy(g, me);
-            if (e.type !== 'roundStart') return;
-            const open = mihokoEyeOpen(g, me);
-            if (open) opened++;
-            expect(mihokoEnergy(g, me)).toBe(open ? before - MIHOKO.eyeCost : before);
-            if (before < MIHOKO.eyeCost) expect(open).toBe(false);
-            // 玩家每局都选了睁眼：体力够就一定睁
-            else expect(open).toBe(true);
+            // 新的一局右眼是闭着的
+            if (e.type === 'roundStart') expect(mihokoEyeOpen(g, me)).toBe(false);
           });
         },
-        true,
-      );
-      expect(opened).toBeGreaterThan(0);
-    }
-  }, 120000);
-
-  it('电脑的美穗子睁眼时只会故意放铳：放给闲家、而且很便宜', () => {
-    let openDealIns = 0;
-    let openRounds = 0;
-    for (let seed = 1; seed <= 40; seed++) {
-      play(seed, LINEUPS[seed % 4], (g, me) => {
-        let open = false;
-        g.onEvent((e) => {
-          if (e.type === 'roundStart') {
-            open = mihokoEyeOpen(g, me);
-            if (open) openRounds++;
+        // 每局第五巡左右按一次
+        before: (g, me) => {
+          if (g.phase !== 'turn' || g.turn !== me || g.players[me].discards.length !== 4) return;
+          const ab = g.abilities[me]!;
+          const was = mihokoEyeOpen(g, me);
+          const energy = mihokoEnergy(g, me);
+          const ok = ab.skill!(g, me)!.enabled;
+          ab.pressSkill!(g, me);
+          if (was) expect(mihokoEnergy(g, me)).toBe(energy);
+          else if (energy >= MIHOKO.eyeCost) {
+            expect(ok).toBe(true);
+            expect(mihokoEyeOpen(g, me)).toBe(true);
+            expect(mihokoEnergy(g, me)).toBe(energy - MIHOKO.eyeCost);
+            opened++;
+          } else {
+            expect(ok).toBe(false);
+            expect(mihokoEyeOpen(g, me)).toBe(false);
+            refused++;
           }
-          if (e.type !== 'roundEnd' || !open || g.players[me].riichi) return;
-          for (const w of e.result.wins) {
-            if (w.from !== me) continue;
-            openDealIns++;
-            expect(w.seat).not.toBe(g.dealer);
-            expect(w.result.ron).toBeLessThanOrEqual(MIHOKO.feedMax);
-          }
-        });
+        },
       });
     }
-    expect(openRounds).toBeGreaterThan(100);
-    console.log({ openRounds, openDealIns });
+    expect(opened).toBeGreaterThan(5);
+    expect(refused).toBeGreaterThan(0);
+  }, 120000);
+
+  it('睁眼看出的“他手里没有的花色”真的和不了；电脑有人立直时会睁眼', () => {
+    let checks = 0;
+    let riichiOpen = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      play(seed, LINEUPS[seed % 4], {
+        setup: (g, me) => {
+          g.onEvent((e) => {
+            if (e.type === 'discard' && e.riichi && e.seat !== me && mihokoEnergy(g, me) >= MIHOKO.eyeCost && !mihokoEyeOpen(g, me)) {
+              // 下一次有人摸牌前就睁眼
+              const at = g.events.length;
+              g.onEvent(() => {
+                if (g.events.length === at + 2 && g.phase === 'turn') {
+                  if (mihokoEyeOpen(g, me)) riichiOpen++;
+                }
+              });
+            }
+            if (e.type !== 'draw' || !mihokoEyeOpen(g, me)) return;
+            for (let s = 0; s < 4; s++) {
+              if (s === me || s === e.seat) continue;
+              const waits = g.waits(s);
+              if (!waits.length) continue;
+              const safe = mihokoSafeKinds(g, me, s);
+              checks++;
+              for (const k of waits) expect(safe.has(k)).toBe(false);
+            }
+          });
+        },
+      });
+    }
+    expect(checks).toBeGreaterThan(50);
+    expect(riichiOpen).toBeGreaterThan(0);
   }, 120000);
 });

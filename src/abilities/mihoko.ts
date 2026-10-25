@@ -1,23 +1,20 @@
 import type { Game } from '../engine/game';
-import type { Kind } from '../engine/tiles';
-import { readOthers } from './hiroe';
+import { type Kind, type TileId, kindOf } from '../engine/tiles';
 import type { Ability } from './types';
 
-// 福路美穗子（风越）：平时闭着右眼，没有能力，稳稳地打。发牌前可以花体力睁开右眼：
-// 这一局另外三家的手牌她都看得见（不动牌山）。
-// - 玩家操作她时：界面上列出三家的手牌和听牌，指着会放铳的牌时提醒
-// - 电脑的美穗子：照看到的听牌防守；庄家连庄、领先时，故意打一张便宜的和了牌给闲家，把庄家拉下来
+// 福路美穗子（风越）：平时闭着右眼稳稳地打。牌局中任何时候都可以花体力睁开右眼，一直睁到这一局结束：
+// 看不到别人的牌，但看得出每个人的理牌习惯：别人手牌的牌背按花色上色（万红、筒蓝、索绿、字牌白），
+// 每家手里各种花色有几张一目了然（不动牌山）。睁眼时画面罩一层蓝色。
+// - 电脑的美穗子：落后、坐庄或者有人立直时睁眼。睁眼后，立直的人手里没有的花色是现物一样安全的牌
 export const MIHOKO = {
   energyMax: 100,
   eyeCost: 25,
   regen: 10, // 每局开始回多少
-  feedMax: 2600, // 送牌只送这么小的和了
 };
 
 interface MihokoGameState {
   energy?: number;
   refilledAt?: number; // 回体力回到第几局了（已经结束的局数）
-  want?: boolean; // 玩家选了睁眼（也当下一局的默认）
 }
 interface MihokoState {
   open?: boolean;
@@ -25,7 +22,7 @@ interface MihokoState {
 
 const stateOf = (g: Game, seat: number) => g.abilityState[seat] as MihokoState;
 
-// 每局开始回一次体力（发牌前界面和配牌都会来问，只回一次）
+// 每局开始回一次体力（只回一次）
 function gameStateOf(g: Game, seat: number): MihokoGameState {
   const gs = g.abilityGameState[seat] as MihokoGameState;
   gs.energy ??= MIHOKO.energyMax;
@@ -47,56 +44,61 @@ export function mihokoEyeOpen(g: Game, seat: number): boolean {
   return !!stateOf(g, seat).open;
 }
 
-const isBehind = (g: Game, seat: number) => g.players.some((p) => p.seat !== seat && p.score > g.players[seat].score);
+// 牌背的花色：0 万、1 筒、2 索、3 字牌
+export const suitClass = (t: TileId): number => Math.min(3, Math.floor(kindOf(t) / 9));
 
-// 电脑的美穗子：该送牌时，送哪几种牌（打给闲家的便宜和了，结束庄家的连庄）。不该送是空的
-export function mihokoFeedKinds(g: Game, seat: number): Set<Kind> {
-  const out = new Set<Kind>();
-  const d = g.dealer;
-  if (!mihokoEyeOpen(g, seat) || d === seat) return out;
-  const top = Math.max(...g.players.map((p) => p.score));
-  if (g.honba === 0 && g.players[d].score < top) return out;
-  const reads = readOthers(g, seat);
-  const dealerRon = new Set(reads.find((r) => r.seat === d)?.ron ?? []);
-  for (const r of reads) {
-    // 立直的人可能有里宝，送不准
-    if (r.seat === d || r.value > MIHOKO.feedMax || g.players[r.seat].riichi) continue;
-    for (const k of r.ron) if (!dealerRon.has(k)) out.add(k);
-  }
+// 睁眼看到的：某一家手里（不算副露）各花色有几张
+export function mihokoSuitCounts(g: Game, target: number): number[] {
+  const out = [0, 0, 0, 0];
+  for (const t of g.players[target].hand) out[suitClass(t)]++;
   return out;
 }
+
+// 睁眼时对 target 安全的牌种：他手里一张都没有的花色（数牌的听牌要手里有同花色的牌，字牌要有字牌）
+export function mihokoSafeKinds(g: Game, seat: number, target: number): Set<Kind> {
+  const out = new Set<Kind>();
+  if (!mihokoEyeOpen(g, seat)) return out;
+  const counts = mihokoSuitCounts(g, target);
+  for (let k = 0; k < 34; k++) if (counts[Math.min(3, Math.floor(k / 9))] === 0) out.add(k);
+  return out;
+}
+
+const canOpen = (g: Game, seat: number) => !mihokoEyeOpen(g, seat) && mihokoEnergy(g, seat) >= MIHOKO.eyeCost && (g.phase === 'turn' || g.phase === 'calls');
+
+function open(g: Game, seat: number): void {
+  gameStateOf(g, seat).energy! -= MIHOKO.eyeCost;
+  stateOf(g, seat).open = true;
+  g.emit({ type: 'ability', seat, ability: 'mihoko', text: '睁开右眼' });
+}
+
+const isBehind = (g: Game, seat: number) => g.players.some((p) => p.seat !== seat && p.score > g.players[seat].score);
 
 export const mihokoAbility: Ability = {
   id: 'mihoko',
   name: '右眼',
-  description: `平时闭着右眼稳稳地打。发牌前可以花 ${MIHOKO.eyeCost} 体力睁开右眼：这一局看得见另外三家的手牌（不动牌山）。体力上限 ${MIHOKO.energyMax}，每局回 ${MIHOKO.regen}。`,
+  description: `平时闭着右眼稳稳地打。牌局中任何时候都可以花 ${MIHOKO.eyeCost} 体力睁开右眼，一直到这一局结束：看不到别人的牌，但看得出理牌习惯，别人手牌的牌背按花色上色（万红、筒蓝、索绿、字牌白）。体力上限 ${MIHOKO.energyMax}，每局回 ${MIHOKO.regen}。`,
 
-  dealRules(g, seat) {
-    const gs = gameStateOf(g, seat);
-    const can = gs.energy! >= MIHOKO.eyeCost;
-    const open = can && (g.manual[seat] ? !!gs.want : isBehind(g, seat) || seat === g.dealer);
-    if (!open) return;
-    gs.energy! -= MIHOKO.eyeCost;
-    stateOf(g, seat).open = true;
-  },
-
-  onRoundStart(g, seat) {
-    if (mihokoEyeOpen(g, seat)) g.emit({ type: 'ability', seat, ability: 'mihoko', text: '睁开右眼' });
-  },
-
-  preDeal(g, seat) {
-    const gs = gameStateOf(g, seat);
-    const ok = gs.energy! >= MIHOKO.eyeCost;
-    return [{ id: 'eye', name: '睁开右眼', desc: '这一局看得见另外三家的手牌和听牌', cost: MIHOKO.eyeCost, enabled: ok, picked: ok && !!gs.want, note: ok ? undefined : '体力不够' }];
-  },
-
-  setPreDeal(g, seat, picked) {
-    gameStateOf(g, seat).want = picked.includes('eye');
+  // 电脑的美穗子：开局时落后或坐庄就睁眼；没睁的话，有人立直时再睁
+  beforeAnyDraw(g, seat) {
+    if (g.manual[seat] || !canOpen(g, seat)) return;
+    const riichi = g.players.some((p) => p.seat !== seat && p.riichi);
+    const start = g.players[seat].discards.length === 0 && (isBehind(g, seat) || seat === g.dealer);
+    if (riichi || start) open(g, seat);
   },
 
   skill(g, seat) {
-    const open = mihokoEyeOpen(g, seat);
-    return { label: '', note: open ? '这一局右眼睁开：看得见三家的手牌' : '这一局闭着右眼', enabled: false, meter: { value: mihokoEnergy(g, seat), max: MIHOKO.energyMax }, active: open };
+    const eye = mihokoEyeOpen(g, seat);
+    const energy = mihokoEnergy(g, seat);
+    const note = eye
+      ? '右眼睁开：别人的牌背按花色上色，到这一局结束'
+      : energy >= MIHOKO.eyeCost
+        ? `花 ${MIHOKO.eyeCost} 体力，这一局看出每家各花色有几张`
+        : '体力不够';
+    return { label: eye ? '右眼睁开中' : '睁开右眼', note, enabled: canOpen(g, seat), meter: { value: energy, max: MIHOKO.energyMax }, active: eye };
+  },
+
+  pressSkill(g, seat) {
+    if (canOpen(g, seat)) open(g, seat);
   },
 
   badge(g, seat) {
@@ -104,6 +106,6 @@ export const mihokoAbility: Ability = {
   },
 
   insight(g, seat) {
-    return [`体力 ${mihokoEnergy(g, seat)}/${MIHOKO.energyMax}`, mihokoEyeOpen(g, seat) ? '这一局右眼睁开，看得见所有人的手牌' : '这一局闭着右眼'];
+    return [`体力 ${mihokoEnergy(g, seat)}/${MIHOKO.energyMax}`, mihokoEyeOpen(g, seat) ? '这一局右眼睁开，看得出每家各花色有几张' : '这一局闭着右眼'];
   },
 };

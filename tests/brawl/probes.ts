@@ -98,6 +98,7 @@ const probe = (ability: Ability, color: string): Character => ({
   id: ability.id,
   name: ability.name,
   school: '测试',
+  cost: 1,
   color,
   ability,
   ai: { ...base, mistakeRate: 0.08 },

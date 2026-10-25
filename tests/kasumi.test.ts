@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
 import { kasumiSuit } from '../src/abilities/kasumi';
+import { isDoraTile, kuroLost } from '../src/abilities/kuro';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
@@ -29,14 +30,16 @@ describe('石户霞', () => {
           if (suit === null) return;
           summoned = true;
           summonedRounds++;
-          for (const p of g.players) if (p.seat !== me) expect(p.hand.some(inSuit(suit))).toBe(false);
+          for (const p of g.players) if (p.seat !== me && g.binds(me, p.seat)) expect(p.hand.some(inSuit(suit))).toBe(false);
         }
-        if (e.type === 'draw' && e.seat !== me && !g.rinshanDraw) {
+        if (e.type === 'draw' && e.seat !== me && g.binds(me, e.seat) && !g.rinshanDraw) {
           const suit = kasumiSuit(g, me);
           if (suit === null) return;
           const p = g.players[e.seat];
-          // 牌山里别的花色被摸光（或被锁住）时才挡不住
-          const other = g.wall.live.some((t) => !inSuit(suit)(t) && !g.wall.locked.has(t));
+          // 牌山里别的花色被摸光（或被锁住、或者剩下的都是玄的宝牌）时才挡不住
+          const kuro = g.players.findIndex((q) => q.name === 'kuro');
+          const kuroHolds = (t: TileId) => !kuroLost(g, kuro) && isDoraTile(g, t);
+          const other = g.wall.live.some((t) => !inSuit(suit)(t) && !g.wall.locked.has(t) && !kuroHolds(t));
           if (!other) return;
           checkedDraws++;
           expect(inSuit(suit)(p.drawn!)).toBe(false);

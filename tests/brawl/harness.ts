@@ -78,7 +78,7 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
         const mine = g === real;
         if (mine && !lockedBefore) lockedBefore = new Set(g.wall.locked);
         const r = inner(g, seat, drawer, rinshan);
-        if (r && mine) rules.push(r);
+        if (r && mine && g.binds(seat, drawer)) rules.push(r);
         return r;
       },
     };

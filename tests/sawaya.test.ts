@@ -51,7 +51,10 @@ describe('狮子原爽', () => {
           g.onEvent((e) => {
             if (e.type === 'ability' && e.seat !== me && g.isSealed(e.seat)) throw new Error(`封印中 ${e.ability} 还在发动`);
             if (e.type === 'roundStart') {
-              const sealed = [0, 1, 2, 3].filter((s) => s !== me).every((s) => g.isSealed(s));
+              // 照、玄封印不了
+              const sealable = [0, 1, 2, 3].filter((s) => s !== me && !g.abilities[s]?.immune && !g.abilities[s]?.absolute);
+              for (const s of [0, 1, 2, 3]) if (s !== me && !sealable.includes(s)) expect(g.isSealed(s)).toBe(false);
+              const sealed = sealable.every((s) => g.isSealed(s));
               if (sealed) sealedRounds++;
               else if (g.round > 1) afterSeal++;
               expect(g.isSealed(me)).toBe(false);
@@ -66,25 +69,19 @@ describe('狮子原爽', () => {
     expect(afterSeal).toBeGreaterThan(10);
   }, 120000);
 
-  it('云用过要等几局才回来，神威一场一次', () => {
+  it('每朵云、每个神威一场只能用一次', () => {
     for (let seed = 1; seed <= 12; seed++) {
       play(
         seed,
         LINEUPS[seed % 4],
         (g, me) => {
-          const last: Record<string, number> = {};
-          const kamuy = new Set<string>();
+          const used = new Set<string>();
           g.onEvent((e) => {
             if (e.type !== 'roundStart') return;
-            for (const id of ['red', 'white', 'yellow'] as const) {
+            for (const id of ['red', 'white', 'yellow', 'pakoro', 'akkoro', 'hoyau', 'huri'] as const) {
               if (!sawayaOn(g, me, id)) continue;
-              if (last[id] !== undefined) expect(g.round - last[id]).toBeGreaterThan(SAWAYA.cloudCooldown);
-              last[id] = g.round;
-            }
-            for (const id of ['pakoro', 'akkoro', 'hoyau', 'huri'] as const) {
-              if (!sawayaOn(g, me, id)) continue;
-              expect(kamuy.has(id)).toBe(false);
-              kamuy.add(id);
+              expect(used.has(id)).toBe(false);
+              used.add(id);
             }
           });
         },
@@ -105,7 +102,7 @@ describe('狮子原爽', () => {
           g.onEvent((e) => {
             if (e.type === 'roundStart') {
               if (sawayaOn(g, me, 'red')) {
-                for (let s = 0; s < 4; s++) if (s !== me && !g.dealUnmet.some((r) => r.target === s)) expect(g.players[s].hand.some((t) => isHonor(kindOf(t)))).toBe(false);
+                for (let s = 0; s < 4; s++) if (s !== me && g.binds(me, s) && !g.dealUnmet.some((r) => r.target === s)) expect(g.players[s].hand.some((t) => isHonor(kindOf(t)))).toBe(false);
               }
               if (sawayaOn(g, me, 'yellow')) {
                 yellowHands++;
@@ -113,7 +110,7 @@ describe('狮子原爽', () => {
                 expect(nums.filter((t) => numOf(kindOf(t)) > 4).length).toBeLessThanOrEqual(1);
               }
             }
-            if (e.type === 'draw' && e.seat !== me && !g.rinshanDraw && sawayaOn(g, me, 'red') && !g.isSealed(me)) {
+            if (e.type === 'draw' && e.seat !== me && g.binds(me, e.seat) && !g.rinshanDraw && sawayaOn(g, me, 'red') && !g.isSealed(me)) {
               // 牌山里只剩字牌（或者别的都被锁住）时才挡不住
               const other = g.wall.live.some((t) => !isHonor(kindOf(t)) && !g.wall.locked.has(t));
               if (!other) return;

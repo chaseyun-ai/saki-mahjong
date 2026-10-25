@@ -6,7 +6,7 @@ import { kuroAbility } from './kuro';
 import { mihokoAbility } from './mihoko';
 import { nellyAbility } from './nelly';
 import { sakiAbility } from './saki';
-import { sawayaAbility } from './sawaya';
+import { SAWAYA_SKILLS, sawayaAbility } from './sawaya';
 import { teruAbility } from './teru';
 import { tokiAbility } from './toki';
 import type { Ability } from './types';
@@ -26,8 +26,8 @@ export interface AiStyle {
   damaMin: number; // 有役、默听荣和至少这么多就不立直（0 是不看）
   mirror: boolean; // 宫永照：照魔镜看过以后读得出别人听什么（和 reads 一样防守）
   streak: boolean; // 宫永照：连和中不够大的和了先不和，等更大的
-  eye: boolean; // 福路美穗子：睁眼那一局照看到的听牌防守，该送牌时送牌
-  waves: boolean; // 涅莉：蓄浪的局以防守为主
+  eye: boolean; // 福路美穗子：睁眼后，立直的人手里没有的花色当安全牌
+  waves: boolean; // 涅莉：运势很差（-2 以下）的局以防守为主
 }
 
 export interface Character {
@@ -35,8 +35,12 @@ export interface Character {
   name: string;
   school: string;
   color: string;
+  // 团体赛选人的费用档位（1–5）：每队每档选一人，正好 15 费。档位只在这里改
+  cost: number;
   ability: Ability | null;
   ai: AiStyle;
+  // 素材页给这几个技能各留一个动画槽，发动时放这一段（name 和能力发动时出的字一样）
+  skillArts?: { id: string; name: string }[];
 }
 
 export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false };
@@ -44,6 +48,7 @@ export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: f
 export const CHARACTERS: Character[] = [
   {
     id: 'saki',
+    cost: 4,
     name: '宫永咲',
     school: '清澄高中',
     color: '#d97a8f',
@@ -52,6 +57,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'kuro',
+    cost: 2,
     name: '松实玄',
     school: '阿知贺女子学院',
     color: '#c9873a',
@@ -60,6 +66,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'toki',
+    cost: 3,
     name: '园城寺怜',
     school: '千里山女子',
     color: '#6f8fc9',
@@ -69,6 +76,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'nodoka',
+    cost: 1,
     name: '原村和',
     school: '清澄高中',
     color: '#9b7fc4',
@@ -77,6 +85,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'awai',
+    cost: 5,
     name: '大星淡',
     school: '白糸台高中',
     color: '#e3b23c',
@@ -85,6 +94,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'kasumi',
+    cost: 3,
     name: '石户霞',
     school: '永水女子',
     color: '#5a8f7b',
@@ -93,6 +103,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'koromo',
+    cost: 5,
     name: '天江衣',
     school: '龙门渊高中',
     color: '#c0504d',
@@ -101,6 +112,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'hiroe',
+    cost: 2,
     name: '爱宕洋榎',
     school: '姬松高中',
     color: '#d9733f',
@@ -109,6 +121,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'teru',
+    cost: 5,
     name: '宫永照',
     school: '白糸台高中',
     color: '#a8324a',
@@ -117,6 +130,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'mihoko',
+    cost: 3,
     name: '福路美穗子',
     school: '风越女子',
     color: '#3f9fb5',
@@ -125,6 +139,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'nelly',
+    cost: 4,
     name: '涅莉·薇萨拉兹',
     school: '临海女子',
     color: '#c2185b',
@@ -133,10 +148,12 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'sawaya',
+    cost: 4,
     name: '狮子原爽',
     school: '有珠山高中',
     color: '#7a8fa6',
     ability: sawayaAbility,
+    skillArts: SAWAYA_SKILLS.filter((k) => k.ready).map(({ id, name }) => ({ id, name })),
     ai: { ...baseAi },
   },
 ];

@@ -16,6 +16,7 @@ import type { TileId } from '../engine/tiles';
 //    全部调整完，配牌的 52 张统一锁定，然后发牌。
 
 export const PRIORITY = {
+  kuro: 1,
   sawaya: 5,
   awai: 10,
   koromo: 20,
@@ -47,6 +48,11 @@ export interface Ability {
   description: string;
   // 越小越先动，没写算 PRIORITY.self
   priority?: number;
+  // 别人的能力动不了她：不被封印，别人对她的配牌、摸牌定的规矩不算，别人换牌也换不到她的配牌（宫永照）。
+  // 只有 absolute 的能力还管得到她
+  immune?: boolean;
+  // 作者钦定最高（松实玄的宝牌）：不被封印，她定的规矩连 immune 的人也要守
+  absolute?: boolean;
   // 配牌之前：牌山已经洗好、骰子掷完，live 的前 52 张还没发（g.dealIndices 给出每家会拿到哪几张）
   // 第一步：定配牌的规矩，不动牌
   dealRules?(g: Game, seat: number): DealRule[] | void;
@@ -64,9 +70,14 @@ export interface Ability {
   foresight?: { title: string };
   // 发牌前可以选的技能：玩家操作时，发牌前弹出来让玩家选（选好调 setPreDeal）；电脑在 dealRules 里自己决定
   preDeal?(g: Game, seat: number): PreDealOption[];
-  setPreDeal?(g: Game, seat: number, picked: string[]): void;
+  // values：带 stepper 的选项选好的数（涅莉分运势）
+  setPreDeal?(g: Game, seat: number, picked: string[], values?: Record<string, number>): void;
+  // 带 stepper 的选项选好的数合不合规矩，不合给原因（界面上“发牌”按钮按不了）
+  preDealCheck?(g: Game, seat: number, values: Record<string, number>): string | null;
   // 这一刻能不能和牌（照的照魔镜那一局和不了）。没写算能
   canWin?(g: Game, seat: number): boolean;
+  // 不许 target 和牌（涅莉的七姐妹封住的人）
+  forbidsWin?(g: Game, seat: number, target: number): boolean;
   // 这一局（第 round 局）封印别人的能力（爽的霍亚乌神威）：为真时别的座位的能力全部不动
   seals?(g: Game, seat: number, round: number): boolean;
   // 别人看得穿的这家能力状态（照的照魔镜），一行一条；没写就只显示能力名
@@ -85,6 +96,8 @@ export interface PreDealOption {
   // 默认勾上（比如上一局选过的）
   picked: boolean;
   note?: string;
+  // 不是勾选，是选一个数（涅莉给每一局分的运势）
+  stepper?: { value: number; min: number; max: number };
 }
 
 export interface SkillButton {

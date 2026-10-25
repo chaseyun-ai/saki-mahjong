@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { NELLY, nellyRiding, nellyWave, rideRounds } from '../src/abilities/nelly';
+import { NELLY, nellyAiPlan, nellyBlocked, nellyLuck, nellyPlanError, nellySisters } from '../src/abilities/nelly';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
@@ -15,10 +15,11 @@ const LINEUPS = [
   ['nodoka', 'mihoko', 'hiroe', 'nelly'],
 ];
 
-function play(seed: number, ids: string[], setup: (g: Game, me: number) => void, pick?: (g: Game, me: number) => string[]) {
+// plan：玩家操作她时开场分的运势（不给就是电脑）
+function play(seed: number, ids: string[], setup: (g: Game, me: number) => void, opts: { plan?: number[]; format?: 'east' | 'team' } = {}) {
   const seats = ids.map(byId);
   const me = ids.indexOf('nelly');
-  const g = new Game({ seed, players: seats.map((c, i) => ({ name: c.id, ability: c.ability, manual: !!pick && i === me })) });
+  const g = new Game({ seed, format: opts.format, players: seats.map((c, i) => ({ name: c.id, ability: c.ability, manual: !!opts.plan && i === me })) });
   setup(g, me);
   let steps = 0;
   while (g.phase !== 'gameEnd' && ++steps < 20000) {
@@ -27,7 +28,10 @@ function play(seed: number, ids: string[], setup: (g: Game, me: number) => void,
       continue;
     }
     if (g.phase === 'predeal') {
-      g.abilities[me]!.setPreDeal!(g, me, pick!(g, me));
+      const ab = g.abilities[me]!;
+      const values = Object.fromEntries(opts.plan!.map((v, i) => [`luck${i}`, v]));
+      expect(ab.preDeal!(g, me).length).toBe(opts.plan!.length);
+      ab.setPreDeal!(g, me, [], values);
       g.deal();
       continue;
     }
@@ -37,62 +41,87 @@ function play(seed: number, ids: string[], setup: (g: Game, me: number) => void,
   return g;
 }
 
+const label = (g: Game) => g.roundWind * 4 + g.roundNumber;
+
 describe('涅莉·薇萨拉兹', () => {
-  it('蓄浪：没和牌涨一格、放铳再涨一格；乘浪花掉全部的波，每两格乘一局', () => {
-    let rides = 0;
-    for (let seed = 1; seed <= 16; seed++) {
-      // 玩家操作：波一到 3 格就乘浪
+  it('运势加起来是 0；电脑前面负、最后两局正；玩家分的照用，同一局连庄沿用', () => {
+    for (const n of [4, 8]) {
+      const plan = nellyAiPlan(n);
+      expect(plan.reduce((a, b) => a + b, 0)).toBe(0);
+      expect(nellyPlanError(plan)).toBeNull();
+      expect(plan.at(-1)).toBeGreaterThan(0);
+    }
+    expect(nellyPlanError([1, 0, 0, 0])).not.toBeNull();
+    expect(nellyPlanError([NELLY.min - 1, 0, 0, -NELLY.min + 1])).not.toBeNull();
+    const mine = [3, -1, -1, -1];
+    for (let seed = 1; seed <= 6; seed++) {
       play(
         seed,
         LINEUPS[seed % 4],
         (g, me) => {
-          let wave = 0;
-          let ride = 0;
-          let riding = false;
+          const sisters = () => NELLY.sisters - nellySisters(g, me);
           g.onEvent((e) => {
-            if (e.type === 'roundStart') {
-              if (!ride && wave >= 3) {
-                ride = rideRounds(wave);
-                wave = 0;
-                rides++;
-              }
-              riding = ride > 0;
-              expect(nellyRiding(g, me)).toBe(riding);
-              expect(nellyWave(g, me)).toBe(wave);
-            }
-            if (e.type !== 'roundEnd') return;
-            if (riding) ride--;
-            else {
-              const won = e.result.wins.some((w) => w.seat === me);
-              const dealt = e.result.wins.some((w) => w.from === me);
-              wave = Math.min(NELLY.waveMax, wave + (won ? 0 : 1) + (dealt ? 1 : 0));
-            }
+            if (e.type !== 'roundStart') return;
+            // 用过七姐妹的局运势被扣掉，所以只会比分的小
+            const want = mine[label(g)] ?? 0;
+            expect(nellyLuck(g, me)).toBeLessThanOrEqual(want);
+            expect(nellyLuck(g, me)).toBeGreaterThanOrEqual(want - sisters());
           });
         },
-        (g, me) => (nellyWave(g, me) >= 3 ? ['ride'] : []),
+        { plan: mine },
       );
     }
-    expect(rides).toBeGreaterThan(5);
   }, 120000);
 
-  it('乘浪的局摸牌明显比蓄浪的局顺', () => {
-    const draws = { ride: [0, 0], store: [0, 0] };
-    for (let seed = 1; seed <= 30; seed++) {
-      play(seed, LINEUPS[seed % 4], (g, me) => {
-        g.onEvent((e) => {
-          if (e.type !== 'draw' || e.seat !== me || g.rinshanDraw) return;
-          const p = g.players[me];
-          const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
-          const good = shanten(toCounts(p.hand), p.melds.length) < before;
-          const d = nellyRiding(g, me) ? draws.ride : draws.store;
-          d[0]++;
-          if (good) d[1]++;
-        });
-      });
+  it('七姐妹：只在运势为正的局用，一场最多 7 次，封住的人这一局和不了，每用一次运势减 1', () => {
+    let used = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+      play(
+        seed,
+        LINEUPS[seed % 4],
+        (g, me) => {
+          let before = 0;
+          g.onEvent((e) => {
+            if (e.type === 'roundStart') before = nellyLuck(g, me);
+            if (e.type === 'ability' && e.seat === me && e.text === '七姐妹') {
+              used++;
+              expect(before).toBeGreaterThan(0);
+              expect(nellyLuck(g, me)).toBe(before - 1);
+              before = nellyLuck(g, me);
+              expect(nellySisters(g, me)).toBeGreaterThanOrEqual(0);
+            }
+            if (e.type === 'roundEnd') for (const w of e.result.wins) expect(nellyBlocked(g, me)).not.toContain(w.seat);
+          });
+        },
+        { format: 'team' },
+      );
     }
-    const rate = (d: number[]) => d[1] / d[0];
-    console.log({ ride: rate(draws.ride).toFixed(2), store: rate(draws.store).toFixed(2) });
-    expect(draws.ride[0]).toBeGreaterThan(100);
-    expect(rate(draws.ride)).toBeGreaterThan(rate(draws.store) + 0.15);
+    expect(used).toBeGreaterThan(2);
+  }, 120000);
+
+  it('运势正的局摸牌明显比负的局顺', () => {
+    const stat = { up: [0, 0], down: [0, 0] };
+    for (let seed = 1; seed <= 20; seed++) {
+      play(
+        seed,
+        LINEUPS[seed % 4],
+        (g, me) => {
+          g.onEvent((e) => {
+            if (e.type !== 'draw' || e.seat !== me || g.rinshanDraw) return;
+            const v = nellyLuck(g, me);
+            if (!v) return;
+            const p = g.players[me];
+            const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
+            const s = v > 0 ? stat.up : stat.down;
+            s[0]++;
+            if (shanten(toCounts(p.hand), p.melds.length) < before) s[1]++;
+          });
+        },
+        { format: 'team' },
+      );
+    }
+    console.log(stat);
+    expect(stat.up[0]).toBeGreaterThan(100);
+    expect(stat.up[1] / stat.up[0]).toBeGreaterThan(stat.down[1] / stat.down[0] + 0.1);
   }, 120000);
 });

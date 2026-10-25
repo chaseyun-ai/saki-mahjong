@@ -3,7 +3,7 @@ import { TileId, isHonor, isWind, kindOf, numOf, suitOf } from '../engine/tiles'
 import { PRIORITY, type Ability, type DealRule, type PreDealOption } from './types';
 
 // 狮子原爽（有珠山）：发牌前召唤五色云和阿伊努的神威（kamuy），可以叠着用。
-// 云用过要等几局才回来；神威一个半庄只能用一次。她最先动（PRIORITY.sawaya），定下的规矩别人不能违反。
+// 每朵云、每个神威一场只能用一次。她最先动（PRIORITY.sawaya），定下的规矩别人不能违反。
 // - 红云：这一局字牌只有她摸得到：别人的配牌里没有字牌，摸牌也摸不到；她自己摸牌容易摸到字牌
 // - 白云：她的配牌和摸牌偏向索子
 // - 黄云：她配牌里的数牌都换成 1–4
@@ -14,7 +14,6 @@ import { PRIORITY, type Ability, type DealRule, type PreDealOption } from './typ
 // - 胡里神威：不是她自风的风牌偏向她的摸牌
 // 帕吾契神威作用在人身上、不影响牌，不放进游戏。
 export const SAWAYA = {
-  cloudCooldown: 3, // 云用过以后要过几局才回来
   hoyauRounds: 2,
   drawChance: 0.5, // 云、神威让她摸到想要的牌的概率
   akkoroChance: 0.7,
@@ -37,8 +36,7 @@ export const SAWAYA_SKILLS: { id: SkillId; name: string; desc: string; kamuy: bo
 const nameOf = (id: string) => SAWAYA_SKILLS.find((k) => k.id === id)!.name;
 
 interface SawayaGameState {
-  cloudBack?: Partial<Record<SkillId, number>>; // 云从第几局起能再用
-  usedKamuy?: SkillId[];
+  used?: SkillId[]; // 这一场用过的云和神威
   sealFrom?: number; // 霍亚乌封印的局（g.round）从哪局到哪局
   sealTo?: number;
   picks?: SkillId[]; // 玩家这一局选的
@@ -50,8 +48,7 @@ interface SawayaState {
 
 const gameStateOf = (g: Game, seat: number) => {
   const gs = g.abilityGameState[seat] as SawayaGameState;
-  gs.cloudBack ??= {};
-  gs.usedKamuy ??= [];
+  gs.used ??= [];
   return gs;
 };
 const stateOf = (g: Game, seat: number) => g.abilityState[seat] as SawayaState;
@@ -61,36 +58,36 @@ export function sawayaOn(g: Game, seat: number, id: SkillId): boolean {
   return !!stateOf(g, seat).on?.includes(id);
 }
 
-// 第 round 局能不能用（round 是马上要开的那一局）。不能用时给原因
-function blocked(g: Game, seat: number, id: SkillId, round: number): string | null {
-  const k = SAWAYA_SKILLS.find((x) => x.id === id)!;
-  if (!k.ready) return '还没做';
-  const gs = gameStateOf(g, seat);
-  if (k.kamuy) return gs.usedKamuy!.includes(id) ? '这一场用过了' : null;
-  const back = gs.cloudBack![id] ?? 0;
-  return round < back ? `还要 ${back - round} 局才回来` : null;
+// 还能不能用。不能用时给原因
+function blocked(g: Game, seat: number, id: SkillId): string | null {
+  if (!SAWAYA_SKILLS.find((x) => x.id === id)!.ready) return '还没做';
+  return gameStateOf(g, seat).used!.includes(id) ? '这一场用过了' : null;
 }
 
+// 点数最高的对手（管不到的人不算）
 const leader = (g: Game, seat: number) =>
-  [0, 1, 2, 3].filter((s) => s !== seat).sort((a, b) => g.players[b].score - g.players[a].score)[0];
+  [0, 1, 2, 3].filter((s) => s !== seat && g.binds(seat, s)).sort((a, b) => g.players[b].score - g.players[a].score)[0];
 
-// 电脑的爽：不领先（或偶尔领先时）放一朵最合配牌的云；落后很多或到了最后一局叫一个神威
+// 电脑的爽：配牌正合某朵云时放出来（每朵一场一次，不合就留着）；不领先时门槛低一些，
+// 最后两局把剩下的云用掉。落后很多或到了最后一局叫一个神威
 function aiPicks(g: Game, seat: number): SkillId[] {
   const out: SkillId[] = [];
-  const ok = (id: SkillId) => blocked(g, seat, id, g.round) === null;
+  const ok = (id: SkillId) => blocked(g, seat, id) === null;
   const me = g.players[seat].score;
   const top = Math.max(...g.players.filter((p) => p.seat !== seat).map((p) => p.score));
-  if (me <= top || g.rng.chance(SAWAYA.aiLeadChance)) {
+  const late = g.isLastRounds(2);
+  if (me <= top || late || g.rng.chance(SAWAYA.aiLeadChance)) {
     const hand = g.dealHand(seat).map(kindOf);
-    const fit: [SkillId, number][] = [
-      ['red', hand.filter(isHonor).length],
-      ['white', hand.filter((k) => k < 27 && suitOf(k) === 2).length],
-      ['yellow', hand.filter((k) => k < 27 && numOf(k) <= 4).length],
+    // 配牌里合这朵云的牌数、合得上的门槛
+    const fit: [SkillId, number, number][] = [
+      ['red', hand.filter(isHonor).length, 4],
+      ['white', hand.filter((k) => k < 27 && suitOf(k) === 2).length, 6],
+      ['yellow', hand.filter((k) => k < 27 && numOf(k) <= 4).length, 8],
     ];
-    const cloud = fit.filter(([id]) => ok(id)).sort((a, b) => b[1] - a[1])[0];
+    const cloud = fit.filter(([id, n, need]) => ok(id) && (late || n >= need)).sort((a, b) => b[1] / b[2] - a[1] / a[2])[0];
     if (cloud) out.push(cloud[0]);
   }
-  if (top - me >= 8000 || (g.roundNumber === 3 && me <= top)) {
+  if (top - me >= 8000 || (g.isLastRounds(1) && me <= top)) {
     const kamuy = (['hoyau', 'akkoro', 'pakoro', 'huri'] as SkillId[]).find(ok);
     if (kamuy) out.push(kamuy);
   }
@@ -123,18 +120,15 @@ function sawayaKeep(g: Game, seat: number): void {
 export const sawayaAbility: Ability = {
   id: 'sawaya',
   name: '五色云·神威',
-  description: `发牌前召唤五色云和神威，可以叠着用。云用过要等 ${SAWAYA.cloudCooldown} 局才回来，神威一个半庄各用一次。红云：字牌只有她摸得到；白云：偏向索子；黄云：配牌的数牌都是 1–4；帕科罗：对手摸到的全是她的和了牌；阿科罗：她摸牌大多是万子；霍亚乌：封印别人的能力 ${SAWAYA.hoyauRounds} 局；胡里：客风牌偏向她。`,
+  description: `发牌前召唤五色云和神威，可以叠着用，每朵云、每个神威一场只能用一次。红云：字牌只有她摸得到；白云：偏向索子；黄云：配牌的数牌都是 1–4；帕科罗：对手摸到的全是她的和了牌；阿科罗：她摸牌大多是万子；霍亚乌：封印别人的能力 ${SAWAYA.hoyauRounds} 局；胡里：客风牌偏向她。`,
   priority: PRIORITY.sawaya,
 
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);
-    const picked = (g.manual[seat] ? gs.picks ?? [] : aiPicks(g, seat)).filter((id) => blocked(g, seat, id, g.round) === null);
+    const picked = (g.manual[seat] ? gs.picks ?? [] : aiPicks(g, seat)).filter((id) => blocked(g, seat, id) === null);
     const st = stateOf(g, seat);
     st.on = picked;
-    for (const id of picked) {
-      if (SAWAYA_SKILLS.find((k) => k.id === id)!.kamuy) gs.usedKamuy!.push(id);
-      else gs.cloudBack![id] = g.round + 1 + SAWAYA.cloudCooldown;
-    }
+    gs.used!.push(...picked);
     if (picked.includes('hoyau')) {
       gs.sealFrom = g.round;
       gs.sealTo = g.round + SAWAYA.hoyauRounds - 1;
@@ -212,10 +206,9 @@ export const sawayaAbility: Ability = {
   },
 
   preDeal(g, seat): PreDealOption[] {
-    const round = g.round + 1;
     return SAWAYA_SKILLS.map((k) => {
-      const why = blocked(g, seat, k.id, round);
-      return { id: k.id, name: k.name, desc: k.desc, enabled: why === null, picked: false, note: why ?? (k.kamuy ? '一场一次' : `用完 ${SAWAYA.cloudCooldown} 局后回来`) };
+      const why = blocked(g, seat, k.id);
+      return { id: k.id, name: k.name, desc: k.desc, enabled: why === null, picked: false, note: why ?? '一场一次' };
     });
   },
 
@@ -238,7 +231,7 @@ export const sawayaAbility: Ability = {
 
   insight(g, seat) {
     const on = stateOf(g, seat).on ?? [];
-    const ready = SAWAYA_SKILLS.filter((k) => blocked(g, seat, k.id, g.round + 1) === null).map((k) => k.name);
+    const ready = SAWAYA_SKILLS.filter((k) => blocked(g, seat, k.id) === null).map((k) => k.name);
     return [on.length ? `这一局：${on.map(nameOf).join('、')}` : '这一局没召唤', ready.length ? `还能用：${ready.join('、')}` : '云和神威都用完了'];
   },
 };

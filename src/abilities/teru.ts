@@ -9,10 +9,12 @@ import type { Ability } from './types';
 // - 照魔镜：第一局只看不和（这一局她和不了牌），看过以后整场都看得穿别人：
 //   玩家操作她时，别人的头像旁边多一面镜子，点开能看到这家能力现在的状态（Ability.insight）；
 //   电脑的照读得出别人听什么，不打别人和得了的牌
-// - 连续和了：和了以后进入连和，连和中摸牌容易摸到进张，连得越多越快；
+// - 别人的能力动不了她（Ability.immune）：不被封印，别人对她的配牌、摸牌定的规矩不算；只有玄的宝牌她也得守
+// - 连续和了：照魔镜看过以后摸牌就比别人顺；和了以后进入连和，摸牌更容易摸到进张，连得越多越快；
 //   下一次和了必须不小于上一次（按她拿到的点数算，不算本场和立直棒），和小了、别人和牌、流局，连和就断
 export const TERU = {
-  boostBase: 0.55, // 连和第一次时，摸牌换成进张的概率
+  idleBoost: 0.15, // 照魔镜看过、还没连和时，摸牌换成进张的概率（全书最强，平时也压人）
+  boostBase: 0.5, // 连和第一次时
   boostStep: 0.15, // 每多连一次加多少
   boostMax: 0.9,
   aiForceWin: 12, // 电脑的照：牌山剩这么多张以内，不够大也和（免得白白流局）
@@ -90,8 +92,9 @@ function settle(g: Game, seat: number): void {
 export const teruAbility: Ability = {
   id: 'teru',
   name: '照魔镜·连续和了',
+  immune: true,
   description:
-    '第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看）。和了以后进入连和：摸牌容易摸到进张，连得越多越快；但下一次和了必须不小于上一次，和小了、别人和牌或流局，连和就断。',
+    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看），摸牌也比别人顺。和了以后进入连和：摸牌更容易摸到进张，连得越多越快；但下一次和了必须不小于上一次，和小了、别人和牌或流局，连和就断。',
 
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);
@@ -112,8 +115,9 @@ export const teruAbility: Ability = {
   // 连和中：摸牌换成进张
   beforeDraw(g, seat, rinshan) {
     const { count } = teruStreak(g, seat);
-    if (rinshan || count === 0) return;
-    if (!g.rng.chance(Math.min(TERU.boostBase + TERU.boostStep * (count - 1), TERU.boostMax))) return;
+    if (rinshan || !teruMirrored(g, seat)) return;
+    const chance = count === 0 ? TERU.idleBoost : Math.min(TERU.boostBase + TERU.boostStep * (count - 1), TERU.boostMax);
+    if (!g.rng.chance(chance)) return;
     const p = g.players[seat];
     const counts = toCounts(p.hand);
     const sh = shanten(counts, p.melds.length);
@@ -149,7 +153,7 @@ export const teruAbility: Ability = {
     if (!g.wall.bringToLive(0, (t) => useful(t) && dora(t), g.rng) && !useful(before)) g.wall.bringToLive(0, useful, g.rng);
     if (g.wall.live[0] === before) return;
     const st = g.abilityState[seat] as TeruState;
-    if (!st.boosted) g.emit({ type: 'ability', seat, ability: 'teru', text: '连续和了' });
+    if (!st.boosted && count > 0) g.emit({ type: 'ability', seat, ability: 'teru', text: '连续和了' });
     st.boosted = true;
   },
 

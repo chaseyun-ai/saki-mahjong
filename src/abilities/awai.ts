@@ -229,11 +229,12 @@ export const awaiAbility: Ability = {
     // 双立直的配牌：先找一手满足别人规矩的（规矩只看牌种，所以拿每种牌里的一张代表来算）
     let plan: { kinds: Kind[]; kan: Kind } | null = null;
     if (st.tenpai) {
-      const avail = toCounts(w.live);
       const others = g.dealRules.filter((r) => r.target === seat && r.seat !== seat);
+      // 只数单拿一张也不违反别人规矩的牌（比如玄在场时赤五不算：同种的普通牌够了才行）
+      const avail = toCounts(w.live.filter((t) => others.every((r) => r.bad([t]) === 0)));
       plan = planHand(avail, g.rng, (kinds) => others.every((r) => r.bad(kinds.map((k) => k * 4 + 1)) === 0));
       // 无解时降级：不顾比她后动的人的规矩，换牌也一样
-      if (!plan) plan = planHand(avail, g.rng, () => true);
+      if (!plan) plan = planHand(toCounts(w.live), g.rng, () => true);
     }
     if (plan) {
       const placed = placeHand(g, mine, plan.kinds) || g.dealFallback(seat, () => placeHand(g, mine, plan!.kinds));

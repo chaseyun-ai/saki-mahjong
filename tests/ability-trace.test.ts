@@ -19,7 +19,8 @@ beforeAll(() => {
   Wall.prototype.bringToLive = function (this: Wall, ...args: Parameters<Wall['bringToLive']>) {
     const before = this.live[args[0]];
     const ok = origLive.apply(this, args);
-    if (this.live[args[0]] !== before) swaps.push({ wall: this, before, after: this.live[args[0]] });
+    // 配牌调整（guard 开着）不算：记录员只讲摸牌
+    if (this.live[args[0]] !== before && !this.guard) swaps.push({ wall: this, before, after: this.live[args[0]] });
     return ok;
   };
   Wall.prototype.bringToRinshan = function (this: Wall, ...args: Parameters<Wall['bringToRinshan']>) {
@@ -122,12 +123,16 @@ describe('能力痕迹', () => {
             if (x.text === '宝牌聚集') {
               kuro++;
               expect(isDora).toBe(true);
+            } else if (x.text === '宝牌只给玄') {
+              // 别人要摸到宝牌时换走（之后开杠翻出的新宝牌可能正好是换来的那张，所以看换走的那张）
+              expect(isRed(x.expected) || dora.includes(kindOf(x.expected))).toBe(true);
             } else {
               expect(x.text).toBeNull();
               expect(isDora).toBe(false);
             }
           }
-          if (x.rinshan) {
+          // 玄把岭上的宝牌从别人手边换走的不算
+          if (x.rinshan && x.ability !== 'kuro') {
             rinshan++;
             expect(x.ability).toBe('saki');
             expect(x.text).toBe('岭上开花');

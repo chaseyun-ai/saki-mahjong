@@ -1,24 +1,26 @@
 import { CHARACTERS, Character } from '../abilities/characters';
-import { bulbLevel, dangerKinds, readOthers, readTenpai } from '../abilities/hiroe';
+import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { teruMirrored } from '../abilities/teru';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { kuroLost } from '../abilities/kuro';
+import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
-import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf, toCounts } from '../engine/tiles';
-import { shanten } from '../engine/shanten';
+import { Kind, TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
-import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl } from '../ui3d/looks';
-import { backHtml, tileHtml } from './tile';
+import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
+import { backHtml, tileHtml, tintOf } from './tile';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
+import { TeamFlow } from './teamFlow';
+import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 import { ForecastCache } from '../ai/forecast';
 
@@ -36,6 +38,8 @@ const AIR_FLIGHT = 250;
 const AIR_PAUSE = 250;
 // 开局点数，终局排名的 ± 从这里算
 const START_SCORE = 25000;
+// 托管时结算画面停多久自动进下一局
+const AUTO_NEXT = 2600;
 // 怜“看下一巡”的体力：满 100，看一次 35，每局开始回 20。同一回合可以看两次，看第二次的话下一局不能用
 const STAMINA_MAX = 100;
 const DEEP_COST = 15;
@@ -105,6 +109,10 @@ export class App {
   private say: { key: string; first: Kind | null; second: Kind | null } = { key: '', first: null, second: null };
   private dangerCache: { at: number; kinds: Set<Kind> } = { at: -1, kinds: new Set() };
   private blocked = false;
+  // 团体赛：正在打的这一场是哪几队坐哪（seats[座位] = 队伍下标）、开局时的点数；auto 是托管（玩家的座位也由电脑打）
+  private team: { flow: TeamFlow; run: TeamRun; seats: number[]; start: number[] } | null = null;
+  private teamFlow: TeamFlow | null = null;
+  private auto = false;
 
   // openLab：选人页上点"动作调试"时调用
   constructor(
@@ -149,10 +157,22 @@ export class App {
 
   // ---------- 选角色 ----------
 
-  private renderSelect(): void {
+  // 离开牌桌：停掉计时器、拆掉 3D 牌桌
+  private teardown(): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
     this.game = null;
+    this.cutins?.clear();
     this.table3d?.dispose();
     this.table3d = null;
+    this.root.classList.remove('mihoko-eye');
+  }
+
+  private renderSelect(): void {
+    this.teardown();
+    this.team = null;
+    this.teamFlow = null;
+    this.auto = false;
     // 3D 牌桌要用的人物模型现在就开始在后台下载
     if (this.mode === '3d') preloadModels(MODEL_URLS);
     // 卡片上只有头像和名字；学校、能力和介绍放在悬停时的浮窗里（见 showCharTip）
@@ -172,6 +192,7 @@ export class App {
           <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 实验</button>
           <button class="${this.mode === '2d' ? 'on' : ''}" data-ui="mode-2d">2D 牌桌</button>
         </div>
+        <button class="lab-entry team-entry" data-ui="team">团体赛拟真</button>
         <button class="lab-entry" data-ui="lab">动作调试</button><span id="skin-entry"></span>
         <div class="char-grid">${cards}</div>
         <div class="char-tip" hidden></div>
@@ -227,8 +248,25 @@ export class App {
     const seed = Math.floor(Math.random() * 2 ** 31);
     // 对手从其余角色里随机抽三个，座位也随机
     const others = new Rng(seed ^ 0x5a17).shuffle(CHARACTERS.filter((c) => c.id !== charId)).slice(0, 3);
-    this.chars = [mine, ...others];
-    this.game = new Game({ seed, startScore: START_SCORE, players: this.chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) });
+    this.team = null;
+    this.auto = false;
+    this.beginGame([mine, ...others], new Game({ seed, startScore: START_SCORE, players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
+  }
+
+  // 团体赛的一场：玩家的队坐 0 号位，每人带着自己队伍现在的点数上场
+  private startTeamMatch(run: TeamRun, seats: number[], auto: boolean): void {
+    const chars = seats.map((t) => run.teams[t].lineup[run.pos]);
+    const start = seats.map((t) => run.teams[t].points);
+    this.team = { flow: this.teamFlow!, run, seats, start };
+    this.auto = auto;
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    const game = new Game({ seed, format: 'team', scores: start, riichiSticks: run.riichiSticks, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
+    this.beginGame(chars, game);
+  }
+
+  private beginGame(chars: Character[], game: Game): void {
+    this.chars = chars;
+    this.game = game;
     this.trace = new AbilityTrace(this.game);
     this.game.onEvent((e) => this.onGameEvent(e));
     this.toasts = [];
@@ -242,6 +280,7 @@ export class App {
     for (const c of this.chars) for (const f of FACES) new Image().src = portraitUrl(c.id, f);
     this.showResult = false;
     this.pdPicks = null;
+    this.pdValues = null;
     this.tableBuilt = false;
     // 第一局发牌前就要选技能：先在选角色的画面上弹出来，选好再建牌桌
     if (this.game.phase === 'predeal') {
@@ -270,7 +309,8 @@ export class App {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
       const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
       this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="cutins"></div>${tip}</div>`;
-      this.cutins = this.mode === '25d' ? new Cutins(document.getElementById('cutins')!) : null;
+      // 切入演出只在 2.5D 放；3D、2D 只放素材页换上的技能动画
+      this.cutins = new Cutins(document.getElementById('cutins')!);
       this.cutinSeen.clear();
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d');
       this.table3d.onHover = (id) => this.hoverTile(id);
@@ -286,7 +326,9 @@ export class App {
       this.table3d.onEvent({ type: 'roundStart', label: this.game!.roundLabel() }, this.game!);
     } else {
       this.root.innerHTML =
-        '<div class="stage"><div class="table"><div id="table" style="display: contents"></div><div id="toasts"></div></div></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
+        '<div class="stage"><div class="table"><div id="table" style="display: contents"></div><div id="toasts"></div></div></div><div class="cutin-layer" id="cutins"></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
+      this.cutins = new Cutins(document.getElementById('cutins')!);
+      this.cutinSeen.clear();
       this.fit();
     }
     this.step();
@@ -327,11 +369,14 @@ export class App {
       this.timer = window.setTimeout(() => {
         this.showResult = true;
         this.render();
+        // 托管：结算看一会儿自己点“下一局”
+        if (this.auto && g.phase === 'roundEnd') this.timer = window.setTimeout(() => this.advance(), AUTO_NEXT);
       }, wait);
       return;
     }
     const waiting = g.waitingSeats();
-    const ai = waiting.filter((s) => s !== this.me);
+    // 托管时自己的座位也由电脑打
+    const ai = waiting.filter((s) => s !== this.me || this.auto);
     // 先让电脑把自己的回应都做完，再等玩家
     if (g.phase === 'calls' && ai.length > 0) {
       this.render();
@@ -359,7 +404,7 @@ export class App {
       this.timer = window.setTimeout(() => this.step(), this.busyMs());
       return;
     }
-    if (g.phase === 'turn' && g.turn !== this.me) {
+    if (g.phase === 'turn' && (g.turn !== this.me || this.auto)) {
       this.timer = window.setTimeout(() => {
         g.act(g.turn, chooseAction(g, g.turn, this.chars[g.turn].ai));
         this.step();
@@ -375,6 +420,22 @@ export class App {
         this.timer = window.setTimeout(() => this.playerAct(legal[0]), wait);
       }
     }
+  }
+
+  // 结算画面的“下一局”
+  private advance(): void {
+    const g = this.game;
+    if (!g || g.phase !== 'roundEnd') return;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.showResult = false;
+    g.nextRound();
+    // 终局：没拿到第一的都“懵逼”
+    if ((g.phase as string) === 'gameEnd') {
+      const rank = g.ranking();
+      for (let i = 1; i < 4; i++) this.faces[rank[i]] = { face: 'surprised', until: Infinity };
+    }
+    this.step();
   }
 
   private playerAct(a: Action): void {
@@ -413,6 +474,11 @@ export class App {
         return;
       }
       playChime();
+      // 这个技能在素材页换了自己的动画：每次发动都放（三种视角都放）
+      const c = this.chars[e.seat];
+      const skill = c.skillArts?.find((k) => k.name === e.text);
+      const art = skill && skillArt(c.id, skill.id);
+      if (art && this.cutins?.show({ pos: POS[e.seat], id: c.id, color: c.color, word: e.text, kind: 'ability', art })) return;
       const key = `${e.seat}-${e.text}`;
       if (!(!this.cutinSeen.has(key) && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
       this.cutinSeen.add(key);
@@ -424,11 +490,12 @@ export class App {
 
   // 立直、鸣牌、和牌的大字：2.5D 放带立绘的切入，3D、2D 还是原来的大字特效
   private bigFx(seat: number, word: string, kind: 'riichi' | 'call' | 'kan' | 'win'): void {
-    if (this.cutins) this.cutin(seat, word, kind);
+    if (this.mode === '25d') this.cutin(seat, word, kind);
     else this.toast(seat, word, true, kind);
   }
 
   private cutin(seat: number, word: string, kind: CutinKind): boolean {
+    if (this.mode !== '25d') return false;
     const c = this.chars[seat];
     return !!this.cutins?.show({ pos: POS[seat], id: c.id, color: c.color, word, kind });
   }
@@ -484,6 +551,21 @@ export class App {
       this.openLab();
       return;
     }
+    if (el.dataset.ui === 'team') {
+      this.teamFlow = new TeamFlow(this.root, {
+        play: (run, seats, auto) => this.startTeamMatch(run, seats, auto),
+        exit: () => this.renderSelect(),
+      });
+      return;
+    }
+    if (el.dataset.ui === 'team-next' && this.team && this.game) {
+      const { flow, seats } = this.team;
+      const g = this.game;
+      this.teardown();
+      this.team = null;
+      flow.afterMatch(seats, g.players.map((p) => p.score), g.riichiSticks);
+      return;
+    }
     if (el.dataset.ui === 'skins') {
       new SkinEditor(this.root, () => this.renderSelect());
       return;
@@ -496,14 +578,7 @@ export class App {
     const g = this.game;
     if (!g) return;
     if (el.dataset.ui === 'next') {
-      this.showResult = false;
-      g.nextRound();
-      // 终局：没拿到第一的都“懵逼”
-      if (g.phase === 'gameEnd') {
-        const rank = g.ranking();
-        for (let i = 1; i < 4; i++) this.faces[rank[i]] = { face: 'surprised', until: Infinity };
-      }
-      this.step();
+      this.advance();
       return;
     }
     if (el.dataset.ui === 'restart') {
@@ -519,6 +594,11 @@ export class App {
       const id = el.dataset.pd;
       if (this.pdPicks?.has(id)) this.pdPicks.delete(id);
       else this.pdPicks?.add(id);
+      this.renderPredeal();
+      return;
+    }
+    if (el.dataset.ui === 'pd-step' && el.dataset.pd && this.pdValues) {
+      this.pdValues[el.dataset.pd] += Number(el.dataset.d);
       this.renderPredeal();
       return;
     }
@@ -574,6 +654,8 @@ export class App {
   // ---------- 画面 ----------
 
   private render(): void {
+    // 美穗子睁开右眼：画面罩一层蓝色
+    this.root.classList.toggle('mihoko-eye', !!this.game && this.eyeOpen() && !this.vision);
     if (this.table3d) {
       this.render3d();
       return;
@@ -625,6 +707,7 @@ export class App {
       ids: this.chars.map((c) => c.id),
       marked: new Set(this.showResult ? [] : this.preview.keys()),
       airDraw: this.airDraw(),
+      tintBacks: this.eyeOpen() && !this.vision ? new Set([1, 2, 3].flatMap((d) => g.players[(this.me + d) % 4].hand)) : undefined,
     });
   }
 
@@ -649,6 +732,7 @@ export class App {
     const badge = c.ability && g.isSealed(s) ? '封印' : c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
+        ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
         <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.mirrorHtml(s)}</div>
       </div>`;
   }
@@ -704,24 +788,6 @@ export class App {
     return this.chars[this.me]?.id === 'mihoko' && mihokoEyeOpen(g, this.me) && (g.phase === 'turn' || g.phase === 'calls');
   }
 
-  // 右眼睁开时：三家的手牌（刚摸的那张放最后）和听牌
-  private eyeBox(): string {
-    if (!this.eyeOpen() || this.vision) return '';
-    const g = this.game!;
-    const rows = [1, 2, 3]
-      .map((d) => (this.me + d) % 4)
-      .map((s) => {
-        const p = g.players[s];
-        const tiles = [...p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b), ...(p.drawn !== null ? [p.drawn] : [])];
-        const r = readTenpai(g, s);
-        const sh = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
-        const state = r ? `<b class="eye-tenpai">听 ${r.ron.length ? r.ron.map(kindLabel).join('') : '（振听或没役）'}</b>` : `<span>${sh} 向听</span>`;
-        return `<div class="eye-row"><div class="eye-head"><span>${this.chars[s].name}</span>${state}</div><div class="eye-hand">${tiles.map((t) => tileHtml(t, { size: 'mini' })).join('')}</div></div>`;
-      })
-      .join('');
-    return `<div class="foresight eye"><div class="fs-title">三家的手牌</div>${rows}</div>`;
-  }
-
   // ---------- 照：照魔镜 ----------
 
   // 照魔镜看过以后，别人头像上的镜子：指着（手机上点）看这家能力现在的状态
@@ -737,11 +803,6 @@ export class App {
   // 指着会放铳的牌时她的提醒：第一张“有点不妙”，第二张不一样的“恐怕也不行”，再往后不说了
   private sayText(): string {
     const g = this.game!;
-    if (this.eyeOpen() && !this.vision && this.myDiscardTurn() && this.previewTile !== null) {
-      const k = kindOf(this.previewTile);
-      const who = readOthers(g, this.me).filter((r) => r.ron.includes(k));
-      return who.length ? `<div class="say-bubble">这张会被${who.map((r) => this.chars[r.seat].name).join('、')}荣和</div>` : '';
-    }
     if (!this.isHiroe() || this.vision || !this.myDiscardTurn() || this.previewTile === null) return '';
     if (this.dangerCache.at !== g.events.length) this.dangerCache = { at: g.events.length, kinds: dangerKinds(g, this.me) };
     const k = kindOf(this.previewTile);
@@ -868,7 +929,7 @@ export class App {
 
   private seatLabel(s: number): string {
     const g = this.game!;
-    return `${WIND_CN[g.seatWind(s) - 27]} ${this.chars[s].name}`;
+    return `${WIND_CN[g.seatWind(s) - 27]} ${this.nameHtml(s)}`;
   }
 
   private centerHtml(): string {
@@ -903,7 +964,10 @@ export class App {
     const g = this.game!;
     const p = g.players[s];
     const c = this.chars[s];
-    const backs = p.hand.map(() => backHtml('pond')).join('');
+    // 美穗子睁眼：牌背按花色上色（照理过的顺序排，刚摸的那张放最后）
+    const tint = this.eyeOpen() && !this.vision;
+    const order = tint ? [...p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b), ...(p.drawn !== null ? [p.drawn] : [])] : p.hand;
+    const backs = order.map((t) => backHtml('pond', tint ? tintOf(t) : undefined)).join('');
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="nameplate">
@@ -1019,7 +1083,7 @@ export class App {
   // 2.5D 不放能力说明，只在能力有东西要给玩家看时（怜的一巡先见、淡和霞的技能按钮）放一个小框
   private foresightHtml(): string {
     const c = this.chars[this.me];
-    const extra = this.foresightBox() + this.skillBox() + this.eyeBox();
+    const extra = this.foresightBox() + this.skillBox();
     return extra ? `<div class="ability-panel foresight-only" style="--c:${c.color}">${extra}</div>` : '';
   }
 
@@ -1043,11 +1107,14 @@ export class App {
   // ---------- 发牌前选技能（淡、霞） ----------
 
   private pdPicks: Set<string> | null = null;
+  // 选数的选项（涅莉分运势）现在选的数
+  private pdValues: Record<string, number> | null = null;
 
   private predealHtml(): string {
     const g = this.game!;
     const ab = this.chars[this.me].ability;
     const opts = ab?.preDeal?.(g, this.me) ?? [];
+    if (opts.some((o) => o.stepper)) return this.stepperHtml(opts);
     if (!this.pdPicks) this.pdPicks = new Set(opts.filter((o) => o.picked).map((o) => o.id));
     const meter = ab?.skill?.(g, this.me)?.meter;
     const spend = opts.filter((o) => this.pdPicks!.has(o.id)).reduce((sum, o) => sum + (o.cost ?? 0), 0);
@@ -1076,11 +1143,43 @@ export class App {
       </div></div>`;
   }
 
+  // 选数的发牌前界面（涅莉开场分运势）：每一项一行加减，合规矩了才能发牌
+  private stepperHtml(opts: PreDealOption[]): string {
+    const g = this.game!;
+    const ab = this.chars[this.me].ability!;
+    if (!this.pdValues) this.pdValues = Object.fromEntries(opts.map((o) => [o.id, o.stepper?.value ?? 0]));
+    const vals = this.pdValues;
+    const rows = opts
+      .filter((o) => o.stepper)
+      .map((o) => {
+        const v = vals[o.id];
+        const { min, max } = o.stepper!;
+        const cls = v > 0 ? ' up' : v < 0 ? ' down' : '';
+        return `<div class="pd-step-row"><span class="pd-step-name">${o.name}</span>
+          <button class="pd-step" data-ui="pd-step" data-pd="${o.id}" data-d="-1" ${v <= min ? 'disabled' : ''}>−</button>
+          <span class="pd-step-val${cls}">${v > 0 ? '+' : ''}${v}</span>
+          <button class="pd-step" data-ui="pd-step" data-pd="${o.id}" data-d="1" ${v >= max ? 'disabled' : ''}>+</button>
+          <span class="pd-step-bar${cls}"><i style="width:${(Math.abs(v) / Math.max(-min, max)) * 100}%"></i></span></div>`;
+      })
+      .join('');
+    const err = ab.preDealCheck?.(g, this.me, vals) ?? null;
+    return `<div class="modal"><div class="result predeal" style="--c:${this.chars[this.me].color}">
+        <h2>分配运势</h2>
+        <p class="pd-sub">给这一场的每一局分运势，加起来要正好是 0。正的局摸牌顺、能用七姐妹；负的局摸牌差。</p>
+        <div class="pd-steps">${rows}</div>
+        <p class="pd-check-msg${err ? ' bad' : ''}">${err ?? '可以了'}</p>
+        <button class="primary" data-ui="pd-go" ${err ? 'disabled' : ''}>开始</button>
+      </div></div>`;
+  }
+
   // 选好了：交给能力，发牌。第一局时牌桌还没建，先建牌桌
   private finishPredeal(): void {
     const g = this.game!;
-    this.chars[this.me].ability?.setPreDeal?.(g, this.me, [...(this.pdPicks ?? [])]);
+    const ab = this.chars[this.me].ability;
+    if (this.pdValues && ab?.preDealCheck?.(g, this.me, this.pdValues)) return;
+    ab?.setPreDeal?.(g, this.me, [...(this.pdPicks ?? [])], this.pdValues ?? undefined);
     this.pdPicks = null;
+    this.pdValues = null;
     g.deal();
     if (!this.tableBuilt) this.buildTable();
     else this.step();
@@ -1154,7 +1253,7 @@ export class App {
     if (!c.ability) {
       return `<div class="ability-panel" style="--c:${c.color}"><div class="ab-name">无能力</div><div class="ab-desc">不受影响，专心打牌。</div></div>`;
     }
-    const extra = this.foresightBox() + this.skillBox() + this.eyeBox();
+    const extra = this.foresightBox() + this.skillBox();
     const lost = c.ability.id === 'kuro' && kuroLost(g, this.me);
     const badge = c.ability.badge?.(g, this.me);
     return `
@@ -1220,13 +1319,24 @@ export class App {
       </div>`;
   }
 
+  // 团体赛：这个座位是哪一队
+  private teamOf(s: number): { name: string; color: string } | null {
+    return this.team ? this.team.run.teams[this.team.seats[s]] : null;
+  }
+
+  // 名字前面加队伍颜色的小方块（团体赛）
+  private nameHtml(s: number): string {
+    const t = this.teamOf(s);
+    return `${t ? `<span class="tm-dot" style="--t:${t.color}" title="${t.name}"></span>` : ''}${this.chars[s].name}`;
+  }
+
   private deltasHtml(r: RoundResult): string {
     const g = this.game!;
     return `<div class="deltas">${[0, 1, 2, 3]
       .map((s) => {
         const d = r.deltas[s];
         const cls = d > 0 ? 'plus' : d < 0 ? 'minus' : '';
-        return `<div class="delta"><span>${this.chars[s].name}</span><span class="${cls}">${d > 0 ? '+' : ''}${d || ''}</span><span>${g.players[s].score}</span></div>`;
+        return `<div class="delta"><span>${this.nameHtml(s)}</span><span class="${cls}">${d > 0 ? '+' : ''}${d || ''}</span><span>${g.players[s].score}</span></div>`;
       })
       .join('')}</div>`;
   }
@@ -1245,6 +1355,7 @@ export class App {
 
   private gameEndHtml(): string {
     const g = this.game!;
+    if (this.team) return this.teamEndHtml();
     const rows = g
       .ranking()
       .map((s, i) => {
@@ -1262,6 +1373,28 @@ export class App {
         <button class="primary" data-ui="restart">再来一局</button>
       </div></div>`;
   }
+  // 团体赛一场打完：每队这一场得失，点“继续”回到点数板
+  private teamEndHtml(): string {
+    const g = this.game!;
+    const { run, seats, start } = this.team!;
+    const rows = g
+      .ranking()
+      .map((s, i) => {
+        const t = run.teams[seats[s]];
+        const d = g.players[s].score - start[s];
+        const cls = d > 0 ? 'plus' : d < 0 ? 'minus' : '';
+        return `<div class="rank-row ${s === this.me ? 'mine' : ''}" style="--c:${t.color}"><span class="rank">${i + 1} 位</span><span>${this.nameHtml(s)}</span><span>${g.players[s].score}</span><span class="${cls}">${d > 0 ? '+' : d < 0 ? '' : '±'}${d}</span></div>`;
+      })
+      .join('');
+    const sticks = g.riichiSticks ? `<p class="pd-sub">剩下的立直棒 ${g.riichiSticks} 根留给下一个位置</p>` : '';
+    return `
+      <div class="modal"><div class="result">
+        <h2>${POSITIONS[run.pos]}战结束</h2>
+        ${rows}${sticks}
+        <button class="primary" data-ui="team-next">继续</button>
+      </div></div>`;
+  }
+
 }
 
 // 一组副露的牌：横着的、扣着的、加杠叠着的都按 meldLayout 摆
