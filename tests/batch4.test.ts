@@ -134,3 +134,16 @@ describe('亦野诚子', () => {
     expect(fished).toBeGreaterThan(3);
   }, 120000);
 });
+
+describe('起家', () => {
+  it('没有优希时按开局给的起家；有优希时不管坐哪都是她', () => {
+    const ids = ['nodoka', 'hiroe', 'mihoko', 'saki'];
+    for (const first of [0, 1, 2, 3]) {
+      const g = new Game({ seed: 5, firstDealer: first, players: ids.map((id) => ({ name: id, ability: byId(id).ability })) });
+      expect(g.dealer).toBe(first);
+      const y = ['nodoka', 'hiroe', 'yuuki', 'saki'];
+      const h = new Game({ seed: 5, firstDealer: first, players: y.map((id) => ({ name: id, ability: byId(id).ability })) });
+      expect(h.dealer).toBe(2);
+    }
+  });
+});

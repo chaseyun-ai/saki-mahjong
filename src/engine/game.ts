@@ -95,6 +95,8 @@ export interface GameOptions {
   scores?: number[];
   // 上一场留下的立直棒（团体赛接着给下一个位置）
   riichiSticks?: number;
+  // 起家（东 1 局的庄家）坐哪：界面开局时随机给；不给是 0 号位。片冈优希在场时一定是她
+  firstDealer?: number;
   // east：东风战（东 4 局后有人到 30000 就结束，不到就南入）；
   // team：团体赛的半庄，打满东南两场，南 4 局庄家没连庄就结束，谁到 30000 都不提前结束，有人小于 0 立刻结束，
   //   剩下的立直棒不给第一名，留给下一个位置
@@ -118,7 +120,7 @@ export class Game {
   round = 0;
   roundWind = 0; // 0 东场，1 南场
   roundNumber = 0; // 0-3，东 1 局是 0
-  firstDealer = 0; // 起家（东 1 局的庄家）：平时是 0 号位，片冈优希在场时是她
+  firstDealer = 0; // 起家（东 1 局的庄家）：见 GameOptions.firstDealer
   honba = 0;
   riichiSticks = 0;
   wall!: Wall;
@@ -167,7 +169,8 @@ export class Game {
       kuikaeBan: [],
     }));
     this.abilities = opts.players.map((p) => p.ability ?? null);
-    this.firstDealer = Math.max(0, this.abilities.findIndex((a) => a?.firstDealer));
+    const yuuki = this.abilities.findIndex((a) => a?.firstDealer);
+    this.firstDealer = yuuki >= 0 ? yuuki : (opts.firstDealer ?? 0) % 4;
     this.manual = opts.players.map((p) => !!p.manual);
     this.format = opts.format ?? 'east';
     this.riichiSticks = opts.riichiSticks ?? 0;
@@ -960,7 +963,8 @@ export class Game {
 
   // 名次：点数高的在前，同分时起家优先
   ranking(): number[] {
-    return [0, 1, 2, 3].sort((a, b) => this.players[b].score - this.players[a].score || a - b);
+    const from = (s: number) => (s - this.firstDealer + 4) % 4;
+    return [0, 1, 2, 3].sort((a, b) => this.players[b].score - this.players[a].score || from(a) - from(b));
   }
 }
 

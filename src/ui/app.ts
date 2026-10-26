@@ -274,7 +274,7 @@ export class App {
     const others = new Rng(seed ^ 0x5a17).shuffle(CHARACTERS.filter((c) => c.id !== charId)).slice(0, 3);
     this.team = null;
     this.auto = false;
-    this.beginGame([mine, ...others], new Game({ seed, startScore: START_SCORE, players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
+    this.beginGame([mine, ...others], new Game({ seed, startScore: START_SCORE, firstDealer: Math.floor(Math.random() * 4), players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
   }
 
   // 团体赛的一场：玩家的队坐 0 号位，每人带着自己队伍现在的点数上场
@@ -284,7 +284,7 @@ export class App {
     this.team = { flow: this.teamFlow!, run, seats, start };
     this.auto = auto;
     const seed = Math.floor(Math.random() * 2 ** 31);
-    const game = new Game({ seed, format: 'team', scores: start, riichiSticks: run.riichiSticks, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
+    const game = new Game({ seed, format: 'team', firstDealer: Math.floor(Math.random() * 4), scores: start, riichiSticks: run.riichiSticks, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
     this.beginGame(chars, game);
   }
 
