@@ -454,6 +454,23 @@ export class App {
     }
   }
 
+  // 挂机：电脑替自己打（能力的取舍也交给电脑），结算看一会儿自动下一局；再按一次收回
+  private autoBtnHtml(): string {
+    const g = this.game!;
+    if (g.phase === 'gameEnd' || this.vision) return '';
+    return `<button class="auto-btn${this.auto ? ' on' : ''}" data-ui="auto">${this.auto ? '挂机中<small>点一下接管</small>' : '挂机'}</button>`;
+  }
+
+  private toggleAuto(): void {
+    const g = this.game;
+    if (!g || this.vision) return;
+    this.auto = !this.auto;
+    g.manual[this.me] = !this.auto;
+    this.riichiMode = false;
+    if (this.auto && g.phase === 'predeal') g.deal();
+    this.step();
+  }
+
   // 结算画面的“下一局”
   private advance(): void {
     const g = this.game;
@@ -628,6 +645,10 @@ export class App {
       this.renderSelect();
       return;
     }
+    if (el.dataset.ui === 'auto') {
+      this.toggleAuto();
+      return;
+    }
     if (el.dataset.ui === 'riichi') {
       this.riichiMode = !this.riichiMode;
       this.render();
@@ -688,6 +709,7 @@ export class App {
   }
 
   private discardable(): Set<TileId> {
+    if (this.auto) return new Set();
     const legal = this.game!.legalActions(this.me);
     return new Set(
       legal.filter((a) => a.type === 'discard' && !!a.riichi === this.riichiMode).map((a) => (a as { tile: TileId }).tile),
@@ -1072,7 +1094,8 @@ export class App {
     const g = this.game!;
     const p = g.players[this.me];
     // 演算里只出牌（可以立直），不自摸、不杠、不鸣
-    const legal = this.vision ? g.legalActions(this.me).filter((a) => a.type === 'discard') : g.legalActions(this.me);
+    // 挂机时电脑替她打，不出按钮
+    const legal = this.auto ? [] : this.vision ? g.legalActions(this.me).filter((a) => a.type === 'discard') : g.legalActions(this.me);
     const discardable = this.discardable();
     const sorted = p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b);
     // 能打的牌亮着，打出去能听牌的上面加个小三角
@@ -1123,6 +1146,7 @@ export class App {
     return `
       <div class="me" style="--c:${c.color}">
         <div class="actions">${buttons.join('')}</div>
+        ${this.autoBtnHtml()}
         ${waitHtml}${hint}
         ${
           withHand
