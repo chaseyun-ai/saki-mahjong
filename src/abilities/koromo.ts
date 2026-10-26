@@ -39,10 +39,9 @@ interface KoromoState {
 const gameStateOf = (g: Game, seat: number) => g.abilityGameState[seat] as KoromoGameState;
 const stateOf = (g: Game, seat: number) => g.abilityState[seat] as KoromoState;
 
-// 这一局还能不能把海底挪给自己（电脑的衣用来决定立不立直）
-export function koromoCanShift(g: Game, seat: number): boolean {
-  const st = stateOf(g, seat);
-  return !st.shifted && st.lucky !== false;
+// 这一局海底捞月会不会发动（还没听牌、没掷过的算会）：电脑的衣用来决定立不立直
+export function koromoHaiteiOn(g: Game, seat: number): boolean {
+  return stateOf(g, seat).lucky !== false;
 }
 
 export function koromoMoon(g: Game, seat: number) {

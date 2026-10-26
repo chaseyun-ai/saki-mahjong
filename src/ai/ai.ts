@@ -3,7 +3,7 @@ import { awaiWaitingForCorner } from '../abilities/awai';
 import { dangerKinds, readOthers } from '../abilities/hiroe';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
-import { koromoCanShift } from '../abilities/koromo';
+import { koromoHaiteiOn } from '../abilities/koromo';
 import { mihokoEyeOpen, mihokoSafeKinds } from '../abilities/mihoko';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { seikoFish } from '../abilities/seiko';
@@ -124,15 +124,18 @@ function danger(g: Game, threat: number, k: Kind, visible: number[]): number {
       .map((e) => (e.type === 'discard' ? kindOf(e.tile) : -1));
     if (after.includes(k)) return 0;
   }
-  if (isHonor(k)) return visible[k] >= 3 ? 1 : visible[k] === 2 ? 3 : 6;
+  // 字牌：见得越多越安全（只剩单骑、双碰能和）
+  if (isHonor(k)) return visible[k] >= 3 ? 1 : visible[k] === 2 ? 2 : visible[k] === 1 ? 4 : 5;
   const n = k % 9;
   const suji = (d: number) => n + d >= 0 && n + d <= 8 && discarded.has(k + d);
   const lowSafe = n < 3 || suji(-3);
   const highSafe = n > 5 || suji(3);
-  if (lowSafe && highSafe) return n === 0 || n === 8 ? 2 : 4;
-  if (n === 0 || n === 8) return 6;
-  if (n === 1 || n === 7) return 8;
-  return 10;
+  const base = lowSafe && highSafe ? (n === 0 || n === 8 ? 2 : 4) : n === 0 || n === 8 ? 6 : n === 1 || n === 7 ? 8 : 10;
+  // 染手：打了好几张牌、一张这门花色都没打过，这门花色的牌都危险（涅莉宣言局的清一色就是这样）
+  const suit = Math.floor(k / 9);
+  const shown = p.discards.length + p.melds.length * 3;
+  const offSuit = p.discards.every((d) => kindOf(d.tile) >= 27 || Math.floor(kindOf(d.tile) / 9) !== suit);
+  return shown >= 6 && offSuit ? Math.max(base, 9) + 3 : base;
 }
 
 // ---------- 自己的回合 ----------
@@ -260,7 +263,11 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const careful = teamCareful(g, seat);
   // 涅莉的宣言局不弃和
   const declared = style.waves && nellyDeclared(g, seat) && g.canWin(seat);
-  if (!declared && threats(g, seat).length && (best.sh >= 1 || !g.canWin(seat) || (careful && best.risk >= 6))) {
+  let folded: Cand[] | null = null;
+  // 听牌了但听得很窄（能和的牌没几张）、要打的又是很危险的牌，对立直也不硬拼
+  const riichiOn = threats(g, seat).some((t) => g.players[t].riichi);
+  const thinTenpai = best.sh === 0 && riichiOn && best.risk >= 8 && best.uke <= 4;
+  if (!declared && threats(g, seat).length && (best.sh >= 1 || !g.canWin(seat) || (careful && best.risk >= 6) || thinTenpai)) {
     // 玄弃和也不打宝牌（还有别的牌可打时）
     const dora = (x: Cand) => (style.keepDora && isDoraTile(g, x.a.tile) ? 1 : 0);
     const safest = [...cands].sort((x, y) => dora(x) - dora(y) || x.hit - y.hit || x.risk - y.risk || attackOrder(x, y));
@@ -268,14 +275,22 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     // 优希：东风之神在的局一向听也拼，南场以防守为主
     const yuukiPush = style.eastWind && yuukiActive(g, seat) && best.sh <= 1 && g.canWin(seat);
     const yuukiFold = style.eastWind && !yuukiActive(g, seat);
-    if (!yuukiPush && (best.sh >= 2 || best.risk >= 6 || style.defensive || yuukiFold || (style.waves && nellyLuck(g, seat) <= -2) || !g.canWin(seat) || careful)) best = safest[0];
+    // 有人立直时一向听只打很安全的牌（现物、壁、见了三张的字牌），否则弃和
+    const push = best.sh >= 1 ? best.risk < (riichiOn ? 3 : 6) : !thinTenpai;
+    if (!yuukiPush && (best.sh >= 2 || !push || style.defensive || yuukiFold || (style.waves && nellyLuck(g, seat) <= -2) || !g.canWin(seat) || careful)) {
+      best = safest[0];
+      folded = safest;
+    }
   }
 
   const slipped = slip ?? (cands.length > 1 && g.rng.chance(style.mistakeRate));
   // 读得出别人听什么时，失误也不会失误到放铳的牌上
   // 玄失误也不会失误到宝牌上
   const doraSlip = style.keepDora && isDoraTile(g, cands[1]?.a.tile ?? -1) && !isDoraTile(g, best.a.tile);
-  if (slipped && cands[1].sh === best.sh && cands[1].hit <= best.hit && !doraSlip) best = cands[1];
+  // 弃和时失误也只会在一样安全的牌里挑错
+  if (folded) {
+    if (slipped && folded.length > 1 && folded[1].risk <= best.risk && folded[1].hit <= best.hit && !doraSlip) best = folded[1];
+  } else if (slipped && cands[1].sh === best.sh && cands[1].hit <= best.hit && !doraSlip) best = cands[1];
 
   // 能立直就立直
   const riichi = discards.find((a) => a.riichi && kindOf(a.tile) === kindOf(best.a.tile));
@@ -294,7 +309,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     // 涅莉的宣言局：手里还有别的花色就先不立直，接着换牌往大里做
     if (declared && suit !== null && g.wall.remaining > NELLY.declLate && p.hand.some((t) => t !== best.a.tile && kindOf(t) < 27 && Math.floor(kindOf(t) / 9) !== suit)) return best.a;
     // 衣：海底不是自己的、这一局也没法再挪给自己，就不立直，留着吃碰把海底挪过来（打掉这张以后，最后一张轮到谁：从下家起数）
-    if (style.haitei && (seat + 1 + g.wall.live.length - 1) % 4 !== seat && !koromoCanShift(g, seat)) return best.a;
+    // 衣：海底捞月还会发动的局一律默听（海底本身就是役）。立直以后不能吃碰，别人鸣牌错开牌序时就没法把海底挪回来了。
+    // 这一局海底没发动才照常立直
+    if (style.haitei && koromoHaiteiOn(g, seat)) return best.a;
     // 洋榎：有役、默听也够大就默听，别人看不出她听牌了
     if (style.damaMin && damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) >= style.damaMin) return best.a;
     if (ukeire(c, p.melds.length, visible) > 0) return riichi;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { koromoMoon } from '../src/abilities/koromo';
+import { koromoHaiteiOn, koromoMoon } from '../src/abilities/koromo';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
@@ -102,5 +102,19 @@ describe('天江衣', () => {
     console.log({ shifts, kept, broken });
     expect(shifts).toBeGreaterThan(10);
     expect(kept).toBeGreaterThan(0);
+  }, 120000);
+
+  it('电脑的衣：海底捞月还会发动的局不立直（立直以后没法吃碰把海底挪回来）', () => {
+    let riichi = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      play(seed, (g, me) => {
+        g.onEvent((e) => {
+          if (e.type !== 'discard' || e.seat !== me || !e.riichi) return;
+          riichi++;
+          expect(koromoHaiteiOn(g, me)).toBe(false);
+        });
+      });
+    }
+    console.log('衣立直', riichi);
   }, 120000);
 });
