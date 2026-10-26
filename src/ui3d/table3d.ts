@@ -13,6 +13,7 @@ import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
+import { TableColors, tableColors } from '../ui/theme';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -271,6 +272,8 @@ export class Table3D {
   private tableMats: TableMaterials | null = null;
   private feltMat: THREE.Material | null = null;
   private keyLight: THREE.DirectionalLight | null = null;
+  // 桌布、牌背、桌框的颜色跟着界面皮肤走，建牌桌时定下来
+  private colors: TableColors = tableColors();
 
   constructor(
     private container: HTMLElement,
@@ -326,8 +329,8 @@ export class Table3D {
   // ---------- 场景 ----------
 
   private buildRoom(): void {
-    this.scene.background = new THREE.Color('#0d2024');
-    this.scene.fog = new THREE.Fog('#0d2024', 40, 80);
+    this.scene.background = new THREE.Color(this.colors.room);
+    this.scene.fog = new THREE.Fog(this.colors.room, 40, 80);
 
     this.scene.add(new THREE.HemisphereLight('#dfefff', '#1b2a2c', 1.1));
     const key = new THREE.DirectionalLight('#fff4e0', 2.2);
@@ -338,13 +341,13 @@ export class Table3D {
     this.scene.add(key);
 
     // 桌子：黑色亮面，桌框只比桌布高一点，内侧一圈金属包边；尺寸变了会整个重建（buildTable）
-    const frameMat = new THREE.MeshStandardMaterial({ color: '#1d2023', roughness: 0.32, metalness: 0.25 });
-    const trimMat = new THREE.MeshStandardMaterial({ color: '#b9a477', roughness: 0.3, metalness: 0.8 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: this.colors.frame, roughness: 0.32, metalness: 0.25 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: this.colors.trim, roughness: 0.3, metalness: 0.8 });
     this.tableMats = {
       frame: frameMat,
       trim: trimMat,
       body: new THREE.MeshStandardMaterial({ color: '#1e2227', roughness: 0.36, metalness: 0.1 }),
-      floor: new THREE.MeshStandardMaterial({ color: '#10262a', roughness: 1 }),
+      floor: new THREE.MeshStandardMaterial({ color: this.colors.room, roughness: 1 }),
     };
     // 机身在桌框下面的阴影里，只靠灯光几乎全黑；给它一点房间的反光，弧面才看得出来
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -354,7 +357,7 @@ export class Table3D {
       (m as THREE.MeshStandardMaterial).envMap = room;
       (m as THREE.MeshStandardMaterial).envMapIntensity = k;
     }
-    this.feltMat = new THREE.MeshStandardMaterial({ map: feltTexture(), roughness: 0.95 });
+    this.feltMat = new THREE.MeshStandardMaterial({ map: feltTexture(this.colors), roughness: 0.95 });
     this.keyLight = key;
     this.buildTable();
 
@@ -416,7 +419,7 @@ export class Table3D {
     // 2.5D 时自己的手牌几乎正对镜头，灯又在镜头这边，亮面会把牌面照白一片，所以磨砂一点
     const matte = this.style === '25d' ? 0.62 : 0;
     const bodyMat = new THREE.MeshStandardMaterial({ color: '#f6f1e3', roughness: matte || 0.35 });
-    const backMat = new THREE.MeshStandardMaterial({ color: '#2f78a8', roughness: matte || 0.4 });
+    const backMat = new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: matte || 0.4 });
     this.backMat = backMat;
     // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
     this.tintMats = ['#e0453a', '#3a6df0', '#2fb25a', '#f4f4f0'].map(
@@ -1241,7 +1244,7 @@ export class Table3D {
     g.wall.doraIndicators.forEach((t, i) => {
       const x = S / 2 + (i - 2.5) * (w + 6) + 3;
       const y = S / 2 - 8;
-      c.fillStyle = i < g.wall.doraRevealed ? '#f6f1e3' : '#2f78a8';
+      c.fillStyle = i < g.wall.doraRevealed ? '#f6f1e3' : this.colors.back;
       c.beginPath();
       c.roundRect(x, y, w, h, 6);
       c.fill();
@@ -1913,15 +1916,15 @@ function placeholder(color: string): THREE.Group {
   return g;
 }
 
-function feltTexture(): THREE.CanvasTexture {
+function feltTexture(colors: TableColors): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 1024;
   c.height = 1024;
   const ctx = c.getContext('2d')!;
   const grad = ctx.createRadialGradient(512, 512, 60, 512, 512, 720);
-  grad.addColorStop(0, '#2c7079');
-  grad.addColorStop(0.6, '#1e525a');
-  grad.addColorStop(1, '#12363c');
+  grad.addColorStop(0, colors.felt[0]);
+  grad.addColorStop(0.6, colors.felt[1]);
+  grad.addColorStop(1, colors.felt[2]);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 1024, 1024);
   // 细微的布纹噪点
@@ -1933,7 +1936,7 @@ function feltTexture(): THREE.CanvasTexture {
     img.data[i + 2] += n;
   }
   ctx.putImageData(img, 0, 0);
-  ctx.strokeStyle = 'rgba(240,195,90,0.25)';
+  ctx.strokeStyle = colors.feltLine;
   ctx.lineWidth = 3;
   ctx.strokeRect(150, 150, 724, 724);
   const t = new THREE.CanvasTexture(c);

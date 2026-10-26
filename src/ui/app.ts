@@ -21,6 +21,7 @@ import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { TeamFlow } from './teamFlow';
+import { THEMES, ThemeId, currentTheme, setTheme } from './theme';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 import { ForecastCache } from '../ai/forecast';
@@ -184,8 +185,10 @@ export class App {
         <div class="char-name">${c.name}</div>
       </button>`,
     ).join('');
+    const themes = THEMES.map((t) => `<button class="${t.id === currentTheme() ? 'on' : ''}" data-ui="theme" data-theme="${t.id}">${t.name}</button>`).join('');
     this.root.innerHTML = `
       <div class="select-screen">
+        <div class="sel-main">
         <h1>超能力麻将</h1>
         <p class="subtitle">选择你的角色（鼠标停在头像上看能力，手机上点一下看、再点一下开始），对手从其余角色里随机抽三位，由电脑操作。东风战，赤宝牌 3 张。</p>
         <div class="mode-switch">
@@ -195,10 +198,17 @@ export class App {
         </div>
         <button class="lab-entry team-entry" data-ui="team">团体赛拟真</button>
         <button class="lab-entry" data-ui="lab">动作调试</button><span id="skin-entry"></span>
+        <div class="theme-switch"><span>皮肤</span>${themes}</div>
         <div class="char-grid">${cards}</div>
-        <div class="char-tip" hidden></div>
         <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物由 VRoid 官方 CC0 示例模型改色</p>
+        </div>
+        <div class="char-tip" hidden></div>
       </div>`;
+    // 换了皮肤的选人页：介绍不再是浮窗，固定在左边当大立绘面板，先放第一位
+    if (this.heroTip()) {
+      this.showCharTip(this.root.querySelector<HTMLElement>('.char-card'));
+      this.tipFor = null;
+    }
     // 能换素材的人（页面主人）才看得到“素材”入口
     void canEditSkins().then((ok) => {
       const slot = this.root.querySelector('#skin-entry');
@@ -209,9 +219,16 @@ export class App {
   // 选人页的介绍浮窗：贴在卡片旁边，不出屏幕
   private tipFor: string | null = null;
   private lastPointer = 'mouse';
+  private heroTip(): boolean {
+    return currentTheme() !== 'classic';
+  }
+
   private showCharTip(card: HTMLElement | null): void {
     const tip = this.root.querySelector<HTMLElement>('.char-tip');
     if (!tip) return;
+    const hero = this.heroTip();
+    // 大立绘面板一直留着，鼠标移开也还是刚才那位
+    if (hero && !card) return;
     this.root.querySelectorAll('.char-card.armed').forEach((x) => x.classList.remove('armed'));
     const c = card && CHARACTERS.find((x) => x.id === card.dataset.pick);
     this.tipFor = c ? c.id : null;
@@ -227,6 +244,12 @@ export class App {
       <div class="char-ability">${c.ability ? c.ability.name : '无能力'}</div>
       <div class="char-desc">${c.ability ? c.ability.description : '不靠能力，只靠扎实的牌效和防守。电脑操作这个角色时不会失误。'}</div>`;
     tip.hidden = false;
+    if (hero) {
+      tip.innerHTML = `<div class="hero-art"><img src="${cutinArt(c.id, 'ability').url}" alt="" onerror="this.remove()" /><span>${c.name.slice(-1)}</span></div>
+        <div class="hero-plate">${tip.innerHTML}<button class="hero-go" data-pick="${c.id}">出场</button></div>`;
+      tip.style.left = tip.style.top = '';
+      return;
+    }
     const r = card.getBoundingClientRect();
     const w = tip.offsetWidth;
     const h = tip.offsetHeight;
@@ -571,6 +594,11 @@ export class App {
       new SkinEditor(this.root, () => this.renderSelect());
       return;
     }
+    if (el.dataset.ui === 'theme' && el.dataset.theme) {
+      setTheme(el.dataset.theme as ThemeId);
+      this.renderSelect();
+      return;
+    }
     if (el.dataset.ui === 'mode-25d' || el.dataset.ui === 'mode-3d' || el.dataset.ui === 'mode-2d') {
       this.mode = el.dataset.ui.slice(5) as '25d' | '3d' | '2d';
       this.renderSelect();
@@ -693,7 +721,7 @@ export class App {
           })
           .join('');
     hud.innerHTML = `
-      ${plates}
+      ${flat ? this.roundBarHtml() : ''}${plates}
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
@@ -735,7 +763,16 @@ export class App {
       <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
         <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
+        <div class="seat-info"><div class="si-name">${c.name}${s === this.me ? '<small>YOU</small>' : ''}${p.riichi ? '<span class="si-tag">立直</span>' : ''}</div><div class="si-ab">${c.ability?.name ?? '无能力'}</div><div class="si-score">${p.score.toLocaleString('en-US')}</div></div>
       </div>`;
+  }
+
+  // 换了皮肤的 2.5D：画面正上方一条局数条（经典皮肤不显示）
+  private roundBarHtml(): string {
+    const g = this.game!;
+    const kind = this.team ? '团体赛' : '个人战';
+    const sticks = g.riichiSticks ? ` · 供托 ${g.riichiSticks * 1000}` : '';
+    return `<div class="round-bar"><span class="rb-live">LIVE</span><span class="rb-kind">${kind}</span><span class="rb-round">${g.roundLabel()}</span><span class="rb-left">余 ${g.wall.remaining}${sticks}</span></div>`;
   }
 
   // 轮到自己出牌时，算出打哪几张能听牌、各听什么（立直模式下按立直算番）
