@@ -612,16 +612,12 @@
   clip-path: polygon(6% 0, 100% 0, 94% 100%, 0 100%);
 }
 
+/* 头像框不裁斜边：裁了会把上面挂的月相、技能标签一起裁掉 */
 :root[data-theme='broadcast'] .seat-frame .portrait {
   border: none;
+  border-top: 3px solid var(--c);
   border-radius: 0;
-  clip-path: polygon(14% 0, 100% 0, 86% 100%, 0 100%);
   background: linear-gradient(160deg, var(--c), #0a1226);
-}
-
-:root[data-theme='broadcast'] .seat-frame.right .portrait,
-:root[data-theme='broadcast'] .seat-frame.top .portrait {
-  clip-path: polygon(0 0, 86% 0, 100% 100%, 14% 100%);
 }
 
 :root[data-theme='broadcast'] .seat-frame .wind {
@@ -1236,8 +1232,8 @@
 
 :root[data-theme='awaken'] .seat-frame .portrait {
   border-radius: 50%;
-  width: 112px;
-  height: 112px;
+  width: 100px;
+  height: 100px;
   border: 3px solid #fff;
   background: radial-gradient(circle at 50% 30%, var(--c), #1a0b3a);
   box-shadow: 0 0 0 3px var(--c), 0 0 24px var(--c);
@@ -1449,4 +1445,108 @@
 :root[data-theme='awaken'] .delta span:not(:first-child) {
   font: 600 19px var(--t-num);
   font-variant-numeric: tabular-nums;
+}
+
+/* ================= 下面两家（自己、下家）：名牌放在头像下面 =================
+   手牌横在画面最下面，宽屏时手牌两头一直伸到头像旁边，名牌放头像右边会压住手牌；
+   所以下面两家的名牌和头像一样宽，只放名字和点数（自己的能力看左上角的技能框） */
+
+:root:not([data-theme='classic']) .seat-frame.bottom,
+:root:not([data-theme='classic']) .seat-frame.right {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+:root:not([data-theme='classic']) .seat-frame.bottom .seat-info,
+:root:not([data-theme='classic']) .seat-frame.right .seat-info {
+  contain: inline-size;
+  align-self: stretch;
+  min-width: 0;
+  height: auto;
+  margin: 4px 0 0;
+  padding: 3px 6px 4px;
+  align-items: center;
+  text-align: center;
+  clip-path: none;
+  transform: none;
+  border-left: none;
+  border-right: none;
+  overflow: hidden;
+}
+
+:root:not([data-theme='classic']) .seat-frame.bottom .seat-info > *,
+:root:not([data-theme='classic']) .seat-frame.right .seat-info > * {
+  transform: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:root:not([data-theme='classic']) .seat-frame.bottom .si-ab,
+:root:not([data-theme='classic']) .seat-frame.right .si-ab,
+:root:not([data-theme='classic']) .seat-frame.bottom .si-name small,
+:root:not([data-theme='classic']) .seat-frame.right .si-name small {
+  display: none;
+}
+
+:root:not([data-theme='classic']) .seat-frame.bottom .si-name,
+:root:not([data-theme='classic']) .seat-frame.right .si-name {
+  font-size: 13px;
+}
+
+:root:not([data-theme='classic']) .seat-frame.bottom .si-score,
+:root:not([data-theme='classic']) .seat-frame.right .si-score {
+  font-size: 21px;
+}
+
+/* 右边两家的能力小标签挂在头像左边，别伸出屏幕 */
+:root:not([data-theme='classic']) .seat-frame.right .badge,
+:root:not([data-theme='classic']) .seat-frame.top .badge {
+  right: auto;
+  left: -6px;
+}
+
+/* 技能框：说明长了换行，不撑出框外 */
+:root:not([data-theme='classic']) .hud .ability-panel.foresight-only {
+  width: auto;
+  min-width: 230px;
+  max-width: 300px;
+}
+
+:root:not([data-theme='classic']) .foresight.skill .deep-btn {
+  white-space: normal;
+}
+
+@media (max-height: 500px), (max-width: 600px) {
+  :root:not([data-theme='classic']) .seat-frame.bottom .si-name,
+  :root:not([data-theme='classic']) .seat-frame.right .si-name {
+    font-size: 10px;
+  }
+
+  :root:not([data-theme='classic']) .seat-frame.bottom .si-score,
+  :root:not([data-theme='classic']) .seat-frame.right .si-score {
+    font-size: 15px;
+  }
+
+  :root:not([data-theme='classic']) .seat-frame.bottom .seat-info,
+  :root:not([data-theme='classic']) .seat-frame.right .seat-info {
+    margin-top: 2px;
+    padding: 1px 3px 2px;
+  }
+
+  :root:not([data-theme='classic']) .hud .ability-panel.foresight-only {
+    min-width: 0;
+    max-width: 220px;
+  }
+}
+
+/* 2.5D 的操作按钮让开右下角下家的头像 */
+:root:not([data-theme='classic']) .stage3d.flat .hud .actions {
+  right: 150px;
+}
+
+@media (max-height: 500px), (max-width: 600px) {
+  :root:not([data-theme='classic']) .stage3d.flat .hud .actions {
+    right: 86px;
+  }
 }
