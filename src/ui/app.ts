@@ -332,7 +332,7 @@ export class App {
     if (this.mode !== '2d') {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
       const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
-      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="cutins"></div>${tip}</div>`;
+      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div>${tip}</div>`;
       // 切入演出只在 2.5D 放；3D、2D 只放素材页换上的技能动画
       this.cutins = new Cutins(document.getElementById('cutins')!);
       this.cutinSeen.clear();
@@ -348,6 +348,7 @@ export class App {
       };
       // 第一局在牌桌建好之前就开始了，补一次开局动画
       this.table3d.onEvent({ type: 'roundStart', label: this.game!.roundLabel() }, this.game!);
+      this.roundBanner();
     } else {
       this.root.innerHTML =
         '<div class="stage"><div class="table"><div id="table" style="display: contents"></div><div id="toasts"></div></div></div><div class="cutin-layer" id="cutins"></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
@@ -473,6 +474,7 @@ export class App {
     this.table3d?.onEvent(e, this.game!);
     this.updateFaces(e);
     if (e.type === 'roundStart') {
+      this.roundBanner();
       this.cutinSeen.clear();
       this.stamina = Math.min(STAMINA_MAX, this.stamina + STAMINA_REGEN);
       this.blocked = this.penaltyNext;
@@ -721,7 +723,7 @@ export class App {
           })
           .join('');
     hud.innerHTML = `
-      ${flat ? this.roundBarHtml() : ''}${plates}
+      ${plates}
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
@@ -748,13 +750,12 @@ export class App {
     return g.legalActions(this.me).length === 1 ? p.drawn : null;
   }
 
-  // 2.5D 的头像框：头像（先用名字的最后一个字占位）、风位、名字、能力、分数；立直了挂一根立直棒，轮到谁谁亮
+  // 2.5D 的头像框：只放头像和名字（风位、点数、立直看中间的仪表盘，技能看左上角的能力说明）；轮到谁谁亮
   private seatFrameHtml(s: number): string {
     const g = this.game!;
     const c = this.chars[s];
     const p = g.players[s];
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? 'active' : '';
-    // 只放立绘（名字、技能、点数都不放了：点数看中间的仪表盘，技能看左上角的能力说明）
     // 怜演算时换成“能力发动头像”（眼睛发光），头像框发绿光
     const power = s === this.me && !!this.vision;
     const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
@@ -762,17 +763,25 @@ export class App {
     return `
       <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" /><span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>${p.riichi ? '<span class="rstick"></span>' : ''}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
-        <div class="seat-info"><div class="si-name">${c.name}${s === this.me ? '<small>YOU</small>' : ''}${p.riichi ? '<span class="si-tag">立直</span>' : ''}</div><div class="si-ab">${c.ability?.name ?? '无能力'}</div><div class="si-score">${p.score.toLocaleString('en-US')}</div></div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
+        <div class="seat-info">${c.name}</div>
       </div>`;
   }
 
-  // 换了皮肤的 2.5D：画面正上方一条局数条（经典皮肤不显示）
-  private roundBarHtml(): string {
-    const g = this.game!;
-    const kind = this.team ? '团体赛' : '个人战';
-    const sticks = g.riichiSticks ? ` · 供托 ${g.riichiSticks * 1000}` : '';
-    return `<div class="round-bar"><span class="rb-live">LIVE</span><span class="rb-kind">${kind}</span><span class="rb-round">${g.roundLabel()}</span><span class="rb-left">余 ${g.wall.remaining}${sticks}</span></div>`;
+  // 每局开始：屏幕中间横着播一下“东场 第一局 0本场”。
+  // 刚建好牌桌的那几帧很卡，等画面先出来两帧再播；播完自己拿掉
+  private roundBanner(): void {
+    const g = this.game;
+    if (!g) return;
+    const html = `<div class="round-banner"><div class="rbn-band"><span class="rbn-main">${WIND_CN[g.roundWind]}场 第${'一二三四'[g.roundNumber]}局</span><span class="rbn-sub">${g.honba} 本场</span></div></div>`;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const el = document.getElementById('banner');
+        if (!el) return;
+        el.innerHTML = html;
+        el.querySelector('.rbn-band')?.addEventListener('animationend', () => (el.innerHTML = ''));
+      }),
+    );
   }
 
   // 轮到自己出牌时，算出打哪几张能听牌、各听什么（立直模式下按立直算番）
