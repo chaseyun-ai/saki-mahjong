@@ -1,5 +1,5 @@
 // 平衡测试：让四个电脑角色打很多场，统计每个角色的成绩
-// 用法：npx vite-node scripts/balance.ts [场数]
+// 用法：npx vite-node scripts/balance.ts [场数] [east|south]
 import { CHARACTERS } from '../src/abilities/characters';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
@@ -12,7 +12,7 @@ let rounds = 0;
 for (let seed = 1; seed <= games; seed++) {
   // 每场随机抽四个人、随机座位，消除座位影响
   const order = new Rng(seed * 31).shuffle([...CHARACTERS]).slice(0, 4);
-  const g = new Game({ seed, players: order.map((c) => ({ name: c.name, ability: c.ability })) });
+  const g = new Game({ seed, format: (process.argv[3] as 'east' | 'south') ?? 'east', players: order.map((c) => ({ name: c.name, ability: c.ability })) });
   g.onEvent((e) => {
     if (e.type !== 'roundEnd') return;
     rounds++;

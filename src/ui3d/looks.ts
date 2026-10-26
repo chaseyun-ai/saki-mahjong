@@ -53,6 +53,14 @@ export const LOOKS: Record<string, Look> = {
   ako: { model: 'models/vroid-g.v2.glb', hair: '#2e2628', eyes: '#7a5040', hairContrast: 0.5, reveal: 'slam', pose: 'edge' },
   // 亦野诚子：先占位，借咲的短发模型换成墨绿色头发、深绿色眼睛
   seiko: { model: 'models/vroid-e.v2.glb', hair: '#2f4a3e', eyes: '#3e6a50', hairContrast: 0.6, reveal: 'slam', pose: 'crossed' },
+  // 染谷真子：先占位，借咲的短发模型换成墨绿色头发、棕色眼睛
+  mako: { model: 'models/vroid-e.v2.glb', hair: '#3c5a48', eyes: '#7a5a3a', hairContrast: 0.6, reveal: 'wave', pose: 'crossed' },
+  // 竹井久：先占位，借和的长发模型换成红棕色头发、灰绿色眼睛
+  hisa: { model: 'models/vroid-g.v2.glb', hair: '#8a3a2e', eyes: '#5a7a6a', hairContrast: 0.6, reveal: 'slam', pose: 'edge' },
+  // 末原恭子：先占位，借玄的长发模型换成黑色头发、深蓝色眼睛
+  kyouko: { model: 'models/vroid-shino.v2.glb', hair: '#26242c', eyes: '#3a4a7a', hairContrast: 0.5, reveal: 'wave', pose: 'edge' },
+  // 涉谷尧深：先占位，借怜的短发模型换成深棕色头发、深棕色眼睛
+  takami: { model: 'models/vroid-f.v2.glb', hair: '#4a3328', eyes: '#5a3a2a', hairContrast: 0.6, reveal: 'wave', pose: 'lap' },
 };
 
 // 牌桌上要用到的全部模型文件

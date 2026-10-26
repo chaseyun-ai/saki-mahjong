@@ -1,5 +1,6 @@
 import { CHARACTERS, Character } from '../abilities/characters';
 import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
+import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { teruMirrored } from '../abilities/teru';
 import { mihokoEyeOpen } from '../abilities/mihoko';
@@ -83,6 +84,8 @@ export class App {
   private freshDiscard: string | null = null;
   // 25d：3D 牌桌、不坐人物，从上往下看（默认）；3d：坐着人物的实验版；2d：网页画的平面牌桌
   private mode: '25d' | '3d' | '2d' = '25d';
+  // 单人对局打东风战还是半庄战
+  private length: 'east' | 'south' = 'south';
   private table3d: Table3D | null = null;
   // 打牌前预览：轮到自己时，打出去以后能听牌的牌和打掉它以后听什么；鼠标停在哪张牌上
   private preview = new Map<TileId, WaitInfo>();
@@ -190,7 +193,11 @@ export class App {
       <div class="select-screen">
         <div class="sel-main">
         <h1>超能力麻将</h1>
-        <p class="subtitle">选择你的角色（鼠标停在头像上看能力，手机上点一下看、再点一下开始），对手从其余角色里随机抽三位，由电脑操作。东风战，赤宝牌 3 张。</p>
+        <p class="subtitle">选择你的角色（鼠标停在头像上看能力，手机上点一下看、再点一下开始），对手从其余角色里随机抽三位，由电脑操作。赤宝牌 3 张。</p>
+        <div class="mode-switch">
+          <button class="${this.length === 'east' ? 'on' : ''}" data-ui="len-east">东风战</button>
+          <button class="${this.length === 'south' ? 'on' : ''}" data-ui="len-south">半庄战（东南）</button>
+        </div>
         <div class="mode-switch">
           <button class="${this.mode === '25d' ? 'on' : ''}" data-ui="mode-25d">2.5D 牌桌</button>
           <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 实验</button>
@@ -274,7 +281,7 @@ export class App {
     const others = new Rng(seed ^ 0x5a17).shuffle(CHARACTERS.filter((c) => c.id !== charId)).slice(0, 3);
     this.team = null;
     this.auto = false;
-    this.beginGame([mine, ...others], new Game({ seed, startScore: START_SCORE, firstDealer: Math.floor(Math.random() * 4), players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
+    this.beginGame([mine, ...others], new Game({ seed, format: this.length, startScore: START_SCORE, firstDealer: Math.floor(Math.random() * 4), players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
   }
 
   // 团体赛的一场：玩家的队坐 0 号位，每人带着自己队伍现在的点数上场
@@ -601,6 +608,11 @@ export class App {
       this.renderSelect();
       return;
     }
+    if (el.dataset.ui === 'len-east' || el.dataset.ui === 'len-south') {
+      this.length = el.dataset.ui === 'len-east' ? 'east' : 'south';
+      this.renderSelect();
+      return;
+    }
     if (el.dataset.ui === 'mode-25d' || el.dataset.ui === 'mode-3d' || el.dataset.ui === 'mode-2d') {
       this.mode = el.dataset.ui.slice(5) as '25d' | '3d' | '2d';
       this.renderSelect();
@@ -825,14 +837,16 @@ export class App {
 
   // ---------- 洋榎：读牌 ----------
 
+  // 读牌的人：洋榎，和读得出没有能力的人的真子
   private isHiroe(): boolean {
-    return this.chars[this.me]?.id === 'hiroe' && !this.game?.isSealed(this.me);
+    return ['hiroe', 'mako'].includes(this.chars[this.me]?.id) && !this.game?.isSealed(this.me);
   }
 
   // 听牌的人头像旁边的灯：牌越大越亮（只给操作洋榎的玩家看）
   private bulbHtml(s: number): string {
     const g = this.game!;
     if (!this.isHiroe() || s === this.me || this.vision || (g.phase !== 'turn' && g.phase !== 'calls')) return '';
+    if (this.chars[this.me].id === 'mako' && !makoKnows(g, s)) return '';
     const r = readTenpai(g, s);
     if (!r) return '';
     const lv = bulbLevel(r.value);
@@ -862,7 +876,7 @@ export class App {
   private sayText(): string {
     const g = this.game!;
     if (!this.isHiroe() || this.vision || !this.myDiscardTurn() || this.previewTile === null) return '';
-    if (this.dangerCache.at !== g.events.length) this.dangerCache = { at: g.events.length, kinds: dangerKinds(g, this.me) };
+    if (this.dangerCache.at !== g.events.length) this.dangerCache = { at: g.events.length, kinds: this.chars[this.me].id === 'mako' ? makoDanger(g, this.me) : dangerKinds(g, this.me) };
     const k = kindOf(this.previewTile);
     if (!this.dangerCache.kinds.has(k)) return '';
     const key = this.turnKey();
@@ -1145,11 +1159,18 @@ export class App {
     return extra ? `<div class="ability-panel foresight-only" style="--c:${c.color}">${extra}</div>` : '';
   }
 
+  // 谁封印了自己：末原恭子鸣牌打乱流向只到她下一次摸牌，狮子原爽的霍亚乌是一整局
+  private sealText(): string {
+    const g = this.game!;
+    const by = g.abilities.find((a, o) => o !== this.me && a?.seals?.(g, o, g.round));
+    return by?.id === 'kyouko' ? '末原恭子鸣牌打乱了流向，到她下一次摸牌之前能力不起作用' : '狮子原爽的霍亚乌神威封印了别人的能力，这一局能力不起作用';
+  }
+
   // 主动开的技能：能量条和开关按钮（演算中不显示）
   private skillBox(): string {
     const g = this.game!;
     const ab = this.chars[this.me].ability;
-    if (ab && g.isSealed(this.me)) return `<div class="foresight skill"><div class="fs-title">${ab.name}<span class="skill-on sealed">被封印</span></div><div class="fs-note skill-state">狮子原爽的霍亚乌神威封印了别人的能力，这一局能力不起作用</div></div>`;
+    if (ab && g.isSealed(this.me)) return `<div class="foresight skill"><div class="fs-title">${ab.name}<span class="skill-on sealed">被封印</span></div><div class="fs-note skill-state">${this.sealText()}</div></div>`;
     const b = !this.vision && ab?.skill?.(g, this.me);
     if (!b) return '';
     const meter = b.meter

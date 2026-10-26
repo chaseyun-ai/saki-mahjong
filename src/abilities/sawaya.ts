@@ -94,7 +94,7 @@ function aiPicks(g: Game, seat: number): SkillId[] {
   if (!ready.length) return [];
   const me = g.players[seat].score;
   const top = Math.max(...g.players.filter((p) => p.seat !== seat).map((p) => p.score));
-  const total = g.format === 'team' ? 8 : 4;
+  const total = g.fullHanchan ? 8 : 4;
   const slot = g.roundWind * 4 + g.roundNumber;
   const roundsLeft = Math.max(1, total - slot);
   const late = g.isLastRounds(2);
