@@ -5,7 +5,7 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 
 // 涅莉·薇萨拉兹（临海女子）：分配运势的人。家里穷，打得亮眼才拉得到赞助，所以她要和就和三倍满这种大牌。
 // - 分配运势（开场）：给这一场的每一局（东风战东 1–4，团体赛东 1–南 4）各分一个运势值，加起来必须是 0。
-//   连庄、流局重打的局沿用同一局的值；南入以后多出来的局是 0。运势分三档：
+//   流局重打的局沿用同一局的值；她在这一局和过一次，这一局的运势就用完了，连庄的局变成 0；南入以后多出来的局是 0。运势分三档：
 //   · 负（蓄势）：她的进张有时被换走，电脑的涅莉这几局以防守为主
 //   · +1 到 +3（顺流）：摸牌常换成进张，别人的进张偶尔被换走，可以用七姐妹
 //   · +4 以上（宣言局）：这一局是她的。配牌偏向一种花色，摸牌几乎都是进张（先补成那门花色，牌够大再来和了牌），
@@ -41,6 +41,9 @@ interface NellyGameState {
   sisters?: number; // 七姐妹还剩几次
   off?: boolean; // 玩家把七姐妹关了
   used?: number[]; // 每一局用掉的运势（七姐妹）
+  spent?: boolean[]; // 她和过的局：这一局的运势用完了
+  seen?: number; // g.events 里看到哪了
+  cur?: number; // 看到的最后一个 roundStart 是第几局
 }
 interface NellyState {
   blocked?: number[]; // 这一局被七姐妹封住、和不了的人
@@ -111,10 +114,24 @@ export function nellyPlanError(plan: number[]): string | null {
   return sum === 0 ? null : `加起来是 ${sum > 0 ? '+' : ''}${sum}，要正好是 0`;
 }
 
-// 这一局的运势（用过七姐妹的已经扣掉）
+// 她和过的局（看到哪算到哪）：和过一次，这一局的运势就用完了
+function spentSlots(g: Game, seat: number): boolean[] {
+  const gs = gameStateOf(g, seat);
+  gs.spent ??= [];
+  for (let i = gs.seen ?? 0; i < g.events.length; i++) {
+    const e = g.events[i];
+    if (e.type === 'roundStart' && e.slot !== undefined) gs.cur = e.slot;
+    if (e.type === 'roundEnd' && gs.cur !== undefined && e.result.wins.some((w) => w.seat === seat)) gs.spent[gs.cur] = true;
+  }
+  gs.seen = g.events.length;
+  return gs.spent;
+}
+
+// 这一局的运势（用过七姐妹的已经扣掉；和过一次就是 0）
 export function nellyLuck(g: Game, seat: number): number {
   const gs = gameStateOf(g, seat);
   const i = slotOf(g);
+  if (spentSlots(g, seat)[i]) return 0;
   return (gs.luck?.[i] ?? 0) - (gs.used![i] ?? 0);
 }
 
@@ -156,7 +173,7 @@ const inSuit = (suit: number) => (t: TileId) => kindOf(t) < 27 && suitOf(kindOf(
 export const nellyAbility: Ability = {
   id: 'nelly',
   name: '运势·七姐妹',
-  description: `开场给这一场的每一局分运势（每局 ${NELLY.min} 到 +${NELLY.max}，加起来是 0）：负的局摸牌差；+1 到 +3 摸牌顺；+${NELLY.declare} 以上是宣言局，这一局是她的：配牌偏向一种花色、摸牌几乎都是进张、别人的进张大多被换走。运势只有她自己知道。七姐妹一场 ${NELLY.sisters} 次：别人要自摸时封住他，这一局他和不了；顺流的局每用一次运势减 1，宣言局里自动发动、不扣次数。`,
+  description: `开场给这一场的每一局分运势（每局 ${NELLY.min} 到 +${NELLY.max}，加起来是 0）：负的局摸牌差；+1 到 +3 摸牌顺；+${NELLY.declare} 以上是宣言局，这一局是她的：配牌偏向一种花色、摸牌几乎都是进张、别人的进张大多被换走。她在一局里和过一次，这一局的运势就用完了（连庄的局是 0）。运势只有她自己知道。七姐妹一场 ${NELLY.sisters} 次：别人要自摸时封住他，这一局他和不了；顺流的局每用一次运势减 1，宣言局里自动发动、不扣次数。`,
   priority: PRIORITY.nelly,
 
   dealRules(g, seat) {
@@ -303,7 +320,8 @@ export const nellyAbility: Ability = {
   // 照魔镜看得到
   insight(g, seat) {
     const gs = gameStateOf(g, seat);
-    const plan = gs.luck ? gs.luck.map((v, i) => `${SLOT_NAMES[i]} ${fmt(v - (gs.used![i] ?? 0))}`).join('，') : '还没分';
+    const spent = spentSlots(g, seat);
+    const plan = gs.luck ? gs.luck.map((v, i) => `${SLOT_NAMES[i]} ${spent[i] ? '用完' : fmt(v - (gs.used![i] ?? 0))}`).join('，') : '还没分';
     return [`运势：${plan}`, nellyDeclared(g, seat) ? '这一局是宣言局' : '', `七姐妹还剩 ${gs.sisters} 次`].filter(Boolean);
   },
 };

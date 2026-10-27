@@ -72,7 +72,8 @@ export interface RoundResult {
 }
 
 export type GameEvent =
-  | { type: 'roundStart'; label: string }
+  // slot：这一局是第几局（东 1 是 0，南 1 是 4；连庄、流局重打的局还是同一个数）
+  | { type: 'roundStart'; label: string; slot?: number }
   | { type: 'draw'; seat: number }
   | { type: 'discard'; seat: number; tile: TileId; riichi: boolean }
   | { type: 'call'; seat: number; call: string }
@@ -401,7 +402,7 @@ export class Game {
       }
     }
     this.dealtWall = { live: this.wall.live.slice(), rinshan: this.wall.rinshan.slice() };
-    this.emit({ type: 'roundStart', label: this.roundLabel() });
+    this.emit({ type: 'roundStart', label: this.roundLabel(), slot: this.roundWind * 4 + this.roundNumber });
     for (const s of this.abilityOrder()) this.active(s)!.onRoundStart?.(this, s);
     this.drawFor(this.dealer, false);
   }

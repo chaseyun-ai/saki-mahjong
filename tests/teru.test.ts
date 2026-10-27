@@ -104,7 +104,7 @@ describe('宫永照', () => {
     expect(broken).toBeGreaterThan(0);
   }, 120000);
 
-  it('连和中摸牌容易摸到进张；电脑的照不和不够大的牌（牌山还多时）', () => {
+  it('连和中摸牌容易摸到进张（还没听牌时）；电脑的照不和不够大的牌（牌山还多时）', () => {
     let streakDraws = 0;
     let streakUseful = 0;
     let plainDraws = 0;
@@ -131,6 +131,8 @@ describe('宫永照', () => {
             if (e.type !== 'draw' || e.seat !== me || g.rinshanDraw) return;
             const p = g.players[me];
             const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
+            // 听牌时连和只给够大的和了牌，平时也不一样，只比较还没听牌的摸牌
+            if (before <= 0) return;
             const useful = shanten(toCounts(p.hand), p.melds.length) < before;
             if (teruStreak(g, me).count) {
               streakDraws++;
@@ -143,7 +145,7 @@ describe('宫永照', () => {
         },
       });
     }
-    expect(streakDraws).toBeGreaterThan(100);
+    expect(streakDraws).toBeGreaterThan(60);
     expect(streakUseful / streakDraws).toBeGreaterThan(plainUseful / plainDraws + 0.05);
     console.log({ streak: (streakUseful / streakDraws).toFixed(2), plain: (plainUseful / plainDraws).toFixed(2), smallSkipped });
   }, 120000);
