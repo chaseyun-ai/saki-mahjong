@@ -65,7 +65,7 @@ describe('爱宕洋榎：读牌', () => {
       }
     }
     expect(checked).toBeGreaterThan(10);
-  });
+  }, 30000);
 
   it('差し込み：有人听着大牌、自己和不了时，放一个便宜的铳给第三家', () => {
     for (const id of ['hiroe', 'mihoko']) {

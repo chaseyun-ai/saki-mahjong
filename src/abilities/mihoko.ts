@@ -54,12 +54,29 @@ export function mihokoSuitCounts(g: Game, target: number): number[] {
   return out;
 }
 
-// 睁眼时对 target 安全的牌种：他手里一张都没有的花色（数牌的听牌要手里有同花色的牌，字牌要有字牌）
+// 睁眼时对 target 安全的牌种：他手里一张都没有的花色（数牌的听牌要手里有同花色的牌，字牌要有字牌）；
+// 鸣过牌的人（做不了七对子）再加上张数是 3 的倍数的花色（见 mihokoLikelySafe）
 export function mihokoSafeKinds(g: Game, seat: number, target: number): Set<Kind> {
   const out = new Set<Kind>();
   if (!mihokoEyeOpen(g, seat)) return out;
   const counts = mihokoSuitCounts(g, target);
-  for (let k = 0; k < 34; k++) if (counts[Math.min(3, Math.floor(k / 9))] === 0) out.add(k);
+  const melded = g.players[target].melds.length > 0;
+  for (let k = 0; k < 34; k++) {
+    const n = counts[Math.min(3, Math.floor(k / 9))];
+    if (n === 0 || (melded && n % 3 === 0)) out.add(k);
+  }
+  return out;
+}
+
+// 睁眼时对 target 多半安全的牌种：张数是 3 的倍数的花色。听牌的手是「几组面子 + 雀头」少一张：
+// 单骑、或者雀头和搭子在同一门时，那门余 1；雀头和搭子分在两门时（两面、坎张、双碰），这两门都余 2；
+// 余 0 的那门全是整组面子，里面没有他的听牌。比如看到字 2、索 3、筒 3、万 5：听的一定是字牌（双碰）或者万子。
+// 只有门清的七对子例外，所以门清的人这只是「多半」
+export function mihokoLikelySafe(g: Game, seat: number, target: number): Set<Kind> {
+  const out = new Set<Kind>();
+  if (!mihokoEyeOpen(g, seat)) return out;
+  const counts = mihokoSuitCounts(g, target);
+  for (let k = 0; k < 34; k++) if (counts[Math.min(3, Math.floor(k / 9))] % 3 === 0) out.add(k);
   return out;
 }
 

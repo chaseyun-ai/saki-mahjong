@@ -145,7 +145,7 @@ describe('涅莉的宣言局', () => {
     let big = 0;
     let suitTiles = 0;
     let tiles = 0;
-    for (let seed = 1; seed <= 16; seed++) {
+    for (let seed = 1; seed <= 32; seed++) {
       play(
         seed,
         LINEUPS[seed % 4],
@@ -178,5 +178,5 @@ describe('涅莉的宣言局', () => {
     expect(suitTiles / tiles).toBeGreaterThan(0.6);
     expect(wins / rounds).toBeGreaterThan(0.4);
     expect(big / wins).toBeGreaterThan(0.6);
-  }, 120000);
+  }, 240000);
 });

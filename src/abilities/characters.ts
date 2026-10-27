@@ -27,23 +27,23 @@ export interface AiStyle {
   foresightRiichi: boolean; // 只在先见到下一巡自摸时才立直，否则默听
   cornerKan: boolean; // 大星淡：等转角暗杠，之前不荣和、不拆暗刻
   suitFocus: boolean; // 石户霞：请神后先打别的花色，做绝掉的那门和字牌
-  defensive: boolean; // 别人立直、自己没听牌就弃和
+  defensive: boolean; // 别人立直、自己没听牌就弃和（霞请神以后不算）
   haitei: boolean; // 天江衣：听牌后靠吃碰把海底挪到自己，海底不是自己的就不立直
   reads: boolean; // 爱宕洋榎：读得出别人听什么，不打别人和得了的牌
   trapWait: boolean; // 爱宕洋榎：听牌时挑引っ掛け（自己打过的牌的筋）的听法
   damaMin: number; // 有役、默听荣和至少这么多就不立直（0 是不看）
   mirror: boolean; // 宫永照：照魔镜看过以后读得出别人听什么（和 reads 一样防守）
-  streak: boolean; // 宫永照：连和中不够大的和了先不和，等更大的
+  streak: boolean; // 宫永照：连和中不够大的和了先不和，等更大的；不坐庄、连和还小时小牌快和、能接上连和就默听，坐庄才立直
   eye: boolean; // 福路美穗子：睁眼后，立直的人手里没有的花色当安全牌
   waves: boolean; // 涅莉：负运势的局不做危险进攻（有人逼近时不打危险牌、不立直）；宣言局门清做大、不弃和，牌不够大先不和、不立直
-  eastWind: boolean; // 片冈优希：东场（或吃了塔可饼）全力进攻，南场以防守为主
-  warm: boolean; // 松实宥：同样向听时留暖色牌
+  eastWind: boolean; // 片冈优希：东场（或吃了塔可饼）全力进攻，南场以防守为主；东场坐庄的烂听牌先默听等改良，不坐庄以和牌为先
+  warm: boolean; // 松实宥：同样向听时留暖色牌，万子混一色能鸣
   speed: boolean; // 新子憧：能鸣就鸣；鸣过以后用距离感看谁听牌了
-  fish: boolean; // 亦野诚子：能碰就碰，对子多时奔对对和
+  fish: boolean; // 亦野诚子：能碰就碰，对子多时奔对对和；鸣满三次听牌了不弃和
   memory: boolean; // 染谷真子：读得出没有能力的人听什么，不打他们和得了的牌；留着染手的那门花色和字牌，染手能鸣
-  badWait: boolean; // 竹井久：能听烂听牌（只等一种牌）就听烂的
+  badWait: boolean; // 竹井久：能听烂听牌（只等一种牌）就听烂的，听烂听牌时不因为听得窄就收
   disrupt: boolean; // 末原恭子：桌上有能力起作用的人时能鸣就鸣，打乱流向
-  harvest: boolean; // 涉谷尧深：第一巡打三元牌（种下），最后一局（收获）留着种下的牌
+  harvest: boolean; // 涉谷尧深：第一巡打三元牌（种下），最后一局（收获）留着种下的牌、不弃和
   clouds: boolean; // 狮子原爽：留住云、神威送来的牌，往混一色做、能鸣就鸣；发动的局牌小先默听等改良
 }
 

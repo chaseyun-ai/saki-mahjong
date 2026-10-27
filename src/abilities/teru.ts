@@ -10,14 +10,18 @@ import type { Ability } from './types';
 //   玩家操作她时，别人的头像旁边多一面镜子，点开能看到这家能力现在的状态（Ability.insight）；
 //   电脑的照读得出别人听什么，不打别人和得了的牌
 // - 别人的能力动不了她（Ability.immune）：不被封印，别人对她的配牌、摸牌定的规矩不算；只有玄的宝牌她也得守
+// - 配牌不会太差：照魔镜看过以后，配牌超过 TERU.dealMax 向听就换几张，让它不差于这个数
 // - 连续和了：照魔镜看过以后摸牌就比别人顺；和了以后进入连和，摸牌更容易摸到进张，连得越多越快；
 //   下一次和了必须不小于上一次（按她拿到的点数算，不算本场和立直棒），和小了、别人和牌、流局，连和就断
 export const TERU = {
-  idleBoost: 0.15, // 照魔镜看过、还没连和时，摸牌换成进张的概率（全书最强，平时也压人）
-  boostBase: 0.5, // 连和第一次时
+  idleBoost: 0.35, // 照魔镜看过、还没连和时，摸牌换成进张的概率（全书最强，平时也压人）
+  dealMax: 2, // 照魔镜看过以后，配牌最多几向听（多了就换几张）
+  dealSwaps: 3, // 配牌最多换几张
+  boostBase: 0.6, // 连和第一次时
   boostStep: 0.15, // 每多连一次加多少
   boostMax: 0.9,
   aiForceWin: 12, // 电脑的照：牌山剩这么多张以内，不够大也和（免得白白流局）
+  aiSmall: 3900, // 电脑的照：连和要求还不到这么多时（刚开始连和），不坐庄就小牌快和、能鸣就鸣
 };
 
 interface TeruGameState {
@@ -101,6 +105,33 @@ export const teruAbility: Ability = {
     settle(g, seat);
     gs.rounds = (gs.rounds ?? 0) + 1;
     gs.dealer = seat === g.dealer;
+  },
+
+  // 照魔镜看过以后：配牌超过 TERU.dealMax 向听就换几张（从发完牌以后的牌山里换）
+  beforeDeal(g, seat) {
+    if (!teruMirrored(g, seat)) return;
+    const w = g.wall;
+    const mine = g.dealIndices(seat);
+    for (let n = 0; n < TERU.dealSwaps; n++) {
+      const counts = toCounts(mine.map((i) => w.live[i]));
+      const cur = shanten(counts, 0);
+      if (cur <= TERU.dealMax) break;
+      let done = false;
+      for (const i of g.rng.shuffle([...mine])) {
+        const k = kindOf(w.live[i]);
+        counts[k]--;
+        const better = (t: number) => {
+          counts[kindOf(t)]++;
+          const sh = shanten(counts, 0);
+          counts[kindOf(t)]--;
+          return sh < cur;
+        };
+        done = w.bringToLive(i, better, g.rng, (j) => j >= 52);
+        counts[k]++;
+        if (done) break;
+      }
+      if (!done) break;
+    }
   },
 
   onRoundStart(g, seat) {
