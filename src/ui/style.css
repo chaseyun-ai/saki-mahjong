@@ -3735,3 +3735,35 @@ html:root .select-screen.team-screen.tm-draft {
     height: 3px;
   }
 }
+
+/* ---------- 没有立绘的角色（借模型占位的）：切入、结算画面用名字的最后一个字代替立绘 ---------- */
+
+.cutin .art.glyph {
+  height: auto;
+  top: calc(var(--y) + 30vh - var(--art) * 0.62);
+  font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
+  font-size: calc(var(--art) * 0.5);
+  line-height: 1;
+  color: color-mix(in srgb, var(--c) 35%, #fff);
+  -webkit-text-stroke: 3px color-mix(in srgb, var(--c) 60%, #000);
+}
+
+.win-glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
+  font-size: 150px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+/* 素材页：没有默认图的格子显示名字的最后一个字 */
+.skin-glyph {
+  font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
+  font-size: 64px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--c) 40%, #fff);
+}

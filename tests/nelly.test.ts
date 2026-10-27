@@ -92,7 +92,7 @@ describe('涅莉·薇萨拉兹', () => {
     expect(spent).toBeGreaterThan(0);
   }, 120000);
 
-  it('七姐妹：只在运势为正的局用，一场最多 7 次，封住的人这一局和不了，顺流的局每用一次运势减 1，宣言局不扣', () => {
+  it('七姐妹：只在运势为正的局用，一场最多 7 次，那张和了牌被换走、封住的人这一局和不了，顺流的局每用一次运势减 1，宣言局不扣', () => {
     let used = 0;
     for (let seed = 1; seed <= 24; seed++) {
       play(
@@ -100,8 +100,16 @@ describe('涅莉·薇萨拉兹', () => {
         LINEUPS[seed % 4],
         (g, me) => {
           let before = 0;
+          let victim = -1;
           // 每个事件之后记一下运势（第一局的庄家第一次摸牌在 roundStart 之前）
           g.onEvent((e) => {
+            // 被封的人摸到的不是和了牌
+            if (e.type === 'draw' && e.seat === victim) {
+              const p = g.players[victim];
+              expect(shanten(toCounts(p.hand), p.melds.length)).toBeGreaterThanOrEqual(0);
+              victim = -1;
+            }
+            if (e.type === 'ability' && e.seat === me && e.text === '七姐妹' && e.target !== undefined) victim = e.target;
             if (e.type === 'ability' && e.seat === me && e.text === '七姐妹') {
               used++;
               expect(before).toBeGreaterThan(0);

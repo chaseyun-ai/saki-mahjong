@@ -16,6 +16,8 @@ export interface Look {
   pose?: RestPose;
   // 牌河和副露倒过来摆，方便对手看（松实玄、松实宥）
   upsideDown?: boolean;
+  // 先占位、借别人的模型：头像、切入不用这个模型渲染的图，显示名字的最后一个字（素材页换了图的照样显示）
+  borrowed?: boolean;
 }
 
 export type RestPose = 'edge' | 'lap' | 'crossed' | 'offscreen';
@@ -36,39 +38,39 @@ export const LOOKS: Record<string, Look> = {
   // 天江衣：金色头发、红色眼睛
   koromo: { model: 'models/vroid-f.v2.glb', hair: '#efd27a', eyes: '#b83a3a', reveal: 'wave', pose: 'lap' },
   // 爱宕洋榎：先占位，借咲的模型换成深棕色头发、棕色眼睛
-  hiroe: { model: 'models/vroid-e.v2.glb', hair: '#4a2c22', eyes: '#7a4e2a', hairContrast: 0.6, reveal: 'slam', pose: 'edge' },
+  hiroe: { model: 'models/vroid-e.v2.glb', hair: '#4a2c22', eyes: '#7a4e2a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 宫永照：先占位，借怜的短发模型换成红棕色头发、暗红色眼睛
   // 福路美穗子：先占位，借和的长发模型换成浅栗色头发、蓝色眼睛
-  mihoko: { model: 'models/vroid-g.v2.glb', hair: '#a8784a', eyes: '#3f6fb8', reveal: 'wave', pose: 'lap' },
+  mihoko: { model: 'models/vroid-g.v2.glb', hair: '#a8784a', eyes: '#3f6fb8', reveal: 'wave', pose: 'lap', borrowed: true },
   // 涅莉：先占位，借淡的长发模型换成淡金色头发、红色眼睛（眼里有火）
-  nelly: { model: 'models/vroid-g.v2.glb', hair: '#e9dcb0', eyes: '#c0392b', reveal: 'slam', pose: 'crossed' },
+  nelly: { model: 'models/vroid-g.v2.glb', hair: '#e9dcb0', eyes: '#c0392b', reveal: 'slam', pose: 'crossed', borrowed: true },
   // 狮子原爽：先占位，借咲的短发模型换成深灰蓝色头发、灰蓝色眼睛
-  sawaya: { model: 'models/vroid-e.v2.glb', hair: '#4a5068', eyes: '#5c7a8f', hairContrast: 0.6, reveal: 'wave', pose: 'edge' },
-  teru: { model: 'models/vroid-f.v2.glb', hair: '#9a5a3c', eyes: '#8a3a2a', hairContrast: 0.7, reveal: 'slam', pose: 'edge' },
+  sawaya: { model: 'models/vroid-e.v2.glb', hair: '#4a5068', eyes: '#5c7a8f', hairContrast: 0.6, reveal: 'wave', pose: 'edge', borrowed: true },
+  teru: { model: 'models/vroid-f.v2.glb', hair: '#9a5a3c', eyes: '#8a3a2a', hairContrast: 0.7, reveal: 'slam', pose: 'edge', borrowed: true },
   // 片冈优希：先占位，借怜的短发模型换成浅棕色头发、棕色眼睛
-  yuuki: { model: 'models/vroid-f.v2.glb', hair: '#c9925a', eyes: '#8a5a2a', reveal: 'slam', pose: 'edge' },
+  yuuki: { model: 'models/vroid-f.v2.glb', hair: '#c9925a', eyes: '#8a5a2a', reveal: 'slam', pose: 'edge', borrowed: true },
   // 松实宥：先占位，借玄的长发模型换成红棕色头发、红褐色眼睛；和玄一样牌河倒过来摆
-  yu: { model: 'models/vroid-shino.v2.glb', hair: '#7a3a34', eyes: '#9a4a3a', hairContrast: 0.6, reveal: 'wave', pose: 'lap', upsideDown: true },
+  yu: { model: 'models/vroid-shino.v2.glb', hair: '#7a3a34', eyes: '#9a4a3a', hairContrast: 0.6, reveal: 'wave', pose: 'lap', upsideDown: true, borrowed: true },
   // 新子憧：先占位，借和的长发模型换成黑色头发、棕色眼睛
-  ako: { model: 'models/vroid-g.v2.glb', hair: '#2e2628', eyes: '#7a5040', hairContrast: 0.5, reveal: 'slam', pose: 'edge' },
+  ako: { model: 'models/vroid-g.v2.glb', hair: '#2e2628', eyes: '#7a5040', hairContrast: 0.5, reveal: 'slam', pose: 'edge', borrowed: true },
   // 亦野诚子：先占位，借咲的短发模型换成墨绿色头发、深绿色眼睛
-  seiko: { model: 'models/vroid-e.v2.glb', hair: '#2f4a3e', eyes: '#3e6a50', hairContrast: 0.6, reveal: 'slam', pose: 'crossed' },
+  seiko: { model: 'models/vroid-e.v2.glb', hair: '#2f4a3e', eyes: '#3e6a50', hairContrast: 0.6, reveal: 'slam', pose: 'crossed', borrowed: true },
   // 染谷真子：先占位，借咲的短发模型换成墨绿色头发、棕色眼睛
-  mako: { model: 'models/vroid-e.v2.glb', hair: '#3c5a48', eyes: '#7a5a3a', hairContrast: 0.6, reveal: 'wave', pose: 'crossed' },
+  mako: { model: 'models/vroid-e.v2.glb', hair: '#3c5a48', eyes: '#7a5a3a', hairContrast: 0.6, reveal: 'wave', pose: 'crossed', borrowed: true },
   // 竹井久：先占位，借和的长发模型换成红棕色头发、灰绿色眼睛
-  hisa: { model: 'models/vroid-g.v2.glb', hair: '#8a3a2e', eyes: '#5a7a6a', hairContrast: 0.6, reveal: 'slam', pose: 'edge' },
+  hisa: { model: 'models/vroid-g.v2.glb', hair: '#8a3a2e', eyes: '#5a7a6a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 末原恭子：先占位，借玄的长发模型换成黑色头发、深蓝色眼睛
-  kyouko: { model: 'models/vroid-shino.v2.glb', hair: '#26242c', eyes: '#3a4a7a', hairContrast: 0.5, reveal: 'wave', pose: 'edge' },
+  kyouko: { model: 'models/vroid-shino.v2.glb', hair: '#26242c', eyes: '#3a4a7a', hairContrast: 0.5, reveal: 'wave', pose: 'edge', borrowed: true },
   // 涉谷尧深：先占位，借怜的短发模型换成深棕色头发、深棕色眼睛
-  takami: { model: 'models/vroid-f.v2.glb', hair: '#4a3328', eyes: '#5a3a2a', hairContrast: 0.6, reveal: 'wave', pose: 'lap' },
+  takami: { model: 'models/vroid-f.v2.glb', hair: '#4a3328', eyes: '#5a3a2a', hairContrast: 0.6, reveal: 'wave', pose: 'lap', borrowed: true },
   // 二条泉：先占位，借咲的短发模型换成黑色头发、深棕色眼睛
-  izumi: { model: 'models/vroid-e.v2.glb', hair: '#24222a', eyes: '#5a4030', hairContrast: 0.5, reveal: 'slam', pose: 'edge' },
+  izumi: { model: 'models/vroid-e.v2.glb', hair: '#24222a', eyes: '#5a4030', hairContrast: 0.5, reveal: 'slam', pose: 'edge', borrowed: true },
   // 弘世堇：先占位，借玄的长发模型换成深蓝色头发、蓝灰色眼睛
-  sumire: { model: 'models/vroid-shino.v2.glb', hair: '#2c3656', eyes: '#4a5a86', hairContrast: 0.5, reveal: 'wave', pose: 'crossed' },
+  sumire: { model: 'models/vroid-shino.v2.glb', hair: '#2c3656', eyes: '#4a5a86', hairContrast: 0.5, reveal: 'wave', pose: 'crossed', borrowed: true },
   // 江口夕：先占位，借怜的短发模型换成红棕色头发、棕色眼睛
-  sera: { model: 'models/vroid-f.v2.glb', hair: '#6e3424', eyes: '#7a4a2a', hairContrast: 0.6, reveal: 'slam', pose: 'edge' },
+  sera: { model: 'models/vroid-f.v2.glb', hair: '#6e3424', eyes: '#7a4a2a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 清水谷龙华：先占位，借和的长发模型换成墨绿偏黑的头发、灰绿色眼睛
-  ryuuka: { model: 'models/vroid-g.v2.glb', hair: '#26332c', eyes: '#56705e', hairContrast: 0.5, reveal: 'wave', pose: 'lap' },
+  ryuuka: { model: 'models/vroid-g.v2.glb', hair: '#26332c', eyes: '#56705e', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
 };
 
 // 牌桌上要用到的全部模型文件
@@ -78,9 +80,11 @@ export const MODEL_URLS = [...new Set(Object.values(LOOKS).map((l) => l.model))]
 export const FACES = ['neutral', 'happy', 'sad', 'surprised', 'serious'] as const;
 export type Face = (typeof FACES)[number];
 
-// 头像和切入立绘的默认图片（scripts/render-portraits.mjs 用模型渲染出来的，咲的换成了手绘）
-export const defaultPortraitUrl = (id: string, face: Face): string => `portraits/${id}-${face}.webp`;
-export const cutinUrl = (id: string): string => `portraits/${id}-cutin.webp`;
+// 头像和切入立绘的默认图片（scripts/render-portraits.mjs 用模型渲染出来的，咲的换成了手绘）。
+// 借模型占位的角色没有默认图，是空字符串：<img src=""> 会马上触发 onerror 被拿掉，露出名字的最后一个字
+const hasArt = (id: string): boolean => !LOOKS[id]?.borrowed;
+export const defaultPortraitUrl = (id: string, face: Face): string => (hasArt(id) ? `portraits/${id}-${face}.webp` : '');
+export const cutinUrl = (id: string): string => (hasArt(id) ? `portraits/${id}-cutin.webp` : '');
 
 // 有手绘的角色，立直、鸣牌、和牌的切入（和结算画面）换成手绘图：立直用“认真”，鸣牌和和牌用“和牌”。
 // 手绘图是横图，wide 为 true；没有手绘的用上面模型渲染的竖图

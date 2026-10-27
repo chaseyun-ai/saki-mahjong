@@ -30,6 +30,7 @@ export interface CutinSpec {
   word: string;
   kind: CutinKind;
   art?: SkinArt; // 这个技能自己的动画，盖过角色的切入图
+  glyph: string; // 没有立绘时代替立绘的大字（名字的最后一个字）
 }
 
 export class Cutins {
@@ -55,7 +56,9 @@ export class Cutins {
     el.style.setProperty('--out', `${leave}s`);
     const media = c.art?.video
       ? `<video class="art" src="${art.url}" muted autoplay playsinline></video>`
-      : `<img class="art" src="${art.url}" alt="" onerror="this.remove()" />`;
+      : art.url
+        ? `<img class="art" src="${art.url}" alt="" onerror="this.remove()" />`
+        : `<span class="art glyph">${c.glyph}</span>`;
     el.innerHTML = `<div class="band"></div>${media}<div class="word"><span>${c.word}</span></div>`;
     this.current = { el, kind: c.kind, timer: 0 };
     const start = (secs: number) => {
