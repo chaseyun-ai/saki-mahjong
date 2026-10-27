@@ -1,6 +1,6 @@
 import type { Character } from '../abilities/characters';
 import { POSITIONS, TIERS, TeamRun, isSub } from '../team/team';
-import { portraitUrl } from '../ui3d/looks';
+import { cutinArt, portraitUrl } from '../ui3d/looks';
 
 // 团体赛拟真的几个画面（选人、布阵、队伍点数板、最终结果）。牌局本身还是 App 来打：
 // 点“开始”时调 play(run, auto)，App 打完一场再调 afterMatch 回到点数板。
@@ -13,13 +13,12 @@ export interface TeamHooks {
   exit(): void;
 }
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
-
 export class TeamFlow {
   run: TeamRun;
   private timer: number | null = null;
   private deadline = 0;
   private sel: number | null = null; // 布阵时点了哪个位置
+  private focus: string | null = null; // 选人时大立绘放的是谁
   private screen: 'draft' | 'lineup' | 'board' | 'final' = 'draft';
 
   constructor(
@@ -60,54 +59,84 @@ export class TeamFlow {
     const team = run.picker()!;
     if (!run.teams[team].human) {
       this.timer = window.setTimeout(() => {
-        run.aiPick();
+        // 电脑选了谁，大立绘就换成谁，看得清被拿走的是哪位
+        const c = run.aiPick();
+        if (c) this.focus = c.id;
         this.draft();
       }, AI_PICK_MS);
     }
   }
 
-  private card(c: Character, opts: { pick?: boolean; taken?: number | null; small?: boolean } = {}): string {
-    const t = opts.taken != null ? this.run.teams[opts.taken] : null;
-    const tip = c.ability ? `${c.ability.name}：${c.ability.description}` : isSub(c) ? '替补选手：没有能力，牌效一般' : '没有能力，只靠扎实的牌效和防守';
-    const tag = t ? `<span class="tm-tag" style="--t:${t.color}">${t.name}</span>` : '';
-    const attrs = opts.pick ? `data-team-pick="${c.id}"` : 'disabled';
-    return `<button class="char-card tm-card${t ? ' taken' : ''}${opts.small ? ' small' : ''}" style="--c:${c.color}" ${attrs} title="${esc(tip)}">
-        <div class="char-portrait">${c.name.slice(-1)}${isSub(c) ? '' : `<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" />`}</div>
-        <div class="char-name">${c.name}</div>
-        <div class="tm-ability">${c.ability?.name ?? (isSub(c) ? '替补' : '无能力')}</div>${tag}
-      </button>`;
+  private mini(c: Character): string {
+    return `<span class="tm-mini" style="--c:${c.color}">${c.name.slice(-1)}${isSub(c) ? '' : `<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" />`}</span>`;
   }
 
-  // 四队的选人进度：每队一列，选到的人按档位排
-  private teamsHtml(highlight: number | null): string {
-    return `<div class="tm-teams">${this.run.teams
-      .map((t, i) => {
-        const slots = TIERS.map((tier, k) => {
-          const c = t.picks[k];
-          return `<div class="tm-slot">${c ? `<span class="tm-mini" style="--c:${c.color}">${c.name.slice(-1)}${isSub(c) ? '' : `<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" />`}</span><span>${c.name}</span>` : `<span class="tm-cost">${tier} 费</span>`}</div>`;
-        }).join('');
-        return `<div class="tm-team${i === highlight ? ' on' : ''}${t.human ? ' mine' : ''}" style="--t:${t.color}"><div class="tm-team-name">${t.name}${t.human ? '（你）' : ''}</div>${slots}</div>`;
-      })
-      .join('')}</div>`;
+  // 大立绘那里放谁：点过的那位；轮到玩家时她要是被拿走了，换成这一档还没被选的第一个（真人优先于替补）
+  private focused(): Character {
+    const run = this.run;
+    const pool = run.pool.get(run.tier) ?? [];
+    const free = pool.filter((c) => run.takenBy(c) === null);
+    const f = pool.find((c) => c.id === this.focus);
+    const mine = run.teams[run.picker()!].human;
+    const c = f && !(mine && run.takenBy(f) !== null) ? f : (free.find((x) => !isSub(x)) ?? free[0] ?? pool[0]);
+    this.focus = c.id;
+    return c;
   }
 
+  // 格斗游戏式：左边大立绘和能力说明，底下一排这一档的候选，右边自己队的五个位置和别的队
   private renderDraft(): void {
     const run = this.run;
     const team = run.picker()!;
     const mine = run.teams[team].human;
+    const me = this.me;
+    const f = this.focused();
+    const fBy = run.takenBy(f);
+    const desc = (c: Character) => c.ability?.description ?? (isSub(c) ? '替补选手：没有能力，牌效一般。' : '不靠能力，只靠扎实的牌效和防守。');
+    const abil = (c: Character) => c.ability?.name ?? (isSub(c) ? '替补' : '无能力');
     const order = run
       .order()
       .map((t, k) => `<span class="tm-order-item${k === run.turn ? ' on' : k < run.turn ? ' done' : ''}" style="--t:${run.teams[t].color}">${run.teams[t].name}</span>`)
       .join('<span class="tm-arrow">→</span>');
-    const cards = (run.pool.get(run.tier) ?? []).map((c) => this.card(c, { pick: mine && run.takenBy(c) === null, taken: run.takenBy(c) })).join('');
+    const art = isSub(f) ? '' : `<img class="tmd-art" src="${cutinArt(f.id, 'ability').url}" alt="" onerror="this.remove()" />`;
+    const stamp = fBy !== null ? `<div class="tmd-stamp" style="--t:${run.teams[fBy].color}">${run.teams[fBy].name}<small>已选</small></div>` : '';
+    const thumbs = (run.pool.get(run.tier) ?? [])
+      .map((c) => {
+        const by = run.takenBy(c);
+        const tag = by !== null ? `<span class="tm-tag" style="--t:${run.teams[by].color}">${run.teams[by].name}</span>` : '';
+        return `<button class="tmd-thumb${c.id === f.id ? ' sel' : ''}${by !== null ? ' taken' : ''}" data-team-focus="${c.id}" style="--c:${c.color}">${this.mini(c)}<span>${c.name}</span>${tag}</button>`;
+      })
+      .join('');
+    const go = mine
+      ? `<button class="primary tmd-go" data-team="pick"${fBy !== null ? ' disabled' : ''}>${fBy !== null ? '已被选走' : '就选她'}</button>`
+      : `<button class="primary tmd-go" disabled>${run.teams[team].name}在选……</button>`;
+    const roster = TIERS.map((tier, k) => {
+      const c = me.picks[k];
+      const open = tier === run.tier && !c;
+      const body = c
+        ? `${this.mini(c)}<span class="tmd-who"><b>${c.name}</b><small>${abil(c)}</small></span>`
+        : open && mine && fBy === null
+          ? `${this.mini(f).replace('tm-mini', 'tm-mini ghost')}<span class="tmd-who"><b>${f.name}？</b><small>正在选</small></span>`
+          : `<span class="tmd-who"><small>${open ? '这一档' : '待选'}</small></span>`;
+      return `<div class="tmd-slot${open ? ' open' : ''}" style="--c:${c?.color ?? 'transparent'}"><span class="tmd-cost">${tier}</span>${body}</div>`;
+    }).join('');
+    const others = run.teams
+      .map((t, i) => (t.human ? '' : `<div class="tmd-other${i === team ? ' on' : ''}" style="--t:${t.color}"><span class="tmd-tname">${t.name}</span>${TIERS.map((_, k) => (t.picks[k] ? this.mini(t.picks[k]) : '<span class="tm-mini empty"></span>')).join('')}</div>`))
+      .join('');
     this.root.innerHTML = `
-      <div class="select-screen team-screen">
-        <div class="tm-head"><button class="lab-entry" data-team="exit">← 退出</button><h1>团体赛 · 选人</h1></div>
-        <p class="subtitle">每队每档选一人，正好 15 费。顺序是蛇形的：这一档先选的，下一档最后选。</p>
-        <div class="tm-order"><b>${run.tier} 费</b>${order}</div>
-        <p class="tm-turn" style="--t:${run.teams[team].color}">${mine ? '轮到你选了（鼠标停在头像上看能力）' : `${run.teams[team].name}在选……`}</p>
-        <div class="char-grid tm-pool">${cards}</div>
-        ${this.teamsHtml(team)}
+      <div class="select-screen team-screen tm-draft">
+        <div class="tm-head tmd-head"><button class="lab-entry" data-team="exit">← 退出</button><h1>团体赛 · 选人</h1><div class="tm-order"><b>${run.tier} 费</b>${order}</div></div>
+        <section class="tmd-stage" style="--c:${f.color}">
+          ${art}<span class="tmd-letter">${f.name.slice(-1)}</span>${stamp}
+          <div class="tmd-plate"><div class="tmd-badge">${f.cost}<small>费</small></div><div><div class="tmd-name">${f.name}</div><div class="tmd-school">${f.school}</div></div></div>
+          <div class="tmd-desc"><div class="tmd-abil">${abil(f)}</div><p>${desc(f)}</p></div>
+        </section>
+        <div class="tmd-pick"><div class="tmd-thumbs">${thumbs}</div>${go}</div>
+        <aside class="tmd-side">
+          <h3 style="--t:${me.color}">${me.name}（你）</h3>
+          <div class="tmd-roster">${roster}</div>
+          <h3>其他队</h3>${others}
+          <p class="tmd-rule">每队每档选一人，正好 15 费。顺序是蛇形的：这一档先选的，下一档最后选。</p>
+        </aside>
       </div>`;
   }
 
@@ -235,11 +264,12 @@ export class TeamFlow {
 
   private onClick = (e: Event): void => {
     if (!this.root.querySelector('.team-screen')) return;
-    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-team],[data-team-pick],[data-team-pos]');
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-team],[data-team-focus],[data-team-pos]');
     if (!el) return;
     const run = this.run;
-    if (el.dataset.teamPick && this.screen === 'draft') {
-      if (run.pick(run.human, el.dataset.teamPick)) this.draft();
+    if (el.dataset.teamFocus && this.screen === 'draft') {
+      this.focus = el.dataset.teamFocus;
+      this.renderDraft();
       return;
     }
     if (el.dataset.teamPos && this.screen === 'lineup') {
@@ -257,6 +287,9 @@ export class TeamFlow {
       case 'exit':
         this.close();
         this.hooks.exit();
+        return;
+      case 'pick':
+        if (this.screen === 'draft' && this.focus && run.pick(run.human, this.focus)) this.draft();
         return;
       case 'lineup-done':
         this.board();
