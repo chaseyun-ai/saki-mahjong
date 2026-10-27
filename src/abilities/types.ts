@@ -70,6 +70,8 @@ export interface Ability {
   badge?(g: Game, seat: number): string | null;
   // 能看到自己下一次摸到的牌（怜）。看到的是哪张由 src/ai/forecast.ts 在复制的牌局上演算
   foresight?: { title: string };
+  // 先见只在某些局开着（龙华借怜的膝枕的那一局）；没写是一直开着
+  foresightOn?(g: Game, seat: number): boolean;
   // 发牌前可以选的技能：玩家操作时，发牌前弹出来让玩家选（选好调 setPreDeal）；电脑在 dealRules 里自己决定
   preDeal?(g: Game, seat: number): PreDealOption[];
   // values：带 stepper 的选项选好的数（涅莉分运势）

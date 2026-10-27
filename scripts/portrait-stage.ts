@@ -36,6 +36,10 @@ const CUTIN: Record<string, CutinPose> = {
   hisa: { hand: [0.22, 0.4, -0.3], face: 'happy' },
   kyouko: { hand: [0.12, 0.3, -0.2], face: 'serious' },
   takami: { hand: [0.12, 0.3, -0.2], face: 'happy', extra: { relaxed: 0.6 } },
+  izumi: { hand: [0.22, 0.42, -0.32], face: 'happy' },
+  sumire: { hand: [0.24, 0.36, -0.34], face: 'serious' },
+  sera: { hand: [0.24, 0.45, -0.32], face: 'happy' },
+  ryuuka: { hand: [0.12, 0.3, -0.2], face: 'neutral', extra: { relaxed: 0.5 } },
 };
 
 const BUST = 256;

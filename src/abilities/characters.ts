@@ -18,6 +18,9 @@ import { hisaAbility } from './hisa';
 import { kyoukoAbility } from './kyouko';
 import { takamiAbility } from './takami';
 import { nodokaAbility, setNodokaCosts } from './nodoka';
+import { ryuukaAbility } from './ryuuka';
+import { sumireAbility } from './sumire';
+import { seraAbility } from './sera';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -47,6 +50,9 @@ export interface AiStyle {
   harvest: boolean; // 涉谷尧深：第一巡打三元牌（种下），最后一局（收获）留着种下的牌、不弃和
   clouds: boolean; // 狮子原爽：留住云、神威送来的牌，往混一色做、能鸣就鸣；发动的局牌小先默听等改良
   angel: boolean; // 原村和：变成天使和以后不再失误，读得出 8000 点以上的铳牌、不打它们
+  sniper: boolean; // 弘世堇：听牌时挑听目标多余牌的打法；有役就默听，只和目标打的牌
+  firepower: boolean; // 江口夕：从不默听、从不弃和，不到满贯先不和；不吃，只碰役牌；留着宝牌和役牌
+  mugoku: boolean; // 清水谷龙华：无极天的局读得出别人听什么，不打放铳的牌；看得出谁听牌了
 }
 
 export interface Character {
@@ -63,7 +69,7 @@ export interface Character {
   skillArts?: { id: string; name: string; label?: string; hint?: string }[];
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -252,6 +258,47 @@ export const CHARACTERS: Character[] = [
     color: '#8a6fb0',
     ability: takamiAbility,
     ai: { ...baseAi, harvest: true },
+  },
+  {
+    id: 'izumi',
+    cost: 1,
+    name: '二条泉',
+    school: '千里山女子',
+    color: '#4f7fc4',
+    ability: null,
+    ai: { ...baseAi },
+  },
+  {
+    id: 'sumire',
+    cost: 2,
+    name: '弘世堇',
+    school: '白糸台高中',
+    color: '#3e5a96',
+    ability: sumireAbility,
+    skillArts: [{ id: 'snipe', name: '狙击' }],
+    ai: { ...baseAi, mistakeRate: 0.03, sniper: true },
+  },
+  {
+    id: 'sera',
+    cost: 3,
+    name: '江口夕',
+    school: '千里山女子',
+    color: '#c2552e',
+    ability: seraAbility,
+    ai: { ...baseAi, mistakeRate: 0.05, firepower: true },
+  },
+  {
+    id: 'ryuuka',
+    cost: 3,
+    name: '清水谷龙华',
+    school: '千里山女子',
+    color: '#4c7a62',
+    ability: ryuukaAbility,
+    skillArts: [
+      { id: 'pillow', name: '怜的膝枕' },
+      { id: 'mugoku', name: '无极天' },
+    ],
+    ai: { ...baseAi, mistakeRate: 0.03, useForesight: true, mugoku: true },
   },
 ];
 

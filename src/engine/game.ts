@@ -103,6 +103,8 @@ export interface GameOptions {
   // team：团体赛的半庄，打满东南两场，南 4 局庄家没连庄就结束，谁到 30000 都不提前结束，有人小于 0 立刻结束，
   //   剩下的立直棒不给第一名，留给下一个位置
   format?: 'east' | 'south' | 'team';
+  // 团体赛：每个座位自己队里的全部队员（角色 id，包括自己和不在这一桌的人）。龙华的膝枕要和怜同队
+  allies?: string[][];
 }
 
 const WIND_NAMES = ['东', '南', '西', '北'];
@@ -117,6 +119,8 @@ export class Game {
   // 哪些座位是玩家操作的（见 PlayerConfig.manual）
   manual: boolean[] = [false, false, false, false];
   format: 'east' | 'south' | 'team' = 'east';
+  // 每个座位的队友（见 GameOptions.allies），不是团体赛是空的
+  allies: string[][] = [[], [], [], []];
 
   // 第几局（从 1 起，每开一局加一，连庄也算）；发牌前等玩家选技能时还是上一局的
   round = 0;
@@ -177,6 +181,7 @@ export class Game {
     this.firstDealer = yuuki >= 0 ? yuuki : (opts.firstDealer ?? 0) % 4;
     this.manual = opts.players.map((p) => !!p.manual);
     this.format = opts.format ?? 'east';
+    if (opts.allies) this.allies = opts.allies.map((a) => [...a]);
     this.riichiSticks = opts.riichiSticks ?? 0;
     this.startOrWait();
   }
