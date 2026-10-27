@@ -68,7 +68,7 @@ function blocked(g: Game, seat: number, id: SkillId): string | null {
 const leader = (g: Game, seat: number) =>
   [0, 1, 2, 3].filter((s) => s !== seat && g.binds(seat, s)).sort((a, b) => g.players[b].score - g.players[a].score)[0];
 
-// 电脑的爽：每局先算这一局值不值得动手，动手就叠着用（云 + 增幅的神威），不动手就全留着。
+// 电脑的爽：每局先算这一局值不值得动手，动手就叠着用（一局最多两样：云 + 一个神威，或者一样 + 霍亚乌），不动手就全留着。
 // - 值不值得：坐庄、落后、配牌正合某朵云、到了最后两局、剩下的云和神威比剩下的局多，都加分；
 //   同桌有攒着最后几局的人（涅莉）时前半场也加分，先把优势拿到手
 // - 动手时只叫配牌真用得上的，不为了用掉而硬叠：云要配牌已经合得上；万子多（往万子混一色走）叫阿科罗；
@@ -80,6 +80,7 @@ export const SAWAYA_AI = {
   act: 3, // 「值不值得」到这个分就动手
   behindPer: 8000, // 落后多少点加 1 分
   pakoroShanten: 3, // 配牌几向听以内算好
+  maxPerRound: 2, // 一局最多叫几样（霍亚乌也算一样）
 };
 
 // 能被霍亚乌封住、而且会控场的对手（只读牌的洋榎、美穗子不算；照、玄封不了）
@@ -135,11 +136,10 @@ function aiPicks(g: Game, seat: number): SkillId[] {
   if (ok('huri') && guestPair) kamuy.push(['huri', 1 + (out[0] === 'red' ? 0.5 : 0)]);
   if (ok('pakoro') && leader(g, seat) !== undefined && sh <= SAWAYA_AI.pakoroShanten) kamuy.push(['pakoro', 1 + (dealer ? 0.5 : 0)]);
   kamuy.sort((a, b) => b[1] - a[1]);
-  // 这一局放几样：剩下的平摊到剩下的局，坐庄多一样；最后一局合得上的全放
-  const budget = g.isLastRounds(1) ? Infinity : Math.max(2, Math.ceil(ready.length / roundsLeft)) + (dealer ? 1 : 0);
-  for (const [id] of kamuy) if (out.length < budget) out.push(id);
+  // 一局最多两样：云配一个神威；叫霍亚乌时只配一样（最合的云或神威）
+  for (const [id] of kamuy) if (out.length < SAWAYA_AI.maxPerRound) out.push(id);
   // 霍亚乌不单独用：一定配着合得上的云或神威
-  if (ok('hoyau') && out.length && (ctrl >= 2 || (late && ctrl >= 1))) out.push('hoyau');
+  if (ok('hoyau') && out.length && (ctrl >= 2 || (late && ctrl >= 1))) out.splice(SAWAYA_AI.maxPerRound - 1, out.length, 'hoyau');
   return out;
 }
 
@@ -311,10 +311,12 @@ export const sawayaAbility: Ability = {
     return { label: '', note: on.length ? `这一局：${on.map(nameOf).join('、')}${seal}` : `这一局没召唤${seal}`, enabled: false, active: on.length > 0 || !!seal };
   },
 
+  // 这一局叫的全列出来；上一局叫的霍亚乌还在封印时补一句
   badge(g, seat) {
-    if (sawayaAbility.seals!(g, seat, g.round)) return '霍亚乌';
     const on = stateOf(g, seat).on ?? [];
-    return on.length ? on.map(nameOf).join('') : null;
+    const names = on.map(nameOf).join('·');
+    if (!on.includes('hoyau') && sawayaAbility.seals!(g, seat, g.round)) return names ? `${names}·封印中` : '霍亚乌封印中';
+    return names || null;
   },
 
   insight(g, seat) {

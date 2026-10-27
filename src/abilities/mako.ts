@@ -11,8 +11,8 @@ import type { Ability } from './types';
 // 电脑的真子：照读出来的听牌防守；留着染手的那门花色和字牌，做染手时能鸣；有役、默听够大就不立直
 
 export const MAKO = {
-  dealSwaps: 3, // 配牌最多换几张别的花色
-  draw: 0.2, // 摸牌是别的花色时换成这门或字牌的概率
+  dealSwaps: 2, // 配牌最多换几张别的花色
+  draw: 0.1, // 摸牌是别的花色时换成这门或字牌的概率
 };
 
 interface MakoState {

@@ -44,7 +44,7 @@ function play(seed: number, ids: string[], setup: (g: Game, me: number) => void,
 const label = (g: Game) => g.roundWind * 4 + g.roundNumber;
 
 describe('涅莉·薇萨拉兹', () => {
-  it('运势加起来是 0；电脑挑几局押上（8 局押 3 局、都是宣言局），避开别人能力最强的局；玩家分的照用，同一局连庄沿用', () => {
+  it('运势加起来是 0；电脑挑几局押上（8 局押 3 局、都是宣言局），避开别人能力最强的局；玩家分的照用；流局重打沿用，她和过一次这一局的运势就用完', () => {
     for (const n of [4, 8]) {
       for (let d = 0; d < 4; d++) {
         for (const contested of [[], [n - 2, n - 1], [0, 1, 2, 3]]) {
@@ -63,14 +63,23 @@ describe('涅莉·薇萨拉兹', () => {
     expect(nellyPlanError([1, 0, 0, 0])).not.toBeNull();
     expect(nellyPlanError([NELLY.min - 1, 0, 0, -NELLY.min + 1])).not.toBeNull();
     const mine = [3, -1, -1, -1];
-    for (let seed = 1; seed <= 6; seed++) {
+    let spent = 0;
+    for (let seed = 1; seed <= 12; seed++) {
       play(
         seed,
         LINEUPS[seed % 4],
         (g, me) => {
           const sisters = () => NELLY.sisters - nellySisters(g, me);
+          const won = new Set<number>();
           g.onEvent((e) => {
+            if (e.type === 'roundEnd' && e.result.wins.some((w) => w.seat === me)) won.add(label(g));
             if (e.type !== 'roundStart') return;
+            // 和过的局（连庄）运势是 0
+            if (won.has(label(g))) {
+              expect(nellyLuck(g, me)).toBe(0);
+              spent++;
+              return;
+            }
             // 用过七姐妹的局运势被扣掉，所以只会比分的小
             const want = mine[label(g)] ?? 0;
             expect(nellyLuck(g, me)).toBeLessThanOrEqual(want);
@@ -80,6 +89,7 @@ describe('涅莉·薇萨拉兹', () => {
         { plan: mine },
       );
     }
+    expect(spent).toBeGreaterThan(0);
   }, 120000);
 
   it('七姐妹：只在运势为正的局用，一场最多 7 次，封住的人这一局和不了，顺流的局每用一次运势减 1，宣言局不扣', () => {

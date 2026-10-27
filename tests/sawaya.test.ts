@@ -127,7 +127,7 @@ describe('狮子原爽', () => {
     expect(yellowHands).toBeGreaterThan(5);
   }, 120000);
 
-  it('电脑的爽：霍亚乌不单独用；动手的局叠着用；最后一局把剩下的用掉', () => {
+  it('电脑的爽：霍亚乌不单独用；动手的局叠着用，一局最多两样', () => {
     let hoyau = 0;
     let stacked = 0;
     let acted = 0;
@@ -140,6 +140,7 @@ describe('狮子原爽', () => {
             hoyau++;
             expect(on.length).toBeGreaterThan(1);
           }
+          expect(on.length).toBeLessThanOrEqual(2);
           if (on.length) acted++;
           if (on.length > 1) stacked++;
         });

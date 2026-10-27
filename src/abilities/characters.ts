@@ -216,7 +216,7 @@ export const CHARACTERS: Character[] = [
     school: '清澄高中',
     color: '#3f8a5a',
     ability: makoAbility,
-    ai: { ...baseAi, mistakeRate: 0.01, memory: true, damaMin: 3900 },
+    ai: { ...baseAi, mistakeRate: 0.04, memory: true, damaMin: 3900 },
   },
   {
     id: 'hisa',
