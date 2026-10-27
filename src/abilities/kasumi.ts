@@ -4,6 +4,7 @@ import { PRIORITY, type Ability } from './types';
 
 // 石户霞（永水）：平时以防守为主。落后时请神上身，之后整场都回不到平时（没有人给她“净化”）。
 // 请神在发牌前决定（和淡一样）：电脑的霞一落后就请神；玩家操作她时，落后时发牌前弹出来让玩家选。
+// 桌上有会做染手的对手（宥、真子、爽）时，电脑的霞不请神：绝掉一门以后别人手里只剩两门，反而帮他们更快做成染手。
 // 请神以后每局开局定一种花色：配牌时别人手里的这种花色被换走，之后别人也摸不到（绝一门），
 // 她自己摸牌时容易摸到这种花色和字牌。岭上牌不受影响，所以咲的杠能绕过去。
 export const KASUMI = {
@@ -28,6 +29,11 @@ export function kasumiSuit(g: Game, seat: number): number | null {
   return stateOf(g, seat).suit ?? null;
 }
 
+// 会做染手的对手：绝一门会让他们的手牌更快
+export const KASUMI_DYERS = ['yu', 'mako', 'sawaya'];
+export const kasumiDyers = (g: Game, seat: number) =>
+  [0, 1, 2, 3].filter((s) => s !== seat && KASUMI_DYERS.includes(g.abilities[s]?.id ?? ''));
+
 const isBehind = (g: Game, seat: number) => g.players.some((p) => p.seat !== seat && p.score > g.players[seat].score);
 
 const inSuit = (suit: number) => (t: TileId) => kindOf(t) < 27 && suitOf(kindOf(t)) === suit;
@@ -41,7 +47,7 @@ export const kasumiAbility: Ability = {
   // 请神：选她配牌里最多的花色（按洗好的牌算，还没人动过），别人的配牌里不能有这种花色
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);
-    if (!gs.summoned && !(g.manual[seat] ? gs.want : isBehind(g, seat))) return;
+    if (!gs.summoned && !(g.manual[seat] ? gs.want : isBehind(g, seat) && !kasumiDyers(g, seat).length)) return;
     const first = !gs.summoned;
     gs.summoned = true;
     const per = [0, 0, 0];
@@ -78,7 +84,9 @@ export const kasumiAbility: Ability = {
     const gs = gameStateOf(g, seat);
     if (gs.summoned) return [];
     const ok = isBehind(g, seat);
-    return [{ id: 'summon', name: '请神', desc: '这一局起请神上身，整场都不退：每局绝一门，别人摸不到那门花色', enabled: ok, picked: false, note: ok ? undefined : '落后时才能请神' }];
+    const dyers = kasumiDyers(g, seat).map((s) => g.players[s].name);
+    const note = !ok ? '落后时才能请神' : dyers.length ? `小心：${dyers.join('、')}会做染手，绝一门会帮她们` : undefined;
+    return [{ id: 'summon', name: '请神', desc: '这一局起请神上身，整场都不退：每局绝一门，别人摸不到那门花色', enabled: ok, picked: false, note }];
   },
 
   setPreDeal(g, seat, picked) {

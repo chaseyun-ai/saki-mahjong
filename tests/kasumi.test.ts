@@ -109,3 +109,29 @@ describe('石户霞', () => {
     }
   }, 120000);
 });
+
+describe('石户霞遇到做染手的对手', () => {
+  it('桌上有宥、真子或爽时，电脑的霞落后也不请神', () => {
+    let behind = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const other = ['yu', 'mako', 'sawaya'][seed % 3];
+      const seats = ['kasumi', 'nodoka', 'hiroe', other].map((id) => CHARACTERS.find((c) => c.id === id)!);
+      const g = new Game({ seed, players: seats.map((c) => ({ name: c.id, ability: c.ability })) });
+      g.onEvent((e) => {
+        if (e.type !== 'roundStart') return;
+        if (g.players.some((p) => p.seat !== 0 && p.score > g.players[0].score)) behind++;
+        expect(kasumiSuit(g, 0)).toBeNull();
+      });
+      let steps = 0;
+      while (g.phase !== 'gameEnd' && ++steps < 20000) {
+        if (g.phase === 'roundEnd') {
+          g.nextRound();
+          continue;
+        }
+        const s = g.waitingSeats()[0];
+        g.act(s, chooseAction(g, s, seats[s].ai));
+      }
+    }
+    expect(behind).toBeGreaterThan(5);
+  }, 60000);
+});
