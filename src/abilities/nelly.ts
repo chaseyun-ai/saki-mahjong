@@ -243,7 +243,8 @@ export const nellyAbility: Ability = {
           gs.used![slotOf(g)] = (gs.used![slotOf(g)] ?? 0) + 1;
         }
         st.blocked!.push(drawer);
-        g.emit({ type: 'ability', seat, ability: 'nelly', text: '七姐妹', target: drawer });
+        // 不写 target：七姐妹要放切入（写了 target 的是悄悄换牌）
+        g.emit({ type: 'ability', seat, ability: 'nelly', text: '七姐妹' });
         return { seat, ability: 'nelly', text: '七姐妹', deny: wins };
       }
     }

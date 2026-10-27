@@ -14,6 +14,7 @@ import type { Ability } from './types';
 //   起胡必须是 1 番，之后每次和了必须正好是下一层，大了小了都断；别人和了、流局也断，从塔底重来。
 //   役满不管在哪一层都直接登顶；登顶以后下一次从 1 番重新爬。
 //   站得越高，配牌和摸牌帮得越多（TERU.boost、dealMax；要和 1–3 番时不给宝牌，4 番以上配牌偏混一色，跳满以上偏清一色）。
+//   压制：别人要摸的进张有 TERU.press 的概率被换走，刚起步压得最狠，越往上越轻。
 //   摸牌的帮助只送朝下一层走的牌：快听牌时只给正好够得上下一层的和了牌；听牌时自摸会和错层，就挡掉那张，等荣和接上
 // - 叽叽叽：一场里自摸满 TERU.kiki 次，下一局配牌直接是九莲宝灯的听牌，第九次自摸必定是纯正九莲宝灯
 export const TERU = {
@@ -26,6 +27,8 @@ export const TERU = {
   aiForceWin: 12, // 电脑的照：牌山剩这么多张以内，不是下一层也和（免得白白流局）
   kiki: 8, // 自摸几次以后下一局九莲宝灯
   smallUntil: 3, // 站在这一层以下（要和 1–3 番）时，配牌、摸牌不给宝牌
+  // 压制：站在第几层时，别人要摸的进张被换走的概率。刚起步压得最狠，越往上越轻（大牌要跟别人抢时间）
+  press: [0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.5],
 };
 
 // 八层加塔尖的名字（第 1 层是 TERU_TIERS[0]）
@@ -217,7 +220,7 @@ export const teruAbility: Ability = {
   name: '照魔镜·连续和了',
   immune: true,
   description:
-    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看）。天梯：起胡 1 番，之后每次必须正好和出下一层（2 番、3 番、4 番、满贯、跳满、倍满、三倍满），大了小了、别人和了、流局都从头来；役满直接登顶。站得越高，配牌和摸牌帮得越多。叽叽叽：一场自摸满八次，第九次必定九莲宝灯。',
+    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看）。天梯：起胡 1 番，之后每次必须正好和出下一层（2 番、3 番、4 番、满贯、跳满、倍满、三倍满），大了小了、别人和了、流局都从头来；役满直接登顶。站得越高，配牌和摸牌帮得越多。压制：别人的进张常被换走，刚起步压得最狠，越往上越轻。叽叽叽：一场自摸满八次，第九次必定九莲宝灯。',
 
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);
@@ -273,6 +276,27 @@ export const teruAbility: Ability = {
 
   canWin(g, seat) {
     return teruMirrored(g, seat);
+  },
+
+  // 压制：照魔镜看过以后，别人要摸的进张有时被换走（悄悄换，结算时能力痕迹里讲）
+  beforeAnyDraw(g, seat, drawer, rinshan) {
+    if (drawer === seat || rinshan || !teruMirrored(g, seat)) return;
+    if (!g.rng.chance(TERU.press[teruLadder(g, seat).level])) return;
+    const p = g.players[drawer];
+    const base = toCounts(p.hand);
+    const melds = p.melds.length;
+    const sh = shanten(base, melds);
+    return {
+      seat,
+      ability: 'teru',
+      text: '压制',
+      deny: (t: TileId) => {
+        base[kindOf(t)]++;
+        const after = shanten(base, melds);
+        base[kindOf(t)]--;
+        return after < sh;
+      },
+    };
   },
 
   // 摸牌换成进张：概率按站在第几层；快听牌时只给正好够得上下一层的和了牌

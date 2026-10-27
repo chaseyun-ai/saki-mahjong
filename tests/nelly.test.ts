@@ -109,7 +109,7 @@ describe('涅莉·薇萨拉兹', () => {
               expect(shanten(toCounts(p.hand), p.melds.length)).toBeGreaterThanOrEqual(0);
               victim = -1;
             }
-            if (e.type === 'ability' && e.seat === me && e.text === '七姐妹' && e.target !== undefined) victim = e.target;
+            if (e.type === 'ability' && e.seat === me && e.text === '七姐妹') victim = nellyBlocked(g, me).at(-1)!;
             if (e.type === 'ability' && e.seat === me && e.text === '七姐妹') {
               used++;
               expect(before).toBeGreaterThan(0);

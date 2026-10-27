@@ -180,4 +180,29 @@ describe('宫永照', () => {
     expect(chuuren / tries).toBeGreaterThan(0.6);
     console.log({ tries, chuuren });
   }, 120000);
+  it('压制：照魔镜看过以后，别人摸到进张的比例比没有照的桌子低', () => {
+    const rate = (ids: string[]) => {
+      const n = [0, 0];
+      for (let seed = 1; seed <= 12; seed++) {
+        play(seed, ids, {
+          setup: (g) => {
+            g.onEvent((e) => {
+              if (e.type !== 'draw' || g.rinshanDraw || g.round === 0) return;
+              const p = g.players[e.seat];
+              if (ids[e.seat] === 'teru') return;
+              const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
+              if (before <= 0) return;
+              n[0]++;
+              if (shanten(toCounts(p.hand), p.melds.length) < before) n[1]++;
+            });
+          },
+        });
+      }
+      return n[1] / n[0];
+    };
+    const withTeru = rate(['teru', 'izumi', 'izumi', 'izumi']);
+    const without = rate(['izumi', 'izumi', 'izumi', 'izumi']);
+    console.log({ withTeru: withTeru.toFixed(2), without: without.toFixed(2) });
+    expect(withTeru).toBeLessThan(without - 0.05);
+  }, 120000);
 });
