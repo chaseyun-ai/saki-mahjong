@@ -13,8 +13,9 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 //     宣言不公开：别人看不到她的运势，不知道她哪一局动手。照不受影响
 // - 七姐妹：一场 7 次。别人要自摸时（下一张就是他的和了牌）用掉一次，这一局那家就和不了了（自摸、荣和都不行）。
 //   顺流的局里用，每用一次这一局的运势减 1（七姐妹和摸牌变好是同一份运势）
-// 电脑的涅莉：把 +6 压在自己南场坐庄的那一局（东风战是东场坐庄那一局）；团体赛同桌没有东场很强的人（优希）时，
-// 东场坐庄那一局也宣言一次；其余的局平摊负数。玩家操作时开场自己分，七姐妹用技能按钮开关（默认开着）
+// 电脑的涅莉：挑几局押上全部运势（8 局押 3 局，都是宣言局；4 局押 2 局），其余的局压到最低。
+// 押哪几局看同桌：别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不去抢，自己坐庄的局优先。
+// 负运势的局不做危险进攻：有人立直、副露逼近时不打危险牌、不立直。玩家操作时开场自己分，七姐妹用技能按钮开关（默认开着）
 export const NELLY = {
   min: -3, // 一局最少
   max: 7, // 一局最多
@@ -31,7 +32,7 @@ export const NELLY = {
   declDenyPer: 0.05,
   declMin: 12000, // 宣言局里电脑的涅莉的牌不到这么大（默听算）就先不和、不立直，接着往大里做
   declLate: 18, // 牌山剩这么多以下就有什么和什么
-  strongEast: ['yuuki'], // 东场很强的人：同桌有她们时电脑不在东场宣言
+  badRisk: 4, // 负运势的局：要打的牌危险度到这个数（不是现物、筋、见了的字牌）就不打，弃和
 };
 
 interface NellyGameState {
@@ -65,27 +66,42 @@ const SLOT_NAMES = ['东1', '东2', '东3', '东4', '南1', '南2', '南3', '南
 // 第几局（东 1 是 0）
 const slotOf = (g: Game) => g.roundWind * 4 + g.roundNumber;
 
-// 电脑的分法：dealerRound 是她每圈第几局坐庄。南场坐庄那局 +6（东风战是东场坐庄那局）；
-// 团体赛 eastToo 时东场坐庄那局 +4；其余的局平摊负数（每局不低于 NELLY.min）
-export function nellyAiPlan(slots: number, dealerRound = slots / 4 - 1, eastToo = false): number[] {
-  const plan = new Array<number>(slots).fill(0);
-  const main = slots === 8 ? 4 + dealerRound : dealerRound;
-  plan[main] = 6;
-  if (slots === 8 && eastToo) plan[dealerRound] = NELLY.declare;
-  const rest = plan.map((_, i) => i).filter((i) => plan[i] === 0);
-  let debt = plan.reduce((a, b) => a + b, 0);
-  for (let i = 0; debt > 0; i = (i + 1) % rest.length) {
-    if (plan[rest[i]] > NELLY.min) {
-      plan[rest[i]]--;
-      debt--;
-    }
+// 别人能力最强的局（按局的序号，8 局或 4 局）：这几局别人也要和，涅莉不去抢
+const HOT: Record<string, (slots: number) => number[]> = {
+  yuuki: (n) => (n === 8 ? [0, 1, 2, 3, 7] : [0, 1, 2, 3]), // 东场；最后一局有塔可饼
+  takami: (n) => [n - 1], // 收获的局
+  sawaya: (n) => [n - 2, n - 1], // 最后两局把云和神威用掉
+};
+
+// 电脑的分法：挑 bet 局押上运势（8 局押 3 局、4 局押 2 局），其余的局都是最低（NELLY.min）。
+// 挑法：自己坐庄的局 +2，别人能力最强的局每有一个人 -3，同分挑靠后的局。押的局里坐庄那局多给（庄家和了是 1.5 倍）。
+// dealerRound 是她每圈第几局坐庄；contested 是别人能力最强的局（一个人一次）
+export function nellyAiPlan(slots: number, dealerRound = slots / 4 - 1, contested: number[] = []): number[] {
+  const bet = slots === 8 ? 3 : 2;
+  const score = (i: number) => (i % 4 === dealerRound ? 2 : 0) - 3 * contested.filter((c) => c === i).length + i * 0.1;
+  const picks = Array.from({ length: slots }, (_, i) => i)
+    .sort((a, b) => score(b) - score(a))
+    .slice(0, bet);
+  const plan = new Array<number>(slots).fill(NELLY.min);
+  let pot = -NELLY.min * (slots - bet);
+  // 坐庄那局一定是宣言局，其余押的局尽量也是；从靠后的局往前分
+  const dealerSlot = picks.filter((i) => i % 4 === dealerRound).sort((a, b) => b - a)[0];
+  if (dealerSlot !== undefined) {
+    plan[dealerSlot] = Math.min(NELLY.max, Math.max(NELLY.declare, pot - NELLY.declare * (bet - 1)));
+    pot -= plan[dealerSlot];
   }
+  const rest = picks.filter((i) => i !== dealerSlot).sort((a, b) => b - a);
+  rest.forEach((i, n) => {
+    plan[i] = Math.min(NELLY.max, Math.max(NELLY.declare, Math.floor(pot / (rest.length - n))), pot);
+    pot -= plan[i];
+  });
   return plan;
 }
 
 const aiPlan = (g: Game, seat: number) => {
-  const strong = [0, 1, 2, 3].some((s) => s !== seat && NELLY.strongEast.includes(g.abilities[s]?.id ?? ''));
-  return nellyAiPlan(nellySlots(g), g.dealerRound(seat), !strong);
+  const n = nellySlots(g);
+  const contested = [0, 1, 2, 3].filter((s) => s !== seat).flatMap((s) => HOT[g.abilities[s]?.id ?? '']?.(n) ?? []);
+  return nellyAiPlan(n, g.dealerRound(seat), contested);
 };
 
 // 分法合不合规矩：不合给原因

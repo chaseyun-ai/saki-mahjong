@@ -35,7 +35,7 @@ export interface AiStyle {
   mirror: boolean; // 宫永照：照魔镜看过以后读得出别人听什么（和 reads 一样防守）
   streak: boolean; // 宫永照：连和中不够大的和了先不和，等更大的
   eye: boolean; // 福路美穗子：睁眼后，立直的人手里没有的花色当安全牌
-  waves: boolean; // 涅莉：运势很差（-2 以下）的局以防守为主；宣言局门清做大、不弃和
+  waves: boolean; // 涅莉：负运势的局不做危险进攻（有人逼近时不打危险牌、不立直）；宣言局门清做大、不弃和，牌不够大先不和、不立直
   eastWind: boolean; // 片冈优希：东场（或吃了塔可饼）全力进攻，南场以防守为主
   warm: boolean; // 松实宥：同样向听时留暖色牌
   speed: boolean; // 新子憧：能鸣就鸣；鸣过以后用距离感看谁听牌了
@@ -44,6 +44,7 @@ export interface AiStyle {
   badWait: boolean; // 竹井久：能听烂听牌（只等一种牌）就听烂的
   disrupt: boolean; // 末原恭子：桌上有能力起作用的人时能鸣就鸣，打乱流向
   harvest: boolean; // 涉谷尧深：第一巡打三元牌（种下），最后一局（收获）留着种下的牌
+  clouds: boolean; // 狮子原爽：留住云、神威送来的牌，往混一色做、能鸣就鸣；发动的局牌小先默听等改良
 }
 
 export interface Character {
@@ -59,7 +60,7 @@ export interface Character {
   skillArts?: { id: string; name: string }[];
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -170,7 +171,7 @@ export const CHARACTERS: Character[] = [
     color: '#7a8fa6',
     ability: sawayaAbility,
     skillArts: SAWAYA_SKILLS.filter((k) => k.ready).map(({ id, name }) => ({ id, name })),
-    ai: { ...baseAi },
+    ai: { ...baseAi, clouds: true },
   },
   {
     id: 'yuuki',

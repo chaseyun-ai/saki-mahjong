@@ -44,16 +44,19 @@ function play(seed: number, ids: string[], setup: (g: Game, me: number) => void,
 const label = (g: Game) => g.roundWind * 4 + g.roundNumber;
 
 describe('涅莉·薇萨拉兹', () => {
-  it('运势加起来是 0；电脑把 +6 压在南场（东风战是东场）坐庄那局；玩家分的照用，同一局连庄沿用', () => {
+  it('运势加起来是 0；电脑挑几局押上（8 局押 3 局、都是宣言局），避开别人能力最强的局；玩家分的照用，同一局连庄沿用', () => {
     for (const n of [4, 8]) {
       for (let d = 0; d < 4; d++) {
-        for (const eastToo of [false, true]) {
-          const plan = nellyAiPlan(n, d, eastToo);
-          expect(plan.reduce((a, b) => a + b, 0)).toBe(0);
+        for (const contested of [[], [n - 2, n - 1], [0, 1, 2, 3]]) {
+          const plan = nellyAiPlan(n, d, contested);
+          const bet = plan.filter((v) => v > 0);
           expect(nellyPlanError(plan)).toBeNull();
-          expect(plan[n === 8 ? 4 + d : d]).toBe(6);
-          if (n === 8) expect(plan[d]).toBe(eastToo ? NELLY.declare : plan[d]);
-          expect(plan.filter((v) => v > 0).length).toBe(n === 8 && eastToo ? 2 : 1);
+          expect(bet.length).toBe(n === 8 ? 3 : 2);
+          expect(plan.filter((v) => v <= 0).every((v) => v === NELLY.min)).toBe(true);
+          if (n === 8) expect(bet.every((v) => v >= NELLY.declare)).toBe(true);
+          else expect(bet.some((v) => v >= NELLY.declare)).toBe(true);
+          // 没被抢的局够押时，没坐庄的抢手局不押
+          if (n - contested.length >= bet.length) for (const c of contested) if (c % 4 !== d) expect(plan[c]).toBe(NELLY.min);
         }
       }
     }

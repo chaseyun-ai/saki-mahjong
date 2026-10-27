@@ -13,6 +13,7 @@ import { makoDanger, makoSuit } from '../abilities/mako';
 import { KYOUKO, kyoukoTargets } from '../abilities/kyouko';
 import { takamiHarvest, takamiSeeds } from '../abilities/takami';
 import { NELLY, nellyDeclared, nellyLuck, nellySuit } from '../abilities/nelly';
+import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { TERU, teruKeeps, teruMirrored, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
@@ -148,7 +149,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const find = (t: Action['type']) => legal.find((a) => a.type === t);
 
   const tsumo = find('tsumo');
-  if (tsumo && !(style.streak && teruWaits(g, seat, true)) && !(style.waves && nellyHolds(g, seat, true))) return tsumo;
+  if (tsumo && !(style.streak && teruWaits(g, seat, true)) && !(style.waves && nellyHolds(g, seat, true)) && !growHolds(g, seat, style, true)) return tsumo;
 
   const kyuushu = find('kyuushu');
   if (kyuushu && kokushiShanten(toCounts(p.hand)) > 2) return kyuushu;
@@ -230,8 +231,15 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 宥：同样向听时留暖色牌
   // 尧深：收获的局留着种下的牌
   const seeds = style.harvest && !sealed && takamiHarvest(g, seat) ? new Set(takamiSeeds(g, seat)) : null;
+  // 爽：留住云、神威送来的牌
+  const focus = style.clouds ? sawayaFocus(g, seat) : null;
   const keep = (c: Cand) =>
-    (suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) || (style.warm && warmKind(kindOf(c.a.tile))) || seeds?.has(kindOf(c.a.tile)) ? 1 : 0;
+    (suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) ||
+    (style.warm && warmKind(kindOf(c.a.tile))) ||
+    seeds?.has(kindOf(c.a.tile)) ||
+    focus?.keep(kindOf(c.a.tile))
+      ? 1
+      : 0;
   // 洋榎听牌时：两种听法都有牌可和，挑引っ掛け的
   const trapOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.trap - x.trap : 0);
   const attackOrder = (x: Cand, y: Cand) =>
@@ -266,6 +274,14 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   }
   let best = cands[0];
 
+  // 能力发动中的局（爽开了云、神威，涅莉的宣言局）：听牌了就在不退听的打法里挑牌最大的，等改良
+  const growing = growBig(g, seat, style);
+  if (growing && best.sh === 0) {
+    const live = cands.filter((x) => x.sh === 0 && x.uke > 0 && x.hit <= best.hit);
+    const value = new Map(live.map((x) => [x, ronValue(g, seat, p.hand.filter((t) => t !== x.a.tile), true)]));
+    if (live.length > 1) best = live.sort((x, y) => value.get(y)! - value.get(x)! || cands.indexOf(x) - cands.indexOf(y))[0];
+  }
+
   // 尧深：第一巡打一张孤张字牌种下（先挑种过、还没满三张的三元牌，再挑别的三元牌、别的字牌），不退向听才打
   if (style.harvest && !sealed && p.discards.length === 0 && p.melds.length === 0) {
     const planted = takamiSeeds(g, seat);
@@ -291,17 +307,19 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 听牌了但听得很窄（能和的牌没几张）、要打的又是很危险的牌，对立直也不硬拼
   const riichiOn = threats(g, seat).some((t) => g.players[t].riichi);
   const thinTenpai = best.sh === 0 && riichiOn && best.risk >= 8 && best.uke <= 4;
-  if (!declared && threats(g, seat).length && (best.sh >= 1 || !g.canWin(seat) || (careful && best.risk >= 6) || thinTenpai)) {
+  // 涅莉负运势的局不做危险进攻：听牌了也不打危险牌
+  const timid = style.waves && nellyLuck(g, seat) < 0 && best.risk >= NELLY.badRisk;
+  if (!declared && threats(g, seat).length && (best.sh >= 1 || !g.canWin(seat) || (careful && best.risk >= 6) || thinTenpai || timid)) {
     // 玄弃和也不打宝牌（还有别的牌可打时）
     const dora = (x: Cand) => (style.keepDora && isDoraTile(g, x.a.tile) ? 1 : 0);
     const safest = [...cands].sort((x, y) => dora(x) - dora(y) || x.hit - y.hit || x.risk - y.risk || attackOrder(x, y));
-    // 涅莉运势很差的局不拼；这一局和不了（被七姐妹封住、照魔镜那一局）也不拼
+    // 这一局和不了（被七姐妹封住、照魔镜那一局）不拼
     // 优希：东风之神在的局一向听也拼，南场以防守为主
     const yuukiPush = style.eastWind && yuukiActive(g, seat) && best.sh <= 1 && g.canWin(seat);
     const yuukiFold = style.eastWind && !yuukiActive(g, seat);
     // 有人立直时一向听只打很安全的牌（现物、壁、见了三张的字牌），否则弃和
     const push = best.sh >= 1 ? best.risk < (riichiOn ? 3 : 6) : !thinTenpai;
-    if (!yuukiPush && (best.sh >= 2 || !push || style.defensive || yuukiFold || (style.waves && nellyLuck(g, seat) <= -2) || !g.canWin(seat) || careful)) {
+    if (!yuukiPush && (best.sh >= 2 || !push || style.defensive || yuukiFold || !g.canWin(seat) || careful || timid)) {
       best = safest[0];
       folded = safest;
     }
@@ -330,6 +348,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       return shanten(c, p.melds.length) === -1 ? riichi : best.a;
     }
     if (style.keepDora && !kuroMustRiichi(g, seat, p.hand.filter((t) => t !== best.a.tile))) return best.a;
+    // 涅莉负运势的局：有人逼近时不立直（立直以后只能摸切，危险牌也得打）
+    if (style.waves && nellyLuck(g, seat) < 0 && threats(g, seat).length) return best.a;
     // 涅莉的宣言局：手里还有别的花色就先不立直，接着换牌往大里做
     if (declared && suit !== null && g.wall.remaining > NELLY.declLate && p.hand.some((t) => t !== best.a.tile && kindOf(t) < 27 && Math.floor(kindOf(t) / 9) !== suit)) return best.a;
     // 衣：海底不是自己的、这一局也没法再挪给自己，就不立直，留着吃碰把海底挪过来（打掉这张以后，最后一张轮到谁：从下家起数）
@@ -338,6 +358,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (style.haitei && koromoHaiteiOn(g, seat)) return best.a;
     // 洋榎：有役、默听也够大就默听，别人看不出她听牌了
     if (style.damaMin && damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) >= style.damaMin) return best.a;
+    // 能力发动中的局：牌还小、牌山还多，先默听等改良，牌够大了再立直
+    if (growing && g.wall.remaining > BIG.late && ronValue(g, seat, p.hand.filter((t) => t !== best.a.tile), true) < bigEnough(g, seat, BIG.riichi)) return best.a;
     if (ukeire(c, p.melds.length, visible) > 0) return riichi;
   }
   return best.a;
@@ -431,12 +453,16 @@ function kuroMustRiichi(g: Game, seat: number, hand: TileId[]): boolean {
 
 // 默听荣和最多能拿多少点（振听、没役是 0）。hand 是打掉一张以后的 13 张
 function damaRon(g: Game, seat: number, hand: TileId[]): number {
+  return ronValue(g, seat, hand, false);
+}
+
+// 荣和最多能拿多少点（riichi：算上立直一番；振听、没役是 0）。hand 是打掉一张以后的 13 张
+function ronValue(g: Game, seat: number, hand: TileId[], riichi: boolean): number {
   const p = g.players[seat];
   const waits = waitingKinds(toCounts(hand), p.melds.length);
   const discarded = new Set([...p.discards.map((d) => kindOf(d.tile)), ...g.players[seat].hand.filter((t) => !hand.includes(t)).map(kindOf)]);
   const furiten = waits.some((k) => discarded.has(k));
   const dora = g.wall.visibleDoraIndicators().map(kindOf);
-  // 默听荣和最多能拿多少点（振听、没役是 0）
   let best = 0;
   if (!furiten) {
     for (const k of waits) {
@@ -449,7 +475,7 @@ function damaRon(g: Game, seat: number, hand: TileId[]): number {
         seatWind: g.seatWind(seat),
         roundWind: EAST + g.roundWind,
         isDealer: seat === g.dealer,
-        riichi: false,
+        riichi: riichi && p.melds.every((m) => m.type === 'ankan'),
         doubleRiichi: false,
         ippatsu: false,
         doraIndicators: dora,
@@ -458,6 +484,25 @@ function damaRon(g: Game, seat: number, hand: TileId[]): number {
     }
   }
   return best;
+}
+
+// 能力发动中的局把牌做大：牌山剩 late 张以上时，立直要牌值到 riichi（算上立直）、和牌要到 win，不到就先等。
+// 庄家按 1.5 倍算
+const BIG = { riichi: 3900, win: 2600, late: 24 };
+const bigEnough = (g: Game, seat: number, v: number) => (seat === g.dealer ? v * 1.5 : v);
+
+// 能力是不是正在发动、该往大里做（爽开了云或攻击的神威；涅莉的宣言局）
+function growBig(g: Game, seat: number, style: AiStyle): boolean {
+  return (style.clouds && sawayaActive(g, seat)) || (style.waves && nellyDeclared(g, seat));
+}
+
+// 能力发动中的局，牌山还多、这手和了太小，就先不和
+function growHolds(g: Game, seat: number, style: AiStyle, tsumo: boolean): boolean {
+  if (!growBig(g, seat, style) || g.wall.remaining <= BIG.late) return false;
+  const p = g.players[seat];
+  const tile = tsumo ? p.drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
+  const r = g.winResult(seat, tile, tsumo);
+  return !!r && teruWinValue(r, tsumo, seat === g.dealer) < bigEnough(g, seat, BIG.win);
 }
 
 // 照：这一手和了接不上连和（比上一次小），牌山还多，就先不和、等更大的
@@ -491,7 +536,7 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const pass = legal.find((a) => a.type === 'pass')!;
   const ron = legal.find((a) => a.type === 'ron');
   // 淡：等转角暗杠自摸，不荣和
-  if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false))) return ron;
+  if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false)) && !growHolds(g, seat, style, false)) return ron;
   // 涅莉的宣言局不鸣牌，门清做大
   if (style.waves && nellyDeclared(g, seat)) return pass;
 
@@ -520,8 +565,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     p.melds.every((m) => m.tiles.every((t) => isSimple(kindOf(t)))) &&
     p.hand.filter((t) => isYaochu(kindOf(t))).length <= 1;
   const yakuSecured = hasYakuhaiMeld(g, seat);
-  // 真子：手里别的花色只剩两张以内，染手那门和字牌能鸣（混一色）
-  const dye = style.memory && !g.isSealed(seat) ? makoSuit(g, seat) : null;
+  // 真子：手里别的花色只剩两张以内，染手那门和字牌能鸣（混一色）；爽开了红云、白云、阿科罗也一样
+  const dye = style.memory && !g.isSealed(seat) ? makoSuit(g, seat) : style.clouds ? sawayaFocus(g, seat)?.suit ?? null : null;
   const inDye = (t: TileId) => dye !== null && (kindOf(t) >= 27 || Math.floor(kindOf(t) / 9) === dye);
   const honitsuOk =
     dye !== null && inDye(tile) && p.melds.every((m) => m.tiles.every(inDye)) && p.hand.filter((t) => !inDye(t)).length <= 2;
