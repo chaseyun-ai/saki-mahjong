@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CHARACTERS } from '../src/abilities/characters';
+import { CHARACTERS as ALL } from '../src/abilities/characters';
+
+// 原来的四个人：咲、玄、怜、和
+const CHARACTERS = ALL.slice(0, 4);
 import { chooseAction } from '../src/ai/ai';
 import { Game, PlayerConfig } from '../src/engine/game';
 import { TileId, doraFromIndicator, isRed, kindOf } from '../src/engine/tiles';
@@ -16,7 +19,8 @@ beforeAll(() => {
   Wall.prototype.bringToLive = function (this: Wall, ...args: Parameters<Wall['bringToLive']>) {
     const before = this.live[args[0]];
     const ok = origLive.apply(this, args);
-    if (this.live[args[0]] !== before) swaps.push({ wall: this, before, after: this.live[args[0]] });
+    // 配牌调整（guard 开着）不算：记录员只讲摸牌
+    if (this.live[args[0]] !== before && !this.guard) swaps.push({ wall: this, before, after: this.live[args[0]] });
     return ok;
   };
   Wall.prototype.bringToRinshan = function (this: Wall, ...args: Parameters<Wall['bringToRinshan']>) {
@@ -38,7 +42,7 @@ const noAbilities: PlayerConfig[] = CHARACTERS.map((c) => ({ name: c.name }));
 // 四个电脑打完一整场。trace 为真时挂上记录员，每局结束时收下这一局的记录
 function play(seed: number, players = withAbilities, trace = true) {
   const g = new Game({ seed, players });
-  const tracer = trace ? new AbilityTrace(g, seed) : null;
+  const tracer = trace ? new AbilityTrace(g) : null;
   const rounds: { entries: TraceEntry[]; wall: Wall }[] = [];
   const calls: string[][] = [];
   let roundCalls: string[] = [];
@@ -113,12 +117,22 @@ describe('能力痕迹', () => {
         for (const x of r.entries) {
           if (x.kind !== 'swap') continue;
           if (x.ability === 'kuro') {
-            kuro++;
-            expect(x.text).toBe('宝牌聚集');
+            // 宝牌聚集换来的是宝牌；打出过宝牌以后（整场失效）悄悄换走宝牌，换来的不是宝牌
             const dora = r.wall.visibleDoraIndicators().map((t) => doraFromIndicator(kindOf(t)));
-            expect(isRed(x.got) || dora.includes(kindOf(x.got))).toBe(true);
+            const isDora = isRed(x.got) || dora.includes(kindOf(x.got));
+            if (x.text === '宝牌聚集') {
+              kuro++;
+              expect(isDora).toBe(true);
+            } else if (x.text === '宝牌只给玄') {
+              // 别人要摸到宝牌时换走（之后开杠翻出的新宝牌可能正好是换来的那张，所以看换走的那张）
+              expect(isRed(x.expected) || dora.includes(kindOf(x.expected))).toBe(true);
+            } else {
+              expect(x.text).toBeNull();
+              expect(isDora).toBe(false);
+            }
           }
-          if (x.rinshan) {
+          // 玄把岭上的宝牌从别人手边换走的不算
+          if (x.rinshan && x.ability !== 'kuro') {
             rinshan++;
             expect(x.ability).toBe('saki');
             expect(x.text).toBe('岭上开花');

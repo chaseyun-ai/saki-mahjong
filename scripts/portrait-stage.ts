@@ -24,6 +24,18 @@ const CUTIN: Record<string, CutinPose> = {
   nodoka: { hand: [-0.02, 0.28, -0.18], face: 'serious' },
   kuro: { hand: [0.2, 0.42, -0.36], face: 'happy' },
   toki: { hand: [0.17, 0.55, -0.12], face: 'neutral', extra: { relaxed: 0.5 } },
+  awai: { hand: [0.24, 0.4, -0.32], face: 'happy' },
+  kasumi: { hand: [0.12, 0.3, -0.2], face: 'neutral', extra: { relaxed: 0.6 } },
+  koromo: { hand: [0.2, 0.5, -0.3], face: 'happy' },
+  hiroe: { hand: [0.22, 0.36, -0.3], face: 'happy' },
+  mihoko: { hand: [0.12, 0.3, -0.2], face: 'happy', extra: { relaxed: 0.4 } },
+  nelly: { hand: [0.2, 0.45, -0.3], face: 'happy' },
+  sawaya: { hand: [0.2, 0.5, -0.25], face: 'neutral' },
+  teru: { hand: [0.24, 0.3, -0.32], face: 'neutral' },
+  mako: { hand: [0.17, 0.5, -0.15], face: 'neutral', extra: { relaxed: 0.4 } },
+  hisa: { hand: [0.22, 0.4, -0.3], face: 'happy' },
+  kyouko: { hand: [0.12, 0.3, -0.2], face: 'serious' },
+  takami: { hand: [0.12, 0.3, -0.2], face: 'happy', extra: { relaxed: 0.6 } },
 };
 
 const BUST = 256;

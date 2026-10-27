@@ -29,9 +29,41 @@ export const LOOKS: Record<string, Look> = {
   kuro: { model: 'models/vroid-shino.v2.glb', hair: '#2b2326', eyes: '#8e3b2e', hairContrast: 0.5, reveal: 'slam', pose: 'edge', upsideDown: true },
   // 园城寺怜：深灰蓝短发、暗红色眼睛
   toki: { model: 'models/vroid-f.v2.glb', hair: '#353b4a', eyes: '#93333a', hairContrast: 0.6, reveal: 'wave', pose: 'crossed' },
+  // 大星淡：金色长发、金色眼睛
+  awai: { model: 'models/vroid-g.v2.glb', hair: '#f0cf72', eyes: '#c99a2e', reveal: 'slam', pose: 'lap' },
+  // 石户霞：黑色长发、紫色眼睛
+  kasumi: { model: 'models/vroid-shino.v2.glb', hair: '#2a2433', eyes: '#7a5c9e', hairContrast: 0.5, reveal: 'wave', pose: 'lap' },
+  // 天江衣：金色头发、红色眼睛
+  koromo: { model: 'models/vroid-f.v2.glb', hair: '#efd27a', eyes: '#b83a3a', reveal: 'wave', pose: 'lap' },
+  // 爱宕洋榎：先占位，借咲的模型换成深棕色头发、棕色眼睛
+  hiroe: { model: 'models/vroid-e.v2.glb', hair: '#4a2c22', eyes: '#7a4e2a', hairContrast: 0.6, reveal: 'slam', pose: 'edge' },
+  // 宫永照：先占位，借怜的短发模型换成红棕色头发、暗红色眼睛
+  // 福路美穗子：先占位，借和的长发模型换成浅栗色头发、蓝色眼睛
+  mihoko: { model: 'models/vroid-g.v2.glb', hair: '#a8784a', eyes: '#3f6fb8', reveal: 'wave', pose: 'lap' },
+  // 涅莉：先占位，借淡的长发模型换成淡金色头发、红色眼睛（眼里有火）
+  nelly: { model: 'models/vroid-g.v2.glb', hair: '#e9dcb0', eyes: '#c0392b', reveal: 'slam', pose: 'crossed' },
+  // 狮子原爽：先占位，借咲的短发模型换成深灰蓝色头发、灰蓝色眼睛
+  sawaya: { model: 'models/vroid-e.v2.glb', hair: '#4a5068', eyes: '#5c7a8f', hairContrast: 0.6, reveal: 'wave', pose: 'edge' },
+  teru: { model: 'models/vroid-f.v2.glb', hair: '#9a5a3c', eyes: '#8a3a2a', hairContrast: 0.7, reveal: 'slam', pose: 'edge' },
+  // 片冈优希：先占位，借怜的短发模型换成浅棕色头发、棕色眼睛
+  yuuki: { model: 'models/vroid-f.v2.glb', hair: '#c9925a', eyes: '#8a5a2a', reveal: 'slam', pose: 'edge' },
+  // 松实宥：先占位，借玄的长发模型换成红棕色头发、红褐色眼睛；和玄一样牌河倒过来摆
+  yu: { model: 'models/vroid-shino.v2.glb', hair: '#7a3a34', eyes: '#9a4a3a', hairContrast: 0.6, reveal: 'wave', pose: 'lap', upsideDown: true },
+  // 新子憧：先占位，借和的长发模型换成黑色头发、棕色眼睛
+  ako: { model: 'models/vroid-g.v2.glb', hair: '#2e2628', eyes: '#7a5040', hairContrast: 0.5, reveal: 'slam', pose: 'edge' },
+  // 亦野诚子：先占位，借咲的短发模型换成墨绿色头发、深绿色眼睛
+  seiko: { model: 'models/vroid-e.v2.glb', hair: '#2f4a3e', eyes: '#3e6a50', hairContrast: 0.6, reveal: 'slam', pose: 'crossed' },
+  // 染谷真子：先占位，借咲的短发模型换成墨绿色头发、棕色眼睛
+  mako: { model: 'models/vroid-e.v2.glb', hair: '#3c5a48', eyes: '#7a5a3a', hairContrast: 0.6, reveal: 'wave', pose: 'crossed' },
+  // 竹井久：先占位，借和的长发模型换成红棕色头发、灰绿色眼睛
+  hisa: { model: 'models/vroid-g.v2.glb', hair: '#8a3a2e', eyes: '#5a7a6a', hairContrast: 0.6, reveal: 'slam', pose: 'edge' },
+  // 末原恭子：先占位，借玄的长发模型换成黑色头发、深蓝色眼睛
+  kyouko: { model: 'models/vroid-shino.v2.glb', hair: '#26242c', eyes: '#3a4a7a', hairContrast: 0.5, reveal: 'wave', pose: 'edge' },
+  // 涉谷尧深：先占位，借怜的短发模型换成深棕色头发、深棕色眼睛
+  takami: { model: 'models/vroid-f.v2.glb', hair: '#4a3328', eyes: '#5a3a2a', hairContrast: 0.6, reveal: 'wave', pose: 'lap' },
 };
 
-// 牌桌上要用到的全部模型文件（每局四个座位正好是这四个角色）
+// 牌桌上要用到的全部模型文件
 export const MODEL_URLS = [...new Set(Object.values(LOOKS).map((l) => l.model))];
 
 // 头像的五种表情：平常、开心、难过、吃惊、认真
@@ -56,12 +88,14 @@ export function defaultCutinArt(id: string, kind: string): { url: string; wide: 
 
 // 试玩页“素材”页面里换上的图（src/ui/skins.ts 读写），盖过上面的默认图。
 // face 头像框平时的头像，blank 放铳和终局没拿第一时的“懵逼”，riichi 立直切入，call 鸣牌（吃碰杠）切入，
-// win 和牌切入，ability 能力发动切入，result 结算画面，power 能力发动时的头像（怜演算时眼睛发光）
-export type SkinSlot = 'face' | 'blank' | 'power' | 'riichi' | 'call' | 'win' | 'ability' | 'result';
+// win 和牌切入，ability 能力发动切入，result 结算画面，power 能力发动时的头像（怜演算时眼睛发光）；
+// skill-<技能 id> 是单个技能发动时放的动画（只有 Character.skillArts 里列的技能有，比如爽的每朵云、每个神威）
+export type SkinSlot = 'face' | 'blank' | 'power' | 'riichi' | 'call' | 'win' | 'ability' | 'result' | `skill-${string}`;
 export interface SkinArt {
   url: string;
   w: number;
   h: number;
+  video?: boolean; // 视频（MP4、WebM），不是图
 }
 let skins: Record<string, Partial<Record<SkinSlot, SkinArt>>> = {};
 export function setSkins(next: typeof skins): void {
@@ -80,6 +114,11 @@ export function portraitUrl(id: string, face: Face): string {
 export const defaultPowerPortraitUrl = (id: string): string => defaultPortraitUrl(id, 'serious');
 export function powerPortraitUrl(id: string): string {
   return skinOf(id, 'power')?.url ?? defaultPowerPortraitUrl(id);
+}
+
+// 单个技能的动画，没换就是 undefined（发动时照常放“能力发动切入”）
+export function skillArt(id: string, skill: string): SkinArt | undefined {
+  return skinOf(id, `skill-${skill}`);
 }
 
 // 切入图：kind 是切入的种类（riichi、call、kan、win、ability），结算画面用 result

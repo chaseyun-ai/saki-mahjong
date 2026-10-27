@@ -1,5 +1,8 @@
 import type { Game } from '../engine/game';
 import type { TileId } from '../engine/tiles';
+import { stackAt } from '../engine/wall';
+
+export { STACKS_PER_WALL, stackAt } from '../engine/wall';
 
 // 牌山在桌上的物理位置。四家面前各 17 墩、每墩上下两张，共 68 墩。
 //
@@ -7,7 +10,6 @@ import type { TileId } from '../engine/tiles';
 // 分开处左边是摸牌的起点，往顺时针方向（每家的左手边）一直摸下去；右边 7 墩是王牌。
 // 王牌从分开处数：第 1、2 墩是岭上牌，第 3 墩起翻宝牌指示牌，下层是里宝牌。
 
-export const STACKS_PER_WALL = 17;
 const TOTAL_STACKS = 68;
 
 export interface WallSlot {
@@ -15,14 +17,6 @@ export interface WallSlot {
   stack: number; // 从这家的右端数第几墩，1..17
   level: 0 | 1; // 0 上层，1 下层
   faceUp: boolean;
-}
-
-// 从摸牌起点数第 p 墩（顺时针）
-export function stackAt(dealer: number, diceSum: number, p: number): { wall: number; stack: number } {
-  const owner = (dealer + diceSum - 1) % 4;
-  const idx = diceSum + p;
-  const wall = (((owner - Math.floor(idx / STACKS_PER_WALL)) % 4) + 4) % 4;
-  return { wall, stack: (idx % STACKS_PER_WALL) + 1 };
 }
 
 // 第 d 张摸到的牌原来所在的位置（d 从 0 开始，包括配牌）
@@ -41,7 +35,7 @@ export function wallSlots(g: Game): Map<TileId, WallSlot> {
   const sum = g.dice[0] + g.dice[1];
   const dealer = g.dealer;
   const out = new Map<TileId, WallSlot>();
-  const frontDrawn = 122 - w.live.length - w.overflow.length;
+  const frontDrawn = w.frontDrawn;
   w.live.forEach((t, k) => out.set(t, drawSlot(dealer, sum, frontDrawn + k)));
   // 开杠后从海底补进王牌的牌，留在原来的位置
   w.overflow.forEach((t, i) => out.set(t, drawSlot(dealer, sum, 121 - i)));

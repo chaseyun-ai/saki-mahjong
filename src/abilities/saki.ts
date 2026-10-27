@@ -1,6 +1,6 @@
 import type { Game } from '../engine/game';
 import { waitingKinds } from '../engine/shanten';
-import { kindOf, toCounts } from '../engine/tiles';
+import { kindLabel, kindOf, toCounts } from '../engine/tiles';
 import type { Ability } from './types';
 
 // 宫永咲：容易摸到能杠的牌，开杠后岭上牌经常就是她的和了牌。
@@ -50,5 +50,10 @@ export const sakiAbility: Ability = {
     if (pairs.length > 0 && g.rng.chance(PAIR_TILE_CHANCE)) {
       g.wall.bringToLive(0, (t) => pairs.includes(kindOf(t)), g.rng);
     }
+  },
+
+  insight(g, seat) {
+    const kinds = kanCandidates(g, seat);
+    return [kinds.length ? `在等杠：${kinds.map(kindLabel).join('、')}` : '手里还没有能杠的刻子', `听牌后开杠，岭上牌 ${RINSHAN_WIN_CHANCE * 100}% 是和了牌`];
   },
 };

@@ -1,20 +1,22 @@
 // 平衡测试：让四个电脑角色打很多场，统计每个角色的成绩
-// 用法：npx vite-node scripts/balance.ts [场数]
+// 用法：npx vite-node scripts/balance.ts [场数] [east|south]
 import { CHARACTERS } from '../src/abilities/characters';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
+import { Rng } from '../src/engine/rng';
 
 const games = Number(process.argv[2] ?? 200);
-const stats = new Map(CHARACTERS.map((c) => [c.id, { rankSum: 0, first: 0, score: 0, wins: 0, dealIns: 0, rinshan: 0, winPoints: 0 }]));
+const stats = new Map(CHARACTERS.map((c) => [c.id, { games: 0, rounds: 0, rankSum: 0, first: 0, score: 0, wins: 0, dealIns: 0, rinshan: 0, winPoints: 0 }]));
 let rounds = 0;
 
 for (let seed = 1; seed <= games; seed++) {
-  // 每场轮换座位，消除座位影响
-  const order = [0, 1, 2, 3].map((i) => CHARACTERS[(i + seed) % 4]);
-  const g = new Game({ seed, players: order.map((c) => ({ name: c.name, ability: c.ability })) });
+  // 每场随机抽四个人、随机座位，消除座位影响
+  const order = new Rng(seed * 31).shuffle([...CHARACTERS]).slice(0, 4);
+  const g = new Game({ seed, format: (process.argv[3] as 'east' | 'south') ?? 'east', players: order.map((c) => ({ name: c.name, ability: c.ability })) });
   g.onEvent((e) => {
     if (e.type !== 'roundEnd') return;
     rounds++;
+    for (const c of order) stats.get(c.id)!.rounds++;
     for (const w of e.result.wins) {
       const s = stats.get(order[w.seat].id)!;
       s.wins++;
@@ -33,6 +35,7 @@ for (let seed = 1; seed <= games; seed++) {
   }
   g.ranking().forEach((seat, rank) => {
     const s = stats.get(order[seat].id)!;
+    s.games++;
     s.rankSum += rank + 1;
     if (rank === 0) s.first++;
     s.score += g.players[seat].score;
@@ -46,12 +49,12 @@ for (const c of CHARACTERS) {
   console.log(
     [
       c.name,
-      (s.rankSum / games).toFixed(2),
-      `${((s.first / games) * 100).toFixed(0)}%`,
-      Math.round(s.score / games),
-      `${((s.wins / rounds) * 100).toFixed(1)}%`,
+      (s.rankSum / s.games).toFixed(2),
+      `${((s.first / s.games) * 100).toFixed(0)}%`,
+      Math.round(s.score / s.games),
+      `${((s.wins / s.rounds) * 100).toFixed(1)}%`,
       Math.round(s.winPoints / Math.max(1, s.wins)),
-      `${((s.dealIns / rounds) * 100).toFixed(1)}%`,
+      `${((s.dealIns / s.rounds) * 100).toFixed(1)}%`,
       s.rinshan,
     ].join('\t'),
   );

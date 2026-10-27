@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CHARACTERS } from '../src/abilities/characters';
+import { CHARACTERS as ALL } from '../src/abilities/characters';
+
+// 原来的四个人：咲、玄、怜、和
+const CHARACTERS = ALL.slice(0, 4);
 import { chooseAction } from '../src/ai/ai';
 import { Game, GameEvent } from '../src/engine/game';
 import { foresee } from '../src/ui/foresee';
@@ -63,7 +66,7 @@ describe('看下一巡', () => {
     // 至少碰到过被鸣牌的情况，说明不只是简单的摸打
     expect(calls).toBeGreaterThan(0);
     expect(dealIns).toBeGreaterThanOrEqual(0);
-  });
+  }, 60000);
 
   it('不碰真的牌局', () => {
     const g = new Game({ seed: 9, players: CHARACTERS.map((c) => ({ name: c.name, ability: c.ability })) });

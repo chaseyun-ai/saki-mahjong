@@ -33,6 +33,10 @@ export function tileHtml(id: TileId, opts: TileOpts = {}): string {
   return `<div class="${cls.join(' ')}"${data}><div class="face">${face(id)}</div></div>`;
 }
 
-export function backHtml(size: TileSize = 'pond'): string {
-  return `<div class="tile back t-${size}"></div>`;
+// 美穗子睁开右眼时，别人手牌的牌背按花色上色：万红、筒蓝、索绿、字牌白
+export type BackTint = 'm' | 'p' | 's' | 'z';
+export const tintOf = (t: TileId): BackTint => (['m', 'p', 's', 'z'] as const)[Math.min(3, Math.floor(kindOf(t) / 9))];
+
+export function backHtml(size: TileSize = 'pond', tint?: BackTint): string {
+  return `<div class="tile back t-${size}${tint ? ` tint tint-${tint}` : ''}"></div>`;
 }

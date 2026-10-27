@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { CHARACTERS } from '../src/abilities/characters';
+import { CHARACTERS as ALL } from '../src/abilities/characters';
+
+// 原来的四个人：咲、玄、怜、和
+const CHARACTERS = ALL.slice(0, 4);
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { TILE_COUNT } from '../src/engine/tiles';
 
 function tilesInPlay(g: Game): number[] {
   const all = [...g.wall.allTiles()];
+  // 加杠等别人抢杠时，那张牌既不在手里也还没进副露
+  if (g.kakanInfo) all.push(g.kakanInfo.tile);
   for (const p of g.players) {
     all.push(...p.hand);
     p.melds.forEach((m) => all.push(...m.tiles));

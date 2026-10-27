@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Game, GameEvent } from '../engine/game';
-import { TILE_COUNT, TileId, WIND_CN } from '../engine/tiles';
+import { TILE_COUNT, TileId, WIND_CN, kindOf } from '../engine/tiles';
 import { meldLayout } from '../ui/meldLayout';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
 import { Avatar, modelProgress } from './avatar';
@@ -13,6 +13,7 @@ import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
+import { TableColors, tableColors } from '../ui/theme';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -44,6 +45,8 @@ export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 
 const WALL_PITCH = TILE_W + 0.02;
 // 2.5D 时别家的第一组副露至少能摆到这里（座位本地 x，牌山末端附近），镜头取景按这个算
 const MELD_MIN_25D = 8 * (TILE_W + GAP) + 0.5;
+// 2.5D 时上家、下家的手牌比别的座位多往外推多少（牌宽）
+const SIDE_HAND_PUSH_25D = 0.7;
 
 // 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
 // 手牌、牌河、桌边、座位这些尺寸可以调，见 tableLayout.ts
@@ -173,6 +176,7 @@ interface Placement {
 
 interface TileObj {
   group: THREE.Group;
+  back: THREE.Mesh;
   shown: boolean;
   target: Placement | null;
 }
@@ -184,6 +188,7 @@ export interface SyncView {
   ids: string[];
   marked?: Set<TileId>; // 上方加个小三角的手牌（打出去能听牌的）
   airDraw?: TileId | null; // 自己立直后摸到、和不了的那张：不进手牌，停在手牌上方的空中，接着直接打进牌河
+  tintBacks?: Set<TileId>; // 美穗子睁眼：这些牌的牌背按花色上色（万红、筒蓝、索绿、字牌白）
 }
 
 export class Table3D {
@@ -192,12 +197,18 @@ export class Table3D {
   camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
   private atlas = new FaceAtlas();
   private tiles: TileObj[] = [];
+  private backMat: THREE.Material | null = null;
+  private tintMats: THREE.Material[] = [];
   private faceGeoms: THREE.PlaneGeometry[] = [];
   private consoleCanvas = document.createElement('canvas');
   private consoleTex: THREE.CanvasTexture;
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2(-9, -9);
   private hovered: TileId | null = null;
+  // 副露的间距：组与组之间多留多少、手牌和副露之间至少留多少（调试面板和截图比较方案时会改）
+  meldSpacing = { group: 0.1, hand: 0.25 };
+  // 抬起来的那张牌原本的位置：鼠标还在这里就算还指着它（不然指着牌下沿时，牌一抬就指不到、一落又指到，来回抽搐）
+  private hoverRest: { id: TileId; at: Placement } | null = null;
   // 鼠标移上移下的那两张牌，这一小会儿抬起、放下要快（雀魂一帧就到位）
   private hoverSnap: { ids: TileId[]; until: number } = { ids: [], until: 0 };
   private clickable = new Set<TileId>();
@@ -263,6 +274,8 @@ export class Table3D {
   private tableMats: TableMaterials | null = null;
   private feltMat: THREE.Material | null = null;
   private keyLight: THREE.DirectionalLight | null = null;
+  // 桌布、牌背、桌框的颜色跟着界面皮肤走，建牌桌时定下来
+  private colors: TableColors = tableColors();
 
   constructor(
     private container: HTMLElement,
@@ -289,11 +302,14 @@ export class Table3D {
     this.scene.add(this.dice.group);
     this.effects = new Effects(this.scene);
     this.buildRiichiSticks();
-    void this.atlas.draw().then(() => {
-      // 牌面画好后控制台上的宝牌也要重画
+    // 牌面画好、仪表盘用的字体下载好以后，仪表盘重画一次
+    const redrawConsole = () => {
       this.consoleKey = '';
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
-    });
+    };
+    void this.atlas.draw().then(redrawConsole);
+    const fonts = ["700 1em 'Barlow Condensed'", "900 1em 'Noto Sans SC'", this.colors.console.title];
+    void Promise.all(fonts.map((f) => document.fonts?.load(f, '东南西北一二三四局本场余0123456789,'))).then(redrawConsole, () => {});
 
     // 跟着容器大小走：窗口变了、旁边的面板变高变矮都要重新算画面比例
     this.resize();
@@ -318,8 +334,8 @@ export class Table3D {
   // ---------- 场景 ----------
 
   private buildRoom(): void {
-    this.scene.background = new THREE.Color('#0d2024');
-    this.scene.fog = new THREE.Fog('#0d2024', 40, 80);
+    this.scene.background = new THREE.Color(this.colors.room);
+    this.scene.fog = new THREE.Fog(this.colors.room, 40, 80);
 
     this.scene.add(new THREE.HemisphereLight('#dfefff', '#1b2a2c', 1.1));
     const key = new THREE.DirectionalLight('#fff4e0', 2.2);
@@ -330,13 +346,13 @@ export class Table3D {
     this.scene.add(key);
 
     // 桌子：黑色亮面，桌框只比桌布高一点，内侧一圈金属包边；尺寸变了会整个重建（buildTable）
-    const frameMat = new THREE.MeshStandardMaterial({ color: '#1d2023', roughness: 0.32, metalness: 0.25 });
-    const trimMat = new THREE.MeshStandardMaterial({ color: '#b9a477', roughness: 0.3, metalness: 0.8 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: this.colors.frame, roughness: 0.32, metalness: 0.25 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: this.colors.trim, roughness: 0.3, metalness: 0.8 });
     this.tableMats = {
       frame: frameMat,
       trim: trimMat,
       body: new THREE.MeshStandardMaterial({ color: '#1e2227', roughness: 0.36, metalness: 0.1 }),
-      floor: new THREE.MeshStandardMaterial({ color: '#10262a', roughness: 1 }),
+      floor: new THREE.MeshStandardMaterial({ color: this.colors.room, roughness: 1 }),
     };
     // 机身在桌框下面的阴影里，只靠灯光几乎全黑；给它一点房间的反光，弧面才看得出来
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -346,7 +362,7 @@ export class Table3D {
       (m as THREE.MeshStandardMaterial).envMap = room;
       (m as THREE.MeshStandardMaterial).envMapIntensity = k;
     }
-    this.feltMat = new THREE.MeshStandardMaterial({ map: feltTexture(), roughness: 0.95 });
+    this.feltMat = new THREE.MeshStandardMaterial({ map: feltTexture(this.colors), roughness: 0.95 });
     this.keyLight = key;
     this.buildTable();
 
@@ -408,7 +424,12 @@ export class Table3D {
     // 2.5D 时自己的手牌几乎正对镜头，灯又在镜头这边，亮面会把牌面照白一片，所以磨砂一点
     const matte = this.style === '25d' ? 0.62 : 0;
     const bodyMat = new THREE.MeshStandardMaterial({ color: '#f6f1e3', roughness: matte || 0.35 });
-    const backMat = new THREE.MeshStandardMaterial({ color: '#2f78a8', roughness: matte || 0.4 });
+    const backMat = new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: matte || 0.4 });
+    this.backMat = backMat;
+    // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
+    this.tintMats = ['#e0453a', '#3a6df0', '#2fb25a', '#f4f4f0'].map(
+      (c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.35, roughness: matte || 0.4 }),
+    );
     const faceMat = new THREE.MeshStandardMaterial({ map: this.atlas.texture, transparent: true, roughness: matte || 0.35 });
     for (let id = 0; id < TILE_COUNT; id++) {
       const group = new THREE.Group();
@@ -426,7 +447,7 @@ export class Table3D {
       group.userData.tileId = id;
       group.visible = false;
       this.scene.add(group);
-      this.tiles.push({ group, shown: false, target: null });
+      this.tiles.push({ group, back, shown: false, target: null });
     }
   }
 
@@ -969,6 +990,8 @@ export class Table3D {
       const t = this.tiles[id];
       const target = targets.get(id) ?? null;
       t.target = target;
+      const mat = view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
+      if (mat && t.back.material !== mat) t.back.material = mat;
       if (!target) {
         t.group.visible = false;
         t.shown = false;
@@ -996,6 +1019,18 @@ export class Table3D {
     return { pos, quat, scale };
   }
 
+  // 座位本地坐标里 z0 那一排的 x0，在 z1 那一排上画面横向位置相同的 x（按镜头的默认位置算）
+  private sameScreenX(seat: number, me: number, x0: number, z0: number, z1: number): number {
+    const cam = this.camera.clone();
+    cam.position.copy(this.rest.pos);
+    cam.lookAt(this.rest.look);
+    cam.updateMatrixWorld();
+    const sx = (x: number, z: number) => this.toWorld(seat, me, x, 0, z, STANDING).pos.project(cam).x;
+    const a = sx(0, z1);
+    const b = sx(1, z1) - a;
+    return Math.abs(b) < 1e-6 ? x0 : (sx(x0, z0) - a) / b;
+  }
+
   private placeSeat(g: Game, s: number, me: number, out: Map<TileId, Placement>): void {
     const p = g.players[s];
     const mine = s === me;
@@ -1020,7 +1055,7 @@ export class Table3D {
         }
         x += w + GAP;
       }
-      mx -= 0.3;
+      mx -= this.meldSpacing.group;
     }
 
     // 手牌：自己的稍微后仰朝向镜头，别人的立着背对我们
@@ -1054,12 +1089,17 @@ export class Table3D {
     // 宽度总按“手牌 + 摸到的那张”算，不管现在手里有没有摸到的牌：
     // 这样摸牌、打牌时这一排不左右挪，打掉摸到的牌其他牌也原地不动（和雀魂一样）
     const width = (13 - 3 * p.melds.length + 1) * step + 0.5;
-    // 副露多了手牌往左让，和副露之间留一点缝
-    const shift = p.melds.length ? Math.max(0, width / 2 - (mx - 0.25)) : 0;
+    // 副露多了手牌往左让，和副露之间留一点缝。自己的手牌离镜头近、看起来更往外，
+    // 按画面上对齐：手牌右沿在画面上正好落在第一组副露左边一点
+    const edge = mx - this.meldSpacing.hand;
+    const handEdge = mine ? this.sameScreenX(s, me, edge, this.dim.meldZ, this.dim.handZ + (hs - 1) * 1.2) : edge;
+    const shift = p.melds.length ? Math.max(0, width / 2 - handEdge) : 0;
     let x = -width / 2 - shift + TILE_W / 2;
     const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : STANDING;
     const y = tilting ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
-    const hz = this.dim.handZ + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
+    // 2.5D 时上家、下家的手牌斜着看过去离牌山很近，往桌边推一点
+    const side = this.style === '25d' && (s - me + 4) % 2 === 1 ? SIDE_HAND_PUSH_25D : 0;
+    const hz = this.dim.handZ + side + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
     // 倒牌开始后不再更新：和牌以后手牌张数可能变了，倒牌要照着和牌前那一刻的位置
     if (!tilting && !this.reveal) this.handRows[s] = { x0: x, step, hs, z: hz };
     // 2.5D 时自己的手牌两头往中间转一点
@@ -1067,6 +1107,7 @@ export class Table3D {
     const place = (t: TileId | null) => {
       const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
       const yaw = fan ? (-fan * (x + shift)) / (width / 2) : 0;
+      if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, rot, yaw, hs) };
       if (t !== null && p.hand.includes(t)) out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
       x += step;
     };
@@ -1155,96 +1196,143 @@ export class Table3D {
 
   // ---------- 中央控制台 ----------
 
-  // 大洋麻将机风格：黑色玻璃面板，每家面前一排红色数码管显示点数，中间是局况和宝牌
+  // 仪表盘：中间一块方屏写局数、本场、余牌、宝牌和供托；四边各家的风位和点数朝着自己，轮到谁谁那边亮一条。
+  // 颜色和局数的字体跟皮肤走（theme.ts 的 console）
   private drawConsole(g: Game, view: SyncView): void {
     // 发牌时每帧都会 sync，内容没变就不重画
     const key = JSON.stringify([
-      g.roundLabel(),
+      g.roundWind,
+      g.roundNumber,
+      g.honba,
       g.wall.remaining,
       g.riichiSticks,
       g.wall.doraRevealed,
       g.wall.doraIndicators,
-      g.players.map((p) => [p.score, p.riichi]),
+      g.players.map((p, s) => [p.score, p.riichi, g.seatWind(s)]),
       g.phase === 'turn' ? g.turn : -1,
       view.me,
       view.colors,
     ]);
     if (key === this.consoleKey) return;
     this.consoleKey = key;
+    const k = this.colors.console;
     const c = this.consoleCanvas.getContext('2d')!;
     const S = 512;
+    const M = S / 2;
+    const num = (px: number) => `700 ${px}px 'Barlow Condensed','Arial Narrow',sans-serif`;
+    const title = (px: number) => k.title.replace('1em', `${px}px`);
     c.setTransform(4, 0, 0, 4, 0, 0);
     c.imageSmoothingQuality = 'high';
-    const bg = c.createLinearGradient(0, 0, S, S);
-    bg.addColorStop(0, '#15181b');
-    bg.addColorStop(0.5, '#07090a');
-    bg.addColorStop(1, '#111417');
+    const bg = c.createRadialGradient(M, M, 40, M, M, M * 1.4);
+    bg.addColorStop(0, k.bg[0]);
+    bg.addColorStop(1, k.bg[1]);
     c.fillStyle = bg;
     c.fillRect(0, 0, S, S);
-    c.strokeStyle = 'rgba(200,180,130,0.35)';
-    c.lineWidth = 3;
-    c.strokeRect(8, 8, S - 16, S - 16);
+    c.strokeStyle = k.line;
+    c.globalAlpha = 0.5;
+    c.lineWidth = 2;
+    c.strokeRect(10, 10, S - 20, S - 20);
+    c.globalAlpha = 1;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    // 中间的液晶小屏：窄一点，给四边的点数让出位置，不被上家、下家的数码管压到
-    c.fillStyle = '#0d1a14';
+
+    // 中间的方屏
+    const P = 124;
+    c.fillStyle = 'rgba(0,0,0,0.35)';
     c.beginPath();
-    c.roundRect(S / 2 - 120, S / 2 - 112, 240, 196, 14);
+    c.roundRect(M - P, M - P, P * 2, P * 2, 18);
     c.fill();
-    c.strokeStyle = 'rgba(120,255,190,0.18)';
-    c.lineWidth = 2;
+    c.strokeStyle = k.line;
+    c.lineWidth = 2.5;
     c.stroke();
-    c.shadowColor = 'rgba(255,190,80,0.8)';
-    c.shadowBlur = 10;
-    c.fillStyle = '#ffc861';
-    c.font = "700 38px 'PingFang SC','Microsoft YaHei',sans-serif";
-    c.fillText(g.roundLabel(), S / 2, S / 2 - 76);
-    c.shadowColor = 'rgba(120,255,190,0.7)';
-    c.fillStyle = '#9ff5c8';
-    c.font = "500 24px 'PingFang SC','Microsoft YaHei',sans-serif";
-    c.fillText(`余 ${g.wall.remaining}　立直棒 ×${g.riichiSticks}`, S / 2, S / 2 - 34);
-    c.shadowBlur = 0;
-    // 宝牌指示牌：翻开的画牌面，没翻的画牌背
-    const w = 40;
-    const h = 54;
-    g.wall.doraIndicators.forEach((t, i) => {
-      const x = S / 2 + (i - 2.5) * (w + 6) + 3;
-      const y = S / 2 - 8;
-      c.fillStyle = i < g.wall.doraRevealed ? '#f6f1e3' : '#2f78a8';
+    // 方屏四角的小折线
+    c.lineWidth = 4;
+    for (let i = 0; i < 4; i++) {
+      c.save();
+      c.translate(M, M);
+      c.rotate((i * Math.PI) / 2);
       c.beginPath();
-      c.roundRect(x, y, w, h, 6);
+      c.moveTo(-P - 8, -P + 22);
+      c.lineTo(-P - 8, -P - 8);
+      c.lineTo(-P + 22, -P - 8);
+      c.stroke();
+      c.restore();
+    }
+    // 局数：东一局
+    c.fillStyle = k.accent;
+    c.shadowColor = k.accent;
+    c.shadowBlur = 12;
+    c.font = title(80);
+    c.fillText(`${WIND_CN[g.roundWind]}${'一二三四'[g.roundNumber]}局`, M, M - 56);
+    c.shadowBlur = 0;
+    // 本场、余牌
+    c.font = num(30);
+    c.fillStyle = k.dim;
+    c.textAlign = 'right';
+    c.fillText(`${g.honba} 本场`, M - 12, M + 4);
+    c.textAlign = 'left';
+    c.fillText(`余 ${g.wall.remaining}`, M + 12, M + 4);
+    c.textAlign = 'center';
+    c.fillStyle = k.line;
+    c.fillRect(M - 1, M - 10, 2, 28);
+    // 宝牌指示牌：翻开的画牌面，没翻的画牌背
+    const w = 36;
+    const h = 48;
+    g.wall.doraIndicators.forEach((t, i) => {
+      const x = M + (i - 2.5) * (w + 5) + 2.5;
+      const y = M + 28;
+      c.fillStyle = i < g.wall.doraRevealed ? '#f6f1e3' : this.colors.back;
+      c.beginPath();
+      c.roundRect(x, y, w, h, 5);
       c.fill();
       if (i < g.wall.doraRevealed) this.atlas.drawFace(c, faceIndex(t), x, y, w, h);
     });
+    // 供托：场上有几根立直棒
+    if (g.riichiSticks) {
+      drawStick(c, M - 24, M + 102, 64, 9);
+      c.font = num(28);
+      c.fillStyle = k.ink;
+      c.textAlign = 'left';
+      c.fillText(`×${g.riichiSticks}`, M + 16, M + 102);
+      c.textAlign = 'center';
+    }
+
+    // 四边：风位、点数，各朝各的人
     for (let s = 0; s < 4; s++) {
       const rel = (s - view.me + 4) % 4;
       c.save();
-      c.translate(S / 2, S / 2);
+      c.translate(M, M);
       c.rotate((-rel * Math.PI) / 2);
       const p = g.players[s];
       const active = g.phase === 'turn' && g.turn === s;
-      // 风位：亮着的是正在出牌的人
-      c.fillStyle = active ? '#ffc861' : '#1c2125';
-      c.beginPath();
-      c.roundRect(-196, 162, 56, 56, 8);
-      c.fill();
-      c.fillStyle = active ? '#1a1206' : view.colors[s];
-      c.font = "700 36px 'PingFang SC','Microsoft YaHei',sans-serif";
-      c.fillText(WIND_CN[g.seatWind(s) - 27], -168, 191);
-      // 点数：数码管
-      c.fillStyle = '#120708';
-      c.beginPath();
-      c.roundRect(-126, 160, 300, 60, 8);
-      c.fill();
-      sevenSeg(c, String(p.score).padStart(6, ' '), 24, 190, 42, p.score < 0 ? '#5fd0ff' : '#ff4a2e');
-      if (p.riichi) {
-        c.fillStyle = '#f7f3ea';
-        c.fillRect(-70, 136, 140, 12);
-        c.fillStyle = '#c0392b';
+      // 轮到谁，谁那边亮一条
+      if (active) {
+        c.fillStyle = k.accent;
+        c.shadowColor = k.accent;
+        c.shadowBlur = 16;
         c.beginPath();
-        c.arc(0, 142, 5, 0, Math.PI * 2);
+        c.roundRect(-140, 229, 280, 7, 3.5);
         c.fill();
+        c.shadowBlur = 0;
       }
+      // 风位：圆圈用角色的颜色，轮到他时填满
+      c.beginPath();
+      c.arc(-116, 190, 28, 0, Math.PI * 2);
+      c.fillStyle = active ? k.accent : 'rgba(0,0,0,0.4)';
+      c.fill();
+      c.strokeStyle = view.colors[s];
+      c.lineWidth = 4;
+      c.stroke();
+      c.fillStyle = active ? k.bg[1] : k.ink;
+      c.font = "900 34px 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif";
+      c.fillText(WIND_CN[g.seatWind(s) - 27], -116, 192);
+      // 点数
+      c.font = num(66);
+      c.fillStyle = p.score < 0 ? '#ff6b6b' : active ? k.accent : k.ink;
+      c.textAlign = 'left';
+      c.fillText(p.score.toLocaleString('en-US'), -78, 192);
+      c.textAlign = 'center';
+      if (p.riichi) drawStick(c, 0, 143, 160, 11);
       c.restore();
     }
     this.consoleTex.needsUpdate = true;
@@ -1427,7 +1515,26 @@ export class Table3D {
     const hit = this.raycaster.intersectObjects(cands, true)[0];
     let o: THREE.Object3D | null = hit?.object ?? null;
     while (o && o.userData.tileId === undefined) o = o.parent;
-    return o ? (o.userData.tileId as TileId) : null;
+    if (o) return o.userData.tileId as TileId;
+    return this.stillOnHovered() ? this.hovered : null;
+  }
+
+  // 什么都没指到时：鼠标还落在抬起的那张牌原本的位置上，就继续算指着它
+  private stillOnHovered(): boolean {
+    const rest = this.hoverRest;
+    if (this.hovered === null || rest?.id !== this.hovered || !this.clickable.has(rest.id)) return false;
+    const g = this.tiles[rest.id].group;
+    const saved = { pos: g.position.clone(), quat: g.quaternion.clone(), scale: g.scale.clone() };
+    g.position.copy(rest.at.pos);
+    g.quaternion.copy(rest.at.quat);
+    g.scale.setScalar(rest.at.scale);
+    g.updateMatrixWorld(true);
+    const hit = this.raycaster.intersectObject(g, true).length > 0;
+    g.position.copy(saved.pos);
+    g.quaternion.copy(saved.quat);
+    g.scale.copy(saved.scale);
+    g.updateMatrixWorld(true);
+    return hit;
   }
 
   // 摸牌：沿弧线从牌山飞到手里
@@ -1748,52 +1855,16 @@ function markGeometry(): THREE.ShapeGeometry {
   return new THREE.ShapeGeometry(shape);
 }
 
-// 七段数码管：text 以 (cx, cy) 为中心，h 是字高；没亮的段也淡淡地画出来
-const SEGMENTS: Record<string, string> = {
-  '0': 'abcdef',
-  '1': 'bc',
-  '2': 'abged',
-  '3': 'abgcd',
-  '4': 'fgbc',
-  '5': 'afgcd',
-  '6': 'afgedc',
-  '7': 'abc',
-  '8': 'abcdefg',
-  '9': 'abcdfg',
-  '-': 'g',
-  ' ': '',
-};
-
-function sevenSeg(c: CanvasRenderingContext2D, text: string, cx: number, cy: number, h: number, color: string): void {
-  const w = h * 0.5;
-  const th = h * 0.11;
-  const pitch = w + h * 0.2;
-  const x0 = cx - (text.length * pitch) / 2 + h * 0.1;
-  const half = h / 2;
-  const seg: Record<string, [number, number, number, number]> = {
-    a: [th / 2, 0, w - th, th],
-    g: [th / 2, half - th / 2, w - th, th],
-    d: [th / 2, h - th, w - th, th],
-    f: [0, th / 2, th, half - th],
-    b: [w - th, th / 2, th, half - th],
-    e: [0, half + th / 2, th, half - th],
-    c: [w - th, half + th / 2, th, half - th],
-  };
-  [...text].forEach((ch, i) => {
-    const on = SEGMENTS[ch] ?? '';
-    const x = x0 + i * pitch;
-    const y = cy - half;
-    for (const [k, [sx, sy, sw, sh]] of Object.entries(seg)) {
-      const lit = on.includes(k);
-      c.fillStyle = lit ? color : 'rgba(255,80,60,0.07)';
-      c.shadowColor = lit ? color : 'transparent';
-      c.shadowBlur = lit ? 8 : 0;
-      c.beginPath();
-      c.roundRect(x + sx, y + sy, sw, sh, th / 2);
-      c.fill();
-    }
-  });
-  c.shadowBlur = 0;
+// 仪表盘上画的千点棒：白色，中间一个红点
+function drawStick(c: CanvasRenderingContext2D, cx: number, cy: number, len: number, th: number): void {
+  c.fillStyle = '#f7f3ea';
+  c.beginPath();
+  c.roundRect(cx - len / 2, cy - th / 2, len, th, th / 2);
+  c.fill();
+  c.fillStyle = '#c4212c';
+  c.beginPath();
+  c.arc(cx, cy, th * 0.38, 0, Math.PI * 2);
+  c.fill();
 }
 
 let stickMat: THREE.MeshStandardMaterial | null = null;
@@ -1863,15 +1934,15 @@ function placeholder(color: string): THREE.Group {
   return g;
 }
 
-function feltTexture(): THREE.CanvasTexture {
+function feltTexture(colors: TableColors): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 1024;
   c.height = 1024;
   const ctx = c.getContext('2d')!;
   const grad = ctx.createRadialGradient(512, 512, 60, 512, 512, 720);
-  grad.addColorStop(0, '#2c7079');
-  grad.addColorStop(0.6, '#1e525a');
-  grad.addColorStop(1, '#12363c');
+  grad.addColorStop(0, colors.felt[0]);
+  grad.addColorStop(0.6, colors.felt[1]);
+  grad.addColorStop(1, colors.felt[2]);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 1024, 1024);
   // 细微的布纹噪点
@@ -1883,7 +1954,7 @@ function feltTexture(): THREE.CanvasTexture {
     img.data[i + 2] += n;
   }
   ctx.putImageData(img, 0, 0);
-  ctx.strokeStyle = 'rgba(240,195,90,0.25)';
+  ctx.strokeStyle = colors.feltLine;
   ctx.lineWidth = 3;
   ctx.strokeRect(150, 150, 724, 724);
   const t = new THREE.CanvasTexture(c);

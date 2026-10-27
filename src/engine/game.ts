@@ -1,4 +1,4 @@
-import type { Ability } from '../abilities/types';
+import { PRIORITY, type Ability, type DealRule, type DrawRule } from '../abilities/types';
 import { Rng } from './rng';
 import { Meld, WinResult, evaluateWin } from './score';
 import { shanten, waitingKinds } from './shanten';
@@ -12,7 +12,7 @@ import {
   kindOf,
   toCounts,
 } from './tiles';
-import { Wall } from './wall';
+import { Wall, isCornerDraw } from './wall';
 
 export type Action =
   | { type: 'discard'; tile: TileId; riichi?: boolean }
@@ -50,7 +50,8 @@ export interface PlayerState {
   kuikaeBan: Kind[];
 }
 
-export type Phase = 'turn' | 'calls' | 'roundEnd' | 'gameEnd';
+// predeal：发牌前等玩家选技能（玩家操作的座位有发牌前技能可选时），选好后调 deal()
+export type Phase = 'predeal' | 'turn' | 'calls' | 'roundEnd' | 'gameEnd';
 
 export interface WinInfo {
   seat: number;
@@ -75,18 +76,32 @@ export type GameEvent =
   | { type: 'draw'; seat: number }
   | { type: 'discard'; seat: number; tile: TileId; riichi: boolean }
   | { type: 'call'; seat: number; call: string }
-  | { type: 'ability'; seat: number; ability: string; text: string }
+  // target：能力作用在谁的摸牌上（没写就是发动能力的人自己）
+  | { type: 'ability'; seat: number; ability: string; text: string; target?: number }
   | { type: 'roundEnd'; result: RoundResult };
 
 export interface PlayerConfig {
   name: string;
   ability?: Ability | null;
+  // 玩家操作的座位：能主动开关技能的能力听玩家的，不替玩家做决定
+  manual?: boolean;
 }
 
 export interface GameOptions {
   seed: number;
   players: PlayerConfig[];
   startScore?: number;
+  // 每家开局的点数（团体赛：每人带着自己队伍现在的点数上场），盖过 startScore
+  scores?: number[];
+  // 上一场留下的立直棒（团体赛接着给下一个位置）
+  riichiSticks?: number;
+  // 起家（东 1 局的庄家）坐哪：界面开局时随机给；不给是 0 号位。片冈优希在场时一定是她
+  firstDealer?: number;
+  // east：东风战（东 4 局后有人到 30000 就结束，不到就南入）；
+  // south：半庄战（东南两场，南 4 局结束；南 4 局庄家连庄时，庄家第一、到 30000 就结束）；
+  // team：团体赛的半庄，打满东南两场，南 4 局庄家没连庄就结束，谁到 30000 都不提前结束，有人小于 0 立刻结束，
+  //   剩下的立直棒不给第一名，留给下一个位置
+  format?: 'east' | 'south' | 'team';
 }
 
 const WIND_NAMES = ['东', '南', '西', '北'];
@@ -95,11 +110,18 @@ export class Game {
   rng: Rng;
   players: PlayerState[];
   abilities: (Ability | null)[];
-  // 能力的私有状态，按座位存
+  // 能力的私有状态，按座位存：abilityState 每局清空，abilityGameState 整场都在
   abilityState: Record<string, unknown>[] = [{}, {}, {}, {}];
+  abilityGameState: Record<string, unknown>[] = [{}, {}, {}, {}];
+  // 哪些座位是玩家操作的（见 PlayerConfig.manual）
+  manual: boolean[] = [false, false, false, false];
+  format: 'east' | 'south' | 'team' = 'east';
 
+  // 第几局（从 1 起，每开一局加一，连庄也算）；发牌前等玩家选技能时还是上一局的
+  round = 0;
   roundWind = 0; // 0 东场，1 南场
-  roundNumber = 0; // 0-3，等于庄家座位
+  roundNumber = 0; // 0-3，东 1 局是 0
+  firstDealer = 0; // 起家（东 1 局的庄家）：见 GameOptions.firstDealer
   honba = 0;
   riichiSticks = 0;
   wall!: Wall;
@@ -118,6 +140,14 @@ export class Game {
   kanBy: number[] = [];
   noCallsYet = true;
   roundResult: RoundResult | null = null;
+  // 这一局发完配牌、庄家还没摸第一张时牌山的样子（给能力痕迹对照用）
+  dealtWall: { live: TileId[]; rinshan: TileId[] } = { live: [], rinshan: [] };
+  // 这一局对配牌定的规矩；调整完还没满足的（无解降级）记在 dealUnmet
+  dealRules: DealRule[] = [];
+  dealUnmet: DealRule[] = [];
+  // 正在调整配牌的人（他自己的规矩由他自己权衡，不拦他）；降级中的人：只顾比他先动的人的规矩
+  private dealActor: number | null = null;
+  private dealRelaxFor: number | null = null;
   events: GameEvent[] = [];
   private eventListeners: ((e: GameEvent) => void)[] = [];
 
@@ -126,7 +156,7 @@ export class Game {
     this.players = opts.players.map((p, seat) => ({
       seat,
       name: p.name,
-      score: opts.startScore ?? 25000,
+      score: opts.scores?.[seat] ?? opts.startScore ?? 25000,
       hand: [],
       melds: [],
       discards: [],
@@ -140,17 +170,38 @@ export class Game {
       kuikaeBan: [],
     }));
     this.abilities = opts.players.map((p) => p.ability ?? null);
-    this.startRound();
+    const yuuki = this.abilities.findIndex((a) => a?.firstDealer);
+    this.firstDealer = yuuki >= 0 ? yuuki : (opts.firstDealer ?? 0) % 4;
+    this.manual = opts.players.map((p) => !!p.manual);
+    this.format = opts.format ?? 'east';
+    this.riichiSticks = opts.riichiSticks ?? 0;
+    this.startOrWait();
   }
 
   // ---------- 查询 ----------
 
   get dealer(): number {
-    return this.roundNumber;
+    return (this.firstDealer + this.roundNumber) % 4;
+  }
+
+  // 这个人在每一圈的第几局坐庄（0–3）
+  dealerRound(seat: number): number {
+    return (seat - this.firstDealer + 4) % 4;
   }
 
   roundLabel(): string {
     return `${WIND_NAMES[this.roundWind]}${this.roundNumber + 1}局 ${this.honba}本场`;
+  }
+
+  // 打满东南两场（半庄战、团体赛）
+  get fullHanchan(): boolean {
+    return this.format !== 'east';
+  }
+
+  // 照计划这一局是不是最后 n 局里的（东风战最后是东 4，半庄战、团体赛是南 4；南入、连庄以后一直算）
+  isLastRounds(n: number): boolean {
+    const last = this.fullHanchan ? 7 : 3;
+    return this.roundWind * 4 + this.roundNumber > last - n;
   }
 
   seatWind(seat: number): Kind {
@@ -179,6 +230,26 @@ export class Game {
     return waitingKinds(toCounts(p.hand), p.melds.length);
   }
 
+  // 能力允不允许这家现在和牌（照的照魔镜那一局不和）。这是自己给自己的限制，被封印也照样
+  // 别人的能力也可能不许他和（涅莉的七姐妹）
+  canWin(seat: number): boolean {
+    if (!(this.abilities[seat]?.canWin?.(this, seat) ?? true)) return false;
+    return ![0, 1, 2, 3].some((o) => o !== seat && this.binds(o, seat) && !!this.active(o)?.forbidsWin?.(this, o, seat));
+  }
+
+  // 这家的能力这一局被别人封印了没有（爽的霍亚乌神威）。round 不写是现在这一局（发牌前是马上要开的那一局）
+  isSealed(seat: number, round = this.phase === 'predeal' ? this.round + 1 : this.round): boolean {
+    const own = this.abilities[seat];
+    if (own?.immune || own?.absolute) return false;
+    return this.abilities.some((a, o) => o !== seat && !!a?.seals?.(this, o, round));
+  }
+
+  // 这一局起作用的能力：被封印的算没有
+  active(seat: number): Ability | null {
+    const a = this.abilities[seat];
+    return a && !this.isSealed(seat, this.round) ? a : null;
+  }
+
   isFuriten(seat: number): boolean {
     const p = this.players[seat];
     if (p.furitenTemp || p.furitenRiichi) return true;
@@ -190,9 +261,98 @@ export class Game {
     return this.kanBy.length;
   }
 
+  // 有能力的座位，按“谁说了算”的顺序：priority 小的先动；一样时从庄家起按座位
+  abilityOrder(): number[] {
+    const pri = (s: number) => this.abilities[s]?.priority ?? PRIORITY.self;
+    return [0, 1, 2, 3]
+      .map((k) => (this.dealer + k) % 4)
+      .filter((s) => this.active(s))
+      .sort((a, b) => pri(a) - pri(b));
+  }
+
+  // 配牌时 seat 会拿到 live 里的哪几张（配牌前调用才有意义）：从庄家起一人一张，发 13 圈
+  dealIndices(seat: number): number[] {
+    const rel = (seat - this.dealer + 4) % 4;
+    return Array.from({ length: 13 }, (_, i) => i * 4 + rel);
+  }
+
+  // 这一家现在会拿到的配牌（配牌前调用才有意义）
+  dealHand(seat: number): TileId[] {
+    return this.dealIndices(seat).map((i) => this.wall.live[i]);
+  }
+
+  // 配牌调整期间补一条规矩（比如淡定好了自己的配牌以后）
+  addDealRule(r: DealRule): void {
+    if (this.binds(r.seat, r.target)) this.dealRules.push(r);
+  }
+
+  // from 的能力管不管得到 target（照这样 immune 的人只听自己和 absolute 的）
+  binds(from: number, target: number): boolean {
+    return from === target || !this.abilities[target]?.immune || !!this.abilities[from]?.absolute;
+  }
+
+  // 调整不下去时降级：fn 里的换牌只顾比 seat 先动的人的规矩
+  dealFallback<T>(seat: number, fn: () => T): T {
+    const prev = this.dealRelaxFor;
+    this.dealRelaxFor = seat;
+    try {
+      return fn();
+    } finally {
+      this.dealRelaxFor = prev;
+    }
+  }
+
+  // 配牌调整期间的把关：live 的这些位置换成这些牌以后，受影响的配牌上别人的规矩没有一条变差
+  private dealChangeOk(changes: [number, TileId][]): boolean {
+    const order = this.abilityOrder();
+    const limit = this.dealRelaxFor === null ? Infinity : order.indexOf(this.dealRelaxFor);
+    const bySeat = new Map<number, Map<number, TileId>>();
+    for (const [i, t] of changes) {
+      if (i >= 52) continue;
+      const seat = (this.dealer + (i % 4)) % 4;
+      if (!bySeat.has(seat)) bySeat.set(seat, new Map());
+      bySeat.get(seat)!.set(i, t);
+    }
+    for (const [seat, ch] of bySeat) {
+      // 别人换不到 immune 的人的配牌
+      if (this.dealActor !== null && !this.binds(this.dealActor, seat)) return false;
+      const idx = this.dealIndices(seat);
+      const before = idx.map((i) => this.wall.live[i]);
+      const after = idx.map((i) => ch.get(i) ?? this.wall.live[i]);
+      for (const r of this.dealRules) {
+        if (r.target !== seat || r.seat === this.dealActor || order.indexOf(r.seat) > limit) continue;
+        if (r.bad(after) > r.bad(before)) return false;
+      }
+    }
+    return true;
+  }
+
+  // 下一张牌（live[0]）谁摸：假设没人鸣牌
+  nextDrawer(): number {
+    if (this.phase === 'turn') return (this.turn + 1) % 4;
+    return ((this.lastDiscard?.seat ?? this.turn) + 1) % 4;
+  }
+
+  // live[k] 会被谁摸到：假设没人鸣牌、没人开杠
+  drawerOf(k: number): number {
+    return (this.nextDrawer() + k) % 4;
+  }
+
+  // 牌山转角：live 里哪些位置是一排牌山的最后一张（摸完就拐弯）。从前往后
+  cornerIndices(): number[] {
+    const sum = this.dice[0] + this.dice[1];
+    const front = this.wall.frontDrawn;
+    const out: number[] = [];
+    for (let k = 0; k < this.wall.live.length; k++) if (isCornerDraw(this.dealer, sum, front + k)) out.push(k);
+    return out;
+  }
+
   // ---------- 一局的流程 ----------
 
   private startRound(): void {
+    this.round++;
+    // 发牌前等玩家选技能的那一段结束了（不然 isSealed 之类会以为还在等下一局）
+    if (this.phase === 'predeal') this.phase = 'turn';
     this.wall = new Wall(this.rng);
     this.dice = [this.rng.int(6) + 1, this.rng.int(6) + 1];
     for (const p of this.players) {
@@ -218,13 +378,31 @@ export class Game {
     this.kanBy = [];
     this.noCallsYet = true;
     this.roundResult = null;
+    // 配牌：先由所有人定规矩，再依次调整（换牌不能让任何一条规矩变差），最后统一锁定、发牌
+    const order = this.abilityOrder();
+    this.dealRules = [];
+    // 爽的霍亚乌在她自己的 dealRules 里定下来（她最先动），后面被封印的人就不再出手
+    for (const s of order) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []).filter((r) => this.binds(r.seat, r.target)));
+    this.wall.guard = (changes) => this.dealChangeOk(changes);
+    try {
+      for (const s of order) {
+        this.dealActor = s;
+        this.active(s)?.beforeDeal?.(this, s);
+      }
+    } finally {
+      this.wall.guard = null;
+      this.dealActor = null;
+    }
+    this.dealUnmet = this.dealRules.filter((r) => r.bad(this.dealHand(r.target)) > 0);
+    for (let i = 0; i < 52; i++) this.wall.locked.add(this.wall.live[i], 'deal');
     for (let i = 0; i < 13; i++) {
       for (let k = 0; k < 4; k++) {
         this.players[(this.dealer + k) % 4].hand.push(this.wall.draw());
       }
     }
+    this.dealtWall = { live: this.wall.live.slice(), rinshan: this.wall.rinshan.slice() };
     this.emit({ type: 'roundStart', label: this.roundLabel() });
-    for (let s = 0; s < 4; s++) this.abilities[s]?.onRoundStart?.(this, s);
+    for (const s of this.abilityOrder()) this.active(s)!.onRoundStart?.(this, s);
     this.drawFor(this.dealer, false);
   }
 
@@ -233,7 +411,7 @@ export class Game {
       this.exhaustiveDraw();
       return;
     }
-    this.abilities[seat]?.beforeDraw?.(this, seat, rinshan);
+    this.applyDrawAbilities(seat, rinshan);
     const tile = rinshan ? this.wall.drawRinshan() : this.wall.draw();
     const p = this.players[seat];
     p.hand.push(tile);
@@ -243,7 +421,41 @@ export class Game {
     this.turn = seat;
     this.phase = 'turn';
     this.emit({ type: 'draw', seat });
-    this.abilities[seat]?.afterDraw?.(this, seat);
+    this.active(seat)?.afterDraw?.(this, seat);
+  }
+
+  // 摸牌前：控场的人按顺序先动、定规矩，摸牌的人自己的能力最后动，最后把违反规矩的牌换走
+  private applyDrawAbilities(seat: number, rinshan: boolean): void {
+    const w = this.wall;
+    const rules: DrawRule[] = [];
+    const union = (n: number) => (n === 0 ? null : (t: TileId) => rules.slice(0, n).some((r) => r.deny(t)));
+    for (const s of this.abilityOrder()) {
+      const a = this.active(s)!;
+      if (!a.beforeAnyDraw) continue;
+      w.deny = union(rules.length);
+      const r = a.beforeAnyDraw(this, s, seat, rinshan);
+      // 管不到 immune 的人：定的规矩不算（能力自己整理牌山的部分照做，比如衣安排海底）
+      if (r && this.binds(s, seat)) rules.push(r);
+    }
+    w.deny = union(rules.length);
+    this.active(seat)?.beforeDraw?.(this, seat, rinshan);
+    w.deny = null;
+    if (rules.length === 0) return;
+    const next = () => (rinshan ? w.rinshan[0] : w.live[0]);
+    const before = next();
+    if (before === undefined || !rules.some((r) => r.deny(before))) return;
+    // 换不出同时满足所有规矩的牌时，先满足先定的规矩
+    let n = rules.length;
+    for (; n > 0; n--) {
+      const deny = union(n)!;
+      if (!deny(before)) return;
+      const ok = rinshan ? w.bringToRinshan((t) => !deny(t), this.rng) : w.bringToLive(0, (t) => !deny(t), this.rng);
+      if (ok) break;
+    }
+    if (next() === before) return;
+    for (const r of rules.slice(0, n)) {
+      if (r.deny(before)) this.emit({ type: 'ability', seat: r.seat, ability: r.ability, text: r.text, target: seat });
+    }
   }
 
   private isFirstTurn(seat: number): boolean {
@@ -258,7 +470,7 @@ export class Game {
     const p = this.players[seat];
     const out: Action[] = [];
     if (p.drawn !== null) {
-      if (this.winResult(seat, p.drawn, true)) out.push({ type: 'tsumo' });
+      if (this.canWin(seat) && this.winResult(seat, p.drawn, true)) out.push({ type: 'tsumo' });
       if (this.isFirstTurn(seat)) {
         const kinds = new Set(p.hand.map(kindOf));
         if (YAOCHU_KINDS.filter((k) => kinds.has(k)).length >= 9) out.push({ type: 'kyuushu' });
@@ -288,16 +500,15 @@ export class Game {
       p.melds.every((m) => m.type === 'ankan') &&
       p.score >= 1000 &&
       this.wall.remaining >= 4;
-    const seenKinds = new Set<string>();
+    // 同一种牌每一张都能当立直宣言牌（包括刚摸到的那张），向听只算一次
+    const tenpaiAfter = new Map<string, boolean>();
     for (const t of p.hand) {
       if (p.kuikaeBan.includes(kindOf(t))) continue;
       out.push({ type: 'discard', tile: t });
       if (!canRiichi) continue;
       const key = `${kindOf(t)}-${isRed(t)}`;
-      if (seenKinds.has(key)) continue;
-      seenKinds.add(key);
-      const rest = p.hand.filter((x) => x !== t);
-      if (shanten(toCounts(rest), p.melds.length) === 0) out.push({ type: 'discard', tile: t, riichi: true });
+      if (!tenpaiAfter.has(key)) tenpaiAfter.set(key, shanten(toCounts(p.hand.filter((x) => x !== t)), p.melds.length) === 0);
+      if (tenpaiAfter.get(key)) out.push({ type: 'discard', tile: t, riichi: true });
     }
     return out;
   }
@@ -394,7 +605,7 @@ export class Game {
     this.rinshanDraw = false;
     this.lastDiscard = { seat, tile };
     this.emit({ type: 'discard', seat, tile, riichi });
-    this.abilities[seat]?.afterDiscard?.(this, seat, tile);
+    this.active(seat)?.afterDiscard?.(this, seat, tile);
     while (this.pendingDora > 0) {
       this.wall.revealDora();
       this.pendingDora--;
@@ -408,7 +619,7 @@ export class Game {
       if (o === seat) continue;
       const q = this.players[o];
       const opts: Action[] = [];
-      if (this.winResult(o, tile, false)) opts.push({ type: 'ron' });
+      if (this.canWin(o) && this.winResult(o, tile, false)) opts.push({ type: 'ron' });
       if (this.wall.remaining > 0 && !q.riichi) {
         const same = q.hand.filter((t) => kindOf(t) === kind);
         for (const pair of distinctPairs(same)) opts.push({ type: 'pon', tiles: pair });
@@ -584,7 +795,7 @@ export class Game {
     this.responses.clear();
     for (let o = 0; o < 4; o++) {
       if (o === seat) continue;
-      if (this.winResult(o, tile, false)) this.pending.set(o, [{ type: 'ron' }, { type: 'pass' }]);
+      if (this.canWin(o) && this.winResult(o, tile, false)) this.pending.set(o, [{ type: 'ron' }, { type: 'pass' }]);
     }
     if (this.pending.size > 0) {
       this.phase = 'calls';
@@ -708,7 +919,12 @@ export class Game {
     const isLast = this.roundNumber === 3;
     const dealerTop = scores[this.dealer] === top && scores.filter((s) => s === top).length === 1;
     let end = scores.some((s) => s < 0);
-    if (this.roundWind === 0) {
+    if (this.format === 'team') {
+      if (this.roundWind === 1 && isLast && !renchan) end = true;
+    } else if (this.format === 'south') {
+      if (this.roundWind >= 1 && isLast && renchan && dealerTop && top >= 30000) end = true;
+      if (this.roundWind >= 1 && isLast && !renchan) end = true;
+    } else if (this.roundWind === 0) {
       if (isLast && renchan && dealerTop && top >= 30000) end = true;
       if (isLast && !renchan && top >= 30000) end = true;
     } else {
@@ -730,11 +946,23 @@ export class Game {
         this.roundWind++;
       }
     }
-    this.startRound();
+    this.startOrWait();
+  }
+
+  // 玩家操作的座位有发牌前技能可选，就先停在 predeal 等玩家（电脑在 dealRules 里自己决定）
+  private startOrWait(): void {
+    const ask = this.manual.some((m, s) => m && !this.isSealed(s, this.round + 1) && (this.abilities[s]?.preDeal?.(this, s) ?? []).some((o) => o.enabled));
+    if (ask) this.phase = 'predeal';
+    else this.startRound();
+  }
+
+  // 玩家选好发牌前的技能（Ability.setPreDeal）以后发牌
+  deal(): void {
+    if (this.phase === 'predeal') this.startRound();
   }
 
   private finishGame(): void {
-    if (this.riichiSticks > 0) {
+    if (this.riichiSticks > 0 && this.format !== 'team') {
       const top = this.ranking()[0];
       this.players[top].score += 1000 * this.riichiSticks;
       this.riichiSticks = 0;
@@ -744,7 +972,8 @@ export class Game {
 
   // 名次：点数高的在前，同分时起家优先
   ranking(): number[] {
-    return [0, 1, 2, 3].sort((a, b) => this.players[b].score - this.players[a].score || a - b);
+    const from = (s: number) => (s - this.firstDealer + 4) % 4;
+    return [0, 1, 2, 3].sort((a, b) => this.players[b].score - this.players[a].score || from(a) - from(b));
   }
 }
 
