@@ -176,6 +176,7 @@ interface Placement {
 
 interface TileObj {
   group: THREE.Group;
+  body: THREE.Mesh;
   back: THREE.Mesh;
   shown: boolean;
   target: Placement | null;
@@ -189,6 +190,7 @@ export interface SyncView {
   marked?: Set<TileId>; // 上方加个小三角的手牌（打出去能听牌的）
   airDraw?: TileId | null; // 自己立直后摸到、和不了的那张：不进手牌，停在手牌上方的空中，接着直接打进牌河
   tintBacks?: Set<TileId>; // 美穗子睁眼：这些牌的牌背按花色上色（万红、筒蓝、索绿、字牌白）
+  deadly?: Set<TileId>; // 龙华的无极天：自己手里打出去会放铳的牌，牌身染红
 }
 
 export class Table3D {
@@ -199,6 +201,8 @@ export class Table3D {
   private tiles: TileObj[] = [];
   private backMat: THREE.Material | null = null;
   private tintMats: THREE.Material[] = [];
+  private bodyMat: THREE.Material | null = null;
+  private deadlyMat: THREE.Material | null = null;
   private faceGeoms: THREE.PlaneGeometry[] = [];
   private consoleCanvas = document.createElement('canvas');
   private consoleTex: THREE.CanvasTexture;
@@ -424,6 +428,8 @@ export class Table3D {
     // 2.5D 时自己的手牌几乎正对镜头，灯又在镜头这边，亮面会把牌面照白一片，所以磨砂一点
     const matte = this.style === '25d' ? 0.62 : 0;
     const bodyMat = new THREE.MeshStandardMaterial({ color: '#f6f1e3', roughness: matte || 0.35 });
+    this.bodyMat = bodyMat;
+    this.deadlyMat = new THREE.MeshStandardMaterial({ color: '#f08a80', emissive: '#d23a2e', emissiveIntensity: 0.35, roughness: matte || 0.35 });
     const backMat = new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: matte || 0.4 });
     this.backMat = backMat;
     // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
@@ -447,7 +453,7 @@ export class Table3D {
       group.userData.tileId = id;
       group.visible = false;
       this.scene.add(group);
-      this.tiles.push({ group, back, shown: false, target: null });
+      this.tiles.push({ group, body, back, shown: false, target: null });
     }
   }
 
@@ -992,6 +998,8 @@ export class Table3D {
       t.target = target;
       const mat = view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
       if (mat && t.back.material !== mat) t.back.material = mat;
+      const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
+      if (body && t.body.material !== body) t.body.material = body;
       if (!target) {
         t.group.visible = false;
         t.shown = false;

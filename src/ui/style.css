@@ -632,6 +632,15 @@ button {
   filter: brightness(0.7);
 }
 
+/* 龙华的无极天：打出去会放铳的牌标红 */
+.hand .tile.deadly {
+  background: #f3a9a1;
+  box-shadow:
+    0 3px 0 #b8473c,
+    0 0 0 2px #d23a2e,
+    0 4px 6px rgba(0, 0, 0, 0.35);
+}
+
 /* 打出去能听牌的牌：上方一个朝下的小三角 */
 .hand .tile.tenpai::after {
   content: '';

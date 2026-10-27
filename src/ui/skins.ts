@@ -36,12 +36,15 @@ export const SLOTS: { slot: SkinSlot; label: string; hint: string }[] = [
 function slotsOf(c: Character): { slot: SkinSlot; label: string; hint: string; skill?: boolean }[] {
   const skills = (c.skillArts ?? []).map((k) => ({
     slot: `skill-${k.id}` as SkinSlot,
-    label: `${k.name}动画`,
-    hint: `发动${k.name}时放这一段，盖过“能力发动切入”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）`,
+    label: k.label ?? `${k.name}动画`,
+    hint: k.hint ?? `发动${k.name}时放这一段，盖过“能力发动切入”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）`,
     skill: true,
   }));
   return [...SLOTS, ...skills];
 }
+
+// 技能动画格子没换图时显示的默认图：和牌的动画（天使和的和牌）用和牌切入，别的用能力发动切入
+const skillKind = (slot: SkinSlot) => (slot.endsWith('-win') ? 'win' : 'ability');
 
 const TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const VIDEO_TYPES = ['video/mp4', 'video/webm'];
@@ -159,7 +162,7 @@ export class SkinEditor {
     if (slot === 'face') return portraitUrl(id, 'neutral');
     if (slot === 'blank') return portraitUrl(id, 'surprised');
     if (slot === 'power') return powerPortraitUrl(id);
-    if (slot.startsWith('skill-')) return skinOf(id, slot)?.url ?? cutinArt(id, 'ability').url;
+    if (slot.startsWith('skill-')) return skinOf(id, slot)?.url ?? cutinArt(id, skillKind(slot)).url;
     return cutinArt(id, slot).url;
   }
 
@@ -167,7 +170,7 @@ export class SkinEditor {
     if (slot === 'face') return defaultPortraitUrl(id, 'neutral');
     if (slot === 'blank') return defaultPortraitUrl(id, 'surprised');
     if (slot === 'power') return defaultPowerPortraitUrl(id);
-    return defaultCutinArt(id, slot.startsWith('skill-') ? 'ability' : slot).url;
+    return defaultCutinArt(id, slot.startsWith('skill-') ? skillKind(slot) : slot).url;
   }
 
   private render = (): void => {

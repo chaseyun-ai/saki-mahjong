@@ -17,6 +17,10 @@ import { makoAbility } from './mako';
 import { hisaAbility } from './hisa';
 import { kyoukoAbility } from './kyouko';
 import { takamiAbility } from './takami';
+import { nodokaAbility, setNodokaCosts } from './nodoka';
+import { ryuukaAbility } from './ryuuka';
+import { sumireAbility } from './sumire';
+import { seraAbility } from './sera';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -45,6 +49,10 @@ export interface AiStyle {
   disrupt: boolean; // 末原恭子：桌上有能力起作用的人时能鸣就鸣，打乱流向
   harvest: boolean; // 涉谷尧深：第一巡打三元牌（种下），最后一局（收获）留着种下的牌、不弃和
   clouds: boolean; // 狮子原爽：留住云、神威送来的牌，往混一色做、能鸣就鸣；发动的局牌小先默听等改良
+  angel: boolean; // 原村和：变成天使和以后不再失误，读得出 8000 点以上的铳牌、不打它们
+  sniper: boolean; // 弘世堇：听牌时挑听目标多余牌的打法；有役就默听，只和目标打的牌
+  firepower: boolean; // 江口夕：从不默听、从不弃和，不到满贯先不和；不吃，只碰役牌；留着宝牌和役牌
+  mugoku: boolean; // 清水谷龙华：无极天的局读得出别人听什么，不打放铳的牌；看得出谁听牌了
 }
 
 export interface Character {
@@ -57,10 +65,11 @@ export interface Character {
   ability: Ability | null;
   ai: AiStyle;
   // 素材页给这几个技能各留一个动画槽，发动时放这一段（name 和能力发动时出的字一样）
-  skillArts?: { id: string; name: string }[];
+  // label、hint 是素材页上格子的名字和说明，不写按 name 来
+  skillArts?: { id: string; name: string; label?: string; hint?: string }[];
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -93,12 +102,17 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'nodoka',
-    cost: 1,
+    cost: 2,
     name: '原村和',
     school: '清澄高中',
     color: '#9b7fc4',
-    ability: null,
-    ai: { ...baseAi, mistakeRate: 0 },
+    ability: nodokaAbility,
+    skillArts: [
+      { id: 'angel', name: '天使和', label: '天使形态动画', hint: '变身天使和的那一局开头放这一段。变身以后头像框换成“能力发动头像”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）' },
+      { id: 'angel-win', name: '天使和和牌', label: '天使形态和牌动画', hint: '天使和荣和、自摸时放这一段，盖过“和牌切入”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）' },
+    ],
+    // 平时偶尔也会看漏，变成天使和以后不再失误
+    ai: { ...baseAi, mistakeRate: 0.03, angel: true },
   },
   {
     id: 'awai',
@@ -245,7 +259,50 @@ export const CHARACTERS: Character[] = [
     ability: takamiAbility,
     ai: { ...baseAi, harvest: true },
   },
+  {
+    id: 'izumi',
+    cost: 1,
+    name: '二条泉',
+    school: '千里山女子',
+    color: '#4f7fc4',
+    ability: null,
+    ai: { ...baseAi },
+  },
+  {
+    id: 'sumire',
+    cost: 2,
+    name: '弘世堇',
+    school: '白糸台高中',
+    color: '#3e5a96',
+    ability: sumireAbility,
+    skillArts: [{ id: 'snipe', name: '狙击' }],
+    ai: { ...baseAi, mistakeRate: 0.03, sniper: true },
+  },
+  {
+    id: 'sera',
+    cost: 3,
+    name: '江口夕',
+    school: '千里山女子',
+    color: '#c2552e',
+    ability: seraAbility,
+    ai: { ...baseAi, mistakeRate: 0.05, firepower: true },
+  },
+  {
+    id: 'ryuuka',
+    cost: 3,
+    name: '清水谷龙华',
+    school: '千里山女子',
+    color: '#4c7a62',
+    ability: ryuukaAbility,
+    skillArts: [
+      { id: 'pillow', name: '怜的膝枕' },
+      { id: 'mugoku', name: '无极天' },
+    ],
+    ai: { ...baseAi, mistakeRate: 0.03, useForesight: true, mugoku: true },
+  },
 ];
+
+setNodokaCosts(Object.fromEntries(CHARACTERS.map((c) => [c.id, c.cost])));
 
 export const characterById = (id: string): Character => {
   const c = CHARACTERS.find((x) => x.id === id);

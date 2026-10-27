@@ -70,6 +70,8 @@ export interface Ability {
   badge?(g: Game, seat: number): string | null;
   // 能看到自己下一次摸到的牌（怜）。看到的是哪张由 src/ai/forecast.ts 在复制的牌局上演算
   foresight?: { title: string };
+  // 先见只在某些局开着（龙华借怜的膝枕的那一局）；没写是一直开着
+  foresightOn?(g: Game, seat: number): boolean;
   // 发牌前可以选的技能：玩家操作时，发牌前弹出来让玩家选（选好调 setPreDeal）；电脑在 dealRules 里自己决定
   preDeal?(g: Game, seat: number): PreDealOption[];
   // values：带 stepper 的选项选好的数（涅莉分运势）
@@ -87,6 +89,11 @@ export interface Ability {
   // 玩家操作这个角色时的技能按钮（g.manual[seat] 为真时由玩家决定，否则能力自己按电脑的规矩决定）
   skill?(g: Game, seat: number): SkillButton | null;
   pressSkill?(g: Game, seat: number): void;
+  // 挡得住别人影响的比例（0–1，天使和是 0.5）：别人给她配牌、摸牌定的规矩每一条有这个概率不算，
+  // 别人调整配牌时这一局有这个概率碰不到她的配牌。absolute 的能力照样管得到
+  resist?(g: Game, seat: number): number;
+  // 现在是第二形态（天使和）：返回素材页里这个形态的动画 id。头像框换成能力发动头像，和牌放 `${id}-win` 的动画
+  form?(g: Game, seat: number): string | null;
 }
 
 export interface PreDealOption {

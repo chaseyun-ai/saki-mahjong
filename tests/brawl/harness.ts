@@ -108,7 +108,8 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
     const rs = rules;
     rules = [];
     lockedBefore = null;
-    if (rs.length === 0 || was?.has(got)) return;
+    // 天使和挡得住一半的规矩（挡掉哪条是随机的），不对账
+    if (rs.length === 0 || was?.has(got) || (g.active(e.seat)?.resist?.(g, e.seat) ?? 0) > 0) return;
     // 还能换的牌：没锁住、还在牌山（岭上摸牌时也算岭上牌）里
     const pool = [...g.wall.live, ...(g.rinshanDraw ? g.wall.rinshan : [])].filter((t) => !g.wall.locked.has(t));
     for (let n = rs.length; n > 0; n--) {

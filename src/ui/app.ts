@@ -5,6 +5,8 @@ import { akoDistance, akoSense } from '../abilities/ako';
 import { teruMirrored } from '../abilities/teru';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { kuroLost } from '../abilities/kuro';
+import { angelDanger, nodokaAngel } from '../abilities/nodoka';
+import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
 import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
@@ -291,7 +293,8 @@ export class App {
     this.team = { flow: this.teamFlow!, run, seats, start };
     this.auto = auto;
     const seed = Math.floor(Math.random() * 2 ** 31);
-    const game = new Game({ seed, format: 'team', firstDealer: Math.floor(Math.random() * 4), scores: start, riichiSticks: run.riichiSticks, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
+    const allies = seats.map((t) => run.teams[t].lineup.map((c) => c.id));
+    const game = new Game({ seed, format: 'team', firstDealer: Math.floor(Math.random() * 4), scores: start, riichiSticks: run.riichiSticks, allies, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
     this.beginGame(chars, game);
   }
 
@@ -534,7 +537,15 @@ export class App {
       this.cutinSeen.add(key);
     } else if (e.type === 'roundEnd') {
       if (e.result.wins.length) playWin();
-      for (const w of e.result.wins) this.bigFx(w.seat, w.from === null ? '自摸' : '荣和', 'win');
+      for (const w of e.result.wins) {
+        // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
+        const c = this.chars[w.seat];
+        const word = w.from === null ? '自摸' : '荣和';
+        const form = this.game!.active(w.seat)?.form?.(this.game!, w.seat);
+        const art = form ? skillArt(c.id, `${form}-win`) : undefined;
+        if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art })) continue;
+        this.bigFx(w.seat, word, 'win');
+      }
     }
   }
 
@@ -771,9 +782,18 @@ export class App {
       colors: this.chars.map((c) => c.color),
       ids: this.chars.map((c) => c.id),
       marked: new Set(this.showResult ? [] : this.preview.keys()),
+      deadly: this.showResult ? undefined : this.deadlyTiles(),
       airDraw: this.airDraw(),
       tintBacks: this.eyeOpen() && !this.vision ? new Set([1, 2, 3].flatMap((d) => g.players[(this.me + d) % 4].hand)) : undefined,
     });
+  }
+
+  // 龙华的无极天：手里打出去会放铳的牌标红
+  private deadlyTiles(): Set<TileId> {
+    const g = this.game!;
+    if (this.chars[this.me]?.id !== 'ryuuka' || !ryuukaMugoku(g, this.me) || this.vision || (g.phase !== 'turn' && g.phase !== 'calls')) return new Set();
+    const kinds = ryuukaDanger(g, this.me);
+    return new Set(g.players[this.me].hand.filter((t) => kinds.has(kindOf(t))));
   }
 
   // 自己立直后摸到、和不了也杠不了的那张（只能摸切）：牌桌上让它停在空中
@@ -791,7 +811,8 @@ export class App {
     const p = g.players[s];
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? 'active' : '';
     // 怜演算时换成“能力发动头像”（眼睛发光），头像框发绿光
-    const power = s === this.me && !!this.vision;
+    // 第二形态（天使和）也一直用能力发动头像
+    const power = (s === this.me && !!this.vision) || !!g.active(s)?.form?.(g, s);
     const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
     const badge = c.ability && g.isSealed(s) ? '封印' : c.ability?.badge?.(g, s);
     return `
@@ -851,7 +872,12 @@ export class App {
   // 鸣过牌以后，别人头像旁边的点：离听牌还差几步（听牌了亮「听」），不显示听什么
   private distHtml(s: number): string {
     const g = this.game!;
-    if (this.chars[this.me]?.id !== 'ako' || s === this.me || !akoSense(g, this.me) || (g.phase !== 'turn' && g.phase !== 'calls')) return '';
+    if (s === this.me || (g.phase !== 'turn' && g.phase !== 'calls')) return '';
+    // 龙华的无极天：只看得出听没听牌
+    if (this.chars[this.me]?.id === 'ryuuka' && ryuukaMugoku(g, this.me)) {
+      return ryuukaSensesTenpai(g, s) ? '<span class="dist tenpai" title="无极天：听牌了">听</span>' : '';
+    }
+    if (this.chars[this.me]?.id !== 'ako' || !akoSense(g, this.me)) return '';
     const d = akoDistance(g, s);
     const inner = d === 0 ? '听' : '●'.repeat(Math.min(3, d));
     return `<span class="dist${d === 0 ? ' tenpai' : ''}" title="距离感：${d === 0 ? '听牌了' : `还差 ${d} 步`}">${inner}</span>`;
@@ -897,8 +923,11 @@ export class App {
   // 指着会放铳的牌时她的提醒：第一张“有点不妙”，第二张不一样的“恐怕也不行”，再往后不说了
   private sayText(): string {
     const g = this.game!;
-    if (!this.isHiroe() || this.vision || !this.myDiscardTurn() || this.previewTile === null) return '';
-    if (this.dangerCache.at !== g.events.length) this.dangerCache = { at: g.events.length, kinds: this.chars[this.me].id === 'mako' ? makoDanger(g, this.me) : dangerKinds(g, this.me) };
+    // 天使和只读得出 8000 点以上的铳牌（不亮灯）
+    const angel = this.chars[this.me]?.id === 'nodoka' && nodokaAngel(g, this.me);
+    if (!(this.isHiroe() || angel) || this.vision || !this.myDiscardTurn() || this.previewTile === null) return '';
+    const id = this.chars[this.me].id;
+    if (this.dangerCache.at !== g.events.length) this.dangerCache = { at: g.events.length, kinds: id === 'mako' ? makoDanger(g, this.me) : angel ? angelDanger(g, this.me) : dangerKinds(g, this.me) };
     const k = kindOf(this.previewTile);
     if (!this.dangerCache.kinds.has(k)) return '';
     const key = this.turnKey();
@@ -1099,7 +1128,8 @@ export class App {
     const discardable = this.discardable();
     const sorted = p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b);
     // 能打的牌亮着，打出去能听牌的上面加个小三角
-    const classes = (t: TileId) => [discardable.has(t) ? 'can' : 'dim', ...(this.preview.has(t) ? ['tenpai'] : [])];
+    const deadly = this.deadlyTiles();
+    const classes = (t: TileId) => [discardable.has(t) ? 'can' : 'dim', ...(this.preview.has(t) ? ['tenpai'] : []), ...(deadly.has(t) ? ['deadly'] : [])];
     const hand = sorted.map((t) => tileHtml(t, { classes: classes(t), data: { tile: t } })).join('');
     const drawn =
       p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn, { classes: classes(p.drawn), data: { tile: p.drawn } })}</div>` : '';
@@ -1292,7 +1322,8 @@ export class App {
   private foresightBox(): string {
     const g = this.game!;
     const c = this.chars[this.me];
-    const fs = g.isSealed(this.me) ? undefined : c.ability?.foresight;
+    // 龙华只在借怜的膝枕的局看得见
+    const fs = g.isSealed(this.me) || c.ability?.foresightOn?.(g, this.me) === false ? undefined : c.ability?.foresight;
     if (!this.vision && (!fs || (g.phase !== 'turn' && g.phase !== 'calls'))) return '';
     const toki = this.isToki();
     const stamina = toki

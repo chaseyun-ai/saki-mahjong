@@ -83,8 +83,8 @@ export const SAWAYA_AI = {
   maxPerRound: 2, // 一局最多叫几样（霍亚乌也算一样）
 };
 
-// 能被霍亚乌封住、而且会控场的对手（只读牌的洋榎、美穗子不算；照、玄封不了）
-const CONTROL_FREE = ['hiroe', 'mihoko'];
+// 能被霍亚乌封住、而且会控场的对手（只读牌的洋榎、美穗子，只挡别人影响的天使和不算；照、玄封不了）
+const CONTROL_FREE = ['hiroe', 'mihoko', 'nodoka'];
 const controllers = (g: Game, seat: number) =>
   [0, 1, 2, 3].filter((s) => s !== seat && g.abilities[s] && !CONTROL_FREE.includes(g.abilities[s]!.id) && g.binds(seat, s) && !g.abilities[s]!.immune && !g.abilities[s]!.absolute);
 
