@@ -98,9 +98,10 @@ export interface GameOptions {
   // 起家（东 1 局的庄家）坐哪：界面开局时随机给；不给是 0 号位。片冈优希在场时一定是她
   firstDealer?: number;
   // east：东风战（东 4 局后有人到 30000 就结束，不到就南入）；
+  // south：半庄战（东南两场，南 4 局结束；南 4 局庄家连庄时，庄家第一、到 30000 就结束）；
   // team：团体赛的半庄，打满东南两场，南 4 局庄家没连庄就结束，谁到 30000 都不提前结束，有人小于 0 立刻结束，
   //   剩下的立直棒不给第一名，留给下一个位置
-  format?: 'east' | 'team';
+  format?: 'east' | 'south' | 'team';
 }
 
 const WIND_NAMES = ['东', '南', '西', '北'];
@@ -114,7 +115,7 @@ export class Game {
   abilityGameState: Record<string, unknown>[] = [{}, {}, {}, {}];
   // 哪些座位是玩家操作的（见 PlayerConfig.manual）
   manual: boolean[] = [false, false, false, false];
-  format: 'east' | 'team' = 'east';
+  format: 'east' | 'south' | 'team' = 'east';
 
   // 第几局（从 1 起，每开一局加一，连庄也算）；发牌前等玩家选技能时还是上一局的
   round = 0;
@@ -192,9 +193,14 @@ export class Game {
     return `${WIND_NAMES[this.roundWind]}${this.roundNumber + 1}局 ${this.honba}本场`;
   }
 
-  // 照计划这一局是不是最后 n 局里的（东风战最后是东 4，团体赛是南 4；南入、连庄以后一直算）
+  // 打满东南两场（半庄战、团体赛）
+  get fullHanchan(): boolean {
+    return this.format !== 'east';
+  }
+
+  // 照计划这一局是不是最后 n 局里的（东风战最后是东 4，半庄战、团体赛是南 4；南入、连庄以后一直算）
   isLastRounds(n: number): boolean {
-    const last = this.format === 'team' ? 7 : 3;
+    const last = this.fullHanchan ? 7 : 3;
     return this.roundWind * 4 + this.roundNumber > last - n;
   }
 
@@ -915,6 +921,9 @@ export class Game {
     let end = scores.some((s) => s < 0);
     if (this.format === 'team') {
       if (this.roundWind === 1 && isLast && !renchan) end = true;
+    } else if (this.format === 'south') {
+      if (this.roundWind >= 1 && isLast && renchan && dealerTop && top >= 30000) end = true;
+      if (this.roundWind >= 1 && isLast && !renchan) end = true;
     } else if (this.roundWind === 0) {
       if (isLast && renchan && dealerTop && top >= 30000) end = true;
       if (isLast && !renchan && top >= 30000) end = true;

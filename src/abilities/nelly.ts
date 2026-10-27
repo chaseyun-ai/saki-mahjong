@@ -59,7 +59,7 @@ const stateOf = (g: Game, seat: number) => {
 };
 
 // 这一场有几局可以分（东风战 4 局，团体赛 8 局）
-export const nellySlots = (g: Game) => (g.format === 'team' ? 8 : 4);
+export const nellySlots = (g: Game) => (g.fullHanchan ? 8 : 4);
 const SLOT_NAMES = ['东1', '东2', '东3', '东4', '南1', '南2', '南3', '南4'];
 
 // 第几局（东 1 是 0）

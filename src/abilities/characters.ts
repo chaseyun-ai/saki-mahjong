@@ -13,6 +13,10 @@ import { seikoAbility } from './seiko';
 import { yuAbility } from './yu';
 import { yuukiAbility } from './yuuki';
 import { tokiAbility } from './toki';
+import { makoAbility } from './mako';
+import { hisaAbility } from './hisa';
+import { kyoukoAbility } from './kyouko';
+import { takamiAbility } from './takami';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -36,6 +40,10 @@ export interface AiStyle {
   warm: boolean; // 松实宥：同样向听时留暖色牌
   speed: boolean; // 新子憧：能鸣就鸣；鸣过以后用距离感看谁听牌了
   fish: boolean; // 亦野诚子：能碰就碰，对子多时奔对对和
+  memory: boolean; // 染谷真子：读得出没有能力的人听什么，不打他们和得了的牌；留着染手的那门花色和字牌，染手能鸣
+  badWait: boolean; // 竹井久：能听烂听牌（只等一种牌）就听烂的
+  disrupt: boolean; // 末原恭子：桌上有能力起作用的人时能鸣就鸣，打乱流向
+  harvest: boolean; // 涉谷尧深：第一巡打三元牌（种下），最后一局（收获）留着种下的牌
 }
 
 export interface Character {
@@ -51,7 +59,7 @@ export interface Character {
   skillArts?: { id: string; name: string }[];
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -199,6 +207,42 @@ export const CHARACTERS: Character[] = [
     color: '#3a8fd0',
     ability: seikoAbility,
     ai: { ...baseAi, fish: true },
+  },
+  {
+    id: 'mako',
+    cost: 1,
+    name: '染谷真子',
+    school: '清澄高中',
+    color: '#3f8a5a',
+    ability: makoAbility,
+    ai: { ...baseAi, mistakeRate: 0.01, memory: true, damaMin: 3900 },
+  },
+  {
+    id: 'hisa',
+    cost: 3,
+    name: '竹井久',
+    school: '清澄高中',
+    color: '#b5413f',
+    ability: hisaAbility,
+    ai: { ...baseAi, mistakeRate: 0.03, badWait: true },
+  },
+  {
+    id: 'kyouko',
+    cost: 1,
+    name: '末原恭子',
+    school: '姬松高中',
+    color: '#5f6fa8',
+    ability: kyoukoAbility,
+    ai: { ...baseAi, mistakeRate: 0.02, disrupt: true, defensive: true },
+  },
+  {
+    id: 'takami',
+    cost: 2,
+    name: '涉谷尧深',
+    school: '白糸台高中',
+    color: '#8a6fb0',
+    ability: takamiAbility,
+    ai: { ...baseAi, harvest: true },
   },
 ];
 

@@ -78,7 +78,7 @@ export const yuukiAbility: Ability = {
   beforeDeal(g, seat) {
     if (!yuukiActive(g, seat)) return;
     const dealer = seat === g.dealer;
-    const max = dealer ? YUUKI.dealerSwaps : g.format === 'team' ? YUUKI.dealSwaps : YUUKI.dealSwapsEast;
+    const max = dealer ? YUUKI.dealerSwaps : g.fullHanchan ? YUUKI.dealSwaps : YUUKI.dealSwapsEast;
     const w = g.wall;
     const mine = g.dealIndices(seat);
     for (let n = 0; n < max; n++) {
@@ -113,7 +113,7 @@ export const yuukiAbility: Ability = {
     const w = g.wall;
     const good = useful(g, seat);
     if (yuukiActive(g, seat)) {
-      const chance = seat === g.dealer ? YUUKI.dealerGood : g.format === 'team' ? YUUKI.good : YUUKI.goodEast;
+      const chance = seat === g.dealer ? YUUKI.dealerGood : g.fullHanchan ? YUUKI.good : YUUKI.goodEast;
       if (!good(w.live[0]) && g.rng.chance(chance)) w.bringToLive(0, good, g.rng);
     } else if (good(w.live[0]) && g.rng.chance(YUUKI.southBad)) w.bringToLive(0, (t) => !good(t), g.rng);
   },
