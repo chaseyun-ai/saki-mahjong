@@ -5,6 +5,7 @@ import { akoDistance, akoSense } from '../abilities/ako';
 import { teruMirrored } from '../abilities/teru';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { kuroLost } from '../abilities/kuro';
+import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
@@ -534,7 +535,15 @@ export class App {
       this.cutinSeen.add(key);
     } else if (e.type === 'roundEnd') {
       if (e.result.wins.length) playWin();
-      for (const w of e.result.wins) this.bigFx(w.seat, w.from === null ? '自摸' : '荣和', 'win');
+      for (const w of e.result.wins) {
+        // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
+        const c = this.chars[w.seat];
+        const word = w.from === null ? '自摸' : '荣和';
+        const form = this.game!.active(w.seat)?.form?.(this.game!, w.seat);
+        const art = form ? skillArt(c.id, `${form}-win`) : undefined;
+        if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art })) continue;
+        this.bigFx(w.seat, word, 'win');
+      }
     }
   }
 
@@ -791,7 +800,8 @@ export class App {
     const p = g.players[s];
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? 'active' : '';
     // 怜演算时换成“能力发动头像”（眼睛发光），头像框发绿光
-    const power = s === this.me && !!this.vision;
+    // 第二形态（天使和）也一直用能力发动头像
+    const power = (s === this.me && !!this.vision) || !!g.active(s)?.form?.(g, s);
     const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
     const badge = c.ability && g.isSealed(s) ? '封印' : c.ability?.badge?.(g, s);
     return `
@@ -897,8 +907,11 @@ export class App {
   // 指着会放铳的牌时她的提醒：第一张“有点不妙”，第二张不一样的“恐怕也不行”，再往后不说了
   private sayText(): string {
     const g = this.game!;
-    if (!this.isHiroe() || this.vision || !this.myDiscardTurn() || this.previewTile === null) return '';
-    if (this.dangerCache.at !== g.events.length) this.dangerCache = { at: g.events.length, kinds: this.chars[this.me].id === 'mako' ? makoDanger(g, this.me) : dangerKinds(g, this.me) };
+    // 天使和只读得出 8000 点以上的铳牌（不亮灯）
+    const angel = this.chars[this.me]?.id === 'nodoka' && nodokaAngel(g, this.me);
+    if (!(this.isHiroe() || angel) || this.vision || !this.myDiscardTurn() || this.previewTile === null) return '';
+    const id = this.chars[this.me].id;
+    if (this.dangerCache.at !== g.events.length) this.dangerCache = { at: g.events.length, kinds: id === 'mako' ? makoDanger(g, this.me) : angel ? angelDanger(g, this.me) : dangerKinds(g, this.me) };
     const k = kindOf(this.previewTile);
     if (!this.dangerCache.kinds.has(k)) return '';
     const key = this.turnKey();

@@ -125,6 +125,8 @@ describe('园城寺怜：演算出来的下一张', () => {
           (g as unknown as { startRound(): void }).startRound();
           g.onEvent((e) => {
             if (e.type !== 'draw' || e.seat === kasumi || g.rinshanDraw) return;
+            // 天使和挡得住一半的规矩，不算
+            if ((g.active(e.seat)?.resist?.(g, e.seat) ?? 0) > 0) return;
             const suit = kasumiSuit(g, kasumi);
             if (suit === null) return;
             // 牌山里别的花色都摸光了（或被别的能力锁住）才挡不住；怜不锁牌，不算理由

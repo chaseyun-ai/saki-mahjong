@@ -1,6 +1,7 @@
 import type { AiStyle } from '../abilities/characters';
 import { awaiWaitingForCorner } from '../abilities/awai';
 import { dangerKinds, readOthers } from '../abilities/hiroe';
+import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
 import { koromoHaiteiOn } from '../abilities/koromo';
@@ -250,8 +251,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 读得出别人听什么：洋榎、照魔镜看过以后的照、睁开右眼的电脑美穗子（玩家操作的美穗子只看得到花色）
   const eyeReads = style.eye && mihokoEyeOpen(g, seat) && !g.manual[seat];
   // 真子只读得出没有能力的人
-  const reader = !sealed && (style.reads || style.memory || eyeReads || (style.mirror && teruMirrored(g, seat)));
-  const readDanger = !reader ? null : style.memory ? makoDanger(g, seat) : dangerKinds(g, seat);
+  // 天使和只读得出 8000 点以上的铳牌
+  const angel = style.angel && nodokaAngel(g, seat);
+  const reader = !sealed && (style.reads || style.memory || eyeReads || (style.mirror && teruMirrored(g, seat)) || angel);
+  const readDanger = !reader ? null : style.memory ? makoDanger(g, seat) : angel ? angelDanger(g, seat) : dangerKinds(g, seat);
+  // 天使和专注对局，不失误
+  const mistakeRate = angel ? 0 : style.mistakeRate;
   // 美穗子睁眼：立直的人手里没有的花色是安全牌
   // 张数是 3 的倍数的花色多半没有他的听牌（门清的七对子例外），危险度压到 1
   const eyeSafe = style.eye && !sealed ? new Map(threats(g, seat).map((t) => [t, mihokoSafeKinds(g, seat, t)])) : null;
@@ -313,7 +318,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 失误先掷（随机数用掉的时刻和别人一样），再演算：演算拿到的随机数和之后真的牌局一致
   let slip: boolean | null = null;
   if (style.useForesight && !sealed) {
-    slip = cands.length > 1 && g.rng.chance(style.mistakeRate);
+    slip = cands.length > 1 && g.rng.chance(mistakeRate);
     const t = forecastNextDraw(g, seat, { discard: cands[0].a.tile });
     if (t !== null) {
       for (const x of cands) {
@@ -396,7 +401,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     }
   }
 
-  const slipped = slip ?? (cands.length > 1 && g.rng.chance(style.mistakeRate));
+  const slipped = slip ?? (cands.length > 1 && g.rng.chance(mistakeRate));
   // 读得出别人听什么时，失误也不会失误到放铳的牌上
   // 玄失误也不会失误到宝牌上
   const doraSlip = style.keepDora && isDoraTile(g, cands[1]?.a.tile ?? -1) && !isDoraTile(g, best.a.tile);

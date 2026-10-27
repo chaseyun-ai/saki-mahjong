@@ -149,6 +149,8 @@ export class Game {
   // 正在调整配牌的人（他自己的规矩由他自己权衡，不拦他）；降级中的人：只顾比他先动的人的规矩
   private dealActor: number | null = null;
   private dealRelaxFor: number | null = null;
+  // 这一局调整配牌时碰不到谁的配牌（天使和挡掉的）：`${调整的人}-${配牌的人}`
+  private dealShrugged = new Set<string>();
   events: GameEvent[] = [];
   private eventListeners: ((e: GameEvent) => void)[] = [];
 
@@ -284,12 +286,19 @@ export class Game {
 
   // 配牌调整期间补一条规矩（比如淡定好了自己的配牌以后）
   addDealRule(r: DealRule): void {
-    if (this.binds(r.seat, r.target)) this.dealRules.push(r);
+    if (this.binds(r.seat, r.target) && !this.shrugs(r.seat, r.target)) this.dealRules.push(r);
   }
 
   // from 的能力管不管得到 target（照这样 immune 的人只听自己和 absolute 的）
   binds(from: number, target: number): boolean {
     return from === target || !this.abilities[target]?.immune || !!this.abilities[from]?.absolute;
+  }
+
+  // target 这一下挡住了 from 的影响（天使和：一半的概率）。absolute 的挡不住；没有 resist 的人不掷随机数
+  private shrugs(from: number, target: number): boolean {
+    if (from === target || this.abilities[from]?.absolute) return false;
+    const r = this.active(target)?.resist?.(this, target) ?? 0;
+    return r > 0 && this.rng.chance(r);
   }
 
   // 调整不下去时降级：fn 里的换牌只顾比 seat 先动的人的规矩
@@ -317,6 +326,7 @@ export class Game {
     for (const [seat, ch] of bySeat) {
       // 别人换不到 immune 的人的配牌
       if (this.dealActor !== null && !this.binds(this.dealActor, seat)) return false;
+      if (this.dealShrugged.has(`${this.dealActor}-${seat}`)) return false;
       const idx = this.dealIndices(seat);
       const before = idx.map((i) => this.wall.live[i]);
       const after = idx.map((i) => ch.get(i) ?? this.wall.live[i]);
@@ -383,7 +393,9 @@ export class Game {
     const order = this.abilityOrder();
     this.dealRules = [];
     // 爽的霍亚乌在她自己的 dealRules 里定下来（她最先动），后面被封印的人就不再出手
-    for (const s of order) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []).filter((r) => this.binds(r.seat, r.target)));
+    for (const s of order) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []).filter((r) => this.binds(r.seat, r.target) && !this.shrugs(r.seat, r.target)));
+    this.dealShrugged.clear();
+    for (const s of order) for (let t = 0; t < 4; t++) if (this.shrugs(s, t)) this.dealShrugged.add(`${s}-${t}`);
     this.wall.guard = (changes) => this.dealChangeOk(changes);
     try {
       for (const s of order) {
@@ -436,7 +448,8 @@ export class Game {
       w.deny = union(rules.length);
       const r = a.beforeAnyDraw(this, s, seat, rinshan);
       // 管不到 immune 的人：定的规矩不算（能力自己整理牌山的部分照做，比如衣安排海底）
-      if (r && this.binds(s, seat)) rules.push(r);
+      // 天使和挡掉一半
+      if (r && this.binds(s, seat) && !this.shrugs(s, seat)) rules.push(r);
     }
     w.deny = union(rules.length);
     this.active(seat)?.beforeDraw?.(this, seat, rinshan);
