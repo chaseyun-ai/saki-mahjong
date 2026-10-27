@@ -2,7 +2,7 @@ import { CHARACTERS, Character } from '../abilities/characters';
 import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
-import { teruMirrored } from '../abilities/teru';
+import { TERU, TERU_TIERS, TERU_TOP, teruLadder, teruMirrored } from '../abilities/teru';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { kuroLost } from '../abilities/kuro';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
@@ -764,7 +764,7 @@ export class App {
       : [1, 2, 3]
           .map((s) => {
             const c = this.chars[s];
-            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
+            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div>${this.towerHtml(s)}</div>`;
           })
           .join('');
     hud.innerHTML = `
@@ -819,6 +819,7 @@ export class App {
       <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
         <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
+        ${this.towerHtml(s)}
         <div class="seat-info">${c.name}</div>
       </div>`;
   }
@@ -918,6 +919,29 @@ export class App {
     const lines = c.ability ? c.ability.insight?.(g, s) ?? [c.ability.description] : ['没有能力，只靠牌效和防守'];
     const name = c.ability ? c.ability.name : '无能力';
     return `<span class="mirror" tabindex="0" aria-label="照魔镜：${c.name}">镜<span class="mirror-pop"><b>${c.name} · ${name}</b>${lines.map((l) => `<span>${l}</span>`).join('')}</span></span>`;
+  }
+
+  // ---------- 照：天梯 ----------
+
+  // 头像旁边的宝塔：八层（越往上越窄），顶上是役满的塔尖；站到的那几层亮金色，下一层闪；
+  // 天梯断了、还没重新起胡时塔变灰。底下八颗叽叽叽（自摸次数）。鼠标停在塔上看站在哪、下一次要和多少
+  private towerHtml(s: number): string {
+    const g = this.game!;
+    if (this.chars[s]?.id !== 'teru' || !teruMirrored(g, s) || g.isSealed(s)) return '';
+    const { level, next, broke, kiki } = teruLadder(g, s);
+    const tiers = TERU_TIERS.slice(0, TERU_TOP - 1)
+      .map((name, i) => {
+        const n = i + 1;
+        const cls = n <= level ? ' lit' : n === next ? ' next' : '';
+        return `<i class="tt-tier${cls}" style="--i:${i}">${name}</i>`;
+      })
+      .reverse()
+      .join('');
+    const pips = Array.from({ length: TERU.kiki }, (_, i) => `<i${i < kiki ? ' class="on"' : ''}></i>`).join('');
+    const head =
+      level >= TERU_TOP ? '登顶了（役满），下一次从 1 番重新爬' : level ? `站在${TERU_TIERS[level - 1]}，下一次要正好和${TERU_TIERS[next - 1]}` : broke ? `天梯断了（${broke}），从 1 番起胡` : '先和一个 1 番起胡';
+    const note = `${head}；叽叽叽 ${kiki}/${TERU.kiki}`;
+    return `<span class="teru-tower${broke && !level ? ' broken' : ''}" title="${note}"><i class="tt-spire${level >= TERU_TOP ? ' lit' : ''}"></i>${tiers}<span class="tt-kiki">${pips}</span></span>`;
   }
 
   // 指着会放铳的牌时她的提醒：第一张“有点不妙”，第二张不一样的“恐怕也不行”，再往后不说了
@@ -1096,6 +1120,7 @@ export class App {
         <div class="nameplate">
           <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
           <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div>
+          ${this.towerHtml(s)}
         </div>
         <div class="ohand">${backs}</div>
         <div class="melds">${this.meldsHtml(p.melds, s)}</div>
@@ -1392,7 +1417,7 @@ export class App {
     const badge = c.ability.badge?.(g, this.me);
     return `
       <div class="ability-panel" style="--c:${c.color}">
-        <div class="ab-name">${c.ability.name}${lost ? '<span class="lost">整场失效</span>' : ''}${badge ? `<span class="ab-badge">${badge}</span>` : ''}</div>
+        <div class="ab-name">${this.towerHtml(this.me)}${c.ability.name}${lost ? '<span class="lost">整场失效</span>' : ''}${badge ? `<span class="ab-badge">${badge}</span>` : ''}</div>
         <div class="ab-desc">${c.ability.description}</div>
         ${extra}
       </div>`;

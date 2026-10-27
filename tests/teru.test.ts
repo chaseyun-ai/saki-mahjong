@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { TERU, teruMirrored, teruStreak, teruWinValue } from '../src/abilities/teru';
+import { TERU, TERU_TOP, teruLadder, teruMirrored, teruTier } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
@@ -64,89 +64,120 @@ describe('宫永照', () => {
     expect(laterWins).toBeGreaterThan(3);
   }, 120000);
 
-  it('连续和了：每次和了都不小于上一次才接上；和小了、别人和、流局就断', () => {
-    let kept = 0;
+  it('天梯：起胡 1 番，每次正好和出下一层才往上爬；大了小了、别人和、流局都从塔底重来，役满直接登顶', () => {
+    let climbed = 0;
     let broken = 0;
+    let top = 0;
     for (let seed = 1; seed <= 30; seed++) {
       play(seed, LINEUPS[seed % 4], {
         setup: (g, me) => {
           // 自己按规则记一份，和能力里的对照
-          let count = 0;
-          let last = 0;
-          let dealer = false;
+          let level = 0;
           g.onEvent((e) => {
-            if (e.type === 'roundStart') {
-              expect(teruStreak(g, me).count).toBe(count);
-              if (count) expect(teruStreak(g, me).min).toBe(last);
-              dealer = g.dealer === me;
-            }
+            if (e.type === 'roundStart') expect(teruLadder(g, me).level).toBe(level);
             if (e.type !== 'roundEnd' || e.result.kind === 'abortive') return;
             const w = e.result.wins.find((x) => x.seat === me);
-            if (!w) {
-              if (count) broken++;
-              count = 0;
-              return;
-            }
-            const v = teruWinValue(w.result, w.from === null, dealer);
-            if (count === 0 || v >= last) {
-              if (count) kept++;
-              count++;
-              last = v;
+            const next = level >= TERU_TOP ? 1 : level + 1;
+            const tier = w ? teruTier(w.result) : 0;
+            if (w && (tier === next || tier === TERU_TOP)) {
+              climbed++;
+              level = tier === TERU_TOP ? TERU_TOP : next;
+              if (level === TERU_TOP) top++;
             } else {
-              broken++;
-              count = 0;
+              if (level > 0 && level < TERU_TOP) broken++;
+              level = 0;
             }
           });
         },
       });
     }
-    expect(kept).toBeGreaterThan(0);
+    expect(climbed).toBeGreaterThan(5);
     expect(broken).toBeGreaterThan(0);
+    console.log({ climbed, broken, top });
   }, 120000);
 
-  it('连和中摸牌容易摸到进张（还没听牌时）；电脑的照不和不够大的牌（牌山还多时）', () => {
-    let streakDraws = 0;
-    let streakUseful = 0;
-    let plainDraws = 0;
-    let plainUseful = 0;
-    let smallSkipped = 0;
+  it('站得越高摸牌越容易是进张（还没听牌时）；电脑的照不和比下一层小的牌（牌山还多时）', () => {
+    const n = { high: 0, highGood: 0, low: 0, lowGood: 0, skipped: 0 };
     for (let seed = 1; seed <= 30; seed++) {
       play(seed, LINEUPS[seed % 4], {
         before: (g, me) => {
           if (g.phase === 'turn' && g.turn !== me) return;
-          const acts = g.legalActions(me);
-          const win = acts.find((a) => a.type === 'tsumo' || a.type === 'ron');
-          const { count, min } = teruStreak(g, me);
-          if (!win || count === 0 || g.wall.remaining <= TERU.aiForceWin) return;
+          if (!teruMirrored(g, me) || g.wall.remaining <= TERU.aiForceWin) return;
+          const win = g.legalActions(me).find((a) => a.type === 'tsumo' || a.type === 'ron');
+          if (!win) return;
           const tsumo = win.type === 'tsumo';
           const tile = tsumo ? g.players[me].drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
-          const v = teruWinValue(g.winResult(me, tile, tsumo)!, tsumo, me === g.dealer);
-          if (v < min) {
-            smallSkipped++;
-            expect(chooseAction(g, me, byId('teru').ai).type).not.toBe(win.type);
-          }
+          const tier = teruTier(g.winResult(me, tile, tsumo)!);
+          const a = chooseAction(g, me, byId('teru').ai).type;
+          if (tier < teruLadder(g, me).next) {
+            n.skipped++;
+            expect(a).not.toBe(win.type);
+          } else if (!g.isLastRounds(1)) expect(a).toBe(win.type);
         },
         setup: (g, me) => {
+          // 隔一局把她放到跳满那一层（配牌已经发完，只看摸牌）
+          let rounds = 0;
           g.onEvent((e) => {
-            if (e.type !== 'draw' || e.seat !== me || g.rinshanDraw) return;
+            if (e.type === 'roundStart' && ++rounds % 2 === 0) (g.abilityGameState[me] as { level?: number }).level = 6;
+            if (e.type !== 'draw' || e.seat !== me || g.rinshanDraw || !teruMirrored(g, me)) return;
             const p = g.players[me];
             const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
-            // 听牌时连和只给够大的和了牌，平时也不一样，只比较还没听牌的摸牌
+            // 听牌时只给接得上天梯的和了牌，只比较还没听牌的摸牌
             if (before <= 0) return;
-            const useful = shanten(toCounts(p.hand), p.melds.length) < before;
-            if (teruStreak(g, me).count) {
-              streakDraws++;
-              if (useful) streakUseful++;
-            } else {
-              plainDraws++;
-              if (useful) plainUseful++;
+            const good = shanten(toCounts(p.hand), p.melds.length) < before ? 1 : 0;
+            const level = teruLadder(g, me).level;
+            if (level === 6) {
+              n.high++;
+              n.highGood += good;
+            } else if (level === 0) {
+              n.low++;
+              n.lowGood += good;
             }
           });
         },
       });
     }
-    expect(streakDraws).toBeGreaterThan(60);
-    expect(streakUseful / streakDraws).toBeGreaterThan(plainUseful / plainDraws + 0.05);
-    console.log({ streak: (streakUseful / streakDraws).toFixed(2), plain: (plainUseful / plainDraws).toFixed(2), smallSkipped });
+    expect(n.high).toBeGreaterThan(40);
+    expect(n.highGood / n.high).toBeGreaterThan(n.lowGood / n.low + 0.1);
+    console.log({ high: (n.highGood / n.high).toFixed(2), low: (n.lowGood / n.low).toFixed(2), skipped: n.skipped });
+  }, 120000);
+
+  it('叽叽叽：自摸满八次，下一局配牌是九莲宝灯的听牌，和出九莲宝灯以后从头数', () => {
+    let chuuren = 0;
+    let tries = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      play(seed, LINEUPS[seed % 4], {
+        setup: (g, me) => {
+          let armed = false;
+          let fired = false;
+          let done = false;
+          g.onEvent((e) => {
+            // 第一局结束时把自摸次数拨到 8
+            if (e.type === 'roundEnd' && !armed) {
+              armed = true;
+              (g.abilityGameState[me] as { kiki?: number }).kiki = TERU.kiki;
+            }
+            if (e.type === 'ability' && e.seat === me && e.text === '叽叽叽') {
+              tries++;
+              fired = true;
+              const p = g.players[me];
+              expect(shanten(toCounts(p.hand.slice(0, 13)), 0)).toBeLessThanOrEqual(0);
+            }
+            if (e.type === 'roundEnd' && fired) {
+              fired = false;
+              const w = e.result.wins.find((x) => x.seat === me);
+              if (w?.result.yaku.some((y) => y.name.includes('九莲宝灯'))) {
+                chuuren++;
+                done = true;
+              }
+            }
+            if (e.type === 'roundStart' && done) expect(teruLadder(g, me).kiki).toBeLessThan(TERU.kiki);
+          });
+        },
+      });
+    }
+    expect(tries).toBeGreaterThan(4);
+    expect(chuuren / tries).toBeGreaterThan(0.6);
+    console.log({ tries, chuuren });
   }, 120000);
 });

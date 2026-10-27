@@ -18,11 +18,11 @@ import { KYOUKO, kyoukoTargets } from '../abilities/kyouko';
 import { takamiHarvest, takamiSeeds } from '../abilities/takami';
 import { NELLY, nellyDeclared, nellyLuck, nellySuit } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
-import { TERU, teruKeeps, teruMirrored, teruStreak, teruWinValue } from '../abilities/teru';
+import { TERU, teruFits, teruLadder, teruMirrored, teruTier, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
-import { kokushiShanten, shanten, waitingKinds } from '../engine/shanten';
+import { kokushiShanten, shanten, standardShanten, waitingKinds } from '../engine/shanten';
 import {
   EAST,
   KIND_COUNT,
@@ -250,6 +250,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     risk: number;
     hit: number; // 洋榎：读出来别人和得了这张
     aim: number; // 堇：打这张以后听的是目标多余的牌
+    fit: number; // 照：打这张以后听的牌和了正好接得上天梯
     trap: number; // 洋榎：听牌时听的是自己打过的牌的筋（引っ掛け）
     bad: number; // 久：打这张听的是烂听牌（只等一种牌，还有剩的）
   };
@@ -263,7 +264,17 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 龙华的无极天：读得出别人听什么
   const mugoku = style.mugoku && ryuukaMugoku(g, seat);
   const reader = !sealed && (style.reads || style.memory || eyeReads || (style.mirror && teruMirrored(g, seat)) || angel || mugoku);
-  const readDanger = !reader ? null : style.memory ? makoDanger(g, seat) : angel ? angelDanger(g, seat) : dangerKinds(g, seat);
+  // 照魔镜只读得出立直的人听什么
+  const mirrorOnly = style.mirror && !(style.reads || style.memory || eyeReads || angel || mugoku);
+  const readDanger = !reader
+    ? null
+    : style.memory
+      ? makoDanger(g, seat)
+      : angel
+        ? angelDanger(g, seat)
+        : mirrorOnly
+          ? new Set(readOthers(g, seat).filter((r) => g.players[r.seat].riichi).flatMap((r) => r.ron))
+          : dangerKinds(g, seat);
   // 被堇瞄准时，读得出牌的人（洋榎、真子、睁眼的美穗子）和照察觉得到她听什么，不给她点
   const aimed = !sealed && (style.reads || style.memory || eyeReads || style.mirror) ? sumireAimedAt(g, seat) : null;
   // 堇：听牌时挑听目标多余牌的打法
@@ -277,6 +288,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const eyeRisk = (t: number, k: Kind) =>
     eyeSafe?.get(t)?.has(k) ? 0 : eyeLikely?.get(t)?.has(k) ? Math.min(1, danger(g, t, k, visible)) : danger(g, t, k, visible);
   const myDiscards = new Set(p.discards.map((d) => kindOf(d.tile)));
+  // 照要和 1 番起胡：七对子一和就是 2 番，不往七对子做
+  const shOf = style.streak && teruMirrored(g, seat) && teruLadder(g, seat).next === 1 ? standardShanten : shanten;
   const cands: Cand[] = [];
   const seen = new Set<string>();
   for (const a of discards) {
@@ -286,9 +299,14 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     seen.add(key);
     const c = counts.slice();
     c[kindOf(a.tile)]--;
-    const sh = shanten(c, p.melds.length);
+    const sh = shOf(c, p.melds.length);
     let val = tileValue(g, seat, kindOf(a.tile), counts);
     if (style.keepDora && isDoraTile(g, a.tile)) val += 20;
+    // 照：要和的那一层还小，宝牌先打掉（多一番就接不上天梯）；满贯以上留着
+    if (style.streak && isDoraTile(g, a.tile) && teruMirrored(g, seat)) {
+      const { next } = teruLadder(g, seat);
+      val += next <= 3 ? -12 : next >= 5 ? 15 : 0;
+    }
     // 夕：留着宝牌和成对的役牌
     if (style.firepower && (isDoraTile(g, a.tile) || (seraYakuhai(g, seat, kindOf(a.tile)) && counts[kindOf(a.tile)] >= 2))) val += 15;
     const ts = threats(g, seat);
@@ -296,6 +314,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const sh2 = sh;
     const hit = readDanger?.has(kindOf(a.tile)) || aimed?.has(kindOf(a.tile)) ? 1 : 0;
     const aim = marks?.size && sh === 0 && waitingKinds(c, p.melds.length).some((w) => marks.has(w)) ? 1 : 0;
+    const fit = style.streak && sh === 0 && teruMirrored(g, seat) && teruHandFits(g, seat, p.hand.filter((t) => t !== a.tile)) ? 1 : 0;
     let trap = 0;
     if (style.trapWait && sh === 0) {
       const out = new Set([...myDiscards, kindOf(a.tile)]);
@@ -307,7 +326,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       const w = waitingKinds(c, p.melds.length);
       bad = w.length === 1 && 4 - visible[w[0]] - c[w[0]] + (kindOf(a.tile) === w[0] ? 1 : 0) > 0 && !myDiscards.has(w[0]) && kindOf(a.tile) !== w[0] ? 1 : 0;
     }
-    cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, trap, bad });
+    cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad });
   }
 
   // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌；涅莉的宣言局也一样，留下做的那门花色
@@ -328,7 +347,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 洋榎听牌时：两种听法都有牌可和，挑引っ掛け的
   const trapOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.trap - x.trap : 0);
   // 堇听牌时：两种听法都有牌可和，挑听目标多余牌的
-  const aimOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.aim - x.aim : 0);
+  const aimOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.aim - x.aim || y.fit - x.fit : 0);
   const attackOrder = (x: Cand, y: Cand) =>
     x.hit - y.hit || x.sh - y.sh || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
   cands.sort(attackOrder);
@@ -458,10 +477,13 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (style.haitei && koromoHaiteiOn(g, seat)) return best.a;
     // 优希：东场坐庄听的是只等一种牌的烂听牌（边张、坎张、单骑），牌山还多就先默听等改良
     if (style.eastWind && seat === g.dealer && yuukiActive(g, seat) && g.wall.remaining > YUUKI_AI.waitLate && waitingKinds(c, p.melds.length).length === 1) return best.a;
-    // 照：不坐庄时连和要一步步往上涨，有役、默听就接得上连和就默听，不靠立直把这一手抬得太大；坐庄才立直收割
-    if (style.streak && seat !== g.dealer) {
-      const dama = damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile));
-      if (dama > 0 && teruKeeps(g, seat, dama)) return best.a;
+    // 照：天梯要正好和出下一层。默听接得上就默听；立直才接得上就立直；都接不上时，默听比下一层小才立直往上抬
+    if (style.streak && !sealed) {
+      const hand = p.hand.filter((t) => t !== best.a.tile);
+      const dama = ronTiers(g, seat, hand, false);
+      if ([...dama].some((t) => teruFits(g, seat, t))) return best.a;
+      const withRiichi = ronTiers(g, seat, hand, true);
+      if (![...withRiichi].some((t) => teruFits(g, seat, t)) && [...dama].some((t) => t >= teruLadder(g, seat).next)) return best.a;
     }
     // 洋榎：有役、默听也够大就默听，别人看不出她听牌了
     if (style.damaMin && damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) >= style.damaMin) return best.a;
@@ -658,12 +680,45 @@ function nellyHolds(g: Game, seat: number, tsumo: boolean): boolean {
   return !!r && teruWinValue(r, tsumo, seat === g.dealer) < NELLY.declMin;
 }
 
+// 照：这一手比天梯的下一层小，牌山还多，就先不和、等它长到下一层（正好是下一层、役满、比下一层大都和）
 function teruWaits(g: Game, seat: number, tsumo: boolean): boolean {
-  if (g.wall.remaining <= TERU.aiForceWin) return false;
+  if (g.wall.remaining <= TERU.aiForceWin || g.isSealed(seat)) return false;
   const p = g.players[seat];
   const tile = tsumo ? p.drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
   const r = g.winResult(seat, tile, tsumo);
-  return !!r && !teruKeeps(g, seat, teruWinValue(r, tsumo, seat === g.dealer));
+  return !!r && teruTier(r) < teruLadder(g, seat).next;
+}
+
+// 13 张的手荣和各听牌是天梯的第几层（振听、没役的不算；riichi：算上立直一番）
+function ronTiers(g: Game, seat: number, hand: TileId[], riichi: boolean): Set<number> {
+  const p = g.players[seat];
+  const waits = waitingKinds(toCounts(hand), p.melds.length);
+  const out = new Set<number>();
+  if (waits.some((k) => p.discards.some((d) => kindOf(d.tile) === k))) return out;
+  const dora = g.wall.visibleDoraIndicators().map(kindOf);
+  for (const k of waits) {
+    const tile = k * 4 + 1;
+    const r = evaluateWin({
+      closed: [...hand, tile],
+      melds: p.melds,
+      winTile: tile,
+      tsumo: false,
+      seatWind: g.seatWind(seat),
+      roundWind: EAST + g.roundWind,
+      isDealer: seat === g.dealer,
+      riichi: riichi && p.melds.every((m) => m.type === 'ankan'),
+      doubleRiichi: false,
+      ippatsu: false,
+      doraIndicators: dora,
+    });
+    if (r) out.add(teruTier(r));
+  }
+  return out;
+}
+
+// 13 张的手（默听或者立直）和了接不接得上天梯
+function teruHandFits(g: Game, seat: number, hand: TileId[]): boolean {
+  return [...ronTiers(g, seat, hand, false), ...ronTiers(g, seat, hand, true)].some((t) => teruFits(g, seat, t));
 }
 
 // ---------- 别人打牌后 ----------
@@ -756,11 +811,11 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const disrupt = style.disrupt && !g.isSealed(seat) && g.wall.remaining >= KYOUKO.aiMinWall && kyoukoTargets(g, seat).length > 0;
   const disruptAny = disrupt && kyoukoTargets(g, seat).some((s) => g.players[s].riichi);
 
-  // 优希不坐庄的东场以和牌为先；照不坐庄、连和还小的时候小牌快和：向听多也吃
+  // 优希不坐庄的东场以和牌为先；照要和 1 番、2 番的时候小牌快和：向听多也吃
   const speedy =
     style.speed ||
     (style.eastWind && seat !== g.dealer && yuukiActive(g, seat)) ||
-    (style.streak && seat !== g.dealer && teruMirrored(g, seat) && teruStreak(g, seat).min < TERU.aiSmall);
+    (style.streak && teruMirrored(g, seat) && teruLadder(g, seat).next <= 2);
 
   // 诚子：对子多、还没吃过，就奔对对和，能碰就碰（碰了不退向听也碰，多钓一条鱼）
   const pairs = counts.filter((n) => n >= 2).length;
