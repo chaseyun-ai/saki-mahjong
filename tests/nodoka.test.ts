@@ -149,4 +149,20 @@ describe('原村和', () => {
     }
     expect(checked).toBeGreaterThan(0);
   }, 120000);
+  it('天使和封印不了，变身前照样被封', () => {
+    const sealer: Ability = { id: 'probe', name: '封印', description: '', seals: () => true };
+    const seats = ['nodoka', 'awai', 'teru'].map((id) => ({ name: id, ability: byId(id).ability }));
+    const g = new Game({ seed: 1, players: [...seats, { name: 'probe', ability: sealer }] });
+    g.events.length = 0;
+    expect(g.isSealed(0)).toBe(true);
+    expect(nodokaAngel(g, 0)).toBe(false);
+    // 两个强者：过完 5 局计数到 -1
+    g.roundWind = 1;
+    g.roundNumber = 1;
+    for (let slot = 0; slot < 5; slot++) g.events.push({ type: 'roundStart', label: '', slot });
+    expect(nodokaCounter(g, 0)).toBeLessThanOrEqual(0);
+    expect(g.isSealed(0)).toBe(false);
+    expect(nodokaAngel(g, 0)).toBe(true);
+    expect(g.isSealed(1)).toBe(true);
+  });
 });

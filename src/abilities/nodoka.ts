@@ -11,7 +11,7 @@ import type { Ability } from './types';
 //   别人调整配牌时，这一局有 resist 的概率碰不到她的配牌（absolute 的玄照样管得到她）
 // - 专注对局：不再失误（电脑的和，见 src/ai/ai.ts）
 // - 看得出别人会荣和 bigPay 点以上的铳牌，不打它们（玩家操作时指着这种牌会冒气泡，见 src/ui/app.ts）
-// 被爽的蛇神威封印的那一局变不了天使
+// - 封印不了：爽的蛇神威之类的封印对天使和无效（计数到 0 以后的每一局）
 
 export const NODOKA = { start: 9, resist: 0.5, bigPay: 8000 };
 
@@ -47,7 +47,11 @@ const ANGEL = '天使和';
 export const nodokaAbility: Ability = {
   id: 'nodoka',
   name: '天使和',
-  description: '平时是不受场况影响的数字派。对局里遇到比自己强的人会越来越专注，到了某一局就变成天使和：别人对她配牌、摸牌的影响减半，不再失误，看得出 8000 点以上的铳牌',
+  description: '平时是不受场况影响的数字派。对局里遇到比自己强的人会越来越专注，到了某一局就变成天使和：别人对她配牌、摸牌的影响减半，封印不了，不再失误，看得出 8000 点以上的铳牌',
+  // 计数到 0 就封印不了（不看 active，不然会绕回 isSealed）
+  unsealable(g, seat) {
+    return nodokaCounter(g, seat) <= 0;
+  },
   resist(g, seat) {
     return nodokaAngel(g, seat) ? NODOKA.resist : 0;
   },
@@ -64,6 +68,6 @@ export const nodokaAbility: Ability = {
     return nodokaAngel(g, seat) ? '天使' : null;
   },
   insight(g, seat) {
-    return nodokaAngel(g, seat) ? ['天使和：别人对她配牌、摸牌的影响减半', '不再失误，看得出 8000 点以上的铳牌'] : ['还是平常的和：只靠牌效和防守'];
+    return nodokaAngel(g, seat) ? ['天使和：别人对她配牌、摸牌的影响减半，封印不了', '不再失误，看得出 8000 点以上的铳牌'] : ['还是平常的和：只靠牌效和防守'];
   },
 };
