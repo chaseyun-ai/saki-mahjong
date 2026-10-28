@@ -34,7 +34,7 @@ export function tileHtml(id: TileId, opts: TileOpts = {}): string {
 }
 
 // 美穗子睁开右眼时，别人手牌的牌背按花色上色：万红、筒蓝、索绿、字牌白
-export type BackTint = 'm' | 'p' | 's' | 'z';
+export type BackTint = 'm' | 'p' | 's' | 'z' | 'aka';
 export const tintOf = (t: TileId): BackTint => (['m', 'p', 's', 'z'] as const)[Math.min(3, Math.floor(kindOf(t) / 9))];
 
 export function backHtml(size: TileSize = 'pond', tint?: BackTint): string {

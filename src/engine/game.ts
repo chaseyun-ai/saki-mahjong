@@ -254,8 +254,14 @@ export class Game {
   // 这家的能力这一局被别人封印了没有（爽的蛇神威）。round 不写是现在这一局（发牌前是马上要开的那一局）
   isSealed(seat: number, round = this.phase === 'predeal' ? this.round + 1 : this.round): boolean {
     const own = this.abilities[seat];
+    if (round === this.round && this.fieldVoid()) return false;
     if (own?.immune || own?.absolute || own?.unsealable?.(this, seat, round)) return false;
     return this.abilities.some((a, o) => o !== seat && !!a?.seals?.(this, o, round));
+  }
+
+  // 这一局控场的能力全部无效（丰音的佛灭）。不看封印：佛灭连封印也破了
+  fieldVoid(): boolean {
+    return this.abilities.some((a, s) => !!a?.nullifies?.(this, s));
   }
 
   // 这一局起作用的能力：被封印的算没有
@@ -304,7 +310,8 @@ export class Game {
 
   // from 的能力管不管得到 target（照这样 immune 的人只听自己和 absolute 的）
   binds(from: number, target: number): boolean {
-    return from === target || !this.abilities[target]?.immune || !!this.abilities[from]?.absolute;
+    if (from === target || this.abilities[from]?.absolute) return true;
+    return !this.abilities[target]?.immune && !this.fieldVoid();
   }
 
   // target 这一下挡住了 from 的影响（天使和：一半的概率）。absolute 的挡不住；没有 resist 的人不掷随机数
@@ -471,9 +478,11 @@ export class Game {
     const w = this.wall;
     const rules: DrawRule[] = [];
     const union = (n: number) => (n === 0 ? null : (t: TileId) => rules.slice(0, n).some((r) => r.deny(t)));
+    // 佛灭：控场的人不出手（摸牌的人自己的能力照样动）
+    const calm = this.fieldVoid();
     for (const s of this.abilityOrder()) {
       const a = this.active(s)!;
-      if (!a.beforeAnyDraw) continue;
+      if (!a.beforeAnyDraw || (calm && !a.absolute)) continue;
       w.deny = union(rules.length);
       const r = a.beforeAnyDraw(this, s, seat, rinshan);
       // 管不到 immune 的人：定的规矩不算（能力自己整理牌山的部分照做，比如衣安排海底）
