@@ -128,6 +128,12 @@
   justify-content: flex-start;
 }
 
+:root:not([data-theme='classic']) .school-tabs,
+:root:not([data-theme='classic']) .school-head {
+  justify-content: flex-start;
+  max-width: none;
+}
+
 :root:not([data-theme='classic']) .char-grid {
   grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
   max-width: none;

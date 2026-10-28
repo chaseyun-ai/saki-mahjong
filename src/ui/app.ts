@@ -26,6 +26,7 @@ import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { TeamFlow } from './teamFlow';
 import { THEMES, ThemeId, currentTheme, setTheme } from './theme';
+import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 import { ForecastCache } from '../ai/forecast';
@@ -135,6 +136,20 @@ export class App {
     });
     // 选人页：鼠标停在卡片上看介绍；手指点的不算悬停（点一下看、再点开始，见 onClick）
     root.addEventListener('pointerdown', (e) => (this.lastPointer = e.pointerType));
+    // 选人页上左右滑换学校
+    let swipe: { x: number; y: number } | null = null;
+    root.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      swipe = !this.game && (e.target as HTMLElement).closest('.school-page') && e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null;
+    });
+    root.addEventListener('touchend', (e) => {
+      const t = e.changedTouches[0];
+      if (!swipe || !t) return;
+      const dx = t.clientX - swipe.x;
+      const dy = t.clientY - swipe.y;
+      swipe = null;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) this.stepSchool(dx < 0 ? 1 : -1);
+    });
     root.addEventListener('pointerover', (e) => {
       if (this.game || e.pointerType !== 'mouse') return;
       const card = (e.target as HTMLElement).closest<HTMLElement>('.char-card');
@@ -183,14 +198,6 @@ export class App {
     this.auto = false;
     // 3D 牌桌要用的人物模型现在就开始在后台下载
     if (this.mode === '3d') preloadModels(MODEL_URLS);
-    // 卡片上只有头像和名字；学校、能力和介绍放在悬停时的浮窗里（见 showCharTip）
-    const cards = CHARACTERS.map(
-      (c) => `
-      <button class="char-card" data-pick="${c.id}" style="--c:${c.color}" aria-label="${c.name}：${c.ability?.name ?? '无能力'}">
-        <div class="char-portrait">${c.name.slice(-1)}<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></div>
-        <div class="char-name">${c.name}</div>
-      </button>`,
-    ).join('');
     const themes = THEMES.map((t) => `<button class="${t.id === currentTheme() ? 'on' : ''}" data-ui="theme" data-theme="${t.id}">${t.name}</button>`).join('');
     this.root.innerHTML = `
       <div class="select-screen">
@@ -209,7 +216,8 @@ export class App {
         <button class="lab-entry team-entry" data-ui="team">团体赛拟真</button>
         <button class="lab-entry" data-ui="lab">动作调试</button><span id="skin-entry"></span>
         <div class="theme-switch"><span>皮肤</span>${themes}</div>
-        <div class="char-grid">${cards}</div>
+        <div class="school-tabs" role="tablist">${this.schoolTabsHtml()}</div>
+        <div class="school-page">${this.schoolPageHtml()}</div>
         <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物由 VRoid 官方 CC0 示例模型改色</p>
         </div>
         <div class="char-tip" hidden></div>
@@ -224,6 +232,52 @@ export class App {
       const slot = this.root.querySelector('#skin-entry');
       if (ok && slot) slot.innerHTML = '<button class="lab-entry" data-ui="skins">素材</button>';
     });
+  }
+
+  // 选人页按学校分页（schools.ts）：一页一个学校，点角色直接开局
+  private school = savedSchool();
+
+  private schoolTabsHtml(): string {
+    return SCHOOLS.map((s) => {
+      const on = s.name === this.school;
+      return `<button class="${on ? 'on' : ''}" role="tab" aria-selected="${on}" data-ui="school" data-school="${s.name}" style="--s:${s.color}">${s.short}<small>${membersOf(s.name).length}</small></button>`;
+    }).join('');
+  }
+
+  // 卡片上只有头像和名字；能力和介绍放在悬停时的浮窗里（见 showCharTip）
+  private schoolPageHtml(): string {
+    const s = SCHOOLS.find((x) => x.name === this.school) ?? SCHOOLS[0];
+    const cards = membersOf(s.name)
+      .map(
+        (c) => `
+      <button class="char-card" data-pick="${c.id}" style="--c:${c.color}" aria-label="${c.name}：${c.ability?.name ?? '无能力'}">
+        <div class="char-portrait">${c.name.slice(-1)}<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></div>
+        <div class="char-name">${c.name}</div>
+      </button>`,
+      )
+      .join('');
+    return `<div class="school-head" style="--s:${s.color}"><b>${s.name}</b>${s.region ? `<span>${s.region}代表</span>` : ''}<em>${membersOf(s.name).length} 人</em></div>
+      <div class="char-grid">${cards}</div>`;
+  }
+
+  // 换一页：只重画标签和这一页，换了皮肤的选人页把左边立绘换成这一页的第一位
+  private showSchool(name: string): void {
+    if (!SCHOOLS.some((s) => s.name === name)) return;
+    this.school = name;
+    saveSchool(name);
+    const tabs = this.root.querySelector('.school-tabs');
+    const page = this.root.querySelector('.school-page');
+    if (!tabs || !page) return;
+    tabs.innerHTML = this.schoolTabsHtml();
+    page.innerHTML = this.schoolPageHtml();
+    this.showCharTip(this.heroTip() ? page.querySelector<HTMLElement>('.char-card') : null);
+    if (this.heroTip()) this.tipFor = null;
+  }
+
+  // 前一页、后一页（手机上左右滑）
+  private stepSchool(d: number): void {
+    const i = SCHOOLS.findIndex((s) => s.name === this.school);
+    this.showSchool(SCHOOLS[(i + d + SCHOOLS.length) % SCHOOLS.length].name);
   }
 
   // 选人页的介绍浮窗：贴在卡片旁边，不出屏幕
@@ -396,6 +450,10 @@ export class App {
       this.renderPredeal();
       return;
     }
+    if (g.phase === 'postdeal') {
+      this.render();
+      return;
+    }
     if (g.phase === 'roundEnd' || g.phase === 'gameEnd') {
       // 3D 牌桌先让大家看清倒牌和特效，再弹结算。2.5D 和牌照雀魂，宣言后 3.4 秒进结算
       this.render();
@@ -471,7 +529,7 @@ export class App {
     this.auto = !this.auto;
     g.manual[this.me] = !this.auto;
     this.riichiMode = false;
-    if (this.auto && g.phase === 'predeal') g.deal();
+    if (this.auto && (g.phase === 'predeal' || g.phase === 'postdeal')) g.deal();
     this.step();
   }
 
@@ -632,6 +690,10 @@ export class App {
       new SkinEditor(this.root, () => this.renderSelect());
       return;
     }
+    if (el.dataset.ui === 'school' && el.dataset.school) {
+      this.showSchool(el.dataset.school);
+      return;
+    }
     if (el.dataset.ui === 'theme' && el.dataset.theme) {
       setTheme(el.dataset.theme as ThemeId);
       this.renderSelect();
@@ -748,7 +810,7 @@ export class App {
       ${this.myAreaHtml()}
       ${this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
-      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' ? this.predealHtml() : ''}`;
+      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     this.freshDiscard = null;
     this.renderToasts();
@@ -773,7 +835,7 @@ export class App {
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
-      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' ? this.predealHtml() : ''}`;
+      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
     // 看下一巡时视野变绿
     hud.parentElement?.classList.toggle('deep', !!this.vision);
     this.renderToasts();
@@ -1279,7 +1341,8 @@ export class App {
   private predealHtml(): string {
     const g = this.game!;
     const ab = this.chars[this.me].ability;
-    const opts = ab?.preDeal?.(g, this.me) ?? [];
+    const post = g.phase === 'postdeal';
+    const opts = (post ? ab?.postDeal?.(g, this.me) : ab?.preDeal?.(g, this.me)) ?? [];
     if (opts.some((o) => o.stepper)) return this.stepperHtml(opts);
     if (!this.pdPicks) this.pdPicks = new Set(opts.filter((o) => o.picked).map((o) => o.id));
     const meter = ab?.skill?.(g, this.me)?.meter;
@@ -1300,12 +1363,17 @@ export class App {
     const energy = meter
       ? `<div class="pd-energy">能量 <span class="stamina energy"><i style="width:${(Math.max(0, left) / meter.max) * 100}%"></i></span> ${Math.max(0, left)} / ${meter.max}${spend ? `（这一局 -${spend}）` : ''}</div>`
       : '';
-    return `<div class="modal"><div class="result predeal" style="--c:${this.chars[this.me].color}">
-        <h2>${g.roundLabel()} · 发牌前</h2>
-        <p class="pd-sub">选这一局要发动的技能（可以都不选）</p>
+    // 配牌后选（爽）：把手牌摆在上面，看着手牌选
+    const hand = post
+      ? `<div class="pd-hand">${[...g.players[this.me].hand].sort((a, b) => a - b).map((t) => tileHtml(t, { size: 'pond' })).join('')}</div>`
+      : '';
+    return `<div class="modal${post ? ' postdeal' : ''}"><div class="result predeal" style="--c:${this.chars[this.me].color}">
+        <h2>${g.roundLabel()} · ${post ? '配牌后' : '发牌前'}</h2>
+        ${hand}
+        <p class="pd-sub">${post ? '看着手牌选这一局要发动的技能（可以都不选）' : '选这一局要发动的技能（可以都不选）'}</p>
         ${energy}
         <div class="pd-list">${rows}</div>
-        <button class="primary" data-ui="pd-go">发牌</button>
+        <button class="primary" data-ui="pd-go">${post ? '开始' : '发牌'}</button>
       </div></div>`;
   }
 
@@ -1343,7 +1411,8 @@ export class App {
     const g = this.game!;
     const ab = this.chars[this.me].ability;
     if (this.pdValues && ab?.preDealCheck?.(g, this.me, this.pdValues)) return;
-    ab?.setPreDeal?.(g, this.me, [...(this.pdPicks ?? [])], this.pdValues ?? undefined);
+    if (g.phase === 'postdeal') ab?.setPostDeal?.(g, this.me, [...(this.pdPicks ?? [])]);
+    else ab?.setPreDeal?.(g, this.me, [...(this.pdPicks ?? [])], this.pdValues ?? undefined);
     this.pdPicks = null;
     this.pdValues = null;
     g.deal();

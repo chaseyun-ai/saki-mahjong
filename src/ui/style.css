@@ -67,11 +67,79 @@ button {
 
 .char-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 108px);
+  grid-template-columns: repeat(auto-fit, 108px);
   justify-content: center;
   gap: 14px;
   max-width: 980px;
   margin: 24px auto 0;
+}
+
+/* 按学校分页：上面一排学校标签，下面是这一页的学校名和角色 */
+.school-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: 980px;
+  margin: 20px auto 0;
+}
+
+.school-tabs button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--s) 45%, transparent);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.school-tabs button small {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.school-tabs button:hover {
+  border-color: var(--s);
+}
+
+.school-tabs button.on {
+  background: var(--s);
+  border-color: var(--s);
+  color: #14181c;
+  font-weight: 700;
+}
+
+.school-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px 12px;
+  max-width: 980px;
+  margin: 18px auto 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid color-mix(in srgb, var(--s) 60%, transparent);
+}
+
+.school-head b {
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: var(--s);
+}
+
+.school-head span,
+.school-head em {
+  font-size: 13px;
+  font-style: normal;
+  color: var(--ink-quiet);
+}
+
+.school-page .char-grid {
+  margin-top: 16px;
 }
 
 .char-card {
@@ -3766,4 +3834,19 @@ html:root .select-screen.team-screen.tm-draft {
   font-size: 64px;
   line-height: 1;
   color: color-mix(in srgb, var(--c) 40%, #fff);
+}
+
+/* 配牌后选技能（爽）：手牌摆在弹窗里，看着手牌选 */
+.modal.postdeal {
+  background: rgba(0, 10, 12, 0.45);
+  place-items: start center;
+  padding-top: 16px;
+}
+
+.pd-hand {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  margin: 4px 0 10px;
 }
