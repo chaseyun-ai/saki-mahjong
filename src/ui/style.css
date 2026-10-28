@@ -3922,3 +3922,18 @@ html:root .select-screen.team-screen.tm-draft {
   gap: 2px;
   margin: 8px 0;
 }
+
+/* 要选对象的技能按钮（爽的瘟神威给哪一家） */
+.skill-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.skill-choices .deep-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+}

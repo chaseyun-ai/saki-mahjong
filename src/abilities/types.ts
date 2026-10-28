@@ -81,19 +81,20 @@ export interface Ability {
   // 配完牌以后可以选的技能（爽）：玩家操作时，发完牌停下来让玩家看着手牌选（选好调 setPostDeal）；电脑在 afterDeal 里自己决定
   postDeal?(g: Game, seat: number): PreDealOption[];
   setPostDeal?(g: Game, seat: number, picked: string[]): void;
-  // 配完牌、庄家摸第一张之前（配牌后的技能选好以后）。手牌已经发好，换牌用 g.swapHandTile
+  // 配完牌、庄家摸第一张之前（配牌后的技能选好以后）。手牌已经发好
   afterDeal?(g: Game, seat: number): void;
   // 这一刻能不能和牌（照的照魔镜那一局和不了）。没写算能
   canWin?(g: Game, seat: number): boolean;
   // 不许 target 和牌（涅莉的七姐妹封住的人）
   forbidsWin?(g: Game, seat: number, target: number): boolean;
-  // 这一局（第 round 局）封印别人的能力（爽的霍亚乌神威）：为真时别的座位的能力全部不动
+  // 这一局（第 round 局）封印别人的能力（爽的蛇神威）：为真时别的座位的能力全部不动
   seals?(g: Game, seat: number, round: number): boolean;
   // 别人看得穿的这家能力状态（照的照魔镜），一行一条；没写就只显示能力名
   insight?(g: Game, seat: number): string[];
   // 玩家操作这个角色时的技能按钮（g.manual[seat] 为真时由玩家决定，否则能力自己按电脑的规矩决定）
   skill?(g: Game, seat: number): SkillButton | null;
-  pressSkill?(g: Game, seat: number): void;
+  // choice：按的是 SkillButton.choices 里的哪一个
+  pressSkill?(g: Game, seat: number, choice?: string): void;
   // 挡得住别人影响的比例（0–1，天使和是 0.5）：别人给她配牌、摸牌定的规矩每一条有这个概率不算，
   // 别人调整配牌时这一局有这个概率碰不到她的配牌。absolute 的能力照样管得到
   resist?(g: Game, seat: number): number;
@@ -112,6 +113,8 @@ export interface PreDealOption {
   note?: string;
   // 不是勾选，是选一个数（涅莉给每一局分的运势）
   stepper?: { value: number; min: number; max: number };
+  // 同一组里只能选一个（爽的红云给谁）
+  group?: string;
 }
 
 export interface SkillButton {
@@ -122,4 +125,6 @@ export interface SkillButton {
   meter?: { value: number; max: number };
   // 开启中（按钮高亮）
   active?: boolean;
+  // 要选对象的技能（爽的瘟神威给哪一家）：一个对象一个按钮，按下去调 pressSkill(g, seat, id)
+  choices?: { id: string; label: string; enabled: boolean }[];
 }

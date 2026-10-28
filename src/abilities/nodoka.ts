@@ -10,7 +10,7 @@ import type { Ability } from './types';
 //   别人调整配牌时，这一局有 resist 的概率碰不到她的配牌（absolute 的玄照样管得到她）
 // - 专注对局：不再失误（电脑的和，见 src/ai/ai.ts）
 // - 看得出别人会荣和 bigPay 点以上的铳牌，不打它们（玩家操作时指着这种牌会冒气泡，见 src/ui/app.ts）
-// 被爽的霍亚乌封印的那一局变不了天使
+// 被爽的蛇神威封印的那一局变不了天使
 
 export const NODOKA = { start: 9, resist: 0.5, bigPay: 8000 };
 

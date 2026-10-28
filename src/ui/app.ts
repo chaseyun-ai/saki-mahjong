@@ -731,7 +731,12 @@ export class App {
     if (el.dataset.ui === 'pd' && el.dataset.pd) {
       const id = el.dataset.pd;
       if (this.pdPicks?.has(id)) this.pdPicks.delete(id);
-      else this.pdPicks?.add(id);
+      else {
+        // 同一组只能选一个（爽的红云给谁）
+        const group = el.dataset.group;
+        if (group) this.root.querySelectorAll<HTMLElement>(`[data-ui="pd"][data-group="${group}"]`).forEach((x) => this.pdPicks?.delete(x.dataset.pd!));
+        this.pdPicks?.add(id);
+      }
       this.renderPredeal();
       return;
     }
@@ -750,7 +755,7 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'skill') {
-      if (this.game && !this.vision) this.chars[this.me].ability?.pressSkill?.(this.game, this.me);
+      if (this.game && !this.vision) this.chars[this.me].ability?.pressSkill?.(this.game, this.me, el.dataset.choice);
       this.render();
       return;
     }
@@ -1313,11 +1318,11 @@ export class App {
     return extra ? `<div class="ability-panel foresight-only" style="--c:${c.color}">${extra}</div>` : '';
   }
 
-  // 谁封印了自己：末原恭子鸣牌打乱流向只到她下一次摸牌，狮子原爽的霍亚乌是一整局
+  // 谁封印了自己：末原恭子鸣牌打乱流向只到她下一次摸牌，狮子原爽的蛇神威是一整局
   private sealText(): string {
     const g = this.game!;
     const by = g.abilities.find((a, o) => o !== this.me && a?.seals?.(g, o, g.round));
-    return by?.id === 'kyouko' ? '末原恭子鸣牌打乱了流向，到她下一次摸牌之前能力不起作用' : '狮子原爽的霍亚乌神威封印了别人的能力，这一局能力不起作用';
+    return by?.id === 'kyouko' ? '末原恭子鸣牌打乱了流向，到她下一次摸牌之前能力不起作用' : '狮子原爽的蛇神威封印了别人的能力，这一局能力不起作用';
   }
 
   // 主动开的技能：能量条和开关按钮（演算中不显示）
@@ -1331,9 +1336,14 @@ export class App {
       ? `<span class="stamina energy" title="能量"><i style="width:${(b.meter.value / b.meter.max) * 100}%"></i></span><span class="st-num">${b.meter.value}</span>`
       : '';
     // 有按钮的技能（pressSkill）画按钮；发牌前选的技能（淡、霞）只显示状态
-    const body = ab!.pressSkill
-      ? `<button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button>`
-      : `<div class="fs-note skill-state">${b.note}</div>`;
+    // 要选对象的（爽的瘟神威）一个对象一个按钮
+    const body = b.choices
+      ? `<div class="fs-note skill-state">${b.note}</div><div class="skill-choices">${b.choices
+          .map((c) => `<button class="deep-btn" data-ui="skill" data-choice="${c.id}" ${c.enabled ? '' : 'disabled'}>${c.label}</button>`)
+          .join('')}</div>`
+      : ab!.pressSkill
+        ? `<button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button>`
+        : `<div class="fs-note skill-state">${b.note}</div>`;
     return `<div class="foresight skill"><div class="fs-title">${ab!.name}${b.active ? '<span class="skill-on">发动中</span>' : ''}${meter}</div>${body}</div>`;
   }
 
@@ -1361,7 +1371,7 @@ export class App {
         const affordable = on || (o.cost ?? 0) <= left;
         const usable = o.enabled && affordable;
         const note = !o.enabled ? (o.note ?? '') : !affordable ? '能量不够' : o.cost ? `能量 -${o.cost}` : '';
-        return `<button class="pd-opt${on ? ' on' : ''}" data-ui="pd" data-pd="${o.id}" ${usable ? '' : 'disabled'}>
+        return `<button class="pd-opt${on ? ' on' : ''}" data-ui="pd" data-pd="${o.id}"${o.group ? ` data-group="${o.group}"` : ''} ${usable ? '' : 'disabled'}>
           <span class="pd-check">${on ? '✓' : ''}</span>
           <span class="pd-text"><b>${o.name}</b><small>${o.desc}</small></span>
           <span class="pd-note">${note}</span></button>`;

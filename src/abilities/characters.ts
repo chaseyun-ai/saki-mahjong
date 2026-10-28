@@ -184,7 +184,7 @@ export const CHARACTERS: Character[] = [
     school: '有珠山高中',
     color: '#7a8fa6',
     ability: sawayaAbility,
-    skillArts: SAWAYA_SKILLS.filter((k) => k.ready).map(({ id, name }) => ({ id, name })),
+    skillArts: SAWAYA_SKILLS.map(({ id, name }) => ({ id, name })),
     ai: { ...baseAi, clouds: true },
   },
   {
