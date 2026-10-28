@@ -24,6 +24,7 @@ import { sumireAbility } from './sumire';
 import { seraAbility } from './sera';
 import { KOMAKI_GODS, komakiAbility } from './komaki';
 import { ROKUYOU, toyoneAbility } from './toyone';
+import { suzuAbility } from './suzu';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -325,6 +326,16 @@ export const CHARACTERS: Character[] = [
     ability: toyoneAbility,
     skillArts: ROKUYOU.map(({ id, name }) => ({ id, name })),
     ai: { ...baseAi, mistakeRate: 0.04, rokuyou: true },
+  },
+  {
+    id: 'suzu',
+    cost: 3,
+    name: '上重漫',
+    school: '姬松高中',
+    color: '#e0892f',
+    ability: suzuAbility,
+    skillArts: [{ id: 'burst', name: '爆发' }],
+    ai: { ...baseAi, mistakeRate: 0.06 },
   },
 ];
 
