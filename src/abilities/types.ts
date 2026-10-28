@@ -17,6 +17,7 @@ import type { TileId } from '../engine/tiles';
 
 export const PRIORITY = {
   kuro: 1,
+  toyone: 2,
   sawaya: 5,
   awai: 10,
   koromo: 20,
@@ -104,6 +105,9 @@ export interface Ability {
   resist?(g: Game, seat: number): number;
   // 照魔镜照不穿她（小莳的天照）：照看不到她的能力状态，电脑的照也读不出她听什么
   mirrorProof?(g: Game, seat: number): boolean;
+  // 这一局控场的能力全部无效（丰音的佛灭）：别人的配牌、摸牌规矩，封印，不许和牌，摸牌前整理牌山都不起作用。
+  // 各人对自己的能力照样起作用；absolute 的照样管得到
+  nullifies?(g: Game, seat: number): boolean;
   // 现在是第二形态（天使和）：返回素材页里这个形态的动画 id。头像框换成能力发动头像，和牌放 `${id}-win` 的动画
   form?(g: Game, seat: number): string | null;
   // 隐身（东横桃子）：她打满几张牌起 viewer 就看不见她，null 是 viewer 看得见她。

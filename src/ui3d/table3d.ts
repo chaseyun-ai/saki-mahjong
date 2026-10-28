@@ -191,6 +191,7 @@ export interface SyncView {
   airDraw?: TileId | null; // 自己立直后摸到、和不了的那张：不进手牌，停在手牌上方的空中，接着直接打进牌河
   tintBacks?: Set<TileId>; // 美穗子睁眼：这些牌的牌背按花色上色（万红、筒蓝、索绿、字牌白）
   deadly?: Set<TileId>; // 龙华的无极天：自己手里打出去会放铳的牌，牌身染红
+  akaBacks?: Set<TileId>; // 丰音的赤口：没公开的赤宝牌（别人手里、牌山里），牌背发金红光
 }
 
 export class Table3D {
@@ -201,6 +202,7 @@ export class Table3D {
   private tiles: TileObj[] = [];
   private backMat: THREE.Material | null = null;
   private tintMats: THREE.Material[] = [];
+  private akaMat: THREE.Material | null = null;
   private bodyMat: THREE.Material | null = null;
   private deadlyMat: THREE.Material | null = null;
   private faceGeoms: THREE.PlaneGeometry[] = [];
@@ -436,6 +438,7 @@ export class Table3D {
     this.tintMats = ['#e0453a', '#3a6df0', '#2fb25a', '#f4f4f0'].map(
       (c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.35, roughness: matte || 0.4 }),
     );
+    this.akaMat = new THREE.MeshStandardMaterial({ color: '#ff5a2e', emissive: '#ff7a1e', emissiveIntensity: 0.7, roughness: matte || 0.4 });
     const faceMat = new THREE.MeshStandardMaterial({ map: this.atlas.texture, transparent: true, roughness: matte || 0.35 });
     for (let id = 0; id < TILE_COUNT; id++) {
       const group = new THREE.Group();
@@ -999,7 +1002,7 @@ export class Table3D {
       const t = this.tiles[id];
       const target = targets.get(id) ?? null;
       t.target = target;
-      const mat = view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
+      const mat = view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
       if (mat && t.back.material !== mat) t.back.material = mat;
       const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;

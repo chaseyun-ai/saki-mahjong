@@ -73,6 +73,8 @@ export const LOOKS: Record<string, Look> = {
   ryuuka: { model: 'models/vroid-g.v2.glb', hair: '#26332c', eyes: '#56705e', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
   // 神代小莳：先占位，借霞的长发模型换成深棕色头发、紫色眼睛
   komaki: { model: 'models/vroid-shino.v2.glb', hair: '#3a2a2a', eyes: '#7a5a9a', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 姊带丰音：先占位，借霞的长发模型换成黑色头发、深紫色眼睛
+  toyone: { model: 'models/vroid-shino.v2.glb', hair: '#1e1c24', eyes: '#5a4a7a', hairContrast: 0.5, reveal: 'slam', pose: 'lap', borrowed: true },
   // 东横桃子：先占位，借和的长发模型换成蓝黑色头发、灰蓝色眼睛
   momo: { model: 'models/vroid-g.v2.glb', hair: '#2a3040', eyes: '#5a6a86', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
 };

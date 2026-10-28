@@ -364,6 +364,11 @@ button {
   --tint: #e9e9e2;
 }
 
+/* 丰音的赤口：别人手里的赤宝牌牌背发金红光 */
+.tile.back.tint-aka {
+  --tint: #ff5a2e;
+}
+
 /* 美穗子睁开右眼：整个画面罩一层蓝色（四周深、中间浅） */
 .mihoko-eye::after {
   content: '';

@@ -9,6 +9,7 @@ import { kuroLost } from '../abilities/kuro';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
 import { komakiActiveGod } from '../abilities/komaki';
+import { toyoneRedHidden } from '../abilities/toyone';
 import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
@@ -861,7 +862,15 @@ export class App {
       deadly: this.showResult ? undefined : this.deadlyTiles(),
       airDraw: this.airDraw(),
       tintBacks: this.eyeOpen() && !this.vision ? new Set([1, 2, 3].flatMap((d) => g.players[(this.me + d) % 4].hand)) : undefined,
+      akaBacks: this.vision ? undefined : this.akaSpots(),
     });
+  }
+
+  // 丰音的赤口：没公开的赤宝牌在哪（别人手里的、牌山里的）
+  private akaSpots(): Set<TileId> {
+    const g = this.game!;
+    if (this.chars[this.me]?.id !== 'toyone' || (g.phase !== 'turn' && g.phase !== 'calls')) return new Set();
+    return toyoneRedHidden(g, this.me);
   }
 
   // 龙华的无极天、小莳的天照：手里打出去会放铳的牌标红
@@ -1200,8 +1209,9 @@ export class App {
     // 美穗子睁眼：牌背按花色上色（照理过的顺序排，刚摸的那张放最后）
     const tint = this.eyeOpen() && !this.vision;
     const order = tint ? [...p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b), ...(p.drawn !== null ? [p.drawn] : [])] : p.hand;
+    const aka = this.vision ? new Set<TileId>() : this.akaSpots();
     // 隐身的桃子的手牌也看不见
-    const backs = g.stealthed(s, this.me) ? '' : order.map((t) => backHtml('pond', tint ? tintOf(t) : undefined)).join('');
+    const backs = g.stealthed(s, this.me) ? '' : order.map((t) => backHtml('pond', aka.has(t) ? 'aka' : tint ? tintOf(t) : undefined)).join('');
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="nameplate">
