@@ -78,6 +78,11 @@ export interface Ability {
   setPreDeal?(g: Game, seat: number, picked: string[], values?: Record<string, number>): void;
   // 带 stepper 的选项选好的数合不合规矩，不合给原因（界面上“发牌”按钮按不了）
   preDealCheck?(g: Game, seat: number, values: Record<string, number>): string | null;
+  // 配完牌以后可以选的技能（爽）：玩家操作时，发完牌停下来让玩家看着手牌选（选好调 setPostDeal）；电脑在 afterDeal 里自己决定
+  postDeal?(g: Game, seat: number): PreDealOption[];
+  setPostDeal?(g: Game, seat: number, picked: string[]): void;
+  // 配完牌、庄家摸第一张之前（配牌后的技能选好以后）。手牌已经发好，换牌用 g.swapHandTile
+  afterDeal?(g: Game, seat: number): void;
   // 这一刻能不能和牌（照的照魔镜那一局和不了）。没写算能
   canWin?(g: Game, seat: number): boolean;
   // 不许 target 和牌（涅莉的七姐妹封住的人）
