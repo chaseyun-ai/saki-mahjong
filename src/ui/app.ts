@@ -740,6 +740,11 @@ export class App {
       this.renderPredeal();
       return;
     }
+    if (el.dataset.ui === 'pd-fold') {
+      this.pdFolded = !this.pdFolded;
+      this.renderPredeal();
+      return;
+    }
     if (el.dataset.ui === 'pd-go') {
       this.finishPredeal();
       return;
@@ -1337,6 +1342,8 @@ export class App {
   private pdPicks: Set<string> | null = null;
   // 选数的选项（涅莉分运势）现在选的数
   private pdValues: Record<string, number> | null = null;
+  // 配牌后的面板收起来了（看整张牌桌）
+  private pdFolded = false;
 
   private predealHtml(): string {
     const g = this.game!;
@@ -1367,13 +1374,27 @@ export class App {
     const hand = post
       ? `<div class="pd-hand">${[...g.players[this.me].hand].sort((a, b) => a - b).map((t) => tileHtml(t, { size: 'pond' })).join('')}</div>`
       : '';
-    return `<div class="modal${post ? ' postdeal' : ''}"><div class="result predeal" style="--c:${this.chars[this.me].color}">
-        <h2>${g.roundLabel()} · ${post ? '配牌后' : '发牌前'}</h2>
+    // 配牌后的面板停在上面、不盖住桌上的手牌；还能收成一条，看整张牌桌
+    if (post && this.pdFolded) {
+      const names = opts.filter((o) => this.pdPicks!.has(o.id)).map((o) => o.name);
+      return `<div class="pd-dock folded" style="--c:${this.chars[this.me].color}">
+        <b>${g.roundLabel()} · 配牌后</b><span class="pd-picked">${names.length ? `已选：${names.join('、')}` : '还没选'}</span>
+        <button data-ui="pd-fold">展开选技能</button><button class="primary" data-ui="pd-go">开始</button></div>`;
+    }
+    if (post) {
+      return `<div class="pd-dock" style="--c:${this.chars[this.me].color}">
+        <div class="pd-dock-head"><b>${g.roundLabel()} · 配牌后</b><span>看着手牌选这一局要发动的技能（可以都不选）</span>
+          <button data-ui="pd-fold">收起，看牌桌</button><button class="primary" data-ui="pd-go">开始</button></div>
         ${hand}
-        <p class="pd-sub">${post ? '看着手牌选这一局要发动的技能（可以都不选）' : '选这一局要发动的技能（可以都不选）'}</p>
+        <div class="pd-list">${rows}</div>
+      </div>`;
+    }
+    return `<div class="modal"><div class="result predeal" style="--c:${this.chars[this.me].color}">
+        <h2>${g.roundLabel()} · 发牌前</h2>
+        <p class="pd-sub">选这一局要发动的技能（可以都不选）</p>
         ${energy}
         <div class="pd-list">${rows}</div>
-        <button class="primary" data-ui="pd-go">${post ? '开始' : '发牌'}</button>
+        <button class="primary" data-ui="pd-go">发牌</button>
       </div></div>`;
   }
 
@@ -1415,6 +1436,7 @@ export class App {
     else ab?.setPreDeal?.(g, this.me, [...(this.pdPicks ?? [])], this.pdValues ?? undefined);
     this.pdPicks = null;
     this.pdValues = null;
+    this.pdFolded = false;
     g.deal();
     if (!this.tableBuilt) this.buildTable();
     else this.step();
