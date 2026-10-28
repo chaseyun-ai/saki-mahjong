@@ -77,7 +77,7 @@ describe('神代小莳', () => {
     expect(seen.size).toBe(8);
   });
 
-  it('神乐：醒来以后被点和满 3 次，下一局降下和初始神不同的新神；醒来之前放铳不算', () => {
+  it('神乐：醒来以后被自摸、放铳满 3 次，下一局降下和初始神不同的新神；醒来之前放铳不算', () => {
     const g = newGame(7, ['komaki', 'teru', 'koromo', 'awai'], 'east');
     const first = komakiGod(g, 0, 1);
     // 从头数：只看下面这几局的结算
@@ -88,8 +88,8 @@ describe('神代小莳', () => {
       fakeEnd([{ seat: 0, from: 1 }]), // 第 2 局：她和了，计时器多减一
       fakeEnd([]),
       fakeEnd([{ seat: 2, from: 0 }]), // 第 4 局：10 - 3×3 - 1 = 0，醒了，1 点
-      fakeEnd([{ seat: 1, from: 3 }]),
-      fakeEnd([{ seat: 1, from: 0 }, { seat: 2, from: 0 }]), // 双响算一次：2 点
+      fakeEnd([{ seat: 1, from: 3 }]), // 别人之间放铳，不算
+      fakeEnd([{ seat: 1, from: null }]), // 第 6 局：别人自摸，2 点
       fakeEnd([{ seat: 3, from: 0 }]), // 第 7 局：3 点，降神
     ];
     for (const result of ends) g.events.push({ type: 'roundEnd', result });

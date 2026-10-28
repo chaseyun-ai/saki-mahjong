@@ -9,7 +9,7 @@ import type { Ability } from './types';
 
 // 神代小莳（永水）：东一局起在睡觉，开局时随机一位神明附身（初始神不会是天宇受卖命）。
 // 看不见的计时器从 KOMAKI.timer 开始，每过一局（连庄也算一局），桌上每有一位 3 费以上的对手就减一；她自己每和一次也减一。
-// 减到 0 以后的下一局起她醒了：没有能力，换成天宇受卖命的神乐：每被点和一次积一点，满 KOMAKI.kagura 点立刻降下新神（和初始神不同），
+// 减到 0 以后的下一局起她醒了：没有能力，换成天宇受卖命的神乐：别人每自摸、她每放铳一次积一点，满 KOMAKI.kagura 点立刻降下新神（和初始神不同），
 // 新神一直留到这一场结束。神乐封印不了（蛇神威、天照都封不住醒着的她）。
 // 九位神明（id 也是素材页上的动画槽）：
 // - 琼琼杵尊·降临：配牌就听牌（天听）
@@ -24,7 +24,7 @@ import type { Ability } from './types';
 export const KOMAKI = {
   timer: 10,
   strongCost: 3, // 几费以上算强者
-  kagura: 3, // 被点和几次降下新神
+  kagura: 3, // 被自摸、放铳几次降下新神
   ninigiTries: 200,
   sakuyaKan: 0.5, // 摸到能杠的第四张
   iwanaga: 0.7,
@@ -45,7 +45,7 @@ export const KOMAKI_GODS = [
   { id: 'iwanaga', name: '磐长姬', skill: '诅咒', desc: '对手往大牌做时，她的手牌成型得更快，都是小牌' },
   { id: 'amaterasu', name: '天照', skill: '天岩户', desc: '其他人的能力失效，照魔镜照不穿她，看得出手里的铳牌，进张效率上升' },
   { id: 'susanoo', name: '须佐之男', skill: '暴风', desc: '配牌偏幺九牌和风牌，每碰一次进张效率上升' },
-  { id: 'uzume', name: '天宇受卖命', skill: '神乐', desc: `醒来以后才有：每被点和一次积一点，满 ${KOMAKI.kagura} 点降下新神` },
+  { id: 'uzume', name: '天宇受卖命', skill: '神乐', desc: `醒来以后才有：被自摸或放铳一次积一点，满 ${KOMAKI.kagura} 点降下新神` },
   { id: 'inari', name: '稻荷神', skill: '丰收', desc: '手里哪门数牌最多，进张就一直是那一门' },
   { id: 'okuni', name: '大国主神', skill: '结缘', desc: '进张效率上升，补嵌张，把孤张连成对子、刻子' },
   { id: 'take', name: '建御雷神', skill: '威压', desc: '立直以后强力压制其他三家，一发很容易自摸' },
@@ -59,7 +59,7 @@ interface KomakiGameState {
   first?: GodId; // 初始神
   second?: GodId; // 神乐降下的新神
   secondFrom?: number; // 新神从第几局起
-  kagura?: number; // 醒来以后被点和了几次
+  kagura?: number; // 醒来以后被自摸、放铳了几次
   wins?: number[]; // 她在第几局和了（计时器每次减一）
   ended?: number; // g.events 里看过几次 roundEnd（第 n 次是第 n 局）
   seen?: number; // g.events 里看到哪了
@@ -97,7 +97,7 @@ export function komakiAsleep(g: Game, seat: number, round = g.round): boolean {
   return komakiTimer(g, seat, round) > 0;
 }
 
-// 把打完的局算进神乐：醒来以后每被点和一次积一点，满了降下新神（下一局起）
+// 把打完的局算进神乐：醒来以后别人每自摸、她每放铳一次积一点（一局最多一点），满了降下新神（下一局起）
 function sync(g: Game, seat: number): KomakiGameState {
   const gs = gameStateOf(g, seat);
   gs.first ??= pickGod(g, seat, 1);
@@ -108,7 +108,7 @@ function sync(g: Game, seat: number): KomakiGameState {
     const asleep = timerOf(g, seat, gs, round) > 0;
     if (e.result.wins.some((w) => w.seat === seat)) (gs.wins ??= []).push(round);
     if (gs.second || asleep) continue;
-    if (!e.result.wins.some((w) => w.from === seat)) continue;
+    if (!e.result.wins.some((w) => w.seat !== seat && (w.from === seat || w.from === null))) continue;
     gs.kagura = (gs.kagura ?? 0) + 1;
     if (gs.kagura >= KOMAKI.kagura) {
       gs.second = pickGod(g, seat, 2, gs.first);
@@ -294,7 +294,7 @@ export const komakiAbility: Ability = {
   name: '神降',
   description: `开局就睡着，随机一位神明附身（${KOMAKI_GODS.filter((x) => x.id !== 'uzume')
     .map((x) => x.name)
-    .join('、')}），各有各的能力。桌上的强者（${KOMAKI.strongCost} 费以上）越多、她自己和得越多，醒得越早；醒来后变回无能力者，换成天宇受卖命的神乐（封印不了）：每被点和一次积一点，满 ${KOMAKI.kagura} 点立刻降下新神。`,
+    .join('、')}），各有各的能力。桌上的强者（${KOMAKI.strongCost} 费以上）越多、她自己和得越多，醒得越早；醒来后变回无能力者，换成天宇受卖命的神乐（封印不了）：被自摸或放铳一次积一点，满 ${KOMAKI.kagura} 点立刻降下新神。`,
 
   dealRules(g, seat) {
     sync(g, seat);
@@ -441,7 +441,7 @@ export const komakiAbility: Ability = {
       return { label: `${x.name}·${x.skill}`, note: `${komakiAsleep(g, seat) ? '睡着，' : '神乐降下的新神，'}${x.desc}`, enabled: false, active: true };
     }
     const n = komakiKagura(g, seat) ?? 0;
-    return { label: '神乐', note: `醒着，没有能力。被点和一次积一点，满 ${KOMAKI.kagura} 点降下新神`, enabled: false, meter: { value: n, max: KOMAKI.kagura } };
+    return { label: '神乐', note: `醒着，没有能力。被自摸或放铳一次积一点，满 ${KOMAKI.kagura} 点降下新神`, enabled: false, meter: { value: n, max: KOMAKI.kagura } };
   },
 
   insight(g, seat) {
@@ -450,7 +450,7 @@ export const komakiAbility: Ability = {
       const x = godOf(god);
       return [`${komakiAsleep(g, seat) ? '睡着' : '神乐降神'}：${x.name}附身`, `${x.skill}：${x.desc}`];
     }
-    return ['醒着，没有能力', `神乐：被点和 ${komakiKagura(g, seat) ?? 0}/${KOMAKI.kagura} 次`];
+    return ['醒着，没有能力', `神乐：被自摸、放铳 ${komakiKagura(g, seat) ?? 0}/${KOMAKI.kagura} 次`];
   },
 };
 
