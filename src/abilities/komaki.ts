@@ -8,9 +8,9 @@ import { isDoraTile } from './kuro';
 import type { Ability } from './types';
 
 // 神代小莳（永水）：东一局起在睡觉，开局时随机一位神明附身（初始神不会是天宇受卖命）。
-// 看不见的计时器从 KOMAKI.timer 开始，每过一局（连庄也算一局），桌上每有一位 3 费以上的对手就减一。
+// 看不见的计时器从 KOMAKI.timer 开始，每过一局（连庄也算一局），桌上每有一位 3 费以上的对手就减一；她自己每和一次也减一。
 // 减到 0 以后的下一局起她醒了：没有能力，换成天宇受卖命的神乐：每被点和一次积一点，满 KOMAKI.kagura 点立刻降下新神（和初始神不同），
-// 新神一直留到这一场结束。
+// 新神一直留到这一场结束。神乐封印不了（蛇神威、天照都封不住醒着的她）。
 // 九位神明（id 也是素材页上的动画槽）：
 // - 琼琼杵尊·降临：配牌就听牌（天听）
 // - 木花咲耶姬·樱花火山：配牌有两组暗刻；容易摸到能杠的第四张；杠后岭上牌一定是进张（听牌时是和了牌）；开了第三杠以后，听牌就自摸
@@ -22,7 +22,7 @@ import type { Ability } from './types';
 // - 大国主神·结缘：进张效率上升；有嵌张补嵌张，有孤张把孤张连成对子、刻子
 // - 建御雷神·威压：立直以后强力压住其他三家的进张，一发的那一巡很容易自摸
 export const KOMAKI = {
-  timer: 9,
+  timer: 10,
   strongCost: 3, // 几费以上算强者
   kagura: 3, // 被点和几次降下新神
   ninigiTries: 200,
@@ -60,6 +60,7 @@ interface KomakiGameState {
   second?: GodId; // 神乐降下的新神
   secondFrom?: number; // 新神从第几局起
   kagura?: number; // 醒来以后被点和了几次
+  wins?: number[]; // 她在第几局和了（计时器每次减一）
   ended?: number; // g.events 里看过几次 roundEnd（第 n 次是第 n 局）
   seen?: number; // g.events 里看到哪了
 }
@@ -82,9 +83,13 @@ export function komakiStrong(g: Game, seat: number): number {
   return [0, 1, 2, 3].filter((s) => s !== seat && seatCost(g, s) >= KOMAKI.strongCost).length;
 }
 
-// 看不见的计时器：第 round 局开始时还剩几点
+// 看不见的计时器：第 round 局开始时还剩几点（之前的局：每局减强者数，她和一次减一）
+function timerOf(g: Game, seat: number, gs: KomakiGameState, round: number): number {
+  const won = (gs.wins ?? []).filter((r) => r < round).length;
+  return Math.max(0, KOMAKI.timer - komakiStrong(g, seat) * Math.max(0, round - 1) - won);
+}
 export function komakiTimer(g: Game, seat: number, round = g.round): number {
-  return Math.max(0, KOMAKI.timer - komakiStrong(g, seat) * Math.max(0, round - 1));
+  return timerOf(g, seat, sync(g, seat), round);
 }
 
 // 第 round 局还在睡
@@ -100,7 +105,9 @@ function sync(g: Game, seat: number): KomakiGameState {
     const e = g.events[i];
     if (e.type !== 'roundEnd') continue;
     const round = (gs.ended = (gs.ended ?? 0) + 1);
-    if (gs.second || komakiAsleep(g, seat, round)) continue;
+    const asleep = timerOf(g, seat, gs, round) > 0;
+    if (e.result.wins.some((w) => w.seat === seat)) (gs.wins ??= []).push(round);
+    if (gs.second || asleep) continue;
     if (!e.result.wins.some((w) => w.from === seat)) continue;
     gs.kagura = (gs.kagura ?? 0) + 1;
     if (gs.kagura >= KOMAKI.kagura) {
@@ -287,7 +294,7 @@ export const komakiAbility: Ability = {
   name: '神降',
   description: `开局就睡着，随机一位神明附身（${KOMAKI_GODS.filter((x) => x.id !== 'uzume')
     .map((x) => x.name)
-    .join('、')}），各有各的能力。桌上的强者（${KOMAKI.strongCost} 费以上）越多，她醒得越早；醒来后变回无能力者，换成天宇受卖命的神乐：每被点和一次积一点，满 ${KOMAKI.kagura} 点立刻降下新神。`,
+    .join('、')}），各有各的能力。桌上的强者（${KOMAKI.strongCost} 费以上）越多、她自己和得越多，醒得越早；醒来后变回无能力者，换成天宇受卖命的神乐（封印不了）：每被点和一次积一点，满 ${KOMAKI.kagura} 点立刻降下新神。`,
 
   dealRules(g, seat) {
     sync(g, seat);
@@ -328,6 +335,16 @@ export const komakiAbility: Ability = {
       g.emit({ type: 'ability', seat, ability: 'komaki', text: '神乐' });
       g.emit({ type: 'ability', seat, ability: 'komaki', text: godOf(gs.second).name });
     }
+  },
+
+  // 神乐（醒着、新神还没降下来）封印不了
+  unsealable(g, seat, round) {
+    return komakiGod(g, seat, round) === null;
+  },
+
+  // 琼琼杵尊的天听配牌：坐庄时第一张不给天和
+  noTenhou(g, seat) {
+    return komakiGod(g, seat) === 'ninigi';
   },
 
   // 天照：其他人的能力全部失效（自己被别人封住时不算）

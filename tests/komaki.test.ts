@@ -50,13 +50,13 @@ const fakeEnd = (wins: { seat: number; from: number | null }[]): RoundResult =>
   ({ kind: wins.length ? 'win' : 'exhaustive', wins, tenpai: [false, false, false, false], deltas: [0, 0, 0, 0] }) as unknown as RoundResult;
 
 describe('神代小莳', () => {
-  it('5 费；计时器 9 点，每过一局减去 3 费以上的对手数，归零的下一局醒来、没有能力', () => {
+  it('5 费；计时器 10 点，每过一局减去 3 费以上的对手数，归零的下一局醒来、没有能力', () => {
     expect(byId('komaki').cost).toBe(5);
-    const strong = ['komaki', 'teru', 'koromo', 'awai']; // 三个：第 4 局醒
+    const strong = ['komaki', 'teru', 'koromo', 'awai']; // 三个：第 5 局醒
     const g = newGame(1, strong);
-    expect([1, 2, 3].every((r) => komakiAsleep(g, 0, r))).toBe(true);
-    expect(komakiAsleep(g, 0, 4)).toBe(false);
-    expect(komakiGod(g, 0, 4)).toBeNull();
+    expect([1, 2, 3, 4].every((r) => komakiAsleep(g, 0, r))).toBe(true);
+    expect(komakiAsleep(g, 0, 5)).toBe(false);
+    expect(komakiGod(g, 0, 5)).toBeNull();
     const two = newGame(1, ['komaki', 'saki', 'sawaya', 'mako']); // 两个：第 6 局醒
     expect(komakiAsleep(two, 0, 5)).toBe(true);
     expect(komakiAsleep(two, 0, 6)).toBe(false);
@@ -85,9 +85,9 @@ describe('神代小莳', () => {
     g.abilityGameState[0] = { first };
     const ends = [
       fakeEnd([{ seat: 1, from: 0 }]), // 第 1 局：还在睡，不算
+      fakeEnd([{ seat: 0, from: 1 }]), // 第 2 局：她和了，计时器多减一
       fakeEnd([]),
-      fakeEnd([]),
-      fakeEnd([{ seat: 2, from: 0 }]), // 第 4 局：醒了，1 点
+      fakeEnd([{ seat: 2, from: 0 }]), // 第 4 局：10 - 3×3 - 1 = 0，醒了，1 点
       fakeEnd([{ seat: 1, from: 3 }]),
       fakeEnd([{ seat: 1, from: 0 }, { seat: 2, from: 0 }]), // 双响算一次：2 点
       fakeEnd([{ seat: 3, from: 0 }]), // 第 7 局：3 点，降神
@@ -99,6 +99,37 @@ describe('神代小莳', () => {
     expect(second).not.toBe(first);
     expect(second).not.toBe('uzume');
     expect(komakiGod(g, 0, 12)).toBe(second);
+  });
+
+  it('她自己和一次计时器减一；神乐封印不了，睡着时照样被封', () => {
+    const sealer = { id: 'probe', name: '封印', description: '', seals: () => true };
+    const g = new Game({ seed: 2, players: [...WEAK.slice(0, 3).map((id) => ({ name: id, ability: byId(id).ability })), { name: 'probe', ability: sealer }] });
+    const first = komakiGod(g, 0, 1);
+    g.events.length = 0;
+    g.abilityGameState[0] = { first };
+    for (let i = 0; i < KOMAKI.timer; i++) g.events.push({ type: 'roundEnd', result: fakeEnd([{ seat: 0, from: null }]) });
+    expect(komakiAsleep(g, 0, KOMAKI.timer)).toBe(true);
+    expect(komakiAsleep(g, 0, KOMAKI.timer + 1)).toBe(false);
+    expect(g.isSealed(0, 3)).toBe(true);
+    expect(g.isSealed(0, KOMAKI.timer + 1)).toBe(false);
+  });
+
+  it('天听配牌的人坐庄时不会天和：淡的天听、小莳的琼琼杵尊', () => {
+    let tenpaiDeals = 0;
+    for (const [ids, me] of [
+      [['awai', 'mako', 'ako', 'izumi'], 0],
+      [WEAK, 0],
+    ] as [string[], number][]) {
+      for (let seed = 1; seed <= 150; seed++) {
+        const g = new Game({ seed, firstDealer: me, players: ids.map((id) => ({ name: id, ability: byId(id).ability })) });
+        if (!g.abilities[me]!.noTenhou!(g, me)) continue;
+        tenpaiDeals++;
+        const p = g.players[me];
+        expect(p.hand.length).toBe(14);
+        expect(shanten(toCounts(p.hand))).toBeGreaterThanOrEqual(0);
+      }
+    }
+    expect(tenpaiDeals).toBeGreaterThan(100);
   });
 
   it('琼琼杵尊：配牌就听牌', () => {

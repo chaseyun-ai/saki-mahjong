@@ -87,6 +87,10 @@ export interface Ability {
   canWin?(g: Game, seat: number): boolean;
   // 不许 target 和牌（涅莉的七姐妹封住的人）
   forbidsWin?(g: Game, seat: number, target: number): boolean;
+  // 这一局（第 round 局）别人封印不了她（小莳的神乐）
+  unsealable?(g: Game, seat: number, round: number): boolean;
+  // 这一局是天听配牌：坐庄时第一次摸牌不给天和（淡的天听、照的九莲宝灯、小莳的琼琼杵尊）
+  noTenhou?(g: Game, seat: number): boolean;
   // 这一局（第 round 局）封印别人的能力（爽的蛇神威）：为真时别的座位的能力全部不动
   seals?(g: Game, seat: number, round: number): boolean;
   // 别人看得穿的这家能力状态（照的照魔镜），一行一条；没写就只显示能力名

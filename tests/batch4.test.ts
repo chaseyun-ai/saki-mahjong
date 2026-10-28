@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CHARACTERS } from '../src/abilities/characters';
+import { CHARACTERS, baseAi } from '../src/abilities/characters';
+import type { Ability } from '../src/abilities/types';
 import { akoDistance, akoSense } from '../src/abilities/ako';
 import { seikoFish } from '../src/abilities/seiko';
 import { yuWarm } from '../src/abilities/yu';
@@ -7,7 +8,7 @@ import { kuroLost } from '../src/abilities/kuro';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
-import { isRed, toCounts } from '../src/engine/tiles';
+import { TileId, isRed, kindOf, toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -64,6 +65,44 @@ describe('片冈优希', () => {
     expect(sh.east[0]).toBeGreaterThan(20);
     expect(sh.south[0]).toBeGreaterThan(10);
     expect(sh.east[1] / sh.east[0]).toBeLessThan(sh.south[1] / sh.south[0] - 0.3);
+  }, 120000);
+
+  it('东场坐庄时，别人对她摸牌定的规矩一半不算', () => {
+    // 测试用的控场：除了自己，谁都摸不到万子（岭上牌除外）
+    const probe: Ability = {
+      id: 'probe',
+      name: '探针',
+      description: '',
+      beforeAnyDraw(_g, seat, drawer, rinshan) {
+        if (rinshan || drawer === seat) return;
+        return { seat, ability: 'probe', text: '不给万子', deny: (t: TileId) => kindOf(t) < 9 };
+      },
+    };
+    const man = { eastDealer: [0, 0], other: [0, 0] };
+    for (let seed = 1; seed <= 6; seed++) {
+      const ids = ['yuuki', 'mako', 'ako', 'probe'];
+      const g = new Game({ seed, format: 'south', players: ids.map((id) => ({ name: id, ability: id === 'probe' ? probe : byId(id).ability })) });
+      g.onEvent((e) => {
+        if (e.type !== 'draw' || e.seat !== 0 || g.rinshanDraw) return;
+        // 牌山里没有别的牌可换了（万子以外的被摸光）不算
+        if (!g.wall.live.some((t) => kindOf(t) >= 9)) return;
+        const m = g.roundWind === 0 && g.dealer === 0 ? man.eastDealer : man.other;
+        m[0]++;
+        if (kindOf(g.players[0].drawn!) < 9) m[1]++;
+      });
+      let steps = 0;
+      while (g.phase !== 'gameEnd' && ++steps < 20000) {
+        if (g.phase === 'roundEnd') {
+          g.nextRound();
+          continue;
+        }
+        const s = g.waitingSeats()[0];
+        g.act(s, chooseAction(g, s, ids[s] === 'probe' ? baseAi : byId(ids[s]).ai));
+      }
+    }
+    expect(man.eastDealer[0]).toBeGreaterThan(50);
+    expect(man.eastDealer[1] / man.eastDealer[0]).toBeGreaterThan(0.06);
+    expect(man.other[1] / man.other[0]).toBeLessThan(0.02);
   }, 120000);
 });
 

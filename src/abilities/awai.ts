@@ -265,6 +265,10 @@ export const awaiAbility: Ability = {
     }
   },
 
+  noTenhou(g, seat) {
+    return stateOf(g, seat).kanKind !== undefined;
+  },
+
   onRoundStart(g, seat) {
     const st = stateOf(g, seat);
     if (st.circle) g.emit({ type: 'ability', seat, ability: 'awai', text: '绝对安全圈' });

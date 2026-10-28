@@ -254,7 +254,7 @@ export class Game {
   // 这家的能力这一局被别人封印了没有（爽的蛇神威）。round 不写是现在这一局（发牌前是马上要开的那一局）
   isSealed(seat: number, round = this.phase === 'predeal' ? this.round + 1 : this.round): boolean {
     const own = this.abilities[seat];
-    if (own?.immune || own?.absolute) return false;
+    if (own?.immune || own?.absolute || own?.unsealable?.(this, seat, round)) return false;
     return this.abilities.some((a, o) => o !== seat && !!a?.seals?.(this, o, round));
   }
 
@@ -453,6 +453,7 @@ export class Game {
       return;
     }
     this.applyDrawAbilities(seat, rinshan);
+    if (!rinshan && seat === this.dealer && this.isFirstTurn(seat)) this.denyTenhou(seat);
     const tile = rinshan ? this.wall.drawRinshan() : this.wall.draw();
     const p = this.players[seat];
     p.hand.push(tile);
@@ -498,6 +499,13 @@ export class Game {
     for (const r of rules.slice(0, n)) {
       if (r.deny(before)) this.emit({ type: 'ability', seat: r.seat, ability: r.ability, text: r.text, target: seat });
     }
+  }
+
+  // 天听配牌的人坐庄时，第一张摸到的不能是和了牌（不许天和）
+  private denyTenhou(seat: number): void {
+    if (!this.abilities[seat]?.noTenhou?.(this, seat)) return;
+    const waits = this.waits(seat);
+    if (waits.length && waits.includes(kindOf(this.wall.live[0]))) this.wall.bringToLive(0, (t) => !waits.includes(kindOf(t)), this.rng);
   }
 
   private isFirstTurn(seat: number): boolean {

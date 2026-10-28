@@ -249,6 +249,11 @@ export const teruAbility: Ability = {
     if (stateOf(g, seat).chuuren !== undefined) g.emit({ type: 'ability', seat, ability: 'teru', text: '叽叽叽' });
   },
 
+  // 叽叽叽的九莲宝灯听牌：坐庄时第一张不给天和
+  noTenhou(g, seat) {
+    return stateOf(g, seat).chuuren !== undefined;
+  },
+
   canWin(g, seat) {
     return teruMirrored(g, seat);
   },
