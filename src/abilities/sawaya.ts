@@ -18,7 +18,8 @@ import { PRIORITY, type Ability, type DealRule, type PreDealOption } from './typ
 // - 蛇神威：封印对手所有能力，3 局（包括这一局）
 export const SAWAYA = {
   drawChance: 0.5, // 云让她摸到想要的牌的概率
-  strongChance: 0.75, // 海神威、鸟神威（大幅）
+  strongChance: 0.8, // 海神威、鸟神威（大幅）
+  kamuyBoost: 0.3, // 海神威、鸟神威起作用时，想要的牌里没有进张就换成别的进张
   seaJunk: 0.35, // 海神威：别人摸到用不上的万子的概率
   redJunk: 0.6, // 红云给了对手：那一家摸到没用的字牌的概率
 };
@@ -263,6 +264,19 @@ function wants(g: Game, seat: number): ((t: TileId) => boolean)[] {
   return out;
 }
 
+// 进张：能减少向听的牌
+function reduces(g: Game, seat: number): (t: TileId) => boolean {
+  const p = g.players[seat];
+  const counts = toCounts(p.hand);
+  const sh = shanten(counts, p.melds.length);
+  return (t) => {
+    counts[kindOf(t)]++;
+    const after = shanten(counts, p.melds.length);
+    counts[kindOf(t)]--;
+    return after < sh;
+  };
+}
+
 // 对这家有用的牌：进张，或者和手里的牌凑得成对子、搭子
 function helps(g: Game, seat: number): (t: TileId) => boolean {
   const p = g.players[seat];
@@ -282,11 +296,14 @@ function helps(g: Game, seat: number): (t: TileId) => boolean {
 // 海神威：里宝牌换成她手里最多的那种万子（换第一张里宝牌指示牌）
 function seaUra(g: Game, seat: number): void {
   const counts = toCounts(g.players[seat].hand);
-  let best = -1;
-  for (let k = 0; k < 9; k++) if (counts[k] > 0 && (best < 0 || counts[k] > counts[best])) best = k;
-  if (best < 0) return;
-  const indicator = best === 0 ? 8 : best - 1;
-  g.wall.bringToUra(0, (t) => kindOf(t) === indicator, g.rng);
+  const most = Math.max(...counts.slice(0, 9));
+  if (most === 0) return;
+  // 一样多的有几种时，哪种的指示牌还拿得到就用哪种（指示牌可能都在别人手里、牌河里）
+  for (let k = 0; k < 9; k++) {
+    if (counts[k] !== most) continue;
+    const indicator = k === 0 ? 8 : k - 1;
+    if (g.wall.bringToUra(0, (t) => kindOf(t) === indicator, g.rng)) return;
+  }
 }
 
 // 她自己的配牌调整好以后定规矩：后动的人换牌时不能让它变差
@@ -420,8 +437,15 @@ export const sawayaAbility: Ability = {
     const red = sawayaRedTarget(g, seat);
     if (red !== null && red !== seat) g.wall.bringToLive(0, (t) => !isHonor(kindOf(t)), g.rng);
     if (sawayaOn(g, seat, 'akkoro')) seaUra(g, seat);
+    const honorOk = (t: TileId) => red === null || red === seat || !isHonor(kindOf(t));
     const good = helps(g, seat);
-    for (const want of wants(g, seat)) if (g.wall.bringToLive(0, (t) => want(t) && good(t) && (red === null || red === seat || !isHonor(kindOf(t))), g.rng)) return;
+    const useful = reduces(g, seat);
+    const list = wants(g, seat);
+    const bring = (pred: (t: TileId) => boolean) => g.wall.bringToLive(0, (t) => pred(t) && honorOk(t), g.rng);
+    // 先挑想要的牌里的进张；海神威、鸟神威起作用时，没有就换成别的进张；再不行才挑凑得成对子、搭子的
+    if (list.some((want) => bring((t) => want(t) && useful(t)))) return;
+    if ((sawayaOn(g, seat, 'akkoro') || sawayaOn(g, seat, 'huri')) && g.rng.chance(SAWAYA.kamuyBoost) && bring(useful)) return;
+    for (const want of list) if (bring((t) => want(t) && good(t))) return;
   },
 
   afterDiscard(g, seat) {
