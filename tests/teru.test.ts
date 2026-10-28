@@ -158,7 +158,7 @@ describe('宫永照', () => {
   it('叽叽叽：自摸满八次，下一局配牌是九莲宝灯的听牌，和出九莲宝灯以后从头数', () => {
     let chuuren = 0;
     let tries = 0;
-    for (let seed = 1; seed <= 8; seed++) {
+    for (let seed = 1; seed <= 12; seed++) {
       play(seed, LINEUPS[seed % 4], {
         setup: (g, me) => {
           let armed = false;

@@ -70,17 +70,28 @@ describe('原村和', () => {
 
   it('变身那一局出一次“天使和”，头像框挂“天使”', () => {
     const seats = ['nodoka', 'awai', 'teru', 'koromo'].map(byId);
-    let shown = 0;
-    let badge = false;
-    play(2, seats, 'south', (g, me) =>
-      g.onEvent((e) => {
-        if (e.type === 'ability' && e.seat === me && e.text === '天使和') shown++;
-        if (e.type === 'draw' && nodokaAngel(g, me)) badge ||= g.abilities[me]!.badge!(g, me) === '天使';
-      }),
-    );
-    expect(shown).toBe(1);
-    expect(badge).toBe(true);
-  }, 30000);
+    // 有的场在她变身之前就有人被打飞了：只看变了身的场
+    let games = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      let shown = 0;
+      let badge = false;
+      let angel = false;
+      play(seed, seats, 'south', (g, me) =>
+        g.onEvent((e) => {
+          if (e.type === 'ability' && e.seat === me && e.text === '天使和') shown++;
+          if (e.type === 'draw' && nodokaAngel(g, me)) {
+            angel = true;
+            badge ||= g.abilities[me]!.badge!(g, me) === '天使';
+          }
+        }),
+      );
+      if (!angel) continue;
+      games++;
+      expect(shown).toBe(1);
+      expect(badge).toBe(true);
+    }
+    expect(games).toBeGreaterThan(2);
+  }, 60000);
 
   it('天使和：别人摸牌的规矩一半不算（摸得到被挡的牌，但比没人挡时少）', () => {
     setNodokaCosts({ ...COSTS, probe: 5 });
@@ -91,6 +102,8 @@ describe('原村和', () => {
         play(seed, seats, 'south', (g, me) =>
           g.onEvent((e) => {
             if (e.type !== 'draw' || e.seat !== me || g.rinshanDraw) return;
+            // 万子以外的牌被摸光了，挡也挡不住：不算
+            if (!g.wall.live.some((t) => kindOf(t) >= 9)) return;
             const man = kindOf(g.players[me].drawn!) < 9 ? 1 : 0;
             if (nodokaAngel(g, me)) {
               n.angel++;
@@ -103,7 +116,7 @@ describe('原村和', () => {
         );
       }
       expect(n.angel).toBeGreaterThan(200);
-      // 平时几乎摸不到万子（只有换不出别的牌时，这一桌约 4%，随牌局走向有出入）
+      // 平时牌山里还有别的牌时摸不到万子
       expect(n.beforeHit / n.before).toBeLessThan(0.05);
       // 天使和：一半的规矩不算，大约摸到平常（约 1/4）的一半
       const rate = n.angelHit / n.angel;
