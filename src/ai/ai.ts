@@ -254,7 +254,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     trap: number; // 洋榎：听牌时听的是自己打过的牌的筋（引っ掛け）
     bad: number; // 久：打这张听的是烂听牌（只等一种牌，还有剩的）
   };
-  // 被爽的霍亚乌封印时读不了牌
+  // 被爽的蛇神威封印时读不了牌
   const sealed = g.isSealed(seat);
   // 读得出别人听什么：洋榎、照魔镜看过以后的照、睁开右眼的电脑美穗子（玩家操作的美穗子只看得到花色）
   const eyeReads = style.eye && mihokoEyeOpen(g, seat) && !g.manual[seat];
@@ -769,7 +769,7 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     p.melds.every((m) => m.tiles.every((t) => isSimple(kindOf(t)))) &&
     p.hand.filter((t) => isYaochu(kindOf(t))).length <= 1;
   const yakuSecured = hasYakuhaiMeld(g, seat);
-  // 真子：手里别的花色只剩两张以内，染手那门和字牌能鸣（混一色）；爽开了红云、白云、阿科罗，霞请神后，宥也一样
+  // 真子：手里别的花色只剩两张以内，染手那门和字牌能鸣（混一色）；爽开了红云、白云、黑云、海神威，霞请神后，宥也一样
   // 霞请神后做绝掉的那门，宥做万子
   const sealedMe = g.isSealed(seat);
   const dye =

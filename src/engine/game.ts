@@ -248,7 +248,7 @@ export class Game {
     return ![0, 1, 2, 3].some((o) => o !== seat && this.binds(o, seat) && !!this.active(o)?.forbidsWin?.(this, o, seat));
   }
 
-  // 这家的能力这一局被别人封印了没有（爽的霍亚乌神威）。round 不写是现在这一局（发牌前是马上要开的那一局）
+  // 这家的能力这一局被别人封印了没有（爽的蛇神威）。round 不写是现在这一局（发牌前是马上要开的那一局）
   isSealed(seat: number, round = this.phase === 'predeal' ? this.round + 1 : this.round): boolean {
     const own = this.abilities[seat];
     if (own?.immune || own?.absolute) return false;
@@ -296,30 +296,6 @@ export class Game {
   addDealRule(r: DealRule): boolean {
     if (!this.binds(r.seat, r.target) || this.shrugs(r.seat, r.target)) return false;
     this.dealRules.push(r);
-    return true;
-  }
-
-  // 配完牌以后（afterDeal）actor 把 seat 手里第 i 张换成牌山里一张符合条件的牌：
-  // 只从牌山后面没锁的牌里挑，比 actor 先动的人给 seat 配牌定的规矩不能变差；管不到、这一局碰不到 seat 的配牌时不换
-  swapHandTile(actor: number, seat: number, i: number, pred: (t: TileId) => boolean): boolean {
-    if (!this.binds(actor, seat) || this.dealShrugged.has(`${actor}-${seat}`)) return false;
-    const hand = this.players[seat].hand;
-    if (pred(hand[i])) return true;
-    const pri = (s: number) => this.abilities[s]?.priority ?? PRIORITY.self;
-    const rules = this.dealRules.filter((r) => r.target === seat && r.seat !== actor && pri(r.seat) < pri(actor));
-    const cands: number[] = [];
-    // 前几张马上要摸，别动
-    for (let j = 8; j < this.wall.live.length; j++) {
-      const t = this.wall.live[j];
-      if (this.wall.locked.has(t) || !pred(t)) continue;
-      const after = hand.slice();
-      after[i] = t;
-      if (rules.some((r) => r.bad(after) > r.bad(hand))) continue;
-      cands.push(j);
-    }
-    if (!cands.length) return false;
-    const j = cands[this.rng.int(cands.length)];
-    [hand[i], this.wall.live[j]] = [this.wall.live[j], hand[i]];
     return true;
   }
 
@@ -426,7 +402,7 @@ export class Game {
     // 配牌：先由所有人定规矩，再依次调整（换牌不能让任何一条规矩变差），最后统一锁定、发牌
     const order = this.abilityOrder();
     this.dealRules = [];
-    // 爽的霍亚乌在她自己的 dealRules 里定下来（她最先动），后面被封印的人就不再出手
+    // 爽最先动：上一局叫的蛇神威封住的人这里就不再出手
     for (const s of order) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []).filter((r) => this.binds(r.seat, r.target) && !this.shrugs(r.seat, r.target)));
     this.dealShrugged.clear();
     for (const s of order) for (let t = 0; t < 4; t++) if (this.shrugs(s, t)) this.dealShrugged.add(`${s}-${t}`);

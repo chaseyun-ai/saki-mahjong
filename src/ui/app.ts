@@ -731,7 +731,12 @@ export class App {
     if (el.dataset.ui === 'pd' && el.dataset.pd) {
       const id = el.dataset.pd;
       if (this.pdPicks?.has(id)) this.pdPicks.delete(id);
-      else this.pdPicks?.add(id);
+      else {
+        // 同一组只能选一个（爽的红云给谁）
+        const group = el.dataset.group;
+        if (group) this.root.querySelectorAll<HTMLElement>(`[data-ui="pd"][data-group="${group}"]`).forEach((x) => this.pdPicks?.delete(x.dataset.pd!));
+        this.pdPicks?.add(id);
+      }
       this.renderPredeal();
       return;
     }
@@ -740,12 +745,17 @@ export class App {
       this.renderPredeal();
       return;
     }
+    if (el.dataset.ui === 'pd-fold') {
+      this.pdFolded = !this.pdFolded;
+      this.renderPredeal();
+      return;
+    }
     if (el.dataset.ui === 'pd-go') {
       this.finishPredeal();
       return;
     }
     if (el.dataset.ui === 'skill') {
-      if (this.game && !this.vision) this.chars[this.me].ability?.pressSkill?.(this.game, this.me);
+      if (this.game && !this.vision) this.chars[this.me].ability?.pressSkill?.(this.game, this.me, el.dataset.choice);
       this.render();
       return;
     }
@@ -1308,11 +1318,11 @@ export class App {
     return extra ? `<div class="ability-panel foresight-only" style="--c:${c.color}">${extra}</div>` : '';
   }
 
-  // 谁封印了自己：末原恭子鸣牌打乱流向只到她下一次摸牌，狮子原爽的霍亚乌是一整局
+  // 谁封印了自己：末原恭子鸣牌打乱流向只到她下一次摸牌，狮子原爽的蛇神威是一整局
   private sealText(): string {
     const g = this.game!;
     const by = g.abilities.find((a, o) => o !== this.me && a?.seals?.(g, o, g.round));
-    return by?.id === 'kyouko' ? '末原恭子鸣牌打乱了流向，到她下一次摸牌之前能力不起作用' : '狮子原爽的霍亚乌神威封印了别人的能力，这一局能力不起作用';
+    return by?.id === 'kyouko' ? '末原恭子鸣牌打乱了流向，到她下一次摸牌之前能力不起作用' : '狮子原爽的蛇神威封印了别人的能力，这一局能力不起作用';
   }
 
   // 主动开的技能：能量条和开关按钮（演算中不显示）
@@ -1326,9 +1336,14 @@ export class App {
       ? `<span class="stamina energy" title="能量"><i style="width:${(b.meter.value / b.meter.max) * 100}%"></i></span><span class="st-num">${b.meter.value}</span>`
       : '';
     // 有按钮的技能（pressSkill）画按钮；发牌前选的技能（淡、霞）只显示状态
-    const body = ab!.pressSkill
-      ? `<button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button>`
-      : `<div class="fs-note skill-state">${b.note}</div>`;
+    // 要选对象的（爽的瘟神威）一个对象一个按钮
+    const body = b.choices
+      ? `<div class="fs-note skill-state">${b.note}</div><div class="skill-choices">${b.choices
+          .map((c) => `<button class="deep-btn" data-ui="skill" data-choice="${c.id}" ${c.enabled ? '' : 'disabled'}>${c.label}</button>`)
+          .join('')}</div>`
+      : ab!.pressSkill
+        ? `<button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button>`
+        : `<div class="fs-note skill-state">${b.note}</div>`;
     return `<div class="foresight skill"><div class="fs-title">${ab!.name}${b.active ? '<span class="skill-on">发动中</span>' : ''}${meter}</div>${body}</div>`;
   }
 
@@ -1337,6 +1352,8 @@ export class App {
   private pdPicks: Set<string> | null = null;
   // 选数的选项（涅莉分运势）现在选的数
   private pdValues: Record<string, number> | null = null;
+  // 配牌后的面板收起来了（看整张牌桌）
+  private pdFolded = false;
 
   private predealHtml(): string {
     const g = this.game!;
@@ -1354,7 +1371,7 @@ export class App {
         const affordable = on || (o.cost ?? 0) <= left;
         const usable = o.enabled && affordable;
         const note = !o.enabled ? (o.note ?? '') : !affordable ? '能量不够' : o.cost ? `能量 -${o.cost}` : '';
-        return `<button class="pd-opt${on ? ' on' : ''}" data-ui="pd" data-pd="${o.id}" ${usable ? '' : 'disabled'}>
+        return `<button class="pd-opt${on ? ' on' : ''}" data-ui="pd" data-pd="${o.id}"${o.group ? ` data-group="${o.group}"` : ''} ${usable ? '' : 'disabled'}>
           <span class="pd-check">${on ? '✓' : ''}</span>
           <span class="pd-text"><b>${o.name}</b><small>${o.desc}</small></span>
           <span class="pd-note">${note}</span></button>`;
@@ -1367,14 +1384,47 @@ export class App {
     const hand = post
       ? `<div class="pd-hand">${[...g.players[this.me].hand].sort((a, b) => a - b).map((t) => tileHtml(t, { size: 'pond' })).join('')}</div>`
       : '';
-    return `<div class="modal${post ? ' postdeal' : ''}"><div class="result predeal" style="--c:${this.chars[this.me].color}">
-        <h2>${g.roundLabel()} · ${post ? '配牌后' : '发牌前'}</h2>
-        ${hand}
-        <p class="pd-sub">${post ? '看着手牌选这一局要发动的技能（可以都不选）' : '选这一局要发动的技能（可以都不选）'}</p>
+    const stage = post ? '配牌后' : '发牌前';
+    const go = post ? '开始' : '发牌';
+    // 牌桌已经建好时（配牌后，或者第二局起发牌前）面板停在上面、不盖住牌桌；还能收成一条，看整张牌桌
+    if (post || this.tableBuilt) {
+      if (this.pdFolded) {
+        const names = opts.filter((o) => this.pdPicks!.has(o.id)).map((o) => o.name);
+        return `<div class="pd-dock folded" style="--c:${this.chars[this.me].color}">
+        <b>${g.roundLabel()} · ${stage}</b><span class="pd-picked">${names.length ? `已选：${names.join('、')}` : '还没选'}</span>
+        <button data-ui="pd-fold">展开选技能</button><button class="primary" data-ui="pd-go">${go}</button></div>`;
+      }
+      return `<div class="pd-dock" style="--c:${this.chars[this.me].color}">
+        <div class="pd-dock-head"><b>${g.roundLabel()} · ${stage}</b><span>${post ? '看着手牌选' : '选'}这一局要发动的技能（可以都不选）</span>
+          <button data-ui="pd-fold">收起，看牌桌</button><button class="primary" data-ui="pd-go">${go}</button></div>
+        ${post ? hand : this.seatMapHtml()}
         ${energy}
         <div class="pd-list">${rows}</div>
-        <button class="primary" data-ui="pd-go">${post ? '开始' : '发牌'}</button>
+      </div>`;
+    }
+    return `<div class="modal"><div class="result predeal" style="--c:${this.chars[this.me].color}">
+        <h2>${g.roundLabel()} · 发牌前</h2>
+        ${this.seatMapHtml()}
+        <p class="pd-sub">选这一局要发动的技能（可以都不选）</p>
+        ${energy}
+        <div class="pd-list">${rows}</div>
+        <button class="primary" data-ui="pd-go">发牌</button>
       </div></div>`;
+  }
+
+  // 发牌前看不到牌桌：画个小牌桌，标出每一家是谁、坐什么风、多少分、什么能力（下家在右、对家在上、上家在左）
+  private seatMapHtml(): string {
+    const g = this.game!;
+    const REL = ['自己', '下家', '对家', '上家'];
+    const POS_CLS = ['sm-me', 'sm-right', 'sm-top', 'sm-left'];
+    const cells = [0, 1, 2, 3]
+      .map((rel) => {
+        const s = (this.me + rel) % 4;
+        const c = this.chars[s];
+        return `<div class="sm-seat ${POS_CLS[rel]}" style="--c:${c.color}"><span class="sm-rel">${REL[rel]} · ${WIND_CN[g.seatWind(s) - 27]}</span><b>${c.name}</b><small>${g.players[s].score} 点 · ${c.ability?.name ?? '无能力'}</small></div>`;
+      })
+      .join('');
+    return `<div class="seat-map">${cells}<div class="sm-center">${g.roundLabel()}</div></div>`;
   }
 
   // 选数的发牌前界面（涅莉开场分运势）：每一项一行加减，合规矩了才能发牌
@@ -1415,6 +1465,7 @@ export class App {
     else ab?.setPreDeal?.(g, this.me, [...(this.pdPicks ?? [])], this.pdValues ?? undefined);
     this.pdPicks = null;
     this.pdValues = null;
+    this.pdFolded = false;
     g.deal();
     if (!this.tableBuilt) this.buildTable();
     else this.step();
