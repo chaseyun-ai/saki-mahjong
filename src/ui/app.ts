@@ -1384,28 +1384,47 @@ export class App {
     const hand = post
       ? `<div class="pd-hand">${[...g.players[this.me].hand].sort((a, b) => a - b).map((t) => tileHtml(t, { size: 'pond' })).join('')}</div>`
       : '';
-    // 配牌后的面板停在上面、不盖住桌上的手牌；还能收成一条，看整张牌桌
-    if (post && this.pdFolded) {
-      const names = opts.filter((o) => this.pdPicks!.has(o.id)).map((o) => o.name);
-      return `<div class="pd-dock folded" style="--c:${this.chars[this.me].color}">
-        <b>${g.roundLabel()} · 配牌后</b><span class="pd-picked">${names.length ? `已选：${names.join('、')}` : '还没选'}</span>
-        <button data-ui="pd-fold">展开选技能</button><button class="primary" data-ui="pd-go">开始</button></div>`;
-    }
-    if (post) {
+    const stage = post ? '配牌后' : '发牌前';
+    const go = post ? '开始' : '发牌';
+    // 牌桌已经建好时（配牌后，或者第二局起发牌前）面板停在上面、不盖住牌桌；还能收成一条，看整张牌桌
+    if (post || this.tableBuilt) {
+      if (this.pdFolded) {
+        const names = opts.filter((o) => this.pdPicks!.has(o.id)).map((o) => o.name);
+        return `<div class="pd-dock folded" style="--c:${this.chars[this.me].color}">
+        <b>${g.roundLabel()} · ${stage}</b><span class="pd-picked">${names.length ? `已选：${names.join('、')}` : '还没选'}</span>
+        <button data-ui="pd-fold">展开选技能</button><button class="primary" data-ui="pd-go">${go}</button></div>`;
+      }
       return `<div class="pd-dock" style="--c:${this.chars[this.me].color}">
-        <div class="pd-dock-head"><b>${g.roundLabel()} · 配牌后</b><span>看着手牌选这一局要发动的技能（可以都不选）</span>
-          <button data-ui="pd-fold">收起，看牌桌</button><button class="primary" data-ui="pd-go">开始</button></div>
-        ${hand}
+        <div class="pd-dock-head"><b>${g.roundLabel()} · ${stage}</b><span>${post ? '看着手牌选' : '选'}这一局要发动的技能（可以都不选）</span>
+          <button data-ui="pd-fold">收起，看牌桌</button><button class="primary" data-ui="pd-go">${go}</button></div>
+        ${post ? hand : this.seatMapHtml()}
+        ${energy}
         <div class="pd-list">${rows}</div>
       </div>`;
     }
     return `<div class="modal"><div class="result predeal" style="--c:${this.chars[this.me].color}">
         <h2>${g.roundLabel()} · 发牌前</h2>
+        ${this.seatMapHtml()}
         <p class="pd-sub">选这一局要发动的技能（可以都不选）</p>
         ${energy}
         <div class="pd-list">${rows}</div>
         <button class="primary" data-ui="pd-go">发牌</button>
       </div></div>`;
+  }
+
+  // 发牌前看不到牌桌：画个小牌桌，标出每一家是谁、坐什么风、多少分、什么能力（下家在右、对家在上、上家在左）
+  private seatMapHtml(): string {
+    const g = this.game!;
+    const REL = ['自己', '下家', '对家', '上家'];
+    const POS_CLS = ['sm-me', 'sm-right', 'sm-top', 'sm-left'];
+    const cells = [0, 1, 2, 3]
+      .map((rel) => {
+        const s = (this.me + rel) % 4;
+        const c = this.chars[s];
+        return `<div class="sm-seat ${POS_CLS[rel]}" style="--c:${c.color}"><span class="sm-rel">${REL[rel]} · ${WIND_CN[g.seatWind(s) - 27]}</span><b>${c.name}</b><small>${g.players[s].score} 点 · ${c.ability?.name ?? '无能力'}</small></div>`;
+      })
+      .join('');
+    return `<div class="seat-map">${cells}<div class="sm-center">${g.roundLabel()}</div></div>`;
   }
 
   // 选数的发牌前界面（涅莉开场分运势）：每一项一行加减，合规矩了才能发牌
