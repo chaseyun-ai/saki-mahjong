@@ -92,8 +92,8 @@ describe('狮子原爽', () => {
           g.onEvent((e) => {
             if (e.type === 'ability' && e.seat !== me && g.isSealed(e.seat)) throw new Error(`封印中 ${e.ability} 还在发动`);
             if (e.type === 'dealt') {
-              // 照、玄封印不了
-              const sealable = [0, 1, 2, 3].filter((s) => s !== me && !g.abilities[s]?.immune && !g.abilities[s]?.absolute);
+              // 照、玄、天使和、神乐封印不了
+              const sealable = [0, 1, 2, 3].filter((s) => s !== me && !g.abilities[s]?.immune && !g.abilities[s]?.absolute && !g.abilities[s]?.unsealable?.(g, s, g.round));
               for (const s of [0, 1, 2, 3]) if (s !== me && !sealable.includes(s)) expect(g.isSealed(s)).toBe(false);
               const sealed = sealable.every((s) => g.isSealed(s));
               if (sealed) sealedRounds++;
