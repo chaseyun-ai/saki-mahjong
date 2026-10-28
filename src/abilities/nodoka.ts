@@ -1,5 +1,6 @@
 import type { Game } from '../engine/game';
 import type { Kind } from '../engine/tiles';
+import { seatCost as costOf } from './costs';
 import { readOthers } from './hiroe';
 import type { Ability } from './types';
 
@@ -14,12 +15,6 @@ import type { Ability } from './types';
 
 export const NODOKA = { start: 9, resist: 0.5, bigPay: 8000 };
 
-// 每个角色的费用（characters.ts 填进来；这里直接 import 角色表会循环引用）
-let costs: Record<string, number> = {};
-export function setNodokaCosts(table: Record<string, number>): void {
-  costs = table;
-}
-const costOf = (g: Game, s: number): number => costs[g.abilities[s]?.id ?? ''] ?? 0;
 
 // 桌上比她强的对手有几个
 export function nodokaStrong(g: Game, seat: number): number {

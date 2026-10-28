@@ -71,6 +71,8 @@ export const LOOKS: Record<string, Look> = {
   sera: { model: 'models/vroid-f.v2.glb', hair: '#6e3424', eyes: '#7a4a2a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 清水谷龙华：先占位，借和的长发模型换成墨绿偏黑的头发、灰绿色眼睛
   ryuuka: { model: 'models/vroid-g.v2.glb', hair: '#26332c', eyes: '#56705e', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 神代小莳：先占位，借霞的长发模型换成深棕色头发、紫色眼睛
+  komaki: { model: 'models/vroid-shino.v2.glb', hair: '#3a2a2a', eyes: '#7a5a9a', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
 };
 
 // 牌桌上要用到的全部模型文件

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS, baseAi } from '../src/abilities/characters';
-import { NODOKA, angelDanger, nodokaAngel, nodokaCounter, setNodokaCosts } from '../src/abilities/nodoka';
+import { NODOKA, angelDanger, nodokaAngel, nodokaCounter } from '../src/abilities/nodoka';
+import { setCosts as setNodokaCosts } from '../src/abilities/costs';
 import { readOthers } from '../src/abilities/hiroe';
 import type { Ability } from '../src/abilities/types';
 import { chooseAction } from '../src/ai/ai';

@@ -114,6 +114,8 @@ const WIND_NAMES = ['东', '南', '西', '北'];
 
 export class Game {
   rng: Rng;
+  // 开局的种子（不随对局变化；能力要在开局前就定好的随机事，用它另起一个随机数，不动 rng）
+  readonly seed: number;
   players: PlayerState[];
   abilities: (Ability | null)[];
   // 能力的私有状态，按座位存：abilityState 每局清空，abilityGameState 整场都在
@@ -162,6 +164,7 @@ export class Game {
   private eventListeners: ((e: GameEvent) => void)[] = [];
 
   constructor(opts: GameOptions) {
+    this.seed = opts.seed;
     this.rng = new Rng(opts.seed);
     this.players = opts.players.map((p, seat) => ({
       seat,

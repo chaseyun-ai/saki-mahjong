@@ -98,6 +98,8 @@ export interface Ability {
   // 挡得住别人影响的比例（0–1，天使和是 0.5）：别人给她配牌、摸牌定的规矩每一条有这个概率不算，
   // 别人调整配牌时这一局有这个概率碰不到她的配牌。absolute 的能力照样管得到
   resist?(g: Game, seat: number): number;
+  // 照魔镜照不穿她（小莳的天照）：照看不到她的能力状态，电脑的照也读不出她听什么
+  mirrorProof?(g: Game, seat: number): boolean;
   // 现在是第二形态（天使和）：返回素材页里这个形态的动画 id。头像框换成能力发动头像，和牌放 `${id}-win` 的动画
   form?(g: Game, seat: number): string | null;
 }

@@ -8,6 +8,7 @@ import { mihokoEyeOpen } from '../abilities/mihoko';
 import { kuroLost } from '../abilities/kuro';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
+import { komakiActiveGod } from '../abilities/komaki';
 import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
@@ -861,11 +862,15 @@ export class App {
     });
   }
 
-  // 龙华的无极天：手里打出去会放铳的牌标红
+  // 龙华的无极天、小莳的天照：手里打出去会放铳的牌标红
   private deadlyTiles(): Set<TileId> {
     const g = this.game!;
-    if (this.chars[this.me]?.id !== 'ryuuka' || !ryuukaMugoku(g, this.me) || this.vision || (g.phase !== 'turn' && g.phase !== 'calls')) return new Set();
-    const kinds = ryuukaDanger(g, this.me);
+    if (this.vision || (g.phase !== 'turn' && g.phase !== 'calls')) return new Set();
+    // 小莳的天照也看得出手里的铳牌
+    const mugoku = this.chars[this.me]?.id === 'ryuuka' && ryuukaMugoku(g, this.me);
+    const amaterasu = this.chars[this.me]?.id === 'komaki' && komakiActiveGod(g, this.me) === 'amaterasu';
+    if (!mugoku && !amaterasu) return new Set();
+    const kinds = mugoku ? ryuukaDanger(g, this.me) : dangerKinds(g, this.me);
     return new Set(g.players[this.me].hand.filter((t) => kinds.has(kindOf(t))));
   }
 
@@ -990,7 +995,8 @@ export class App {
     const g = this.game!;
     if (this.chars[this.me]?.id !== 'teru' || s === this.me || !teruMirrored(g, this.me) || g.isSealed(this.me)) return '';
     const c = this.chars[s];
-    const lines = c.ability ? c.ability.insight?.(g, s) ?? [c.ability.description] : ['没有能力，只靠牌效和防守'];
+    const proof = !!g.active(s)?.mirrorProof?.(g, s);
+    const lines = proof ? ['天岩户：照魔镜照不进去'] : c.ability ? c.ability.insight?.(g, s) ?? [c.ability.description] : ['没有能力，只靠牌效和防守'];
     const name = c.ability ? c.ability.name : '无能力';
     return `<span class="mirror" tabindex="0" aria-label="照魔镜：${c.name}">镜<span class="mirror-pop"><b>${c.name} · ${name}</b>${lines.map((l) => `<span>${l}</span>`).join('')}</span></span>`;
   }
