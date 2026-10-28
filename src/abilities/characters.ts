@@ -23,6 +23,7 @@ import { ryuukaAbility } from './ryuuka';
 import { sumireAbility } from './sumire';
 import { seraAbility } from './sera';
 import { KOMAKI_GODS, komakiAbility } from './komaki';
+import { ROKUYOU, toyoneAbility } from './toyone';
 import { suzuAbility } from './suzu';
 import type { Ability } from './types';
 
@@ -57,6 +58,7 @@ export interface AiStyle {
   firepower: boolean; // 江口夕：从不默听、从不弃和，不到满贯先不和；不吃，只碰役牌；留着宝牌和役牌
   mugoku: boolean; // 清水谷龙华：无极天的局读得出别人听什么，不打放铳的牌；看得出谁听牌了
   gods: boolean; // 神代小莳：按附身的神打（木花咲耶姬能杠就杠、须佐之男能碰就碰、天照读得出铳牌）
+  rokuyou: boolean; // 姊带丰音：先负还能发动时默听，先负发动后听牌就追立、不弃和；副露两次以上、有役时能鸣就鸣（奔友引）
 }
 
 export interface Character {
@@ -73,7 +75,7 @@ export interface Character {
   skillArts?: { id: string; name: string; label?: string; hint?: string }[];
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false, gods: false };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false, gods: false, rokuyou: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -314,6 +316,16 @@ export const CHARACTERS: Character[] = [
     // 神降下来、醒来、神乐各一格；天宇受卖命的那一格放神乐
     skillArts: [...KOMAKI_GODS.map(({ id, name }) => (id === 'uzume' ? { id, name: '神乐', label: '天宇受卖命·神乐' } : { id, name })), { id: 'wake', name: '醒来' }],
     ai: { ...baseAi, mistakeRate: 0.05, gods: true },
+  },
+  {
+    id: 'toyone',
+    cost: 4,
+    name: '姊带丰音',
+    school: '宫守女子',
+    color: '#4a4a6a',
+    ability: toyoneAbility,
+    skillArts: ROKUYOU.map(({ id, name }) => ({ id, name })),
+    ai: { ...baseAi, mistakeRate: 0.04, rokuyou: true },
   },
   {
     id: 'suzu',
