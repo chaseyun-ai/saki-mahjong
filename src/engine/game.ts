@@ -51,7 +51,8 @@ export interface PlayerState {
 }
 
 // predeal：发牌前等玩家选技能（玩家操作的座位有发牌前技能可选时），选好后调 deal()
-export type Phase = 'predeal' | 'turn' | 'calls' | 'roundEnd' | 'gameEnd';
+// postdeal：配完牌、庄家摸第一张之前等玩家看着手牌选技能（爽的云和神威），选好后调 deal()
+export type Phase = 'predeal' | 'postdeal' | 'turn' | 'calls' | 'roundEnd' | 'gameEnd';
 
 export interface WinInfo {
   seat: number;
@@ -74,6 +75,8 @@ export interface RoundResult {
 export type GameEvent =
   // slot：这一局是第几局（东 1 是 0，南 1 是 4；连庄、流局重打的局还是同一个数）
   | { type: 'roundStart'; label: string; slot?: number }
+  // 配完牌以后的技能（爽的云和神威）都换好了牌，庄家马上摸第一张
+  | { type: 'dealt' }
   | { type: 'draw'; seat: number }
   | { type: 'discard'; seat: number; tile: TileId; riichi: boolean }
   | { type: 'call'; seat: number; call: string }
@@ -290,8 +293,34 @@ export class Game {
   }
 
   // 配牌调整期间补一条规矩（比如淡定好了自己的配牌以后）
-  addDealRule(r: DealRule): void {
-    if (this.binds(r.seat, r.target) && !this.shrugs(r.seat, r.target)) this.dealRules.push(r);
+  addDealRule(r: DealRule): boolean {
+    if (!this.binds(r.seat, r.target) || this.shrugs(r.seat, r.target)) return false;
+    this.dealRules.push(r);
+    return true;
+  }
+
+  // 配完牌以后（afterDeal）actor 把 seat 手里第 i 张换成牌山里一张符合条件的牌：
+  // 只从牌山后面没锁的牌里挑，比 actor 先动的人给 seat 配牌定的规矩不能变差；管不到、这一局碰不到 seat 的配牌时不换
+  swapHandTile(actor: number, seat: number, i: number, pred: (t: TileId) => boolean): boolean {
+    if (!this.binds(actor, seat) || this.dealShrugged.has(`${actor}-${seat}`)) return false;
+    const hand = this.players[seat].hand;
+    if (pred(hand[i])) return true;
+    const pri = (s: number) => this.abilities[s]?.priority ?? PRIORITY.self;
+    const rules = this.dealRules.filter((r) => r.target === seat && r.seat !== actor && pri(r.seat) < pri(actor));
+    const cands: number[] = [];
+    // 前几张马上要摸，别动
+    for (let j = 8; j < this.wall.live.length; j++) {
+      const t = this.wall.live[j];
+      if (this.wall.locked.has(t) || !pred(t)) continue;
+      const after = hand.slice();
+      after[i] = t;
+      if (rules.some((r) => r.bad(after) > r.bad(hand))) continue;
+      cands.push(j);
+    }
+    if (!cands.length) return false;
+    const j = cands[this.rng.int(cands.length)];
+    [hand[i], this.wall.live[j]] = [this.wall.live[j], hand[i]];
+    return true;
   }
 
   // from 的能力管不管得到 target（照这样 immune 的人只听自己和 absolute 的）
@@ -420,6 +449,21 @@ export class Game {
     }
     this.dealtWall = { live: this.wall.live.slice(), rinshan: this.wall.rinshan.slice() };
     this.emit({ type: 'roundStart', label: this.roundLabel(), slot: this.roundWind * 4 + this.roundNumber });
+    // 玩家操作的座位有配牌后的技能可选：停下来让玩家看着手牌选（电脑在 afterDeal 里自己决定）
+    const ask = this.manual.some((m, s) => m && (this.active(s)?.postDeal?.(this, s) ?? []).some((o) => o.enabled));
+    if (ask) this.phase = 'postdeal';
+    else this.finishDeal();
+  }
+
+  // 配牌后的技能换完牌，开始摸牌
+  private finishDeal(): void {
+    this.phase = 'turn';
+    const order = this.abilityOrder();
+    if (order.some((s) => this.active(s)!.afterDeal)) {
+      for (const s of order) this.active(s)?.afterDeal?.(this, s);
+      this.dealtWall = { live: this.wall.live.slice(), rinshan: this.wall.rinshan.slice() };
+      this.emit({ type: 'dealt' });
+    }
     for (const s of this.abilityOrder()) this.active(s)!.onRoundStart?.(this, s);
     this.drawFor(this.dealer, false);
   }
@@ -975,9 +1019,10 @@ export class Game {
     else this.startRound();
   }
 
-  // 玩家选好发牌前的技能（Ability.setPreDeal）以后发牌
+  // 玩家选好发牌前的技能（Ability.setPreDeal）以后发牌；配牌后的技能（Ability.setPostDeal）选好以后开始摸牌
   deal(): void {
     if (this.phase === 'predeal') this.startRound();
+    else if (this.phase === 'postdeal') this.finishDeal();
   }
 
   private finishGame(): void {

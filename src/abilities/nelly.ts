@@ -11,7 +11,7 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 //   · +4 以上（宣言局）：这一局是她的。配牌偏向一种花色，摸牌几乎都是进张（先补成那门花色，牌够大再来和了牌），
 //     别人的进张大多被换走，别人要自摸时七姐妹自动封住（不扣次数、不扣运势）。
 //     宣言不公开：别人看不到她的运势，不知道她哪一局动手。照不受影响
-// - 七姐妹：一场 7 次。别人要自摸时（下一张就是他的和了牌）用掉一次，这一局那家就和不了了（自摸、荣和都不行）。
+// - 七姐妹：一场 7 次。别人要自摸时（下一张就是他的和了牌）用掉一次：那张和了牌被换走，这一局那家也和不了了（自摸、荣和都不行）。
 //   顺流的局里用，每用一次这一局的运势减 1（七姐妹和摸牌变好是同一份运势）
 // 电脑的涅莉：挑几局押上全部运势（8 局押 3 局，都是宣言局；4 局押 2 局），其余的局压到最低。
 // 押哪几局看同桌：别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不去抢，自己坐庄的局优先。
@@ -222,17 +222,30 @@ export const nellyAbility: Ability = {
     const declared = v >= NELLY.declare;
     const next = rinshan ? g.wall.rinshan[0] : g.wall.live[0];
     const can = declared || (gs.sisters! > 0 && !gs.off);
-    if (v > 0 && can && next !== undefined && g.binds(seat, drawer) && !st.blocked!.includes(drawer) && g.canWin(drawer)) {
-      const p = g.players[drawer];
-      const counts = toCounts(p.hand);
-      counts[kindOf(next)]++;
-      if (shanten(counts, p.melds.length) < 0) {
+    const p = g.players[drawer];
+    // 摸了 t 就和了（按现在的手牌算，摸进来以后再问也一样）
+    const base = toCounts(p.hand);
+    const melds = p.melds.length;
+    const wins = (t: TileId) => {
+      base[kindOf(t)]++;
+      const done = shanten(base, melds) < 0;
+      base[kindOf(t)]--;
+      return done;
+    };
+    // 七姐妹：那张和了牌换走（他摸到的是别的牌），这一局他也和不了了。换不走就不发动。
+    // 再定一条规矩，摸牌的人自己的能力也不能把和了牌换回来
+    if (v > 0 && can && next !== undefined && g.binds(seat, drawer) && !st.blocked!.includes(drawer) && g.canWin(drawer) && wins(next)) {
+      const w = g.wall;
+      const swapped = rinshan ? w.bringToRinshan((t) => !wins(t), g.rng) : w.bringToLive(0, (t) => !wins(t), g.rng);
+      if (swapped) {
         if (!declared) {
           gs.sisters!--;
           gs.used![slotOf(g)] = (gs.used![slotOf(g)] ?? 0) + 1;
         }
         st.blocked!.push(drawer);
+        // 不写 target：七姐妹要放切入（写了 target 的是悄悄换牌）
         g.emit({ type: 'ability', seat, ability: 'nelly', text: '七姐妹' });
+        return { seat, ability: 'nelly', text: '七姐妹', deny: wins };
       }
     }
     if (rinshan || v <= 0) return;

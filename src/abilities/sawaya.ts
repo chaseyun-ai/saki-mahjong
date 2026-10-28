@@ -1,16 +1,17 @@
 import type { Game } from '../engine/game';
 import { shanten } from '../engine/shanten';
 import { Kind, TileId, isHonor, isWind, kindOf, numOf, suitOf, toCounts } from '../engine/tiles';
-import { PRIORITY, type Ability, type DealRule, type PreDealOption } from './types';
+import { PRIORITY, type Ability, type PreDealOption } from './types';
 
-// 狮子原爽（有珠山）：发牌前召唤五色云和阿伊努的神威（kamuy），可以叠着用。
-// 每朵云、每个神威一场只能用一次。她最先动（PRIORITY.sawaya），定下的规矩别人不能违反。
-// - 红云：这一局字牌只有她摸得到：别人的配牌里没有字牌，摸牌也摸不到；她自己摸牌容易摸到字牌
-// - 白云：她的配牌和摸牌偏向索子
-// - 黄云：她配牌里的数牌都换成 1–4
+// 狮子原爽（有珠山）：配完牌、看过自己的手牌以后召唤五色云和阿伊努的神威（kamuy），可以叠着用。
+// 每朵云、每个神威一场只能用一次。召唤时直接拿牌山里的牌换手牌（别人配牌时定的规矩照样不能变差）。
+// 她最先动（PRIORITY.sawaya）：霍亚乌封住的人这一局后面的能力都不动。
+// - 红云：这一局字牌只有她摸得到：别人手里的字牌换走，摸牌也摸不到；她自己摸牌容易摸到字牌
+// - 白云：她的手牌（换掉一半不是索子的牌）和摸牌偏向索子
+// - 黄云：她手里的数牌都换成 1–4
 // - 黑云、第五朵：原作没写，占位
 // - 帕科罗神威：她听牌以后，点数最高的那家对手摸到的全是她的和了牌（对手可以拆牌防守）
-// - 阿科罗神威：她摸牌大多是万子，赤五万一定在她配牌里
+// - 阿科罗神威：她摸牌大多是万子，赤五万还在牌山里就换到她手里
 // - 霍亚乌神威：封印别人的能力，持续 SAWAYA.hoyauRounds 局（包括这一局）
 // - 胡里神威：不是她自风的风牌偏向她的摸牌
 // 帕吾契神威作用在人身上、不影响牌，不放进游戏。
@@ -23,13 +24,13 @@ export const SAWAYA = {
 type SkillId = 'red' | 'white' | 'yellow' | 'black' | 'fifth' | 'pakoro' | 'akkoro' | 'hoyau' | 'huri';
 
 export const SAWAYA_SKILLS: { id: SkillId; name: string; desc: string; kamuy: boolean; ready: boolean }[] = [
-  { id: 'red', name: '红云', desc: '这一局字牌只有她摸得到：别人配牌里没有字牌，也摸不到；她自己容易摸到字牌', kamuy: false, ready: true },
-  { id: 'white', name: '白云', desc: '她的配牌和摸牌偏向索子，方便做清一色', kamuy: false, ready: true },
-  { id: 'yellow', name: '黄云', desc: '她配牌里的数牌都换成 1–4', kamuy: false, ready: true },
+  { id: 'red', name: '红云', desc: '这一局字牌只有她摸得到：别人手里的字牌换走，也摸不到；她自己容易摸到字牌', kamuy: false, ready: true },
+  { id: 'white', name: '白云', desc: '她手里不是索子的牌换掉一半，摸牌也偏向索子，方便做清一色', kamuy: false, ready: true },
+  { id: 'yellow', name: '黄云', desc: '她手里的数牌都换成 1–4', kamuy: false, ready: true },
   { id: 'black', name: '黑云', desc: '原作没写效果，待定', kamuy: false, ready: false },
   { id: 'fifth', name: '第五朵云', desc: '原作没写效果，待定', kamuy: false, ready: false },
   { id: 'pakoro', name: '帕科罗神威', desc: '她听牌以后，点数最高的对手摸到的全是她的和了牌（对手可以拆牌防守）', kamuy: true, ready: true },
-  { id: 'akkoro', name: '阿科罗神威', desc: '她摸牌大多是万子，赤五万一定在她配牌里', kamuy: true, ready: true },
+  { id: 'akkoro', name: '阿科罗神威', desc: '她摸牌大多是万子，赤五万还在牌山里就换到她手里', kamuy: true, ready: true },
   { id: 'hoyau', name: '霍亚乌神威', desc: `封印别人的能力，持续 ${SAWAYA.hoyauRounds} 局`, kamuy: true, ready: true },
   { id: 'huri', name: '胡里神威', desc: '不是她自风的风牌偏向她的摸牌', kamuy: true, ready: true },
 ];
@@ -68,7 +69,7 @@ function blocked(g: Game, seat: number, id: SkillId): string | null {
 const leader = (g: Game, seat: number) =>
   [0, 1, 2, 3].filter((s) => s !== seat && g.binds(seat, s)).sort((a, b) => g.players[b].score - g.players[a].score)[0];
 
-// 电脑的爽：每局先算这一局值不值得动手，动手就叠着用（一局最多两样：云 + 一个神威，或者一样 + 霍亚乌），不动手就全留着。
+// 电脑的爽：配完牌看着手牌算这一局值不值得动手，动手就叠着用（一局最多两样：云 + 一个神威，或者一样 + 霍亚乌），不动手就全留着。
 // - 值不值得：坐庄、落后、配牌正合某朵云、到了最后两局、剩下的云和神威比剩下的局多，都加分；
 //   同桌有攒着最后几局的人（涅莉）时前半场也加分，先把优势拿到手
 // - 动手时只叫配牌真用得上的，不为了用掉而硬叠：云要配牌已经合得上；万子多（往万子混一色走）叫阿科罗；
@@ -103,7 +104,8 @@ function aiPicks(g: Game, seat: number): SkillId[] {
   const late = g.isLastRounds(2);
   const dealer = seat === g.dealer;
 
-  const hand = g.dealHand(seat).map(kindOf);
+  const tiles = g.players[seat].hand;
+  const hand = tiles.map(kindOf);
   const man = hand.filter((k) => k < 9).length;
   // 配牌里合这朵云的牌数、门槛（到门槛的 3/4 就算合得上，最后两局再放低一些）
   const honorPair = hand.some((k) => isHonor(k) && hand.filter((x) => x === k).length >= 2);
@@ -114,7 +116,7 @@ function aiPicks(g: Game, seat: number): SkillId[] {
   ];
   const loose = (need: number) => Math.ceil(need * 0.75 * (late ? 0.75 : 1));
   const clouds = fit.filter(([id, n, need]) => ok(id) && n >= loose(need)).sort((a, b) => b[1] / b[2] - a[1] / a[2]);
-  const sh = shanten(toCounts(g.dealHand(seat)), 0);
+  const sh = shanten(toCounts(tiles), 0);
   const guestPair = hand.some((k) => isWind(k) && k !== g.seatWind(seat) && hand.filter((x) => x === k).length >= 2);
 
   let worth = 0;
@@ -192,27 +194,17 @@ function helps(g: Game, seat: number): (t: TileId) => boolean {
   };
 }
 
-// 她自己的配牌调整好以后定规矩：后动的人换牌时不能让它变差
-function sawayaKeep(g: Game, seat: number): void {
-  const hand = g.dealHand(seat);
-  const keep = (text: string, count: (hand: TileId[]) => number) => {
-    const done = count(hand);
-    g.addDealRule({ seat, ability: 'sawaya', text, target: seat, bad: (h) => Math.max(0, count(h) - done) });
-  };
-  if (sawayaOn(g, seat, 'yellow')) keep('黄云', (h) => h.filter((t) => kindOf(t) < 27 && numOf(kindOf(t)) > 4).length);
-  if (sawayaOn(g, seat, 'white')) keep('白云', (h) => h.filter((t) => kindOf(t) < 18 || kindOf(t) >= 27).length);
-  if (sawayaOn(g, seat, 'akkoro')) keep('阿科罗神威', (h) => (h.includes(16) ? 0 : 1));
-}
-
 export const sawayaAbility: Ability = {
   id: 'sawaya',
   name: '五色云·神威',
-  description: `发牌前召唤五色云和神威，可以叠着用，每朵云、每个神威一场只能用一次。红云：字牌只有她摸得到；白云：偏向索子；黄云：配牌的数牌都是 1–4；帕科罗：对手摸到的全是她的和了牌；阿科罗：她摸牌大多是万子；霍亚乌：封印别人的能力 ${SAWAYA.hoyauRounds} 局；胡里：客风牌偏向她。`,
+  description: `配完牌看过手牌以后召唤五色云和神威，可以叠着用，每朵云、每个神威一场只能用一次。红云：字牌只有她摸得到；白云：偏向索子；黄云：手里的数牌都换成 1–4；帕科罗：对手摸到的全是她的和了牌；阿科罗：她摸牌大多是万子；霍亚乌：封印别人的能力 ${SAWAYA.hoyauRounds} 局；胡里：客风牌偏向她。`,
   priority: PRIORITY.sawaya,
 
-  dealRules(g, seat) {
+  // 配完牌以后召唤：拿牌山里的牌换手牌
+  afterDeal(g, seat) {
     const gs = gameStateOf(g, seat);
     const picked = (g.manual[seat] ? gs.picks ?? [] : aiPicks(g, seat)).filter((id) => blocked(g, seat, id) === null);
+    gs.picks = undefined;
     const st = stateOf(g, seat);
     st.on = picked;
     gs.used!.push(...picked);
@@ -221,50 +213,21 @@ export const sawayaAbility: Ability = {
       gs.sealTo = g.round + SAWAYA.hoyauRounds - 1;
     }
     if (picked.includes('pakoro')) st.pakoroTarget = leader(g, seat);
-    const rules: DealRule[] = [];
-    const rule = (text: string, target: number, bad: (hand: TileId[]) => number) => rules.push({ seat, ability: 'sawaya', text, target, bad });
-    // 红云：别人的配牌里不能有字牌
-    if (picked.includes('red')) for (let s = 0; s < 4; s++) if (s !== seat) rule('红云', s, (hand) => hand.filter((t) => isHonor(kindOf(t))).length);
-    return rules;
-  },
-
-  // 配牌：换不过来时降级（她最先动，只顾不了比她后动的人的规矩）
-  beforeDeal(g, seat) {
-    const w = g.wall;
-    const mine = g.dealIndices(seat);
-    const later = (j: number) => j >= 52;
-    const bring = (i: number, pred: (t: TileId) => boolean, from?: (j: number) => boolean) => {
-      const swap = () => w.bringToLive(i, pred, g.rng, from);
-      return swap() || g.dealFallback(seat, swap);
+    const swapAll = (s: number, from: (k: Kind) => boolean, to: (t: TileId) => boolean, chance = 1) => {
+      const hand = g.players[s].hand;
+      for (let i = 0; i < hand.length; i++) if (from(kindOf(hand[i])) && g.rng.chance(chance)) g.swapHandTile(seat, s, i, to);
     };
-    if (sawayaOn(g, seat, 'red')) {
-      for (let s = 0; s < 4; s++) {
-        if (s === seat) continue;
-        for (const i of g.dealIndices(s)) if (isHonor(kindOf(w.live[i]))) bring(i, (t) => !isHonor(kindOf(t)), later);
-      }
-    }
-    if (sawayaOn(g, seat, 'yellow')) {
-      for (const i of mine) {
-        const k = kindOf(w.live[i]);
-        if (k < 27 && numOf(k) > 4) bring(i, (t) => kindOf(t) < 27 && numOf(kindOf(t)) <= 4, later);
-      }
-    }
-    if (sawayaOn(g, seat, 'white')) {
-      // 不是索子的牌换掉一半
-      for (const i of mine) {
-        const k = kindOf(w.live[i]);
-        if ((k < 18 || k >= 27) && g.rng.chance(0.5)) bring(i, (t) => kindOf(t) >= 18 && kindOf(t) < 27, later);
-      }
-    }
-    if (sawayaOn(g, seat, 'akkoro')) {
+    const num = (t: TileId) => kindOf(t) < 27;
+    if (picked.includes('red')) for (let s = 0; s < 4; s++) if (s !== seat) swapAll(s, isHonor, (t) => !isHonor(kindOf(t)));
+    if (picked.includes('yellow')) swapAll(seat, (k) => k < 27 && numOf(k) > 4, (t) => num(t) && numOf(kindOf(t)) <= 4);
+    // 不是索子的牌换掉一半
+    if (picked.includes('white')) swapAll(seat, (k) => k < 18 || k >= 27, (t) => kindOf(t) >= 18 && num(t), 0.5);
+    if (picked.includes('akkoro')) {
       const red5m = 16;
-      const at = w.live.indexOf(red5m);
-      if (at >= 0 && !mine.includes(at)) {
-        const slot = mine.find((i) => kindOf(w.live[i]) >= 9);
-        if (slot !== undefined) bring(slot, (t) => t === red5m);
-      }
+      const hand = g.players[seat].hand;
+      const slot = hand.findIndex((t) => kindOf(t) >= 9);
+      if (!hand.includes(red5m) && slot >= 0) g.swapHandTile(seat, seat, slot, (t) => t === red5m);
     }
-    sawayaKeep(g, seat);
   },
 
   onRoundStart(g, seat) {
@@ -293,14 +256,14 @@ export const sawayaAbility: Ability = {
     for (const want of wants(g, seat)) if (g.wall.bringToLive(0, (t) => want(t) && good(t), g.rng)) return;
   },
 
-  preDeal(g, seat): PreDealOption[] {
+  postDeal(g, seat): PreDealOption[] {
     return SAWAYA_SKILLS.map((k) => {
       const why = blocked(g, seat, k.id);
       return { id: k.id, name: k.name, desc: k.desc, enabled: why === null, picked: false, note: why ?? '一场一次' };
     });
   },
 
-  setPreDeal(g, seat, picked) {
+  setPostDeal(g, seat, picked) {
     gameStateOf(g, seat).picks = picked.filter((id) => SAWAYA_SKILLS.some((k) => k.id === id)) as SkillId[];
   },
 

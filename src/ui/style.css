@@ -67,11 +67,79 @@ button {
 
 .char-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 108px);
+  grid-template-columns: repeat(auto-fit, 108px);
   justify-content: center;
   gap: 14px;
   max-width: 980px;
   margin: 24px auto 0;
+}
+
+/* 按学校分页：上面一排学校标签，下面是这一页的学校名和角色 */
+.school-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: 980px;
+  margin: 20px auto 0;
+}
+
+.school-tabs button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--s) 45%, transparent);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.school-tabs button small {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.school-tabs button:hover {
+  border-color: var(--s);
+}
+
+.school-tabs button.on {
+  background: var(--s);
+  border-color: var(--s);
+  color: #14181c;
+  font-weight: 700;
+}
+
+.school-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px 12px;
+  max-width: 980px;
+  margin: 18px auto 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid color-mix(in srgb, var(--s) 60%, transparent);
+}
+
+.school-head b {
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: var(--s);
+}
+
+.school-head span,
+.school-head em {
+  font-size: 13px;
+  font-style: normal;
+  color: var(--ink-quiet);
+}
+
+.school-page .char-grid {
+  margin-top: 16px;
 }
 
 .char-card {
@@ -3564,4 +3632,221 @@ html:root .select-screen.team-screen.tm-draft {
   background: linear-gradient(180deg, #e3a43b, #b8731c);
   border-color: #ffd27a;
   box-shadow: 0 0 12px rgba(227, 164, 59, 0.6);
+}
+
+/* ---------- 宫永照的天梯：头像旁边的宝塔 ---------- */
+
+.teru-tower {
+  display: inline-grid;
+  justify-items: center;
+  gap: 2px;
+  font-style: normal;
+}
+
+.teru-tower i {
+  font-style: normal;
+}
+
+/* 一层一层：越往上越窄，没爬到的暗、爬到的金、下一层闪红 */
+.teru-tower .tt-tier {
+  width: calc(58px - var(--i) * 4px);
+  height: 11px;
+  display: grid;
+  place-items: center;
+  border-radius: 2px 2px 1px 1px;
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background 0.3s, color 0.3s;
+}
+
+.teru-tower .tt-tier.lit {
+  background: #d9a640;
+  color: #3a2400;
+}
+
+.teru-tower .tt-tier.next {
+  background: #c43d58;
+  color: #fff;
+  animation: tt-pulse 1.4s ease-in-out infinite;
+}
+
+.teru-tower.broken .tt-tier:not(.next) {
+  background: rgba(138, 143, 153, 0.45);
+}
+
+@keyframes tt-pulse {
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .teru-tower .tt-tier.next {
+    animation: none;
+  }
+}
+
+/* 塔尖是役满 */
+.teru-tower .tt-spire {
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 13px solid rgba(255, 255, 255, 0.14);
+}
+
+.teru-tower .tt-spire.lit {
+  border-bottom-color: #e8b84e;
+  filter: drop-shadow(0 0 5px #e8b84e);
+}
+
+/* 叽叽叽：八颗小点，自摸一次亮一颗 */
+.teru-tower .tt-kiki {
+  display: flex;
+  gap: 2px;
+  margin-top: 3px;
+}
+
+.teru-tower .tt-kiki i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  border: 1px solid #e0637c;
+}
+
+.teru-tower .tt-kiki i.on {
+  background: #e0637c;
+}
+
+/* 2.5D：塔立在头像框旁边，避开手牌和能力说明：
+   下面两个框（自己、下家）放在头像上方，左上的框放在名字下面，右上的框放在头像左边 */
+.seat-frame .teru-tower {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+}
+
+.seat-frame.left .teru-tower {
+  bottom: auto;
+  top: calc(100% + 10px);
+}
+
+.seat-frame.top .teru-tower {
+  left: auto;
+  bottom: auto;
+  top: 0;
+  right: calc(100% + 8px);
+  transform: none;
+}
+
+/* 名牌、能力说明里放一座小的，不写层名 */
+.nameplate .teru-tower .tt-tier,
+.ability-panel .teru-tower .tt-tier {
+  width: calc(30px - var(--i) * 2px);
+  height: 3px;
+  font-size: 0;
+}
+
+.nameplate .teru-tower,
+.ability-panel .teru-tower {
+  gap: 1px;
+}
+
+.ability-panel .teru-tower {
+  float: right;
+  margin-left: 8px;
+}
+
+.nameplate .teru-tower .tt-spire,
+.ability-panel .teru-tower .tt-spire {
+  border-left-width: 4px;
+  border-right-width: 4px;
+  border-bottom-width: 6px;
+}
+
+.nameplate .teru-tower .tt-kiki,
+.ability-panel .teru-tower .tt-kiki {
+  margin-top: 1px;
+}
+
+.nameplate .teru-tower .tt-kiki i,
+.ability-panel .teru-tower .tt-kiki i {
+  width: 3px;
+  height: 3px;
+}
+
+@media (max-height: 500px), (max-width: 600px) {
+  .seat-frame .teru-tower .tt-tier {
+    width: calc(34px - var(--i) * 2px);
+    height: 6px;
+    font-size: 0;
+  }
+
+  .seat-frame .teru-tower {
+    gap: 1px;
+  }
+
+  .seat-frame .teru-tower .tt-spire {
+    border-left-width: 5px;
+    border-right-width: 5px;
+    border-bottom-width: 8px;
+  }
+
+  .seat-frame .teru-tower .tt-kiki i {
+    width: 3px;
+    height: 3px;
+  }
+}
+
+/* ---------- 没有立绘的角色（借模型占位的）：切入、结算画面用名字的最后一个字代替立绘 ---------- */
+
+.cutin .art.glyph {
+  height: auto;
+  top: calc(var(--y) + 30vh - var(--art) * 0.62);
+  font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
+  font-size: calc(var(--art) * 0.5);
+  line-height: 1;
+  color: color-mix(in srgb, var(--c) 35%, #fff);
+  -webkit-text-stroke: 3px color-mix(in srgb, var(--c) 60%, #000);
+}
+
+.win-glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
+  font-size: 150px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+/* 素材页：没有默认图的格子显示名字的最后一个字 */
+.skin-glyph {
+  font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
+  font-size: 64px;
+  line-height: 1;
+  color: color-mix(in srgb, var(--c) 40%, #fff);
+}
+
+/* 配牌后选技能（爽）：手牌摆在弹窗里，看着手牌选 */
+.modal.postdeal {
+  background: rgba(0, 10, 12, 0.45);
+  place-items: start center;
+  padding-top: 16px;
+}
+
+.pd-hand {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  margin: 4px 0 10px;
 }

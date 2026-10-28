@@ -25,9 +25,9 @@ function play(seed: number, ids: string[], setup: (g: Game, me: number) => void,
       g.nextRound();
       continue;
     }
-    if (g.phase === 'predeal') {
-      const opts = g.abilities[me]!.preDeal!(g, me);
-      g.abilities[me]!.setPreDeal!(g, me, pick!(g, me).filter((id) => opts.find((o) => o.id === id)?.enabled));
+    if (g.phase === 'postdeal') {
+      const opts = g.abilities[me]!.postDeal!(g, me);
+      g.abilities[me]!.setPostDeal!(g, me, pick!(g, me).filter((id) => opts.find((o) => o.id === id)?.enabled));
       g.deal();
       continue;
     }
@@ -47,10 +47,10 @@ describe('狮子原爽', () => {
         seed,
         LINEUPS[seed % 4],
         (g, me) => {
-          // 第一局在建对局时就开始了（这时还没监听），从第二局起看
+          // 配完牌、她选好以后（dealt）看
           g.onEvent((e) => {
             if (e.type === 'ability' && e.seat !== me && g.isSealed(e.seat)) throw new Error(`封印中 ${e.ability} 还在发动`);
-            if (e.type === 'roundStart') {
+            if (e.type === 'dealt') {
               // 照、玄封印不了
               const sealable = [0, 1, 2, 3].filter((s) => s !== me && !g.abilities[s]?.immune && !g.abilities[s]?.absolute);
               for (const s of [0, 1, 2, 3]) if (s !== me && !sealable.includes(s)) expect(g.isSealed(s)).toBe(false);
@@ -62,7 +62,7 @@ describe('狮子原爽', () => {
             }
           });
         },
-        (g) => (g.round === 0 ? ['hoyau'] : []),
+        (g) => (g.round === 1 ? ['hoyau'] : []),
       );
     }
     expect(sealedRounds).toBeGreaterThan(10);
@@ -77,7 +77,7 @@ describe('狮子原爽', () => {
         (g, me) => {
           const used = new Set<string>();
           g.onEvent((e) => {
-            if (e.type !== 'roundStart') return;
+            if (e.type !== 'dealt') return;
             for (const id of ['red', 'white', 'yellow', 'pakoro', 'akkoro', 'hoyau', 'huri'] as const) {
               if (!sawayaOn(g, me, id)) continue;
               expect(used.has(id)).toBe(false);
@@ -91,7 +91,7 @@ describe('狮子原爽', () => {
     }
   }, 120000);
 
-  it('红云：别人配牌里没有字牌、也摸不到字牌；黄云：她配牌里的数牌都是 1–4', () => {
+  it('红云：别人手里的字牌换走、也摸不到字牌；黄云：她手里的数牌都换成 1–4', () => {
     let redDraws = 0;
     let yellowHands = 0;
     for (let seed = 1; seed <= 16; seed++) {
@@ -100,9 +100,9 @@ describe('狮子原爽', () => {
         LINEUPS[seed % 4],
         (g, me) => {
           g.onEvent((e) => {
-            if (e.type === 'roundStart') {
+            if (e.type === 'dealt') {
               if (sawayaOn(g, me, 'red')) {
-                for (let s = 0; s < 4; s++) if (s !== me && g.binds(me, s) && !g.dealUnmet.some((r) => r.target === s)) expect(g.players[s].hand.some((t) => isHonor(kindOf(t)))).toBe(false);
+                for (let s = 0; s < 4; s++) if (s !== me && g.binds(me, s)) expect(g.players[s].hand.some((t) => isHonor(kindOf(t)))).toBe(false);
               }
               if (sawayaOn(g, me, 'yellow')) {
                 yellowHands++;
@@ -111,9 +111,9 @@ describe('狮子原爽', () => {
               }
             }
             if (e.type === 'draw' && e.seat !== me && g.binds(me, e.seat) && !g.rinshanDraw && sawayaOn(g, me, 'red') && !g.isSealed(me)) {
-              // 牌山里只剩字牌（或者别的都被锁住）时才挡不住
+              // 牌山里只剩字牌（或者别的都被锁住、被先定的规矩挡着，比如玄的宝牌）时才挡不住：牌局末尾不看
               const other = g.wall.live.some((t) => !isHonor(kindOf(t)) && !g.wall.locked.has(t));
-              if (!other) return;
+              if (!other || g.wall.remaining < 20) return;
               redDraws++;
               expect(isHonor(kindOf(g.players[e.seat].drawn!))).toBe(false);
             }
@@ -134,7 +134,7 @@ describe('狮子原爽', () => {
     for (let seed = 1; seed <= 24; seed++) {
       const g = play(seed, LINEUPS[seed % 4], (g, me) => {
         g.onEvent((e) => {
-          if (e.type !== 'roundStart') return;
+          if (e.type !== 'dealt') return;
           const on = ['red', 'white', 'yellow', 'pakoro', 'akkoro', 'hoyau', 'huri'].filter((id) => sawayaOn(g, me, id as never));
           if (on.includes('hoyau')) {
             hoyau++;
@@ -150,4 +150,23 @@ describe('狮子原爽', () => {
     expect(hoyau).toBeGreaterThan(3);
     expect(stacked / acted).toBeGreaterThan(0.5);
   }, 120000);
+
+  it('玩家操作时配完牌才停下来选：手牌已经发好，选的云当场换牌', () => {
+    const ids = LINEUPS[0];
+    const seats = ids.map(byId);
+    const g = new Game({ seed: 3, players: seats.map((c, i) => ({ name: c.id, ability: c.ability, manual: i === 0 })) });
+    expect(g.phase).toBe('postdeal');
+    for (const p of g.players) expect(p.hand.length).toBe(13);
+    expect(g.players[g.dealer].drawn).toBeNull();
+    const before = g.players[0].hand.slice();
+    g.abilities[0]!.setPostDeal!(g, 0, ['yellow']);
+    g.deal();
+    expect(g.phase).toBe('turn');
+    expect(sawayaOn(g, 0, 'yellow')).toBe(true);
+    const big = (h: number[]) => h.filter((t) => kindOf(t) < 27 && numOf(kindOf(t)) > 4).length;
+    if (big(before)) expect(big(g.players[0].hand.filter((t) => t !== g.players[0].drawn))).toBeLessThan(big(before));
+    // 136 张一张不少
+    const all = [...g.players.flatMap((p) => p.hand), ...g.wall.allTiles()];
+    expect(new Set(all).size).toBe(136);
+  });
 });

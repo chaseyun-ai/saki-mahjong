@@ -188,7 +188,9 @@ export class SkinEditor {
         const tall = slot === 'face' || slot === 'blank' || slot === 'power';
         const media = docs[c.id]?.[slot]?.video
           ? `<video src="${shown}" muted autoplay loop playsinline></video>`
-          : `<img src="${shown}" alt="" onerror="this.src='${this.fallback(c.id, slot)}'" />`;
+          : shown
+            ? `<img src="${shown}" alt="" onerror="this.onerror=null;this.src='${this.fallback(c.id, slot)}'" />`
+            : `<span class="skin-glyph">${c.name.slice(-1)}</span>`;
         const accept = skill ? [...TYPES, ...VIDEO_TYPES] : TYPES;
         return `
           <div class="skin-slot${own ? ' own' : ''}${skill ? ' skill' : ''}">

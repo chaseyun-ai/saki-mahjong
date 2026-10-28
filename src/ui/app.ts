@@ -2,7 +2,8 @@ import { CHARACTERS, Character } from '../abilities/characters';
 import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
-import { teruMirrored } from '../abilities/teru';
+import { TERU, TERU_TIERS, TERU_TOP, teruLadder, teruMirrored } from '../abilities/teru';
+import { nellyBlocked } from '../abilities/nelly';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { kuroLost } from '../abilities/kuro';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
@@ -25,6 +26,7 @@ import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { TeamFlow } from './teamFlow';
 import { THEMES, ThemeId, currentTheme, setTheme } from './theme';
+import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 import { ForecastCache } from '../ai/forecast';
@@ -134,6 +136,20 @@ export class App {
     });
     // 选人页：鼠标停在卡片上看介绍；手指点的不算悬停（点一下看、再点开始，见 onClick）
     root.addEventListener('pointerdown', (e) => (this.lastPointer = e.pointerType));
+    // 选人页上左右滑换学校
+    let swipe: { x: number; y: number } | null = null;
+    root.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      swipe = !this.game && (e.target as HTMLElement).closest('.school-page') && e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null;
+    });
+    root.addEventListener('touchend', (e) => {
+      const t = e.changedTouches[0];
+      if (!swipe || !t) return;
+      const dx = t.clientX - swipe.x;
+      const dy = t.clientY - swipe.y;
+      swipe = null;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) this.stepSchool(dx < 0 ? 1 : -1);
+    });
     root.addEventListener('pointerover', (e) => {
       if (this.game || e.pointerType !== 'mouse') return;
       const card = (e.target as HTMLElement).closest<HTMLElement>('.char-card');
@@ -182,14 +198,6 @@ export class App {
     this.auto = false;
     // 3D 牌桌要用的人物模型现在就开始在后台下载
     if (this.mode === '3d') preloadModels(MODEL_URLS);
-    // 卡片上只有头像和名字；学校、能力和介绍放在悬停时的浮窗里（见 showCharTip）
-    const cards = CHARACTERS.map(
-      (c) => `
-      <button class="char-card" data-pick="${c.id}" style="--c:${c.color}" aria-label="${c.name}：${c.ability?.name ?? '无能力'}">
-        <div class="char-portrait">${c.name.slice(-1)}<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></div>
-        <div class="char-name">${c.name}</div>
-      </button>`,
-    ).join('');
     const themes = THEMES.map((t) => `<button class="${t.id === currentTheme() ? 'on' : ''}" data-ui="theme" data-theme="${t.id}">${t.name}</button>`).join('');
     this.root.innerHTML = `
       <div class="select-screen">
@@ -208,7 +216,8 @@ export class App {
         <button class="lab-entry team-entry" data-ui="team">团体赛拟真</button>
         <button class="lab-entry" data-ui="lab">动作调试</button><span id="skin-entry"></span>
         <div class="theme-switch"><span>皮肤</span>${themes}</div>
-        <div class="char-grid">${cards}</div>
+        <div class="school-tabs" role="tablist">${this.schoolTabsHtml()}</div>
+        <div class="school-page">${this.schoolPageHtml()}</div>
         <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物由 VRoid 官方 CC0 示例模型改色</p>
         </div>
         <div class="char-tip" hidden></div>
@@ -223,6 +232,52 @@ export class App {
       const slot = this.root.querySelector('#skin-entry');
       if (ok && slot) slot.innerHTML = '<button class="lab-entry" data-ui="skins">素材</button>';
     });
+  }
+
+  // 选人页按学校分页（schools.ts）：一页一个学校，点角色直接开局
+  private school = savedSchool();
+
+  private schoolTabsHtml(): string {
+    return SCHOOLS.map((s) => {
+      const on = s.name === this.school;
+      return `<button class="${on ? 'on' : ''}" role="tab" aria-selected="${on}" data-ui="school" data-school="${s.name}" style="--s:${s.color}">${s.short}<small>${membersOf(s.name).length}</small></button>`;
+    }).join('');
+  }
+
+  // 卡片上只有头像和名字；能力和介绍放在悬停时的浮窗里（见 showCharTip）
+  private schoolPageHtml(): string {
+    const s = SCHOOLS.find((x) => x.name === this.school) ?? SCHOOLS[0];
+    const cards = membersOf(s.name)
+      .map(
+        (c) => `
+      <button class="char-card" data-pick="${c.id}" style="--c:${c.color}" aria-label="${c.name}：${c.ability?.name ?? '无能力'}">
+        <div class="char-portrait">${c.name.slice(-1)}<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></div>
+        <div class="char-name">${c.name}</div>
+      </button>`,
+      )
+      .join('');
+    return `<div class="school-head" style="--s:${s.color}"><b>${s.name}</b>${s.region ? `<span>${s.region}代表</span>` : ''}<em>${membersOf(s.name).length} 人</em></div>
+      <div class="char-grid">${cards}</div>`;
+  }
+
+  // 换一页：只重画标签和这一页，换了皮肤的选人页把左边立绘换成这一页的第一位
+  private showSchool(name: string): void {
+    if (!SCHOOLS.some((s) => s.name === name)) return;
+    this.school = name;
+    saveSchool(name);
+    const tabs = this.root.querySelector('.school-tabs');
+    const page = this.root.querySelector('.school-page');
+    if (!tabs || !page) return;
+    tabs.innerHTML = this.schoolTabsHtml();
+    page.innerHTML = this.schoolPageHtml();
+    this.showCharTip(this.heroTip() ? page.querySelector<HTMLElement>('.char-card') : null);
+    if (this.heroTip()) this.tipFor = null;
+  }
+
+  // 前一页、后一页（手机上左右滑）
+  private stepSchool(d: number): void {
+    const i = SCHOOLS.findIndex((s) => s.name === this.school);
+    this.showSchool(SCHOOLS[(i + d + SCHOOLS.length) % SCHOOLS.length].name);
   }
 
   // 选人页的介绍浮窗：贴在卡片旁边，不出屏幕
@@ -311,7 +366,7 @@ export class App {
     this.penaltyNext = false;
     this.blocked = false;
     // 头像先下好，第一次换表情时不会空一下
-    for (const c of this.chars) for (const f of FACES) new Image().src = portraitUrl(c.id, f);
+    for (const c of this.chars) for (const f of FACES) if (portraitUrl(c.id, f)) new Image().src = portraitUrl(c.id, f);
     this.showResult = false;
     this.pdPicks = null;
     this.pdValues = null;
@@ -395,6 +450,10 @@ export class App {
       this.renderPredeal();
       return;
     }
+    if (g.phase === 'postdeal') {
+      this.render();
+      return;
+    }
     if (g.phase === 'roundEnd' || g.phase === 'gameEnd') {
       // 3D 牌桌先让大家看清倒牌和特效，再弹结算。2.5D 和牌照雀魂，宣言后 3.4 秒进结算
       this.render();
@@ -470,7 +529,7 @@ export class App {
     this.auto = !this.auto;
     g.manual[this.me] = !this.auto;
     this.riichiMode = false;
-    if (this.auto && g.phase === 'predeal') g.deal();
+    if (this.auto && (g.phase === 'predeal' || g.phase === 'postdeal')) g.deal();
     this.step();
   }
 
@@ -531,7 +590,7 @@ export class App {
       const c = this.chars[e.seat];
       const skill = c.skillArts?.find((k) => k.name === e.text);
       const art = skill && skillArt(c.id, skill.id);
-      if (art && this.cutins?.show({ pos: POS[e.seat], id: c.id, color: c.color, word: e.text, kind: 'ability', art })) return;
+      if (art && this.cutins?.show({ pos: POS[e.seat], id: c.id, color: c.color, word: e.text, kind: 'ability', art, glyph: c.name.slice(-1) })) return;
       const key = `${e.seat}-${e.text}`;
       if (!(!this.cutinSeen.has(key) && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
       this.cutinSeen.add(key);
@@ -543,7 +602,7 @@ export class App {
         const word = w.from === null ? '自摸' : '荣和';
         const form = this.game!.active(w.seat)?.form?.(this.game!, w.seat);
         const art = form ? skillArt(c.id, `${form}-win`) : undefined;
-        if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art })) continue;
+        if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art, glyph: c.name.slice(-1) })) continue;
         this.bigFx(w.seat, word, 'win');
       }
     }
@@ -558,7 +617,7 @@ export class App {
   private cutin(seat: number, word: string, kind: CutinKind): boolean {
     if (this.mode !== '25d') return false;
     const c = this.chars[seat];
-    return !!this.cutins?.show({ pos: POS[seat], id: c.id, color: c.color, word, kind });
+    return !!this.cutins?.show({ pos: POS[seat], id: c.id, color: c.color, word, kind, glyph: c.name.slice(-1) });
   }
 
   // 头像框平时一直是头像；立直、鸣牌、和牌换的是切入图（见 looks.ts 的 cutinArt）。
@@ -629,6 +688,10 @@ export class App {
     }
     if (el.dataset.ui === 'skins') {
       new SkinEditor(this.root, () => this.renderSelect());
+      return;
+    }
+    if (el.dataset.ui === 'school' && el.dataset.school) {
+      this.showSchool(el.dataset.school);
       return;
     }
     if (el.dataset.ui === 'theme' && el.dataset.theme) {
@@ -747,7 +810,7 @@ export class App {
       ${this.myAreaHtml()}
       ${this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
-      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' ? this.predealHtml() : ''}`;
+      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     this.freshDiscard = null;
     this.renderToasts();
@@ -764,7 +827,7 @@ export class App {
       : [1, 2, 3]
           .map((s) => {
             const c = this.chars[s];
-            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div></div>`;
+            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.sistersBlocked(s) ? '被七姐妹封住' : (c.ability?.name ?? '无能力')}</div></div>${this.towerHtml(s)}</div>`;
           })
           .join('');
     hud.innerHTML = `
@@ -772,7 +835,7 @@ export class App {
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
-      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' ? this.predealHtml() : ''}`;
+      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
     // 看下一巡时视野变绿
     hud.parentElement?.classList.toggle('deep', !!this.vision);
     this.renderToasts();
@@ -814,11 +877,12 @@ export class App {
     // 第二形态（天使和）也一直用能力发动头像
     const power = (s === this.me && !!this.vision) || !!g.active(s)?.form?.(g, s);
     const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
-    const badge = c.ability && g.isSealed(s) ? '封印' : c.ability?.badge?.(g, s);
+    const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·封住' : c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
         <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
+        ${this.towerHtml(s)}
         <div class="seat-info">${c.name}</div>
       </div>`;
   }
@@ -845,7 +909,8 @@ export class App {
     this.preview.clear();
     const myTurn = g.phase === 'turn' && g.turn === this.me;
     if (!myTurn) this.previewTile = null;
-    if (!myTurn || g.players[this.me].riichi) return;
+    // 这一局和不了（被七姐妹封住、照魔镜那一局）就不标听牌
+    if (!myTurn || g.players[this.me].riichi || !g.canWin(this.me)) return;
     const byKind = new Map<string, WaitInfo>();
     for (const t of this.discardable()) {
       // 同一种牌打哪张都一样（赤五单算，宝牌数不同）
@@ -918,6 +983,35 @@ export class App {
     const lines = c.ability ? c.ability.insight?.(g, s) ?? [c.ability.description] : ['没有能力，只靠牌效和防守'];
     const name = c.ability ? c.ability.name : '无能力';
     return `<span class="mirror" tabindex="0" aria-label="照魔镜：${c.name}">镜<span class="mirror-pop"><b>${c.name} · ${name}</b>${lines.map((l) => `<span>${l}</span>`).join('')}</span></span>`;
+  }
+
+  // 这一局被涅莉的七姐妹封住、和不了
+  private sistersBlocked(s: number): boolean {
+    const g = this.game!;
+    return [0, 1, 2, 3].some((o) => o !== s && g.active(o)?.id === 'nelly' && nellyBlocked(g, o).includes(s));
+  }
+
+  // ---------- 照：天梯 ----------
+
+  // 头像旁边的宝塔：八层（越往上越窄），顶上是役满的塔尖；站到的那几层亮金色，下一层闪；
+  // 天梯断了、还没重新起胡时塔变灰。底下八颗叽叽叽（自摸次数）。鼠标停在塔上看站在哪、下一次要和多少
+  private towerHtml(s: number): string {
+    const g = this.game!;
+    if (this.chars[s]?.id !== 'teru' || !teruMirrored(g, s) || g.isSealed(s)) return '';
+    const { level, next, broke, kiki } = teruLadder(g, s);
+    const tiers = TERU_TIERS.slice(0, TERU_TOP - 1)
+      .map((name, i) => {
+        const n = i + 1;
+        const cls = n <= level ? ' lit' : n === next ? ' next' : '';
+        return `<i class="tt-tier${cls}" style="--i:${i}">${name}</i>`;
+      })
+      .reverse()
+      .join('');
+    const pips = Array.from({ length: TERU.kiki }, (_, i) => `<i${i < kiki ? ' class="on"' : ''}></i>`).join('');
+    const head =
+      level >= TERU_TOP ? '登顶了（役满），下一次从 1 番重新爬' : level ? `站在${TERU_TIERS[level - 1]}，下一次要正好和${TERU_TIERS[next - 1]}` : broke ? `天梯断了（${broke}），从 1 番起胡` : '先和一个 1 番起胡';
+    const note = `${head}；叽叽叽 ${kiki}/${TERU.kiki}`;
+    return `<span class="teru-tower${broke && !level ? ' broken' : ''}" title="${note}"><i class="tt-spire${level >= TERU_TOP ? ' lit' : ''}"></i>${tiers}<span class="tt-kiki">${pips}</span></span>`;
   }
 
   // 指着会放铳的牌时她的提醒：第一张“有点不妙”，第二张不一样的“恐怕也不行”，再往后不说了
@@ -1095,7 +1189,8 @@ export class App {
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="nameplate">
           <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
-          <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${c.ability?.name ?? '无能力'}</div></div>
+          <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.sistersBlocked(s) ? '被七姐妹封住' : (c.ability?.name ?? '无能力')}</div></div>
+          ${this.towerHtml(s)}
         </div>
         <div class="ohand">${backs}</div>
         <div class="melds">${this.meldsHtml(p.melds, s)}</div>
@@ -1170,7 +1265,7 @@ export class App {
     const waitHtml = `<div data-r="waits">${this.waitsSlotHtml()}</div>`;
     const hint =
       g.phase === 'turn' && g.turn === this.me && discardable.size > 0
-        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}</div>`
+        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹封住，这一局和不了）' : ''}</div>`
         : '';
     const c = this.chars[this.me];
     return `
@@ -1246,7 +1341,8 @@ export class App {
   private predealHtml(): string {
     const g = this.game!;
     const ab = this.chars[this.me].ability;
-    const opts = ab?.preDeal?.(g, this.me) ?? [];
+    const post = g.phase === 'postdeal';
+    const opts = (post ? ab?.postDeal?.(g, this.me) : ab?.preDeal?.(g, this.me)) ?? [];
     if (opts.some((o) => o.stepper)) return this.stepperHtml(opts);
     if (!this.pdPicks) this.pdPicks = new Set(opts.filter((o) => o.picked).map((o) => o.id));
     const meter = ab?.skill?.(g, this.me)?.meter;
@@ -1267,12 +1363,17 @@ export class App {
     const energy = meter
       ? `<div class="pd-energy">能量 <span class="stamina energy"><i style="width:${(Math.max(0, left) / meter.max) * 100}%"></i></span> ${Math.max(0, left)} / ${meter.max}${spend ? `（这一局 -${spend}）` : ''}</div>`
       : '';
-    return `<div class="modal"><div class="result predeal" style="--c:${this.chars[this.me].color}">
-        <h2>${g.roundLabel()} · 发牌前</h2>
-        <p class="pd-sub">选这一局要发动的技能（可以都不选）</p>
+    // 配牌后选（爽）：把手牌摆在上面，看着手牌选
+    const hand = post
+      ? `<div class="pd-hand">${[...g.players[this.me].hand].sort((a, b) => a - b).map((t) => tileHtml(t, { size: 'pond' })).join('')}</div>`
+      : '';
+    return `<div class="modal${post ? ' postdeal' : ''}"><div class="result predeal" style="--c:${this.chars[this.me].color}">
+        <h2>${g.roundLabel()} · ${post ? '配牌后' : '发牌前'}</h2>
+        ${hand}
+        <p class="pd-sub">${post ? '看着手牌选这一局要发动的技能（可以都不选）' : '选这一局要发动的技能（可以都不选）'}</p>
         ${energy}
         <div class="pd-list">${rows}</div>
-        <button class="primary" data-ui="pd-go">发牌</button>
+        <button class="primary" data-ui="pd-go">${post ? '开始' : '发牌'}</button>
       </div></div>`;
   }
 
@@ -1310,7 +1411,8 @@ export class App {
     const g = this.game!;
     const ab = this.chars[this.me].ability;
     if (this.pdValues && ab?.preDealCheck?.(g, this.me, this.pdValues)) return;
-    ab?.setPreDeal?.(g, this.me, [...(this.pdPicks ?? [])], this.pdValues ?? undefined);
+    if (g.phase === 'postdeal') ab?.setPostDeal?.(g, this.me, [...(this.pdPicks ?? [])]);
+    else ab?.setPreDeal?.(g, this.me, [...(this.pdPicks ?? [])], this.pdValues ?? undefined);
     this.pdPicks = null;
     this.pdValues = null;
     g.deal();
@@ -1392,7 +1494,7 @@ export class App {
     const badge = c.ability.badge?.(g, this.me);
     return `
       <div class="ability-panel" style="--c:${c.color}">
-        <div class="ab-name">${c.ability.name}${lost ? '<span class="lost">整场失效</span>' : ''}${badge ? `<span class="ab-badge">${badge}</span>` : ''}</div>
+        <div class="ab-name">${this.towerHtml(this.me)}${c.ability.name}${lost ? '<span class="lost">整场失效</span>' : ''}${badge ? `<span class="ab-badge">${badge}</span>` : ''}</div>
         <div class="ab-desc">${c.ability.description}</div>
         ${extra}
       </div>`;
@@ -1440,7 +1542,11 @@ export class App {
     const ura = w.uraIndicators.length
       ? `<div class="ura">里宝牌指示牌 ${w.uraIndicators.map((t) => tileHtml(t, { size: 'mini' })).join('')}</div>`
       : '';
-    const art = this.mode === '25d' ? `<div class="win-art"><img src="${cutinArt(this.chars[w.seat].id, 'result').url}" alt="" onerror="this.remove()" /></div>` : '';
+    const url = cutinArt(this.chars[w.seat].id, 'result').url;
+    const art =
+      this.mode === '25d'
+        ? `<div class="win-art">${url ? `<img src="${url}" alt="" onerror="this.remove()" />` : `<span class="win-glyph">${this.chars[w.seat].name.slice(-1)}</span>`}</div>`
+        : '';
     return `
       <div class="win" style="--c:${this.chars[w.seat].color}">
         ${art}<div class="win-body">

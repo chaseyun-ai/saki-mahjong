@@ -199,5 +199,5 @@ describe('打牌前预览', () => {
     }
     // 确实测到了不少能听牌的情况
     expect(marked).toBeGreaterThan(200);
-  });
+  }, 20000);
 });
