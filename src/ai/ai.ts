@@ -19,6 +19,7 @@ import { takamiHarvest, takamiSeeds } from '../abilities/takami';
 import { NELLY, nellyDeclared, nellyLuck, nellySuit } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { komakiActiveGod } from '../abilities/komaki';
+import { toyoneMode } from '../abilities/toyone';
 import { TERU, teruFits, teruLadder, teruMirrored, teruTier, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
@@ -425,7 +426,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       (style.fish && !sealed && seikoFish(g, seat) >= SEIKO_SURE && best.sh === 0) ||
       (style.harvest && !sealed && takamiHarvest(g, seat) && best.sh <= 1) ||
       // 夕从不弃和
-      style.firepower);
+      style.firepower ||
+      // 丰音的先负发动了：追上去，不弃和
+      (style.rokuyou && toyoneMode(g, seat) === 'senbu' && best.sh <= 1));
   let folded: Cand[] | null = null;
   // 听牌了但听得很窄（能和的牌没几张）、要打的又是很危险的牌，对立直也不硬拼
   const riichiOn = threats(g, seat).some((t) => g.players[t].riichi);
@@ -466,6 +469,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (riichi && best.sh === 0 && g.canWin(seat)) {
     const c = counts.slice();
     c[kindOf(best.a.tile)]--;
+    // 丰音：先负发动了就追立；这一局还没有六曜起作用（先负还能发动）就默听
+    if (style.rokuyou && !sealed) {
+      const mode = toyoneMode(g, seat);
+      if (mode === 'senbu') return riichi;
+      if (mode === null) return best.a;
+    }
     // 夕从不默听
     if (style.firepower) return ukeire(c, p.melds.length, visible) > 0 ? riichi : best.a;
     // 堇：有役就默听，只等目标打
@@ -831,6 +840,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 诚子：对子多、还没吃过，就奔对对和，能碰就碰（碰了不退向听也碰，多钓一条鱼）
   const pairs = counts.filter((n) => n >= 2).length;
   const toitoi = style.fish && p.melds.every((m) => m.type !== 'chi') && pairs + p.melds.length >= 4;
+  // 丰音：副露两次以上、有役，这一局还没有六曜起作用时奔友引（四副露单骑），不退向听就鸣
+  const tomobiki = style.rokuyou && !sealedMe && yakuSecured && p.melds.length >= 2 && toyoneMode(g, seat) === null;
   let best: Action = pass;
   let bestSh = cur;
   for (const a of legal) {
@@ -845,7 +856,7 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const c = counts.slice();
     for (const t of a.tiles) c[kindOf(t)]--;
     const sh = shanten(c, p.melds.length + 1);
-    if (sh < bestSh || ((style.fish && a.type === 'pon') || disrupt) && sh <= cur && best === pass) {
+    if (sh < bestSh || ((style.fish && a.type === 'pon') || disrupt || tomobiki) && sh <= cur && best === pass) {
       best = a;
       bestSh = sh;
     }
