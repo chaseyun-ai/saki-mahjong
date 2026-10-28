@@ -28,6 +28,8 @@ export function readSteps(c: Game, start: number, seat: number, rons: CanRon[]):
   const seen: SeenStep[] = [];
   for (const e of c.events.slice(start)) {
     if (e.type === 'discard') {
+      // 演算到最后隐身了的桃子打的牌她看不见，不写进经过
+      if (c.stealthed(e.seat, seat)) continue;
       seen.push({ kind: 'discard', seat: e.seat, tile: e.tile, riichi: e.riichi });
       if (left[0]?.tile === e.tile && left[0].from === e.seat) seen.push(left.shift()!);
     } else if (e.type === 'call') seen.push({ kind: 'call', seat: e.seat, call: e.call });

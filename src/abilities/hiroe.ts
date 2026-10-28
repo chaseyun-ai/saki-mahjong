@@ -63,9 +63,9 @@ export function readTenpai(g: Game, seat: number): TenpaiRead | null {
   return value > 0 ? { seat, ron, pay, value } : null;
 }
 
-// 除了 seat 自己，听牌的人
+// 除了 seat 自己，听牌的人（隐身的桃子读不出来）
 export function readOthers(g: Game, seat: number): TenpaiRead[] {
-  return [0, 1, 2, 3].filter((s) => s !== seat).flatMap((s) => readTenpai(g, s) ?? []);
+  return [0, 1, 2, 3].filter((s) => s !== seat && !g.stealthed(s, seat)).flatMap((s) => readTenpai(g, s) ?? []);
 }
 
 // 打出去会被谁荣和的牌种

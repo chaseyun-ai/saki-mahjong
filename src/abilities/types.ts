@@ -110,6 +110,9 @@ export interface Ability {
   nullifies?(g: Game, seat: number): boolean;
   // 现在是第二形态（天使和）：返回素材页里这个形态的动画 id。头像框换成能力发动头像，和牌放 `${id}-win` 的动画
   form?(g: Game, seat: number): string | null;
+  // 隐身（东横桃子）：她打满几张牌起 viewer 就看不见她，null 是 viewer 看得见她。
+  // 看不见她的整条牌河和手牌，荣和不了、鸣不了她打的牌，不知道她立没立直（Game.stealthed、Game.seesRiichi）
+  stealth?(g: Game, seat: number, viewer: number): number | null;
 }
 
 export interface PreDealOption {

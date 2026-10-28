@@ -77,6 +77,8 @@ export const LOOKS: Record<string, Look> = {
   toyone: { model: 'models/vroid-shino.v2.glb', hair: '#1e1c24', eyes: '#5a4a7a', hairContrast: 0.5, reveal: 'slam', pose: 'lap', borrowed: true },
   // 上重漫：先占位，借怜的短发模型换成深棕色头发、棕色眼睛
   suzu: { model: 'models/vroid-f.v2.glb', hair: '#4a2e22', eyes: '#8a5a32', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
+  // 东横桃子：先占位，借和的长发模型换成蓝黑色头发、灰蓝色眼睛
+  momo: { model: 'models/vroid-g.v2.glb', hair: '#2a3040', eyes: '#5a6a86', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
 };
 
 // 牌桌上要用到的全部模型文件

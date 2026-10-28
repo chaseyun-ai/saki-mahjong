@@ -195,7 +195,7 @@ export const toyoneAbility: Ability = {
     const st = stateOf(g, seat);
     const p = g.players[seat];
     // 被动的两种：这一局还没有别的技能起作用时自己发动
-    if (!st.mode && !p.riichi && g.players.some((q) => q.seat !== seat && q.riichi)) start(g, seat, 'senbu');
+    if (!st.mode && !p.riichi && g.players.some((q) => q.seat !== seat && q.riichi && g.seesRiichi(q.seat, seat))) start(g, seat, 'senbu');
     if (!st.mode && tomobikiReady(g, seat)) start(g, seat, 'tomobiki', false);
     // 电脑：手里有赤宝牌就开赤口
     if (!st.mode && !g.manual[seat] && p.hand.some(isRed)) start(g, seat, 'shakku');
@@ -246,7 +246,7 @@ export const toyoneAbility: Ability = {
   afterDiscard(g, seat) {
     const st = stateOf(g, seat);
     if (st.mode !== 'senbu' || !g.players[seat].riichiPending || st.chase) return;
-    st.chase = g.players.filter((q) => q.seat !== seat && q.riichi).map((q) => q.seat);
+    st.chase = g.players.filter((q) => q.seat !== seat && q.riichi && g.seesRiichi(q.seat, seat)).map((q) => q.seat);
     g.emit({ type: 'ability', seat, ability: 'toyone', text: '追立' });
   },
 

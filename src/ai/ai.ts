@@ -2,6 +2,7 @@ import type { AiStyle } from '../abilities/characters';
 import { awaiWaitingForCorner } from '../abilities/awai';
 import { dangerKinds, readOthers } from '../abilities/hiroe';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
+import { momoStealthNext } from '../abilities/momo';
 import { ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
 import { SERA, seraYakuhai } from '../abilities/sera';
 import { SUMIRE, sumireAimedAt, sumireMarks, sumireTarget } from '../abilities/sumire';
@@ -69,9 +70,8 @@ function visibleCounts(g: Game, seat: number): number[] {
   const add = (t: TileId) => c[kindOf(t)]++;
   g.players[seat].hand.forEach(add);
   for (const p of g.players) {
-    p.discards.forEach((d) => {
-      if (!d.called) add(d.tile);
-    });
+    // 隐身的桃子的牌河看不见
+    if (!g.stealthed(p.seat, seat)) p.discards.forEach((d) => !d.called && add(d.tile));
     p.melds.forEach((m) => m.tiles.forEach(add));
   }
   g.wall.visibleDoraIndicators().forEach(add);
@@ -137,7 +137,9 @@ function threats(g: Game, seat: number): number[] {
   return [0, 1, 2, 3].filter((s) => {
     if (s === seat) return false;
     const p = g.players[s];
-    if (p.riichi) return true;
+    if (g.seesRiichi(s, seat)) return true;
+    // 隐身的桃子：立没立直、听没听牌都看不出来，鸣的牌也不当回事
+    if (g.stealthed(s, seat)) return false;
     if (sense) return akoDistance(g, s) === 0;
     if (mugoku) return ryuukaSensesTenpai(g, s);
     const id = g.abilities[s]?.id;
@@ -196,13 +198,18 @@ function koromoHaiteiSeat(g: Game, seat: number): number | null {
   return (g.lastDiscard!.seat + n) % 4 === k ? k : null;
 }
 
-function danger(g: Game, threat: number, k: Kind, visible: number[]): number {
+// viewer 眼里 threat 的牌河（桃子隐身以后打的牌看不见）
+function seenDiscards(g: Game, viewer: number, threat: number) {
+  return g.stealthed(threat, viewer) ? [] : g.players[threat].discards;
+}
+
+function danger(g: Game, viewer: number, threat: number, k: Kind, visible: number[]): number {
   const p = g.players[threat];
-  const discarded = new Set(p.discards.map((d) => kindOf(d.tile)));
+  const river = seenDiscards(g, viewer, threat);
+  const discarded = new Set(river.map((d) => kindOf(d.tile)));
   if (discarded.has(k)) return 0;
   // 立直之后别人打过而他没荣和的牌也安全
-  const riichiIdx = p.discards.findIndex((d) => d.riichi);
-  if (riichiIdx >= 0) {
+  if (g.seesRiichi(threat, viewer)) {
     const riichiTime = g.events.findIndex((e) => e.type === 'discard' && e.seat === threat && e.riichi);
     const after = g.events
       .slice(riichiTime + 1)
@@ -219,8 +226,8 @@ function danger(g: Game, threat: number, k: Kind, visible: number[]): number {
   const base = lowSafe && highSafe ? (n === 0 || n === 8 ? 2 : 4) : n === 0 || n === 8 ? 6 : n === 1 || n === 7 ? 8 : 10;
   // 染手：打了好几张牌、一张这门花色都没打过，这门花色的牌都危险（涅莉宣言局的清一色就是这样）
   const suit = Math.floor(k / 9);
-  const shown = p.discards.length + p.melds.length * 3;
-  const offSuit = p.discards.every((d) => kindOf(d.tile) >= 27 || Math.floor(kindOf(d.tile) / 9) !== suit);
+  const shown = river.length + p.melds.length * 3;
+  const offSuit = river.every((d) => kindOf(d.tile) >= 27 || Math.floor(kindOf(d.tile) / 9) !== suit);
   return shown >= 6 && offSuit ? Math.max(base, 9) + 3 : base;
 }
 
@@ -246,7 +253,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       if (shanten(after, p.melds.length + 1) <= cur && threats(g, seat).length === 0) return a;
     }
     // 咲也不在立直的人可能荣和这张时加杠（抢杠）
-    const chankan = (k: Kind) => threats(g, seat).some((t) => g.players[t].riichi && danger(g, t, k, visibleCounts(g, seat)) >= 6);
+    const chankan = (k: Kind) => threats(g, seat).some((t) => g.seesRiichi(t, seat) && danger(g, seat, t, k, visibleCounts(g, seat)) >= 6);
     if (a.type === 'kakan' && ((style.kanEager && !chankan(kindOf(a.tile))) || threats(g, seat).length === 0)) {
       const after = counts.slice();
       after[kindOf(a.tile)]--;
@@ -290,7 +297,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       : angel
         ? angelDanger(g, seat)
         : mirrorOnly
-          ? new Set(readOthers(g, seat).filter((r) => g.players[r.seat].riichi && !g.active(r.seat)?.mirrorProof?.(g, r.seat)).flatMap((r) => r.ron))
+          ? new Set(readOthers(g, seat).filter((r) => g.seesRiichi(r.seat, seat) && !g.active(r.seat)?.mirrorProof?.(g, r.seat)).flatMap((r) => r.ron))
           : dangerKinds(g, seat);
   // 被堇瞄准时，读得出牌的人（洋榎、真子、睁眼的美穗子）和照察觉得到她听什么，不给她点
   const aimed = !sealed && (style.reads || style.memory || eyeReads || style.mirror) ? sumireAimedAt(g, seat) : null;
@@ -303,7 +310,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const eyeSafe = style.eye && !sealed ? new Map(threats(g, seat).map((t) => [t, mihokoSafeKinds(g, seat, t)])) : null;
   const eyeLikely = style.eye && !sealed ? new Map(threats(g, seat).map((t) => [t, mihokoLikelySafe(g, seat, t)])) : null;
   const eyeRisk = (t: number, k: Kind) =>
-    eyeSafe?.get(t)?.has(k) ? 0 : eyeLikely?.get(t)?.has(k) ? Math.min(1, danger(g, t, k, visible)) : danger(g, t, k, visible);
+    eyeSafe?.get(t)?.has(k) ? 0 : eyeLikely?.get(t)?.has(k) ? Math.min(1, danger(g, seat, t, k, visible)) : danger(g, seat, t, k, visible);
   const myDiscards = new Set(p.discards.map((d) => kindOf(d.tile)));
   // 照要和 1 番起胡：七对子一和就是 2 番，不往七对子做
   const shOf = style.streak && teruMirrored(g, seat) && teruLadder(g, seat).next === 1 ? standardShanten : shanten;
@@ -431,7 +438,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       (style.rokuyou && toyoneMode(g, seat) === 'senbu' && best.sh <= 1));
   let folded: Cand[] | null = null;
   // 听牌了但听得很窄（能和的牌没几张）、要打的又是很危险的牌，对立直也不硬拼
-  const riichiOn = threats(g, seat).some((t) => g.players[t].riichi);
+  const riichiOn = threats(g, seat).some((t) => g.seesRiichi(t, seat));
   // 久听烂听牌是她的能力，不因为听得窄就收
   const thinTenpai = best.sh === 0 && riichiOn && best.risk >= 8 && best.uke <= 4 && !(style.badWait && !sealed && best.bad);
   // 涅莉负运势的局不做危险进攻：听牌了也不打危险牌
@@ -469,6 +476,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (riichi && best.sh === 0 && g.canWin(seat)) {
     const c = counts.slice();
     c[kindOf(best.a.tile)]--;
+    // 桃子：还没隐身先默听，打这张就隐身了（别人看不见她立直）才立直
+    if (style.stealth && !sealed && !momoStealthNext(g, seat)) return best.a;
     // 丰音：先负发动了就追立；这一局还没有六曜起作用（先负还能发动）就默听
     if (style.rokuyou && !sealed) {
       const mode = toyoneMode(g, seat);
@@ -829,7 +838,7 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 
   // 恭子：桌上有能力起作用的人，就鸣牌打乱流向（不退向听就鸣；有能力的人立直了，没役也鸣）
   const disrupt = style.disrupt && !g.isSealed(seat) && g.wall.remaining >= KYOUKO.aiMinWall && kyoukoTargets(g, seat).length > 0;
-  const disruptAny = disrupt && kyoukoTargets(g, seat).some((s) => g.players[s].riichi);
+  const disruptAny = disrupt && kyoukoTargets(g, seat).some((s) => g.seesRiichi(s, seat));
 
   // 优希不坐庄的东场以和牌为先；照要和 1 番、2 番的时候小牌快和：向听多也吃
   const speedy =

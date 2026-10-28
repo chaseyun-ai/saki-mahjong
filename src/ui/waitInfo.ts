@@ -65,12 +65,13 @@ export function waitInfo(g: Game, seat: number, discard: TileId | null = null, r
   };
 }
 
-// 这个座位看得见的牌：自己的手牌、四家牌河（被叫走的算在副露里）、四家副露、翻开的宝牌指示牌
+// 这个座位看得见的牌：自己的手牌、四家牌河（隐身的桃子打的不算）（被叫走的算在副露里）、四家副露、翻开的宝牌指示牌
 function seenCounts(g: Game, seat: number): number[] {
   const tiles: TileId[] = [...g.players[seat].hand, ...g.wall.visibleDoraIndicators()];
   for (const q of g.players) {
     for (const m of q.melds) tiles.push(...m.tiles);
-    for (const d of q.discards) if (!d.called) tiles.push(d.tile);
+    // 隐身的桃子打的牌看不见
+    if (!g.stealthed(q.seat, seat)) for (const d of q.discards) if (!d.called) tiles.push(d.tile);
   }
   return toCounts(tiles);
 }

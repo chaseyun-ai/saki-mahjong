@@ -644,6 +644,11 @@ button {
   filter: brightness(0.92);
 }
 
+/* 隐身的桃子打的牌：别人看不见，她自己看着是半透明的 */
+.pond .tile.stealth {
+  opacity: 0.5;
+}
+
 .pond .tile.last {
   outline: 2px solid var(--gold);
 }
