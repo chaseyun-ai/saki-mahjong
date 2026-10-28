@@ -106,6 +106,9 @@ export interface Ability {
   mirrorProof?(g: Game, seat: number): boolean;
   // 现在是第二形态（天使和）：返回素材页里这个形态的动画 id。头像框换成能力发动头像，和牌放 `${id}-win` 的动画
   form?(g: Game, seat: number): string | null;
+  // 隐身（东横桃子）：从她打的第几张牌起（0 起算）viewer 看不见，null 是 viewer 看得见她。
+  // 看不见的牌 viewer 荣和不了、鸣不了；这些牌里的立直 viewer 也不知道（Game.discardHidden、Game.stealthed）
+  stealth?(g: Game, seat: number, viewer: number): number | null;
 }
 
 export interface PreDealOption {

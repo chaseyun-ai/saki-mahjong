@@ -98,7 +98,7 @@ export const mihokoAbility: Ability = {
   // 电脑的美穗子：开局时落后或坐庄就睁眼；没睁的话，有人立直时再睁
   beforeAnyDraw(g, seat) {
     if (g.manual[seat] || !canOpen(g, seat)) return;
-    const riichi = g.players.some((p) => p.seat !== seat && p.riichi);
+    const riichi = g.players.some((p) => p.seat !== seat && g.seesRiichi(p.seat, seat));
     const start = g.players[seat].discards.length === 0 && (isBehind(g, seat) || seat === g.dealer);
     if (riichi || start) open(g, seat);
   },

@@ -568,7 +568,10 @@ export class App {
       this.penaltyNext = false;
     }
     if (e.type === 'discard') {
-      this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
+      const index = this.game!.players[e.seat].discards.length - 1;
+      // 隐身的桃子打的牌：看不见也听不见
+      if (this.game!.discardHidden(e.seat, index, this.me)) return;
+      this.freshDiscard = `${e.seat}-${index}`;
       if (!this.table3d) playClick();
       if (e.riichi) {
         playRiichi();
@@ -886,7 +889,6 @@ export class App {
   private seatFrameHtml(s: number): string {
     const g = this.game!;
     const c = this.chars[s];
-    const p = g.players[s];
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? 'active' : '';
     // 怜演算时换成“能力发动头像”（眼睛发光），头像框发绿光
     // 第二形态（天使和）也一直用能力发动头像
@@ -894,7 +896,7 @@ export class App {
     const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
     const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·封住' : c.ability?.badge?.(g, s);
     return `
-      <div class="seat-frame ${POS[s]} ${active} ${p.riichi ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
+      <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
         <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
         ${this.towerHtml(s)}
@@ -952,7 +954,7 @@ export class App {
   // 鸣过牌以后，别人头像旁边的点：离听牌还差几步（听牌了亮「听」），不显示听什么
   private distHtml(s: number): string {
     const g = this.game!;
-    if (s === this.me || (g.phase !== 'turn' && g.phase !== 'calls')) return '';
+    if (s === this.me || (g.phase !== 'turn' && g.phase !== 'calls') || g.stealthed(s, this.me)) return '';
     // 龙华的无极天：只看得出听没听牌
     if (this.chars[this.me]?.id === 'ryuuka' && ryuukaMugoku(g, this.me)) {
       return ryuukaSensesTenpai(g, s) ? '<span class="dist tenpai" title="无极天：听牌了">听</span>' : '';
@@ -973,7 +975,7 @@ export class App {
   // 听牌的人头像旁边的灯：牌越大越亮（只给操作洋榎的玩家看）
   private bulbHtml(s: number): string {
     const g = this.game!;
-    if (!this.isHiroe() || s === this.me || this.vision || (g.phase !== 'turn' && g.phase !== 'calls')) return '';
+    if (!this.isHiroe() || s === this.me || this.vision || (g.phase !== 'turn' && g.phase !== 'calls') || g.stealthed(s, this.me)) return '';
     if (this.chars[this.me].id === 'mako' && !makoKnows(g, s)) return '';
     const r = readTenpai(g, s);
     if (!r) return '';
@@ -1172,19 +1174,18 @@ export class App {
       .join('');
     const scores = [0, 1, 2, 3]
       .map((s) => {
-        const p = g.players[s];
         const active = g.phase === 'turn' && g.turn === s ? 'active' : '';
         return `<div class="score ${POS[s]} ${active}" style="--c:${this.chars[s].color}">
           <span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>
-          <span class="pts">${p.score}</span>
-          ${p.riichi ? '<span class="stick"></span>' : ''}
+          <span class="pts">${g.shownScore(s, this.me)}</span>
+          ${g.players[s].riichi && g.seesRiichi(s, this.me) ? '<span class="stick"></span>' : ''}
         </div>`;
       })
       .join('');
     return `
       <div class="round">${g.roundLabel()}</div>
       <div class="remain">余 ${g.wall.remaining}</div>
-      <div class="sticks">立直棒 ×${g.riichiSticks}</div>
+      <div class="sticks">立直棒 ×${g.shownSticks(this.me)}</div>
       <div class="dora">${dora}</div>
       ${scores}`;
   }
@@ -1219,7 +1220,10 @@ export class App {
     const last = g.lastDiscard;
     const tiles = p.discards
       .map((d, i) => {
+        // 隐身的桃子打的牌别人看不见；她自己看得见，淡淡地显示
+        if (g.discardHidden(s, i, this.me)) return '';
         const classes: string[] = [];
+        if ([0, 1, 2, 3].some((o) => o !== s && g.discardHidden(s, i, o))) classes.push('stealth');
         if (d.called) classes.push('called');
         if (d.tsumogiri) classes.push('tsumogiri');
         if (last && last.seat === s && i === p.discards.length - 1) classes.push('last');

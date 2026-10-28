@@ -12,6 +12,7 @@ const KNOWN: School[] = [
   { name: '清澄高中', short: '清澄', region: '长野', color: '#e2667a' },
   { name: '龙门渊高中', short: '龙门渊', region: '长野', color: '#c7a14a' },
   { name: '风越女子', short: '风越', region: '长野', color: '#5aa0d8' },
+  { name: '鹤贺学园', short: '鹤贺', region: '长野', color: '#8fa0b8' },
   { name: '阿知贺女子学院', short: '阿知贺', region: '奈良', color: '#e89a4c' },
   { name: '千里山女子', short: '千里山', region: '北大阪', color: '#8c6fd1' },
   { name: '白糸台高中', short: '白糸台', region: '西东京', color: '#d9dde6' },

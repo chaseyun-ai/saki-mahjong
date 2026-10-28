@@ -679,6 +679,8 @@ export class Table3D {
       const ch = this.characterAt(e.seat);
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
+      // 隐身的桃子打的牌：看不见，手里那张直接消失，没有动画、没有立直特效
+      if (g.discardHidden(e.seat, g.players[e.seat].discards.length - 1, this.lastSync?.view.me ?? 0)) return;
       const pond = this.seatPoint(e.seat, 0, 0, this.dim.pondZ + 1.5);
       // 立直宣言：牌拍下去的那一刻放特效（落桌标记），接着从抽屉里拿立直棒放到桌上（2.5D 是落桌后立直棒直接掉下来）
       const flat = this.style === '25d';
@@ -751,7 +753,8 @@ export class Table3D {
     for (let s = 0; s < 4; s++) {
       const stick = this.riichiSticks[s];
       // 立直宣言了但别人还在决定要不要鸣这张牌时，立直还没成立，也算在立直：正在拿的立直棒不能被收回去
-      const on = (g.players[s].riichi || g.players[s].riichiPending) && g.phase !== 'roundEnd';
+      // 隐身以后的立直看不见
+      const on = g.seesRiichi(s, this.lastSync?.view.me ?? 0) && g.phase !== 'roundEnd';
       if (!on) {
         this.stickState[s] = 'hidden';
         stick.visible = false;
@@ -1135,8 +1138,8 @@ export class Table3D {
     let row = 0;
     const pstep = TILE_W + GAP;
     let px = -((POND_COLS * pstep) / 2);
-    for (const d of p.discards) {
-      if (d.called) continue;
+    for (const [i, d] of p.discards.entries()) {
+      if (d.called || g.discardHidden(s, i, me)) continue;
       if (col === POND_COLS && row < 2) {
         col = 0;
         row++;
@@ -1213,10 +1216,10 @@ export class Table3D {
       g.roundNumber,
       g.honba,
       g.wall.remaining,
-      g.riichiSticks,
+      g.shownSticks(view.me),
       g.wall.doraRevealed,
       g.wall.doraIndicators,
-      g.players.map((p, s) => [p.score, p.riichi, g.seatWind(s)]),
+      g.players.map((_, s) => [g.shownScore(s, view.me), g.seesRiichi(s, view.me), g.seatWind(s)]),
       g.phase === 'turn' ? g.turn : -1,
       view.me,
       view.colors,
@@ -1296,12 +1299,13 @@ export class Table3D {
       if (i < g.wall.doraRevealed) this.atlas.drawFace(c, faceIndex(t), x, y, w, h);
     });
     // 供托：场上有几根立直棒
-    if (g.riichiSticks) {
+    const sticks = g.shownSticks(view.me);
+    if (sticks) {
       drawStick(c, M - 24, M + 102, 64, 9);
       c.font = num(28);
       c.fillStyle = k.ink;
       c.textAlign = 'left';
-      c.fillText(`×${g.riichiSticks}`, M + 16, M + 102);
+      c.fillText(`×${sticks}`, M + 16, M + 102);
       c.textAlign = 'center';
     }
 
@@ -1311,7 +1315,6 @@ export class Table3D {
       c.save();
       c.translate(M, M);
       c.rotate((-rel * Math.PI) / 2);
-      const p = g.players[s];
       const active = g.phase === 'turn' && g.turn === s;
       // 轮到谁，谁那边亮一条
       if (active) {
@@ -1336,11 +1339,12 @@ export class Table3D {
       c.fillText(WIND_CN[g.seatWind(s) - 27], -116, 192);
       // 点数
       c.font = num(66);
-      c.fillStyle = p.score < 0 ? '#ff6b6b' : active ? k.accent : k.ink;
+      const score = g.shownScore(s, view.me);
+      c.fillStyle = score < 0 ? '#ff6b6b' : active ? k.accent : k.ink;
       c.textAlign = 'left';
-      c.fillText(p.score.toLocaleString('en-US'), -78, 192);
+      c.fillText(score.toLocaleString('en-US'), -78, 192);
       c.textAlign = 'center';
-      if (p.riichi) drawStick(c, 0, 143, 160, 11);
+      if (g.seesRiichi(s, view.me)) drawStick(c, 0, 143, 160, 11);
       c.restore();
     }
     this.consoleTex.needsUpdate = true;

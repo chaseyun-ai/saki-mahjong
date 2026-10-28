@@ -26,8 +26,12 @@ export type CanRon = Extract<SeenStep, { kind: 'canRon' }>;
 export function readSteps(c: Game, start: number, seat: number, rons: CanRon[]): SeenStep[] {
   const left = [...rons];
   const seen: SeenStep[] = [];
-  for (const e of c.events.slice(start)) {
+  const events = c.events.slice(start);
+  // 每家演算里打的第一张是牌河里的第几张：隐身的桃子打的牌她看不见，不写进经过
+  const index = [0, 1, 2, 3].map((s) => c.players[s].discards.length - events.filter((e) => e.type === 'discard' && e.seat === s).length);
+  for (const e of events) {
     if (e.type === 'discard') {
+      if (c.discardHidden(e.seat, index[e.seat]++, seat)) continue;
       seen.push({ kind: 'discard', seat: e.seat, tile: e.tile, riichi: e.riichi });
       if (left[0]?.tile === e.tile && left[0].from === e.seat) seen.push(left.shift()!);
     } else if (e.type === 'call') seen.push({ kind: 'call', seat: e.seat, call: e.call });
