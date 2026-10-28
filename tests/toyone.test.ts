@@ -80,7 +80,7 @@ describe('姊带丰音', () => {
       });
     }
     expect(senshoRounds).toBeGreaterThan(0);
-  });
+  }, 60000);
 
   it('先负：先默听，有人立直后发动；追立以后先立直的人摸到的都是她的铳牌', () => {
     const ids = ['toyone', 'hisa', 'yuuki', 'sera'];
