@@ -17,10 +17,12 @@ import { makoAbility } from './mako';
 import { hisaAbility } from './hisa';
 import { kyoukoAbility } from './kyouko';
 import { takamiAbility } from './takami';
-import { nodokaAbility, setNodokaCosts } from './nodoka';
+import { nodokaAbility } from './nodoka';
+import { setCosts } from './costs';
 import { ryuukaAbility } from './ryuuka';
 import { sumireAbility } from './sumire';
 import { seraAbility } from './sera';
+import { KOMAKI_GODS, komakiAbility } from './komaki';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -53,6 +55,7 @@ export interface AiStyle {
   sniper: boolean; // 弘世堇：听牌时挑听目标多余牌的打法；有役就默听，只和目标打的牌
   firepower: boolean; // 江口夕：从不默听、从不弃和，不到满贯先不和；不吃，只碰役牌；留着宝牌和役牌
   mugoku: boolean; // 清水谷龙华：无极天的局读得出别人听什么，不打放铳的牌；看得出谁听牌了
+  gods: boolean; // 神代小莳：按附身的神打（木花咲耶姬能杠就杠、须佐之男能碰就碰、天照读得出铳牌）
 }
 
 export interface Character {
@@ -69,7 +72,7 @@ export interface Character {
   skillArts?: { id: string; name: string; label?: string; hint?: string }[];
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false, gods: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -300,9 +303,20 @@ export const CHARACTERS: Character[] = [
     ],
     ai: { ...baseAi, mistakeRate: 0.03, useForesight: true, mugoku: true },
   },
+  {
+    id: 'komaki',
+    cost: 5,
+    name: '神代小莳',
+    school: '永水女子',
+    color: '#b07ab8',
+    ability: komakiAbility,
+    // 神降下来、醒来、神乐各一格；天宇受卖命的那一格放神乐
+    skillArts: [...KOMAKI_GODS.map(({ id, name }) => (id === 'uzume' ? { id, name: '神乐', label: '天宇受卖命·神乐' } : { id, name })), { id: 'wake', name: '醒来' }],
+    ai: { ...baseAi, mistakeRate: 0.05, gods: true },
+  },
 ];
 
-setNodokaCosts(Object.fromEntries(CHARACTERS.map((c) => [c.id, c.cost])));
+setCosts(Object.fromEntries(CHARACTERS.map((c) => [c.id, c.cost])));
 
 export const characterById = (id: string): Character => {
   const c = CHARACTERS.find((x) => x.id === id);

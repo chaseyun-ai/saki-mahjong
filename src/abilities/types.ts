@@ -87,6 +87,10 @@ export interface Ability {
   canWin?(g: Game, seat: number): boolean;
   // 不许 target 和牌（涅莉的七姐妹封住的人）
   forbidsWin?(g: Game, seat: number, target: number): boolean;
+  // 这一局（第 round 局）别人封印不了她（小莳的神乐）
+  unsealable?(g: Game, seat: number, round: number): boolean;
+  // 这一局是天听配牌：坐庄时第一次摸牌不给天和（淡的天听、照的九莲宝灯、小莳的琼琼杵尊）
+  noTenhou?(g: Game, seat: number): boolean;
   // 这一局（第 round 局）封印别人的能力（爽的蛇神威）：为真时别的座位的能力全部不动
   seals?(g: Game, seat: number, round: number): boolean;
   // 别人看得穿的这家能力状态（照的照魔镜），一行一条；没写就只显示能力名
@@ -98,6 +102,8 @@ export interface Ability {
   // 挡得住别人影响的比例（0–1，天使和是 0.5）：别人给她配牌、摸牌定的规矩每一条有这个概率不算，
   // 别人调整配牌时这一局有这个概率碰不到她的配牌。absolute 的能力照样管得到
   resist?(g: Game, seat: number): number;
+  // 照魔镜照不穿她（小莳的天照）：照看不到她的能力状态，电脑的照也读不出她听什么
+  mirrorProof?(g: Game, seat: number): boolean;
   // 现在是第二形态（天使和）：返回素材页里这个形态的动画 id。头像框换成能力发动头像，和牌放 `${id}-win` 的动画
   form?(g: Game, seat: number): string | null;
 }

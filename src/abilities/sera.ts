@@ -11,7 +11,7 @@ import type { Ability } from './types';
 export const SERA = {
   dealChance: 0.7,
   dealSwaps: 2,
-  draw: 0.3,
+  draw: 0.15,
   holdLate: 10,
   mangan: 8000,
 };

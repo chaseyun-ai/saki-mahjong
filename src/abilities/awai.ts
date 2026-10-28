@@ -115,7 +115,7 @@ function cornerSlot(g: Game, seat: number): number | null {
 }
 
 // 把 kinds 摆到她的配牌位置上：已经是要的牌种就不动，缺的先从发完牌以后的牌山里拿
-function placeHand(g: Game, mine: number[], kinds: Kind[]): boolean {
+export function placeHand(g: Game, mine: number[], kinds: Kind[]): boolean {
   const w = g.wall;
   const need = new Array<number>(KIND_COUNT).fill(0);
   for (const k of kinds) need[k]++;
@@ -263,6 +263,10 @@ export const awaiAbility: Ability = {
       const idx = g.dealIndices(s);
       if (!worsen(g, idx)) g.dealFallback(seat, () => worsen(g, idx));
     }
+  },
+
+  noTenhou(g, seat) {
+    return stateOf(g, seat).kanKind !== undefined;
   },
 
   onRoundStart(g, seat) {

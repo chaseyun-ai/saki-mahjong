@@ -5,7 +5,7 @@ import type { Ability, PreDealOption } from './types';
 
 // 片冈优希（清澄）：东风之神。东场开局速度飞快，尤其坐庄时；一到南场就没劲了，靠塔可饼补充能量。
 // - 开局必定坐庄（她是起家）
-// - 东场：配牌少一两向听，摸牌常换成进张；坐庄的局更强（配牌大多一向听，第一巡有机会双立直）。
+// - 东场：配牌少一两向听，摸牌常换成进张；坐庄的局更强（配牌大多一向听，第一巡有机会双立直），别人对她配牌、摸牌的影响减半（Ability.resist）。
 //   东风战（个人赛）整场都在东场，所以加成小一点
 // - 南场：能力消失，有用的牌偶尔被换走
 // - 塔可饼：一场一次，南场发牌前吃一个，这一局恢复东场的状态。电脑留到坐庄或落后时，最后一局一定吃
@@ -19,6 +19,7 @@ export const YUUKI = {
   goodEast: 0.1, // 东风战
   dealerGood: 0.3, // 坐庄时
   southBad: 0.12, // 南场有用的牌被换走的概率
+  dealerResist: 0.5, // 东场坐庄时挡得住别人影响的比例
   tacoBehind: 8000, // 电脑落后多少吃塔可饼
 };
 
@@ -60,8 +61,13 @@ function aiTaco(g: Game, seat: number): boolean {
 export const yuukiAbility: Ability = {
   id: 'yuuki',
   name: '东风之神',
-  description: `开局必定坐庄。东场配牌少一两向听、摸牌常是进张，坐庄的局更强（配牌大多一向听，有机会双立直）；南场没劲，有用的牌偶尔被换走。塔可饼一场一次：南场发牌前吃一个，这一局恢复东场的状态。`,
+  description: `开局必定坐庄。东场配牌少一两向听、摸牌常是进张，坐庄的局更强（配牌大多一向听，有机会双立直），别人对她配牌、摸牌的影响减半；南场没劲，有用的牌偶尔被换走。塔可饼一场一次：南场发牌前吃一个，这一局恢复东场的状态。`,
   firstDealer: true,
+
+  // 东场坐庄：东风之神，别人对她配牌、摸牌的影响减半
+  resist(g, seat) {
+    return g.roundWind === 0 && seat === g.dealer ? YUUKI.dealerResist : 0;
+  },
 
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);

@@ -18,6 +18,7 @@ import { KYOUKO, kyoukoTargets } from '../abilities/kyouko';
 import { takamiHarvest, takamiSeeds } from '../abilities/takami';
 import { NELLY, nellyDeclared, nellyLuck, nellySuit } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
+import { komakiActiveGod } from '../abilities/komaki';
 import { TERU, teruFits, teruLadder, teruMirrored, teruTier, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import type { Action, Game } from '../engine/game';
@@ -42,7 +43,22 @@ import {
 export function chooseAction(g: Game, seat: number, style: AiStyle): Action {
   const legal = g.legalActions(seat);
   if (legal.length === 0) throw new Error(`座位 ${seat} 没有可做的操作`);
+  if (style.gods) style = komakiStyle(g, seat, style);
   return g.phase === 'calls' ? chooseCall(g, seat, legal, style) : chooseTurn(g, seat, legal, style);
+}
+
+// 神代小莳：按附身的神换打法
+function komakiStyle(g: Game, seat: number, style: AiStyle): AiStyle {
+  switch (komakiActiveGod(g, seat)) {
+    case 'sakuya':
+      return { ...style, kanEager: true };
+    case 'susanoo':
+      return { ...style, fish: true };
+    case 'amaterasu':
+      return { ...style, reads: true };
+    default:
+      return style;
+  }
 }
 
 // ---------- 可见牌统计 ----------
@@ -273,7 +289,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       : angel
         ? angelDanger(g, seat)
         : mirrorOnly
-          ? new Set(readOthers(g, seat).filter((r) => g.players[r.seat].riichi).flatMap((r) => r.ron))
+          ? new Set(readOthers(g, seat).filter((r) => g.players[r.seat].riichi && !g.active(r.seat)?.mirrorProof?.(g, r.seat)).flatMap((r) => r.ron))
           : dangerKinds(g, seat);
   // 被堇瞄准时，读得出牌的人（洋榎、真子、睁眼的美穗子）和照察觉得到她听什么，不给她点
   const aimed = !sealed && (style.reads || style.memory || eyeReads || style.mirror) ? sumireAimedAt(g, seat) : null;
