@@ -3,6 +3,7 @@ import { CHARACTERS } from '../src/abilities/characters';
 import { TERU, TERU_TOP, teruLadder, teruMirrored, teruTier } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
+import type { WinResult } from '../src/engine/score';
 import { shanten } from '../src/engine/shanten';
 import { toCounts } from '../src/engine/tiles';
 
@@ -63,6 +64,18 @@ describe('宫永照', () => {
     expect(firstRoundChecks).toBeGreaterThan(20);
     expect(laterWins).toBeGreaterThan(3);
   }, 120000);
+
+  it('天梯只算役的番数：宝牌、赤宝牌、里宝牌加的番不算', () => {
+    const r = (han: number, dora = 0, aka = 0, ura = 0, yakuman = 0) => ({ han, dora, aka, ura, yakuman }) as WinResult;
+    expect(teruTier(r(3, 1, 1, 0))).toBe(1);
+    expect(teruTier(r(4, 0, 0, 2))).toBe(2);
+    expect(teruTier(r(7, 2, 0, 0))).toBe(5);
+    expect(teruTier(r(9, 1, 1, 1))).toBe(6);
+    expect(teruTier(r(10, 2, 0, 0))).toBe(7);
+    expect(teruTier(r(12, 1, 0, 0))).toBe(8);
+    expect(teruTier(r(16, 3, 0, 0))).toBe(TERU_TOP);
+    expect(teruTier(r(0, 0, 0, 0, 1))).toBe(TERU_TOP);
+  });
 
   it('天梯：起胡 1 番，每次正好和出下一层才往上爬；大了小了、别人和、流局都从塔底重来，役满直接登顶', () => {
     let climbed = 0;

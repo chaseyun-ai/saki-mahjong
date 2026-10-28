@@ -302,11 +302,6 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const sh = shOf(c, p.melds.length);
     let val = tileValue(g, seat, kindOf(a.tile), counts);
     if (style.keepDora && isDoraTile(g, a.tile)) val += 20;
-    // 照：要和的那一层还小，宝牌先打掉（多一番就接不上天梯）；满贯以上留着
-    if (style.streak && isDoraTile(g, a.tile) && teruMirrored(g, seat)) {
-      const { next } = teruLadder(g, seat);
-      val += next <= 3 ? -12 : next >= 5 ? 15 : 0;
-    }
     // 夕：留着宝牌和成对的役牌
     if (style.firepower && (isDoraTile(g, a.tile) || (seraYakuhai(g, seat, kindOf(a.tile)) && counts[kindOf(a.tile)] >= 2))) val += 15;
     const ts = threats(g, seat);
