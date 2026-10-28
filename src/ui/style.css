@@ -3926,16 +3926,16 @@ html:root .select-screen.team-screen.tm-draft {
 /* 要选对象的技能按钮（爽的瘟神威给哪一家） */
 .skill-choices {
   display: flex;
-  flex-wrap: wrap;
   gap: 4px;
   margin-top: 6px;
 }
 
 .skill-choices .deep-btn {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 5px 4px;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 /* 发牌前的小牌桌：自己在下、下家在右、对家在上、上家在左 */

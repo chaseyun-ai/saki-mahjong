@@ -474,9 +474,9 @@ export const sawayaAbility: Ability = {
     if (plague !== null) return { label: '', note: `${status}（瘟神威→${g.players[plague].name}）`, enabled: false, active: true };
     if (!ok(g, seat, 'pakoro')) return { label: '', note: status, enabled: false, active: on.length > 0 };
     const ready = tenpai(g, seat) && (g.phase === 'turn' || g.phase === 'calls');
-    const choices = [1, 2, 3].map((rel) => {
+    const choices = [3, 2, 1].map((rel) => {
       const t = (seat + rel) % 4;
-      return { id: String(t), label: `瘟神威→${REL[rel]}`, enabled: ready && g.binds(seat, t) };
+      return { id: String(t), label: `瘟→${REL[rel]}`, enabled: ready && g.binds(seat, t) };
     });
     return { label: '瘟神威', note: ready ? `${status}。指定一家，这一局他摸到的都是你的和了牌` : `${status}。瘟神威听牌后才能发动`, enabled: ready, active: on.length > 0, choices };
   },
