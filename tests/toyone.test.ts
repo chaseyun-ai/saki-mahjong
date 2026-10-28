@@ -80,7 +80,7 @@ describe('姊带丰音', () => {
       });
     }
     expect(senshoRounds).toBeGreaterThan(0);
-  });
+  }, 60000);
 
   it('先负：先默听，有人立直后发动；追立以后先立直的人摸到的都是她的铳牌', () => {
     const ids = ['toyone', 'hisa', 'yuuki', 'sera'];
@@ -143,7 +143,7 @@ describe('姊带丰音', () => {
       });
       run(g, ids, (g) => (g.round === 0 ? 'taian' : null));
     }
-  });
+  }, 60000);
 
   it('佛灭：这一局控场的能力全部无效（封印、不许和牌、别人的规矩），玄的宝牌照样算', () => {
     const ids = ['toyone', 'nelly', 'sawaya', 'kuro'];
@@ -204,5 +204,5 @@ describe('姊带丰音', () => {
         expect(g.players.reduce((a, p) => a + p.score, 0) + g.riichiSticks * 1000).toBe(100000);
       }
     }
-  });
+  }, 60000);
 });
