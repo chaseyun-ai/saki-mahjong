@@ -568,10 +568,9 @@ export class App {
       this.penaltyNext = false;
     }
     if (e.type === 'discard') {
-      const index = this.game!.players[e.seat].discards.length - 1;
       // 隐身的桃子打的牌：看不见也听不见
-      if (this.game!.discardHidden(e.seat, index, this.me)) return;
-      this.freshDiscard = `${e.seat}-${index}`;
+      if (this.game!.stealthed(e.seat, this.me)) return;
+      this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
       if (!this.table3d) playClick();
       if (e.riichi) {
         playRiichi();
@@ -1201,7 +1200,8 @@ export class App {
     // 美穗子睁眼：牌背按花色上色（照理过的顺序排，刚摸的那张放最后）
     const tint = this.eyeOpen() && !this.vision;
     const order = tint ? [...p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b), ...(p.drawn !== null ? [p.drawn] : [])] : p.hand;
-    const backs = order.map((t) => backHtml('pond', tint ? tintOf(t) : undefined)).join('');
+    // 隐身的桃子的手牌也看不见
+    const backs = g.stealthed(s, this.me) ? '' : order.map((t) => backHtml('pond', tint ? tintOf(t) : undefined)).join('');
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="nameplate">
@@ -1218,12 +1218,13 @@ export class App {
     const g = this.game!;
     const p = g.players[s];
     const last = g.lastDiscard;
+    // 隐身的桃子的牌河别人看不见；她自己看得见，淡淡地显示
+    if (g.stealthed(s, this.me)) return `<div class="pond ${POS[s]}"></div>`;
+    const ghost = [0, 1, 2, 3].some((o) => o !== s && g.stealthed(s, o));
     const tiles = p.discards
       .map((d, i) => {
-        // 隐身的桃子打的牌别人看不见；她自己看得见，淡淡地显示
-        if (g.discardHidden(s, i, this.me)) return '';
         const classes: string[] = [];
-        if ([0, 1, 2, 3].some((o) => o !== s && g.discardHidden(s, i, o))) classes.push('stealth');
+        if (ghost) classes.push('stealth');
         if (d.called) classes.push('called');
         if (d.tsumogiri) classes.push('tsumogiri');
         if (last && last.seat === s && i === p.discards.length - 1) classes.push('last');

@@ -2,7 +2,7 @@ import type { AiStyle } from '../abilities/characters';
 import { awaiWaitingForCorner } from '../abilities/awai';
 import { dangerKinds, readOthers } from '../abilities/hiroe';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
-import { momoStealthOn } from '../abilities/momo';
+import { momoStealthNext } from '../abilities/momo';
 import { ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
 import { SERA, seraYakuhai } from '../abilities/sera';
 import { SUMIRE, sumireAimedAt, sumireMarks, sumireTarget } from '../abilities/sumire';
@@ -69,9 +69,8 @@ function visibleCounts(g: Game, seat: number): number[] {
   const add = (t: TileId) => c[kindOf(t)]++;
   g.players[seat].hand.forEach(add);
   for (const p of g.players) {
-    p.discards.forEach((d, i) => {
-      if (!d.called && !g.discardHidden(p.seat, i, seat)) add(d.tile);
-    });
+    // 隐身的桃子的牌河看不见
+    if (!g.stealthed(p.seat, seat)) p.discards.forEach((d) => !d.called && add(d.tile));
     p.melds.forEach((m) => m.tiles.forEach(add));
   }
   g.wall.visibleDoraIndicators().forEach(add);
@@ -200,7 +199,7 @@ function koromoHaiteiSeat(g: Game, seat: number): number | null {
 
 // viewer 眼里 threat 的牌河（桃子隐身以后打的牌看不见）
 function seenDiscards(g: Game, viewer: number, threat: number) {
-  return g.players[threat].discards.filter((_, i) => !g.discardHidden(threat, i, viewer));
+  return g.stealthed(threat, viewer) ? [] : g.players[threat].discards;
 }
 
 function danger(g: Game, viewer: number, threat: number, k: Kind, visible: number[]): number {
@@ -474,8 +473,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (riichi && best.sh === 0 && g.canWin(seat)) {
     const c = counts.slice();
     c[kindOf(best.a.tile)]--;
-    // 桃子：还没隐身先默听，隐身以后的立直别人看不见
-    if (style.stealth && !sealed && !momoStealthOn(g, seat)) return best.a;
+    // 桃子：还没隐身先默听，打这张就隐身了（别人看不见她立直）才立直
+    if (style.stealth && !sealed && !momoStealthNext(g, seat)) return best.a;
     // 夕从不默听
     if (style.firepower) return ukeire(c, p.melds.length, visible) > 0 ? riichi : best.a;
     // 堇：有役就默听，只等目标打

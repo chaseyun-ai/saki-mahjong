@@ -680,7 +680,7 @@ export class Table3D {
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
       // 隐身的桃子打的牌：看不见，手里那张直接消失，没有动画、没有立直特效
-      if (g.discardHidden(e.seat, g.players[e.seat].discards.length - 1, this.lastSync?.view.me ?? 0)) return;
+      if (g.stealthed(e.seat, this.lastSync?.view.me ?? 0)) return;
       const pond = this.seatPoint(e.seat, 0, 0, this.dim.pondZ + 1.5);
       // 立直宣言：牌拍下去的那一刻放特效（落桌标记），接着从抽屉里拿立直棒放到桌上（2.5D 是落桌后立直棒直接掉下来）
       const flat = this.style === '25d';
@@ -1069,6 +1069,9 @@ export class Table3D {
       mx -= this.meldSpacing.group;
     }
 
+    // 隐身的桃子：手牌和牌河都看不见（副露照旧摆着）
+    if (g.stealthed(s, me)) return;
+
     // 手牌：自己的稍微后仰朝向镜头，别人的立着背对我们
     let drawn = p.drawn;
     let hand: (TileId | null)[] = p.hand.filter((t) => t !== drawn).sort((a, b) => a - b);
@@ -1138,8 +1141,8 @@ export class Table3D {
     let row = 0;
     const pstep = TILE_W + GAP;
     let px = -((POND_COLS * pstep) / 2);
-    for (const [i, d] of p.discards.entries()) {
-      if (d.called || g.discardHidden(s, i, me)) continue;
+    for (const d of p.discards) {
+      if (d.called) continue;
       if (col === POND_COLS && row < 2) {
         col = 0;
         row++;

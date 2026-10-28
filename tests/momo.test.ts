@@ -27,7 +27,7 @@ function play(seed: number, ids: string[], format: 'east' | 'south', on: (g: Gam
 }
 
 describe('东横桃子', () => {
-  it('3 费；第 7 巡起打的牌别人看不见、鸣不了也荣和不了，她立直别人也不知道', () => {
+  it('3 费；第 7 巡起整条牌河、手牌别人看不见，打的牌鸣不了也荣和不了，她立没立直别人也不知道', () => {
     expect(byId('momo').cost).toBe(3);
     const n = { hidden: 0, shown: 0, hiddenRiichi: 0, blocked: 0 };
     for (let seed = 1; seed <= 12; seed++) {
@@ -35,15 +35,14 @@ describe('东横桃子', () => {
       play(seed, ids, 'east', (g) =>
         g.onEvent((e) => {
           if (e.type !== 'discard' || e.seat !== 0) return;
-          const i = g.players[0].discards.length - 1;
-          const late = i >= MOMO.from - 1;
-          for (const o of [1, 2, 3]) expect(g.discardHidden(0, i, o)).toBe(late);
-          expect(g.discardHidden(0, i, 0)).toBe(false);
+          const late = g.players[0].discards.length >= MOMO.from;
+          for (const o of [1, 2, 3]) expect(g.stealthed(0, o)).toBe(late);
+          expect(g.stealthed(0, 0)).toBe(false);
           if (late) n.hidden++;
           else n.shown++;
-          // 打完第 6 张就算进了第 7 巡
-          expect(momoStealthOn(g, 0)).toBe(i + 1 >= MOMO.from - 1);
-          if (e.riichi && late) {
+          expect(momoStealthOn(g, 0)).toBe(late);
+          // 隐身了，之前立的直也看不见
+          if (late && g.players[0].riichi) {
             n.hiddenRiichi++;
             for (const o of [1, 2, 3]) expect(g.seesRiichi(0, o)).toBe(false);
             expect(g.seesRiichi(0, 0)).toBe(true);
@@ -74,7 +73,7 @@ describe('东横桃子', () => {
           if (e.type === 'roundEnd') {
             if (g.players[0].discards.length >= MOMO.from) {
               revealed++;
-              expect(g.discardHidden(0, MOMO.from - 1, 1)).toBe(false);
+              expect(g.stealthed(0, 1)).toBe(false);
             }
             return;
           }
@@ -100,6 +99,7 @@ describe('东横桃子', () => {
           if (e.type !== 'discard' || e.seat !== 0 || !e.riichi) return;
           riichi++;
           expect(g.players[0].discards.length).toBeGreaterThanOrEqual(MOMO.from);
+          expect(g.seesRiichi(0, 1)).toBe(false);
         }),
       );
     }
@@ -113,11 +113,10 @@ describe('东横桃子', () => {
       play(seed, ['momo', 'nodoka', 'teru', 'awai'], 'south', (g) =>
         g.onEvent((e) => {
           if (e.type !== 'discard' || e.seat !== 0) return;
-          const i = g.players[0].discards.length - 1;
-          if (i < MOMO.from - 1) return;
+          if (g.players[0].discards.length < MOMO.from) return;
           const angel = nodokaAngel(g, 1);
-          expect(g.discardHidden(0, i, 1)).toBe(!angel && !g.isSealed(0));
-          expect(g.discardHidden(0, i, 2)).toBe(!g.isSealed(0));
+          expect(g.stealthed(0, 1)).toBe(!angel && !g.isSealed(0));
+          expect(g.stealthed(0, 2)).toBe(!g.isSealed(0));
           if (angel) angelSaw++;
         }),
       );

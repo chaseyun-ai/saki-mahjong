@@ -71,7 +71,7 @@ function seenCounts(g: Game, seat: number): number[] {
   for (const q of g.players) {
     for (const m of q.melds) tiles.push(...m.tiles);
     // 隐身的桃子打的牌看不见
-    q.discards.forEach((d, i) => !d.called && !g.discardHidden(q.seat, i, seat) && tiles.push(d.tile));
+    if (!g.stealthed(q.seat, seat)) for (const d of q.discards) if (!d.called) tiles.push(d.tile);
   }
   return toCounts(tiles);
 }

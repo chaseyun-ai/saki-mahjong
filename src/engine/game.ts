@@ -264,29 +264,19 @@ export class Game {
     return a && !this.isSealed(seat, this.round) ? a : null;
   }
 
-  // 东横桃子的隐身：viewer 从 seat 打的第几张牌起看不见（null 是都看得见）。自己永远看得见，一局结束全部亮出来
-  private hiddenFrom(seat: number, viewer: number): number | null {
-    if (seat === viewer || this.phase === 'roundEnd' || this.phase === 'gameEnd') return null;
-    return this.active(seat)?.stealth?.(this, seat, viewer) ?? null;
-  }
-
-  // viewer 看不看得见 seat 打的第 index 张牌
-  discardHidden(seat: number, index: number, viewer: number): boolean {
-    const from = this.hiddenFrom(seat, viewer);
-    return from !== null && index >= from;
-  }
-
-  // viewer 眼里 seat 已经隐身了（到了隐身的那一巡）：读不出她听什么
+  // 东横桃子的隐身：viewer 眼里 seat 隐身了没有（她打满 stealth 给的张数起）。
+  // 隐身了，viewer 看不见她的整条牌河和手牌，荣和不了、鸣不了她打的牌，不知道她立没立直，也读不出她听什么。
+  // 自己永远看得见，一局结束全部亮出来
   stealthed(seat: number, viewer: number): boolean {
-    const from = this.hiddenFrom(seat, viewer);
+    if (seat === viewer || this.phase === 'roundEnd' || this.phase === 'gameEnd') return false;
+    const from = this.active(seat)?.stealth?.(this, seat, viewer) ?? null;
     return from !== null && this.players[seat].discards.length >= from;
   }
 
-  // viewer 知不知道 seat 立直了（隐身以后的立直看不见）
+  // viewer 知不知道 seat 立直了（隐身了就不知道）
   seesRiichi(seat: number, viewer: number): boolean {
     const p = this.players[seat];
-    if (!p.riichi && !p.riichiPending) return false;
-    return !this.discardHidden(seat, p.discards.findIndex((d) => d.riichi), viewer);
+    return (p.riichi || p.riichiPending) && !this.stealthed(seat, viewer);
   }
 
   // viewer 眼里的点数和场上的立直棒（看不见的立直不算那 1000 点）
@@ -700,11 +690,10 @@ export class Game {
     this.pending.clear();
     this.responses.clear();
     const kind = kindOf(tile);
-    const index = p.discards.length - 1;
     for (let o = 0; o < 4; o++) {
       if (o === seat) continue;
       // 看不见的牌（桃子隐身）荣和不了、也鸣不了
-      if (this.discardHidden(seat, index, o)) continue;
+      if (this.stealthed(seat, o)) continue;
       const q = this.players[o];
       const opts: Action[] = [];
       if (this.canWin(o) && this.winResult(o, tile, false)) opts.push({ type: 'ron' });
@@ -781,7 +770,7 @@ export class Game {
       if (this.responses.get(o)?.type === 'ron') continue;
       if (!this.waits(o).includes(kind)) continue;
       // 没看见的牌（桃子隐身）不算见逃
-      if (this.callKind === 'discard' && this.discardHidden(src.seat, this.players[src.seat].discards.length - 1, o)) continue;
+      if (this.callKind === 'discard' && this.stealthed(src.seat, o)) continue;
       const p = this.players[o];
       p.furitenTemp = true;
       if (p.riichi) p.furitenRiichi = true;
