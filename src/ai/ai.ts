@@ -21,7 +21,7 @@ import { NELLY, nellyDeclared, nellyLuck, nellySuit } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneMode } from '../abilities/toyone';
-import { TERU, teruFits, teruLadder, teruMirrored, teruTier, teruWinValue } from '../abilities/teru';
+import { TERU, teruDanger, teruFits, teruLadder, teruMirrored, teruTier, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import { himekoExtra, himekoPlan } from '../abilities/himeko';
 import type { Action, Game } from '../engine/game';
@@ -311,7 +311,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       : angel
         ? angelDanger(g, seat)
         : mirrorOnly
-          ? new Set(readOthers(g, seat).filter((r) => g.seesRiichi(r.seat, seat) && !g.active(r.seat)?.mirrorProof?.(g, r.seat)).flatMap((r) => r.ron))
+          ? teruDanger(g, seat)
           : dangerKinds(g, seat);
   // 被堇瞄准时，读得出牌的人（洋榎、真子、睁眼的美穗子）和照察觉得到她听什么，不给她点
   const aimed = !sealed && (style.reads || style.memory || eyeReads || style.mirror) ? sumireAimedAt(g, seat) : null;
