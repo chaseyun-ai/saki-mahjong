@@ -1,4 +1,5 @@
 import type { Character } from '../abilities/characters';
+import type { BindKey } from '../abilities/types';
 import { POSITIONS, TIERS, TeamRun, isSub } from '../team/team';
 import { cutinArt, portraitUrl } from '../ui3d/looks';
 
@@ -222,9 +223,9 @@ export class TeamFlow {
       </div>`;
   }
 
-  // App 打完一场：每个座位的点数、剩下的立直棒
-  afterMatch(seats: number[], scores: number[], riichiSticks: number): void {
-    this.run.finish(seats, scores, riichiSticks);
+  // App 打完一场：每个座位的点数、剩下的立直棒、白水哩拿到的钥匙
+  afterMatch(seats: number[], scores: number[], riichiSticks: number, keys: BindKey[][]): void {
+    this.run.finish(seats, scores, riichiSticks, keys);
     this.board();
   }
 

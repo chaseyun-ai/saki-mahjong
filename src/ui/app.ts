@@ -10,6 +10,7 @@ import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
 import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneRedHidden } from '../abilities/toyone';
+import { riiKeys } from '../abilities/rii';
 import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
@@ -351,7 +352,9 @@ export class App {
     this.auto = auto;
     const seed = Math.floor(Math.random() * 2 ** 31);
     const allies = seats.map((t) => run.teams[t].lineup.map((c) => c.id));
-    const game = new Game({ seed, format: 'team', firstDealer: Math.floor(Math.random() * 4), scores: start, riichiSticks: run.riichiSticks, allies, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
+    // 同队的哩在之前的位置拿到的钥匙
+    const keys = seats.map((t) => run.keys[t]);
+    const game = new Game({ seed, format: 'team', firstDealer: Math.floor(Math.random() * 4), scores: start, riichiSticks: run.riichiSticks, allies, keys, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
     this.beginGame(chars, game);
   }
 
@@ -687,7 +690,7 @@ export class App {
       const g = this.game;
       this.teardown();
       this.team = null;
-      flow.afterMatch(seats, g.players.map((p) => p.score), g.riichiSticks);
+      flow.afterMatch(seats, g.players.map((p) => p.score), g.riichiSticks, [0, 1, 2, 3].map((s) => (g.abilities[s]?.id === 'rii' ? riiKeys(g, s) : [])));
       return;
     }
     if (el.dataset.ui === 'skins') {

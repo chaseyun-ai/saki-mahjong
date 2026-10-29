@@ -23,6 +23,7 @@ import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneMode } from '../abilities/toyone';
 import { TERU, teruFits, teruLadder, teruMirrored, teruTier, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
+import { himekoExtra, himekoPlan } from '../abilities/himeko';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
 import { kokushiShanten, shanten, standardShanten, waitingKinds } from '../engine/shanten';
@@ -236,6 +237,19 @@ function danger(g: Game, viewer: number, threat: number, k: Kind, visible: numbe
 function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Action {
   const p = g.players[seat];
   const find = (t: Action['type']) => legal.find((a) => a.type === t);
+
+  // 姬子钥匙的那一局：照着那副牌打，凑齐就自摸，先打不要的牌，不立直
+  const twin = style.twin ? himekoPlan(g, seat) : null;
+  if (twin) {
+    const tsumo = find('tsumo');
+    if (tsumo) return tsumo;
+    // 不要的牌里先打最安全的
+    const visible = visibleCounts(g, seat);
+    const risk = (t: TileId) => Math.max(0, ...threats(g, seat).map((o) => danger(g, seat, o, kindOf(t), visible)));
+    const extra = himekoExtra(g, seat, twin).sort((a, b) => risk(a) - risk(b));
+    const out = extra.map((t) => legal.find((a) => a.type === 'discard' && !a.riichi && a.tile === t)).find((a) => a);
+    if (out) return out;
+  }
 
   const tsumo = find('tsumo');
   if (tsumo && !(style.streak && teruWaits(g, seat, true)) && !(style.waves && nellyHolds(g, seat, true)) && !growHolds(g, seat, style, true) && !seraHolds(g, seat, style, true) && !allLastHold(g, seat, true)) return tsumo;
@@ -761,6 +775,8 @@ function hasYakuhaiMeld(g: Game, seat: number): boolean {
 
 function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Action {
   const pass = legal.find((a) => a.type === 'pass')!;
+  // 姬子钥匙的那一局：门清自摸才是那副牌的番数，不鸣牌也不荣和
+  if (style.twin && himekoPlan(g, seat)) return pass;
   const ron = legal.find((a) => a.type === 'ron');
   // 淡：等转角暗杠自摸，不荣和
   if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false)) && !growHolds(g, seat, style, false) && !seraHolds(g, seat, style, false) && !sumireSkips(g, seat, style) && !allLastHold(g, seat, false)) return ron;

@@ -1,4 +1,4 @@
-import { PRIORITY, type Ability, type DealRule, type DrawRule } from '../abilities/types';
+import { PRIORITY, type Ability, type BindKey, type DealRule, type DrawRule } from '../abilities/types';
 import { Rng } from './rng';
 import { Meld, WinResult, evaluateWin } from './score';
 import { shanten, waitingKinds } from './shanten';
@@ -108,6 +108,8 @@ export interface GameOptions {
   format?: 'east' | 'south' | 'team';
   // 团体赛：每个座位自己队里的全部队员（角色 id，包括自己和不在这一桌的人）。龙华的膝枕要和怜同队
   allies?: string[][];
+  // 团体赛：同队的白水哩在之前的位置拿到的钥匙（每个座位一份），鹤田姬子在同一个场、局、本场用
+  keys?: BindKey[][];
 }
 
 const WIND_NAMES = ['东', '南', '西', '北'];
@@ -126,6 +128,8 @@ export class Game {
   format: 'east' | 'south' | 'team' = 'east';
   // 每个座位的队友（见 GameOptions.allies），不是团体赛是空的
   allies: string[][] = [[], [], [], []];
+  // 每个座位从之前的位置带来的钥匙（见 GameOptions.keys）
+  keys: BindKey[][] = [[], [], [], []];
 
   // 第几局（从 1 起，每开一局加一，连庄也算）；发牌前等玩家选技能时还是上一局的
   round = 0;
@@ -188,6 +192,7 @@ export class Game {
     this.manual = opts.players.map((p) => !!p.manual);
     this.format = opts.format ?? 'east';
     if (opts.allies) this.allies = opts.allies.map((a) => [...a]);
+    if (opts.keys) this.keys = opts.keys.map((k) => [...k]);
     this.riichiSticks = opts.riichiSticks ?? 0;
     this.startOrWait();
   }
@@ -255,7 +260,7 @@ export class Game {
   isSealed(seat: number, round = this.phase === 'predeal' ? this.round + 1 : this.round): boolean {
     const own = this.abilities[seat];
     if (round === this.round && this.fieldVoid()) return false;
-    if (own?.immune || own?.absolute || own?.unsealable?.(this, seat, round)) return false;
+    if (this.isImmune(seat) || this.isAbsolute(seat) || own?.unsealable?.(this, seat, round)) return false;
     return this.abilities.some((a, o) => o !== seat && !!a?.seals?.(this, o, round));
   }
 
@@ -333,15 +338,27 @@ export class Game {
     return true;
   }
 
+  // 作者钦定最高（玄），或者这一局压过所有人（姬子拿到钥匙的那一局）
+  isAbsolute(seat: number): boolean {
+    const a = this.abilities[seat];
+    return !!a && (!!a.absolute || !!a.supreme?.(this, seat));
+  }
+
+  // 别人的能力动不了她（照），或者这一局压过所有人（姬子拿到钥匙的那一局）
+  isImmune(seat: number): boolean {
+    const a = this.abilities[seat];
+    return !!a && (!!a.immune || !!a.supreme?.(this, seat));
+  }
+
   // from 的能力管不管得到 target（照这样 immune 的人只听自己和 absolute 的）
   binds(from: number, target: number): boolean {
-    if (from === target || this.abilities[from]?.absolute) return true;
-    return !this.abilities[target]?.immune && !this.fieldVoid();
+    if (from === target || this.isAbsolute(from)) return true;
+    return !this.isImmune(target) && !this.fieldVoid();
   }
 
   // target 这一下挡住了 from 的影响（天使和：一半的概率）。absolute 的挡不住；没有 resist 的人不掷随机数
   private shrugs(from: number, target: number): boolean {
-    if (from === target || this.abilities[from]?.absolute) return false;
+    if (from === target || this.isAbsolute(from)) return false;
     const r = this.active(target)?.resist?.(this, target) ?? 0;
     return r > 0 && this.rng.chance(r);
   }
@@ -507,7 +524,7 @@ export class Game {
     const calm = this.fieldVoid();
     for (const s of this.abilityOrder()) {
       const a = this.active(s)!;
-      if (!a.beforeAnyDraw || (calm && !a.absolute)) continue;
+      if (!a.beforeAnyDraw || (calm && !this.isAbsolute(s))) continue;
       w.deny = union(rules.length);
       const r = a.beforeAnyDraw(this, s, seat, rinshan);
       // 管不到 immune 的人：定的规矩不算（能力自己整理牌山的部分照做，比如衣安排海底）
@@ -990,6 +1007,7 @@ export class Game {
     this.pending.clear();
     this.responses.clear();
     this.phase = 'roundEnd';
+    for (let s = 0; s < 4; s++) this.abilities[s]?.onRoundEnd?.(this, s, result);
     this.emit({ type: 'roundEnd', result });
   }
 
