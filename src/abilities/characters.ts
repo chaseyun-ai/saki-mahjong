@@ -26,6 +26,7 @@ import { seraAbility } from './sera';
 import { KOMAKI_GODS, komakiAbility } from './komaki';
 import { ROKUYOU, toyoneAbility } from './toyone';
 import { suzuAbility } from './suzu';
+import { kirameAbility } from './kirame';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -347,6 +348,15 @@ export const CHARACTERS: Character[] = [
     color: '#8c9aa8',
     ability: momoAbility,
     ai: { ...baseAi, mistakeRate: 0.04, stealth: true },
+  },
+  {
+    id: 'kirame',
+    cost: 1,
+    name: '花田煌',
+    school: '新道寺女子',
+    color: '#e0a23a',
+    ability: kirameAbility,
+    ai: { ...baseAi },
   },
 ];
 

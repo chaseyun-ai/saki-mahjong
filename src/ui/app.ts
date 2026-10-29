@@ -1014,7 +1014,15 @@ export class App {
   }
 
   // 这一局被涅莉的七姐妹封住、和不了
-  private sistersBlocked(s: number): boolean {
+  // 花田煌：手里有放铳会被击飞、打不出去的牌
+  private bustBlocked(): boolean {
+    const g = this.game!;
+    if (!g.abilities[this.me]?.unbustable || this.riichiMode || g.players[this.me].riichi) return false;
+    const can = this.discardable();
+    return g.players[this.me].hand.some((t) => !can.has(t) && !g.players[this.me].kuikaeBan.includes(kindOf(t)));
+  }
+
+    private sistersBlocked(s: number): boolean {
     const g = this.game!;
     return [0, 1, 2, 3].some((o) => o !== s && g.active(o)?.id === 'nelly' && nellyBlocked(g, o).includes(s));
   }
@@ -1298,7 +1306,7 @@ export class App {
     const waitHtml = `<div data-r="waits">${this.waitsSlotHtml()}</div>`;
     const hint =
       g.phase === 'turn' && g.turn === this.me && discardable.size > 0
-        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹封住，这一局和不了）' : ''}</div>`
+        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹封住，这一局和不了）' : ''}${this.bustBlocked() ? '（灰掉的牌放铳会被击飞，打不出去）' : ''}</div>`
         : '';
     const c = this.chars[this.me];
     return `

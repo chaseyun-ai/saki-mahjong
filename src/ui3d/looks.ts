@@ -79,6 +79,8 @@ export const LOOKS: Record<string, Look> = {
   suzu: { model: 'models/vroid-f.v2.glb', hair: '#4a2e22', eyes: '#8a5a32', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 东横桃子：先占位，借和的长发模型换成蓝黑色头发、灰蓝色眼睛
   momo: { model: 'models/vroid-g.v2.glb', hair: '#2a3040', eyes: '#5a6a86', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 花田煌：先占位，借咲的短发模型换成栗色头发、绿色眼睛
+  kirame: { model: 'models/vroid-e.v2.glb', hair: '#8a5a2e', eyes: '#4a7a4a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
 };
 
 // 牌桌上要用到的全部模型文件
