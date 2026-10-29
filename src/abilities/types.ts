@@ -113,6 +113,9 @@ export interface Ability {
   // 隐身（东横桃子）：她打满几张牌起 viewer 就看不见她，null 是 viewer 看得见她。
   // 看不见她的整条牌河和手牌，荣和不了、鸣不了她打的牌，不知道她立没立直（Game.stealthed、Game.seesRiichi）
   stealth?(g: Game, seat: number, viewer: number): number | null;
+  // 不会被击飞（花田煌）：别人摸不到自摸了会把她击飞的牌，她也打不出放铳会被击飞的牌，流局罚符最多付到 0 点。
+  // 一直起作用：不看封印、佛灭，immune 的人也一样摸不到（Game.bustRules、Game.dealInBusts）
+  unbustable?: boolean;
 }
 
 export interface PreDealOption {
