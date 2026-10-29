@@ -2,7 +2,7 @@ import { CHARACTERS, Character } from '../abilities/characters';
 import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
-import { TERU, TERU_TIERS, TERU_TOP, teruLadder, teruMirrored } from '../abilities/teru';
+import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored } from '../abilities/teru';
 import { nellyBlocked } from '../abilities/nelly';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { kuroLost } from '../abilities/kuro';
@@ -873,15 +873,17 @@ export class App {
     return toyoneRedHidden(g, this.me);
   }
 
-  // 龙华的无极天、小莳的天照：手里打出去会放铳的牌标红
+  // 龙华的无极天、小莳的天照、照的照魔镜：手里打出去会放铳的牌标红
   private deadlyTiles(): Set<TileId> {
     const g = this.game!;
     if (this.vision || (g.phase !== 'turn' && g.phase !== 'calls')) return new Set();
     // 小莳的天照也看得出手里的铳牌
     const mugoku = this.chars[this.me]?.id === 'ryuuka' && ryuukaMugoku(g, this.me);
     const amaterasu = this.chars[this.me]?.id === 'komaki' && komakiActiveGod(g, this.me) === 'amaterasu';
-    if (!mugoku && !amaterasu) return new Set();
-    const kinds = mugoku ? ryuukaDanger(g, this.me) : dangerKinds(g, this.me);
+    // 照的照魔镜：立直的人听的牌
+    const teru = this.chars[this.me]?.id === 'teru';
+    if (!mugoku && !amaterasu && !teru) return new Set();
+    const kinds = mugoku ? ryuukaDanger(g, this.me) : amaterasu ? dangerKinds(g, this.me) : teruDanger(g, this.me);
     return new Set(g.players[this.me].hand.filter((t) => kinds.has(kindOf(t))));
   }
 
