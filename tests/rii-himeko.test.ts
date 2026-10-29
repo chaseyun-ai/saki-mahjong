@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { himekoKey, himekoPlan } from '../src/abilities/himeko';
+import { HIMEKO, himekoBroken, himekoKey, himekoPlan } from '../src/abilities/himeko';
 import { isDoraTile } from '../src/abilities/kuro';
 import { RII, riiBind, riiKeys } from '../src/abilities/rii';
 import type { BindKey } from '../src/abilities/types';
@@ -171,6 +171,32 @@ describe('鹤田姬子', () => {
     }
     expect(draws).toBeGreaterThan(0);
     expect(better / draws).toBeLessThan(0.02);
+  }, 60000);
+
+  it('破碎的钥匙那一局：配牌烂、没有宝牌、几乎和不了，和了也只有一番', () => {
+    let rounds = 0;
+    let wins = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const { g, seats } = setup(seed, ['himeko', 'izumi', 'mako', 'ako'], { keys: [[{ label: '东1局 0本场', round: 1, bind: 3, broken: true }], [], [], []] });
+      expect(himekoBroken(g, 0)).toBe(true);
+      expect(himekoKey(g, 0)).toBeNull();
+      expect(g.isImmune(0) || g.isAbsolute(0)).toBe(false);
+      const p = g.players[0];
+      expect(shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), 0)).toBeGreaterThanOrEqual(HIMEKO.broken.deal - 1);
+      // 配牌、摸牌都没有宝牌（鸣来的、开杠翻出来的新宝牌不算）
+      expect(p.hand.some((t) => isDoraTile(g, t))).toBe(false);
+      g.onEvent((e) => {
+        if (e.type === 'draw' && e.seat === 0) expect(isDoraTile(g, p.drawn!)).toBe(false);
+      });
+      playRound(g, seats);
+      rounds++;
+      const win = g.roundResult!.wins.find((w) => w.seat === 0);
+      if (win) {
+        wins++;
+        expect(win.result.han).toBeLessThanOrEqual(HIMEKO.broken.maxHan);
+      }
+    }
+    expect(wins / rounds).toBeLessThan(0.1);
   }, 60000);
 
   it('同桌时：哩拿到钥匙的下一局发动', () => {

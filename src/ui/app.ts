@@ -588,6 +588,8 @@ export class App {
       // 玄打出宝牌、能力失效时出一行小字。咲的杠的气息、岭上开花：这一局第一次放切入，之后只出小字
       // 控场能力换掉别人要摸的牌：悄悄换，结算时能力痕迹里再讲
       if (e.target !== undefined && e.target !== e.seat) return;
+      // 姬子破碎的钥匙那一局换走自己摸到的宝牌：悄悄换
+      if (e.ability === 'himeko' && e.text === '没有宝牌') return;
       if (e.ability === 'kuro') {
         if (e.text !== '宝牌聚集') this.toast(e.seat, e.text, false);
         return;

@@ -16,8 +16,11 @@ import { PRIORITY, type Ability, type BindKey, type DealRule } from './types';
 //   这一局她压过所有人（Ability.supreme）：照、天照的神代、大安的丰音都挡不住，封印不了，佛灭也灭不掉；
 //   别人的能力也动不了她。只有玄的宝牌照旧：玄摸宝牌不挡，玄配牌里的宝牌不换，她的牌也不碰宝牌
 // - 别人的配牌也压住：至少 othersDeal 向听（天听、双立直之类的配牌做不出来）
+// - 哩拿到破碎的钥匙的那一局（同样按场、局、本场或者同桌的下一局）反过来：她配牌是烂牌，没有宝牌，
+//   进张常被换走，摸不到宝牌，就算和了也只能和一番（多了和不了）
 // othersDeal：别人的配牌至少几向听（少了就换几张，最多 othersSwaps 张）
-export const HIMEKO = { tries: 4000, dealShanten: 3, othersDeal: 3, othersSwaps: 4 };
+// broken：破碎的钥匙那一局。配牌至少 deal 向听（最多换 swaps 张），摸到进张有 block 的概率被换走，和牌最多 maxHan 番
+export const HIMEKO = { tries: 4000, dealShanten: 3, othersDeal: 3, othersSwaps: 4, broken: { deal: 5, swaps: 6, block: 0.85, maxHan: 1 } };
 
 interface Plan {
   han: number; // 要和出几番（番缚的两倍）
@@ -34,16 +37,49 @@ interface HimekoState {
 const stateOf = (g: Game, seat: number) => g.abilityState[seat] as HimekoState;
 
 // 这一局用的钥匙（没有是 null）。只看钥匙和局数，不看 g.active（会绕回 isSealed）
-export function himekoKey(g: Game, seat: number): BindKey | null {
+export function himekoKey(g: Game, seat: number, broken = false): BindKey | null {
   const label = g.roundLabel();
-  const carried = g.keys[seat]?.find((k) => !k.broken && k.label === label);
+  const carried = g.keys[seat]?.find((k) => k.broken === broken && k.label === label);
   if (carried) return carried;
   for (let s = 0; s < 4; s++) {
     if (s === seat || g.abilities[s]?.id !== 'rii') continue;
-    const k = riiKeys(g, s).find((x) => !x.broken && x.round === g.round - 1);
+    const k = riiKeys(g, s).find((x) => x.broken === broken && x.round === g.round - 1);
     if (k) return k;
   }
   return null;
+}
+
+// 这一局用的是破碎的钥匙（有完整的钥匙时不算）
+export function himekoBroken(g: Game, seat: number): boolean {
+  return !himekoKey(g, seat) && himekoKey(g, seat, true) !== null;
+}
+
+// 破碎的钥匙那一局：配牌换成烂牌，宝牌换走
+function breakDeal(g: Game, seat: number): void {
+  const w = g.wall;
+  const mine = g.dealIndices(seat);
+  for (const i of mine) if (isDoraTile(g, w.live[i])) w.bringToLive(i, (t) => !isDoraTile(g, t), g.rng, (j) => j >= 52);
+  for (let n = 0; n < HIMEKO.broken.swaps; n++) {
+    const counts = toCounts(mine.map((i) => w.live[i]));
+    const sh = shanten(counts, 0);
+    if (sh >= HIMEKO.broken.deal) return;
+    let done = false;
+    for (const i of g.rng.shuffle([...mine])) {
+      const k = kindOf(w.live[i]);
+      counts[k]--;
+      const worse = (t: TileId) => {
+        if (isDoraTile(g, t)) return false;
+        counts[kindOf(t)]++;
+        const after = shanten(counts, 0);
+        counts[kindOf(t)]--;
+        return after > sh;
+      };
+      done = w.bringToLive(i, worse, g.rng, (j) => j >= 52);
+      counts[k]++;
+      if (done) break;
+    }
+    if (!done) return;
+  }
 }
 
 export function himekoPlan(g: Game, seat: number): Plan | null {
@@ -188,7 +224,7 @@ const usable = (g: Game, t: TileId) => !isRed(t) && !isDoraTile(g, t) && !g.wall
 export const himekoAbility: Ability = {
   id: 'himeko',
   name: '钥匙',
-  description: '白水哩拿到钥匙的那一局（团体赛里是同队的哩记下的那一个场、局、本场，同桌时是下一局），她拿到一副能和出两倍番缚的牌：配牌三向听，之后每一次摸牌都是要的牌。那一局所有人的进张都被压住，谁也挡不住（照和天照的神代也一样），只有玄的宝牌照旧。',
+  description: '白水哩拿到钥匙的那一局（团体赛里是同队的哩记下的那一个场、局、本场，同桌时是下一局），她拿到一副能和出两倍番缚的牌：配牌三向听，之后每一次摸牌都是要的牌。那一局所有人的进张都被压住，谁也挡不住（照和天照的神代也一样），只有玄的宝牌照旧。哩拿到破碎的钥匙的那一局反过来：她配牌烂、摸不到宝牌、进张常被换走，和牌最多一番。',
   priority: PRIORITY.himeko,
 
   supreme(g, seat) {
@@ -230,6 +266,7 @@ export const himekoAbility: Ability = {
   },
 
   beforeDeal(g, seat) {
+    if (himekoBroken(g, seat)) breakDeal(g, seat);
     if (!himekoKey(g, seat)) return;
     const plan = himekoPlan(g, seat);
     const planned = new Set(plan?.final ?? []);
@@ -301,13 +338,17 @@ export const himekoAbility: Ability = {
     const st = stateOf(g, seat);
     for (const t of st.held ?? []) g.wall.locked.delete(t, 'himeko');
     st.held = [];
-    if (!himekoKey(g, seat) || st.announced) return;
+    if (st.announced) return;
+    if (himekoKey(g, seat)) g.emit({ type: 'ability', seat, ability: 'himeko', text: '钥匙' });
+    else if (himekoBroken(g, seat)) g.emit({ type: 'ability', seat, ability: 'himeko', text: '破碎的钥匙' });
+    else return;
     st.announced = true;
-    g.emit({ type: 'ability', seat, ability: 'himeko', text: '钥匙' });
   },
 
   // 别人的进张全压住：向听会前进的牌（听牌的是和了牌）、她还要的牌都摸不到。玄摸宝牌不挡
   beforeAnyDraw(g, seat, drawer) {
+    // 破碎的钥匙：自己摸不到宝牌（立成规矩，别人换牌时也不会换给她）
+    if (drawer === seat && himekoBroken(g, seat)) return { seat, ability: 'himeko', text: '没有宝牌', deny: (t) => isDoraTile(g, t) };
     if (drawer === seat || !himekoKey(g, seat)) return;
     const plan = himekoPlan(g, seat);
     const wanted = new Set(plan ? himekoMissing(g, seat, plan) : []);
@@ -334,6 +375,28 @@ export const himekoAbility: Ability = {
 
   // 每一次摸牌都是要的牌：先补缺的，自摸的那张留到最后
   beforeDraw(g, seat, rinshan) {
+    // 破碎的钥匙：摸不到宝牌，进张常被换走
+    if (himekoBroken(g, seat)) {
+      const w = g.wall;
+      const p = g.players[seat];
+      const counts = toCounts(p.hand);
+      const sh = shanten(counts, p.melds.length);
+      const block = g.rng.chance(HIMEKO.broken.block);
+      const bad = (t: TileId) => {
+        if (isDoraTile(g, t)) return true;
+        if (!block) return false;
+        counts[kindOf(t)]++;
+        const better = shanten(counts, p.melds.length) < sh;
+        counts[kindOf(t)]--;
+        return better;
+      };
+      const next = rinshan ? w.rinshan[0] : w.live[0];
+      if (next !== undefined && bad(next)) {
+        if (rinshan) w.bringToRinshan((t) => !bad(t), g.rng);
+        else w.bringToLive(0, (t) => !bad(t), g.rng);
+      }
+      return;
+    }
     const plan = himekoPlan(g, seat);
     if (!plan || rinshan) return;
     const missing = himekoMissing(g, seat, plan);
@@ -346,14 +409,26 @@ export const himekoAbility: Ability = {
     g.wall.bringToLive(0, (t) => now.has(kindOf(t)) && usable(g, t), g.rng);
   },
 
+  // 破碎的钥匙那一局：和牌最多一番
+  canWin(g, seat) {
+    if (!himekoBroken(g, seat)) return true;
+    const p = g.players[seat];
+    const tsumo = g.phase === 'turn' && g.turn === seat && p.drawn !== null;
+    const tile = tsumo ? p.drawn : (g.kakanInfo?.tile ?? g.lastDiscard?.tile);
+    if (tile === undefined || tile === null) return true;
+    const r = g.winResult(seat, tile, tsumo);
+    return !r || (r.yakuman === 0 && r.han <= HIMEKO.broken.maxHan);
+  },
+
   badge(g, seat) {
     const key = himekoKey(g, seat);
-    return key ? `钥匙·${key.bind * 2}番` : null;
+    if (key) return `钥匙·${key.bind * 2}番`;
+    return himekoBroken(g, seat) ? '破碎的钥匙' : null;
   },
 
   insight(g, seat) {
     const key = himekoKey(g, seat);
-    if (!key) return ['这一局没有钥匙，是普通人'];
+    if (!key) return himekoBroken(g, seat) ? ['破碎的钥匙：配牌烂、摸不到宝牌、进张常被换走，和牌最多一番'] : ['这一局没有钥匙，是普通人'];
     const plan = himekoPlan(g, seat);
     return [`哩在${key.label}缚了 ${key.bind} 番，这一局要和出 ${key.bind * 2} 番`, plan ? `还差 ${himekoMissing(g, seat, plan).length} 张` : '这一局的牌没凑出来', '所有人的进张都被压住'];
   },
