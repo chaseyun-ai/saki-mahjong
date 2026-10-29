@@ -6,7 +6,7 @@ import { dangerKinds } from './hiroe';
 import type { Ability, PreDealOption } from './types';
 
 // 清水谷龙华（千里山）：队长，怜的搭档。两个技能都在发牌前决定，各自用一次管一局：
-// - 怜的膝枕（和怜同队时才有，一场 pillowUses 次）：这一局和怜一样看得见自己下一次摸到的牌（一巡先见）
+// - 怜的膝枕（一场 pillowUses 次，不用和怜同队）：这一局和怜一样看得见自己下一次摸到的牌（一巡先见）
 // - 无极天（一场 mugokuUses 次）：感知别人的体温、心跳、呼吸——
 //   看得出每家听没听牌；手里打出去会放铳的牌标红（玩家操作时）；摸牌有 draw 的概率换成进张
 // 电脑的龙华：剩下的次数够把剩下的局都用上就每局用；不然坐庄、或者落后第一 behind 点以上时用
@@ -30,9 +30,7 @@ interface RyuukaState {
 const gameStateOf = (g: Game, seat: number) => g.abilityGameState[seat] as RyuukaGameState;
 const stateOf = (g: Game, seat: number) => g.abilityState[seat] as RyuukaState;
 
-// 怜和她同队（团体赛）
-export const ryuukaWithToki = (g: Game, seat: number): boolean => g.allies[seat]?.includes('toki') ?? false;
-export const ryuukaPillowLeft = (g: Game, seat: number): number => (ryuukaWithToki(g, seat) ? RYUUKA.pillowUses - (gameStateOf(g, seat).pillow ?? 0) : 0);
+export const ryuukaPillowLeft = (g: Game, seat: number): number => RYUUKA.pillowUses - (gameStateOf(g, seat).pillow ?? 0);
 export const ryuukaMugokuLeft = (g: Game, seat: number): number => RYUUKA.mugokuUses - (gameStateOf(g, seat).mugoku ?? 0);
 
 // 这一局借着怜的膝枕
@@ -81,7 +79,7 @@ const useful = (g: Game, seat: number) => {
 export const ryuukaAbility: Ability = {
   id: 'ryuuka',
   name: '怜的膝枕·无极天',
-  description: `发牌前决定这一局用不用，各用一次管一局。怜的膝枕（和怜同队时，一场 ${RYUUKA.pillowUses} 次）：看得见自己下一次摸到的牌。无极天（一场 ${RYUUKA.mugokuUses} 次）：看得出每家听没听牌，手里会放铳的牌标红，摸牌更容易是进张。`,
+  description: `发牌前决定这一局用不用，各用一次管一局。怜的膝枕（一场 ${RYUUKA.pillowUses} 次）：看得见自己下一次摸到的牌。无极天（一场 ${RYUUKA.mugokuUses} 次）：看得出每家听没听牌，手里会放铳的牌标红，摸牌更容易是进张。`,
   foresight: { title: '怜的膝枕' },
 
   foresightOn(g, seat) {
@@ -123,9 +121,7 @@ export const ryuukaAbility: Ability = {
     const pillow = ryuukaPillowLeft(g, seat);
     const mugoku = ryuukaMugokuLeft(g, seat);
     const out: PreDealOption[] = [];
-    if (ryuukaWithToki(g, seat)) {
-      out.push({ id: 'pillow', name: '怜的膝枕', desc: '这一局看得见自己下一次摸到的牌', enabled: pillow > 0, picked: false, note: pillow > 0 ? `还剩 ${pillow} 次` : '用完了' });
-    }
+    out.push({ id: 'pillow', name: '怜的膝枕', desc: '这一局看得见自己下一次摸到的牌', enabled: pillow > 0, picked: false, note: pillow > 0 ? `还剩 ${pillow} 次` : '用完了' });
     out.push({ id: 'mugoku', name: '无极天', desc: '这一局看得出每家听没听牌，会放铳的牌标红，摸牌更容易是进张', enabled: mugoku > 0, picked: false, note: mugoku > 0 ? `还剩 ${mugoku} 次` : '用完了' });
     return out;
   },
@@ -137,7 +133,7 @@ export const ryuukaAbility: Ability = {
   skill(g, seat) {
     const st = stateOf(g, seat);
     const on = [st.pillow ? '怜的膝枕' : '', st.mugoku ? '无极天' : ''].filter(Boolean);
-    const left = [ryuukaWithToki(g, seat) ? `膝枕剩 ${ryuukaPillowLeft(g, seat)} 次` : '', `无极天剩 ${ryuukaMugokuLeft(g, seat)} 次`].filter(Boolean).join('，');
+    const left = `膝枕剩 ${ryuukaPillowLeft(g, seat)} 次，无极天剩 ${ryuukaMugokuLeft(g, seat)} 次`;
     return { label: '', note: on.length ? `这一局：${on.join('、')}（${left}）` : `${left}，发牌前选`, enabled: false, active: on.length > 0 };
   },
 
@@ -149,7 +145,7 @@ export const ryuukaAbility: Ability = {
   insight(g, seat) {
     const st = stateOf(g, seat);
     return [
-      st.pillow ? '这一局借着怜的膝枕，看得见自己下一张' : ryuukaWithToki(g, seat) ? `怜的膝枕还剩 ${ryuukaPillowLeft(g, seat)} 次` : '怜不在她队里，借不到膝枕',
+      st.pillow ? '这一局借着怜的膝枕，看得见自己下一张' : `怜的膝枕还剩 ${ryuukaPillowLeft(g, seat)} 次`,
       st.mugoku ? '这一局在无极天里：看得出谁听牌、哪张会放铳，摸牌更顺' : `无极天还剩 ${ryuukaMugokuLeft(g, seat)} 次`,
     ];
   },

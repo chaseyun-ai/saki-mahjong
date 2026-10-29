@@ -39,7 +39,7 @@ describe('新角色', () => {
 });
 
 describe('清水谷龙华', () => {
-  it('和怜同队才有膝枕（一场最多 4 次），无极天一场最多 3 次；先见只在膝枕的局开着', () => {
+  it('不管和不和怜同队都有膝枕（一场最多 4 次），无极天一场最多 3 次；先见只在膝枕的局开着', () => {
     for (let seed = 1; seed <= 4; seed++) {
       for (const withToki of [true, false]) {
         const ids = ['ryuuka', 'saki', 'kuro', 'hiroe'];
@@ -57,8 +57,7 @@ describe('清水谷龙华', () => {
             }),
           { format: 'team', allies },
         );
-        if (withToki) expect(pillow).toBeGreaterThan(0);
-        else expect(pillow).toBe(0);
+        expect(pillow).toBeGreaterThan(0);
         expect(pillow).toBeLessThanOrEqual(RYUUKA.pillowUses);
         expect(mugoku).toBeGreaterThan(0);
         expect(mugoku).toBeLessThanOrEqual(RYUUKA.mugokuUses);
