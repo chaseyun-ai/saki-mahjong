@@ -1,4 +1,5 @@
 import { CHARACTERS, baseAi, type Character } from '../abilities/characters';
+import type { BindKey } from '../abilities/types';
 import { Rng } from '../engine/rng';
 
 // 团体赛拟真：红、绿、黄、蓝四队，玩家是其中一队的队长。
@@ -18,7 +19,7 @@ export const TEAMS = [
 ];
 
 // 电脑选人时同一档里的偏好（前面的先挑）；没写的排在后面，替补最后
-const AI_PREF = ['teru', 'koromo', 'komaki', 'awai', 'takami', 'saki', 'toyone', 'sawaya', 'nelly', 'hisa', 'toki', 'ryuuka', 'momo', 'yuuki', 'sera', 'suzu', 'kasumi', 'mihoko', 'sumire', 'hiroe', 'seiko', 'kuro', 'yu', 'nodoka', 'ako', 'kyouko', 'mako', 'kirame', 'izumi'];
+const AI_PREF = ['teru', 'koromo', 'komaki', 'awai', 'takami', 'saki', 'toyone', 'sawaya', 'nelly', 'hisa', 'toki', 'ryuuka', 'momo', 'yuuki', 'sera', 'suzu', 'rii', 'kasumi', 'mihoko', 'sumire', 'hiroe', 'seiko', 'kuro', 'yu', 'nodoka', 'ako', 'kyouko', 'mako', 'himeko', 'kirame', 'izumi'];
 // 电脑按偏好挑的概率，不然从这一档剩下的人里随便挑一个
 const AI_BEST = 0.6;
 
@@ -81,6 +82,8 @@ export class TeamRun {
   turn = 0; // 这一档轮到第几个
   pos = 0; // 打到第几个位置
   riichiSticks = 0; // 上一场留下的立直棒
+  // 每队的白水哩拿到的钥匙，带给后面位置的鹤田姬子
+  keys: BindKey[][] = TEAMS.map(() => []);
   history: MatchRecord[] = [];
 
   constructor(
@@ -145,9 +148,14 @@ export class TeamRun {
     return c;
   }
 
-  // 选完以后的默认布阵：玩家队按选的顺序（5 费当先锋），电脑队随机排
+  // 选完以后的默认布阵：玩家队按选的顺序（5 费当先锋），电脑队随机排（有哩和姬子时，姬子排在哩后面）
   private defaultLineups(): void {
-    for (const t of this.teams) t.lineup = t.human ? [...t.picks] : this.rng.shuffle([...t.picks]);
+    for (const t of this.teams) {
+      t.lineup = t.human ? [...t.picks] : this.rng.shuffle([...t.picks]);
+      const rii = t.lineup.findIndex((c) => c.id === 'rii');
+      const himeko = t.lineup.findIndex((c) => c.id === 'himeko');
+      if (!t.human && rii >= 0 && himeko >= 0 && himeko < rii) this.swap(this.teams.indexOf(t), rii, himeko);
+    }
   }
 
   // 玩家调换两个位置
@@ -168,10 +176,11 @@ export class TeamRun {
     return [this.human, ...others];
   }
 
-  // 这一场打完：每个座位（按 seats）最后的点数、剩下的立直棒
-  finish(seats: number[], scores: number[], riichiSticks: number): void {
+  // 这一场打完：每个座位（按 seats）最后的点数、剩下的立直棒、白水哩拿到的钥匙
+  finish(seats: number[], scores: number[], riichiSticks: number, keys: BindKey[][] = []): void {
     const start = this.teams.map((t) => t.points);
     seats.forEach((team, s) => (this.teams[team].points = scores[s]));
+    seats.forEach((team, s) => this.keys[team].push(...(keys[s] ?? [])));
     this.history.push({ pos: this.pos, seats, chars: seats.map((t) => this.teams[t].lineup[this.pos]), start, end: this.teams.map((t) => t.points) });
     this.riichiSticks = riichiSticks;
     this.pos++;

@@ -10,6 +10,7 @@ import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
 import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneRedHidden } from '../abilities/toyone';
+import { riiKeys } from '../abilities/rii';
 import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
@@ -351,7 +352,9 @@ export class App {
     this.auto = auto;
     const seed = Math.floor(Math.random() * 2 ** 31);
     const allies = seats.map((t) => run.teams[t].lineup.map((c) => c.id));
-    const game = new Game({ seed, format: 'team', firstDealer: Math.floor(Math.random() * 4), scores: start, riichiSticks: run.riichiSticks, allies, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
+    // 同队的哩在之前的位置拿到的钥匙
+    const keys = seats.map((t) => run.keys[t]);
+    const game = new Game({ seed, format: 'team', firstDealer: Math.floor(Math.random() * 4), scores: start, riichiSticks: run.riichiSticks, allies, keys, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
     this.beginGame(chars, game);
   }
 
@@ -585,6 +588,8 @@ export class App {
       // 玄打出宝牌、能力失效时出一行小字。咲的杠的气息、岭上开花：这一局第一次放切入，之后只出小字
       // 控场能力换掉别人要摸的牌：悄悄换，结算时能力痕迹里再讲
       if (e.target !== undefined && e.target !== e.seat) return;
+      // 姬子破碎的钥匙那一局换走自己摸到的宝牌：悄悄换
+      if (e.ability === 'himeko' && e.text === '没有宝牌') return;
       if (e.ability === 'kuro') {
         if (e.text !== '宝牌聚集') this.toast(e.seat, e.text, false);
         return;
@@ -687,7 +692,7 @@ export class App {
       const g = this.game;
       this.teardown();
       this.team = null;
-      flow.afterMatch(seats, g.players.map((p) => p.score), g.riichiSticks);
+      flow.afterMatch(seats, g.players.map((p) => p.score), g.riichiSticks, [0, 1, 2, 3].map((s) => (g.abilities[s]?.id === 'rii' ? riiKeys(g, s) : [])));
       return;
     }
     if (el.dataset.ui === 'skins') {

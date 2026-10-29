@@ -1,4 +1,4 @@
-import type { Game } from '../engine/game';
+import type { Game, RoundResult } from '../engine/game';
 import type { TileId } from '../engine/tiles';
 
 // 能力插件：挂在规则引擎的固定时机上。
@@ -17,6 +17,8 @@ import type { TileId } from '../engine/tiles';
 
 export const PRIORITY = {
   kuro: 1,
+  // 鹤田姬子拿到钥匙的那一局：只在玄后面
+  himeko: 1.5,
   toyone: 2,
   sawaya: 5,
   awai: 10,
@@ -43,6 +45,14 @@ export interface DealRule {
   bad: (hand: TileId[]) => number;
 }
 
+// 白水哩的钥匙：哪一局（东/南场几局几本场）番缚了几番。和出的番数正好是番缚数是钥匙，没和成是破碎的钥匙
+export interface BindKey {
+  label: string; // Game.roundLabel()
+  round: number; // 这一场的第几局（Game.round）
+  bind: number; // 番缚了几番
+  broken: boolean;
+}
+
 export interface Ability {
   id: string;
   name: string;
@@ -56,6 +66,8 @@ export interface Ability {
   firstDealer?: boolean;
   // 作者钦定最高（松实玄的宝牌）：不被封印，她定的规矩连 immune 的人也要守
   absolute?: boolean;
+  // 这一局既 absolute 又 immune（鹤田姬子拿到钥匙的那一局）：只看规则和钥匙算，不许读 g.active，不然会绕回 isSealed
+  supreme?(g: Game, seat: number): boolean;
   // 配牌之前：牌山已经洗好、骰子掷完，live 的前 52 张还没发（g.dealIndices 给出每家会拿到哪几张）
   // 第一步：定配牌的规矩，不动牌
   dealRules?(g: Game, seat: number): DealRule[] | void;
@@ -67,6 +79,8 @@ export interface Ability {
   beforeDraw?(g: Game, seat: number, rinshan: boolean): void;
   afterDraw?(g: Game, seat: number): void;
   afterDiscard?(g: Game, seat: number, tile: TileId): void;
+  // 一局结算完、点数已经算进去，roundEnd 事件发出之前（白水哩的番缚在这里结算成钥匙）。被封印也照样调用
+  onRoundEnd?(g: Game, seat: number, result: RoundResult): void;
   // 头像框上的小标签（比如衣的月相、霞绝掉的花色），没有就是 null
   badge?(g: Game, seat: number): string | null;
   // 能看到自己下一次摸到的牌（怜）。看到的是哪张由 src/ai/forecast.ts 在复制的牌局上演算

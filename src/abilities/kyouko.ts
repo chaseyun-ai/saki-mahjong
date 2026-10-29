@@ -29,7 +29,7 @@ export function kyoukoBreaking(g: Game, seat: number): boolean {
 export function kyoukoTargets(g: Game, seat: number): number[] {
   return [0, 1, 2, 3].filter((s) => {
     const a = g.abilities[s];
-    if (s === seat || !a || a.immune || a.absolute) return false;
+    if (s === seat || !a || g.isImmune(s) || g.isAbsolute(s)) return false;
     // 还没变出第二形态的人（平常的原村和）没有能力可打断
     if (a.form && !a.form(g, s)) return false;
     return !g.abilities.some((b, o) => o !== s && o !== seat && !!b?.seals?.(g, o, g.round));

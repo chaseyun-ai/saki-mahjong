@@ -124,7 +124,7 @@ export const SAWAYA_AI = {
 // 能被蛇神威封住、而且会控场的对手（只读牌的洋榎、美穗子，只挡别人影响的天使和不算；照、玄封不了）
 const CONTROL_FREE = ['hiroe', 'mihoko', 'nodoka'];
 const controllers = (g: Game, seat: number) =>
-  [0, 1, 2, 3].filter((s) => s !== seat && g.abilities[s] && !CONTROL_FREE.includes(g.abilities[s]!.id) && g.binds(seat, s) && !g.abilities[s]!.immune && !g.abilities[s]!.absolute);
+  [0, 1, 2, 3].filter((s) => s !== seat && g.abilities[s] && !CONTROL_FREE.includes(g.abilities[s]!.id) && g.binds(seat, s) && !g.isImmune(s) && !g.isAbsolute(s));
 
 // 同桌有没有把运势攒到最后几局的人
 const lateHeavy = (g: Game, seat: number) => [0, 1, 2, 3].some((s) => s !== seat && g.abilities[s]?.id === 'nelly');
