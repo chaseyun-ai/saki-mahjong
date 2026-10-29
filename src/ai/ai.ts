@@ -276,6 +276,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   }
 
   const discards = legal.filter((a): a is Extract<Action, { type: 'discard' }> => a.type === 'discard');
+  // 花田煌：手里的牌打出去全会击飞自己时只剩自摸（或杠）
+  if (discards.length === 0) return tsumo ?? legal[0];
   if (p.riichi) return discards[0];
 
   const visible = visibleCounts(g, seat);

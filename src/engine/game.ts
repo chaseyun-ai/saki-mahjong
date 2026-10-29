@@ -420,6 +420,105 @@ export class Game {
     return out;
   }
 
+  // ---------- 不会被击飞（花田煌） ----------
+
+  // seat 打出 tile 放铳的话会不会被击飞。chankan：加杠被抢杠。last：这张打出去是不是河底（默认按现在的牌山算）
+  // 三家和了是途中流局，不算放铳
+  dealInBusts(seat: number, tile: TileId, chankan = false, last = this.wall.remaining === 0): boolean {
+    const prev = this.callKind;
+    this.callKind = chankan ? 'chankan' : 'discard';
+    try {
+      let pay = 0;
+      let n = 0;
+      for (const d of [1, 2, 3]) {
+        const o = (seat + d) % 4;
+        if (!chankan && this.stealthed(seat, o)) continue;
+        if (!this.canWin(o)) continue;
+        const r = this.winResult(o, tile, false, last);
+        if (!r) continue;
+        pay += r.ron + (n === 0 ? 300 * this.honba : 0);
+        n++;
+      }
+      return n > 0 && n < 3 && this.players[seat].score < pay;
+    } finally {
+      this.callKind = prev;
+    }
+  }
+
+  // seat 摸到 tile 能不能自摸（还没摸的时候算）
+  private tsumoWith(seat: number, tile: TileId, rinshan: boolean): WinResult | null {
+    if (!this.canWin(seat)) return null;
+    const p = this.players[seat];
+    const prev = this.rinshanDraw;
+    p.hand.push(tile);
+    this.rinshanDraw = rinshan;
+    try {
+      return this.winResult(seat, tile, true, this.wall.remaining === 1);
+    } finally {
+      p.hand.pop();
+      this.rinshanDraw = prev;
+    }
+  }
+
+  // 不会被击飞的人对这一次摸牌定的规矩：别人摸不到自摸了会把她击飞的牌；
+  // 她自己摸牌时，摸到以后要么能自摸，要么手里至少还有一张打得出去的牌
+  private bustRules(drawer: number, rinshan: boolean): DrawRule[] {
+    const out: DrawRule[] = [];
+    const key = (t: TileId) => `${kindOf(t)}-${isRed(t)}`;
+    for (let k = 0; k < 4; k++) {
+      const a = this.abilities[k];
+      if (!a?.unbustable) continue;
+      const memo = new Map<string, boolean>();
+      const once = (t: TileId, f: () => boolean) => {
+        if (!memo.has(key(t))) memo.set(key(t), f());
+        return memo.get(key(t))!;
+      };
+      const base = { seat: k, ability: a.id, text: a.name };
+      if (k !== drawer) {
+        out.push({
+          ...base,
+          deny: (t) =>
+            once(t, () => {
+              const r = this.tsumoWith(drawer, t, rinshan);
+              if (!r) return false;
+              const pay = (k === this.dealer ? r.tsumoDealerPays : r.tsumoOtherPays) + 100 * this.honba;
+              return this.players[k].score < pay;
+            }),
+        });
+        continue;
+      }
+      const p = this.players[k];
+      // 摸完以后打的牌：摸的是最后一张就是河底
+      const last = this.wall.remaining === 1;
+      const deadly = (t: TileId) => once(t, () => this.dealInBusts(k, t, false, last));
+      let handSafe: boolean | null = null;
+      out.push({
+        ...base,
+        deny: (t) => {
+          handSafe ??= !p.riichi && p.hand.some((x) => !deadly(x));
+          return !handSafe && deadly(t) && !this.tsumoWith(k, t, rinshan);
+        },
+      });
+    }
+    return out;
+  }
+
+  // 牌山里换不出不击飞她的牌（海底只剩一张之类）：从王牌里换
+  private bustFallback(drawer: number, rinshan: boolean, bust: DrawRule[]): void {
+    const next = rinshan ? this.wall.rinshan[0] : this.wall.live[0];
+    if (next === undefined) return;
+    const hit = bust.filter((r) => r.deny(next));
+    if (hit.length === 0 || !this.wall.bringFromDead(rinshan, (t) => !bust.some((r) => r.deny(t)), this.rng)) return;
+    for (const r of hit) this.emit({ type: 'ability', seat: r.seat, ability: r.ability, text: r.text, target: drawer });
+  }
+
+  // 这一手牌鸣了以后还打得出去牌（不会被击飞的人才用得上）
+  private callLeavesSafe(seat: number, action: Action, tile: TileId): boolean {
+    if (action.type !== 'pon' && action.type !== 'chi') return true;
+    const ban = kuikae(action, kindOf(tile));
+    return this.players[seat].hand.some((t) => !action.tiles.includes(t) && !ban.includes(kindOf(t)) && !this.dealInBusts(seat, t));
+  }
+
   // ---------- 一局的流程 ----------
 
   private startRound(): void {
@@ -501,8 +600,10 @@ export class Game {
       this.exhaustiveDraw();
       return;
     }
-    this.applyDrawAbilities(seat, rinshan);
-    if (!rinshan && seat === this.dealer && this.isFirstTurn(seat)) this.denyTenhou(seat);
+    const bust = this.bustRules(seat, rinshan);
+    this.applyDrawAbilities(seat, rinshan, bust);
+    if (!rinshan && seat === this.dealer && this.isFirstTurn(seat)) this.denyTenhou(seat, bust);
+    this.bustFallback(seat, rinshan, bust);
     const tile = rinshan ? this.wall.drawRinshan() : this.wall.draw();
     const p = this.players[seat];
     p.hand.push(tile);
@@ -516,9 +617,10 @@ export class Game {
   }
 
   // 摸牌前：控场的人按顺序先动、定规矩，摸牌的人自己的能力最后动，最后把违反规矩的牌换走
-  private applyDrawAbilities(seat: number, rinshan: boolean): void {
+  // bust：不会被击飞的人的规矩，排在最前面，谁也越不过去
+  private applyDrawAbilities(seat: number, rinshan: boolean, bust: DrawRule[]): void {
     const w = this.wall;
-    const rules: DrawRule[] = [];
+    const rules: DrawRule[] = [...bust];
     const union = (n: number) => (n === 0 ? null : (t: TileId) => rules.slice(0, n).some((r) => r.deny(t)));
     // 佛灭：控场的人不出手（摸牌的人自己的能力照样动）
     const calm = this.fieldVoid();
@@ -553,10 +655,10 @@ export class Game {
   }
 
   // 天听配牌的人坐庄时，第一张摸到的不能是和了牌（不许天和）
-  private denyTenhou(seat: number): void {
+  private denyTenhou(seat: number, bust: DrawRule[]): void {
     if (!this.abilities[seat]?.noTenhou?.(this, seat)) return;
     const waits = this.waits(seat);
-    if (waits.length && waits.includes(kindOf(this.wall.live[0]))) this.wall.bringToLive(0, (t) => !waits.includes(kindOf(t)), this.rng);
+    if (waits.length && waits.includes(kindOf(this.wall.live[0]))) this.wall.bringToLive(0, (t) => !waits.includes(kindOf(t)) && !bust.some((r) => r.deny(t)), this.rng);
   }
 
   private isFirstTurn(seat: number): boolean {
@@ -568,6 +670,20 @@ export class Game {
   legalActions(seat: number): Action[] {
     if (this.phase === 'calls') return this.responses.has(seat) ? [] : this.pending.get(seat) ?? [];
     if (this.phase !== 'turn' || seat !== this.turn) return [];
+    const out = this.turnActions(seat);
+    if (!this.abilities[seat]?.unbustable) return out;
+    // 不会被击飞的人：放铳会被击飞的牌打不出去、加杠不了。一张都打不出去又自摸不了时（很少见）照常
+    const memo = new Map<string, boolean>();
+    const busts = (t: TileId, chankan: boolean) => {
+      const k = `${kindOf(t)}-${isRed(t)}-${chankan}`;
+      if (!memo.has(k)) memo.set(k, this.dealInBusts(seat, t, chankan));
+      return memo.get(k)!;
+    };
+    const safe = out.filter((a) => (a.type === 'discard' ? !busts(a.tile, false) : a.type === 'kakan' ? !busts(a.tile, true) : true));
+    return safe.some((a) => a.type === 'discard' || a.type === 'tsumo') ? safe : out;
+  }
+
+  private turnActions(seat: number): Action[] {
     const p = this.players[seat];
     const out: Action[] = [];
     if (p.drawn !== null) {
@@ -623,7 +739,8 @@ export class Game {
     return before.length > 0 && before.join() === after.join();
   }
 
-  winResult(seat: number, tile: TileId, tsumo: boolean): WinResult | null {
+  // last：牌山摸完了没有（海底、河底），默认按现在的牌山算
+  winResult(seat: number, tile: TileId, tsumo: boolean, last = this.wall.remaining === 0): WinResult | null {
     const p = this.players[seat];
     const closed = tsumo ? p.hand.slice() : [...p.hand, tile];
     if (shanten(toCounts(closed), p.melds.length) !== -1) return null;
@@ -647,8 +764,8 @@ export class Game {
       riichi: p.riichi,
       doubleRiichi: p.doubleRiichi,
       ippatsu: p.ippatsu,
-      haitei: tsumo && this.wall.remaining === 0 && !this.rinshanDraw,
-      houtei: !tsumo && this.wall.remaining === 0 && this.callKind === 'discard',
+      haitei: tsumo && last && !this.rinshanDraw,
+      houtei: !tsumo && last && this.callKind === 'discard',
       rinshan: tsumo && this.rinshanDraw,
       chankan: !tsumo && this.callKind === 'chankan',
       tenhou: tsumo && first && seat === this.dealer,
@@ -739,6 +856,12 @@ export class Game {
             for (const x of as) for (const y of bs) opts.push({ type: 'chi', tiles: [x, y] });
           }
         }
+      }
+      // 不会被击飞的人：鸣了以后一张都打不出去的不能鸣
+      if (this.abilities[o]?.unbustable) {
+        const keep = opts.filter((a) => this.callLeavesSafe(o, a, tile));
+        opts.length = 0;
+        opts.push(...keep);
       }
       if (opts.length) {
         opts.push({ type: 'pass' });
@@ -847,17 +970,12 @@ export class Game {
     if (action.type === 'pon') {
       take(action.tiles);
       p.melds.push({ type: 'pon', tiles: [...action.tiles, tile], calledTile: tile, from });
-      p.kuikaeBan = [kind];
+      p.kuikaeBan = kuikae(action, kind);
       this.emit({ type: 'call', seat, call: '碰' });
     } else if (action.type === 'chi') {
       take(action.tiles);
       p.melds.push({ type: 'chi', tiles: [...action.tiles, tile], calledTile: tile, from });
-      const ks = action.tiles.map(kindOf).sort((a, b) => a - b);
-      const ban = [kind];
-      // 两面吃的另一端也不能打（食替）
-      if (kind < ks[0] && ks[1] % 9 < 8) ban.push(ks[1] + 1);
-      if (kind > ks[1] && ks[0] % 9 > 0) ban.push(ks[0] - 1);
-      p.kuikaeBan = ban;
+      p.kuikaeBan = kuikae(action, kind);
       this.emit({ type: 'call', seat, call: '吃' });
     } else if (action.type === 'daiminkan') {
       const ids = p.hand.filter((t) => kindOf(t) === kind);
@@ -993,6 +1111,14 @@ export class Game {
     const deltas = [0, 0, 0, 0];
     if (n > 0 && n < 4) {
       for (let s = 0; s < 4; s++) deltas[s] = tenpai[s] ? 3000 / n : -3000 / (4 - n);
+      // 不会被击飞的人：不听罚符最多付到 0 点，少付的从听牌的人收的里面平摊扣掉
+      for (let s = 0; s < 4; s++) {
+        const short = -(this.players[s].score + deltas[s]);
+        if (!this.abilities[s]?.unbustable || short <= 0) continue;
+        deltas[s] += short;
+        const got = [0, 1, 2, 3].filter((t) => tenpai[t]);
+        got.forEach((t, i) => (deltas[t] -= Math.floor(short / n) + (i < short % n ? 1 : 0)));
+      }
     }
     this.endRound({ kind: 'exhaustive', wins: [], tenpai, deltas });
   }
@@ -1102,6 +1228,16 @@ function sameAction(a: Action, b: Action): boolean {
     default:
       return true;
   }
+}
+
+// 吃、碰以后这一巡不能打的牌（食替）：鸣的那种牌，两面吃的另一端也不行
+function kuikae(action: { type: 'pon' | 'chi'; tiles: [TileId, TileId] }, kind: Kind): Kind[] {
+  if (action.type === 'pon') return [kind];
+  const ks = action.tiles.map(kindOf).sort((a, b) => a - b);
+  const ban = [kind];
+  if (kind < ks[0] && ks[1] % 9 < 8) ban.push(ks[1] + 1);
+  if (kind > ks[1] && ks[0] % 9 > 0) ban.push(ks[0] - 1);
+  return ban;
 }
 
 // 同种牌里，只按“是不是赤牌”区分

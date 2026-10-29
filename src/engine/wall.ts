@@ -139,6 +139,24 @@ export class Wall {
     return true;
   }
 
+  // 牌山里换不出来时（比如海底只剩一张）：从还没翻开的王牌（岭上牌、里宝牌指示牌）里找一张符合条件的，
+  // 换到下一张摸的位置（rinshan 时是岭上牌的第一张）
+  bringFromDead(rinshan: boolean, pred: (t: TileId) => boolean, rng: Rng): boolean {
+    const dst = rinshan ? this.rinshan : this.live;
+    if (dst.length === 0 || this.locked.has(dst[0])) return false;
+    const cands: { src: TileId[]; i: number }[] = [];
+    this.rinshan.forEach((t, i) => {
+      if (!(rinshan && i === 0) && !this.locked.has(t) && pred(t)) cands.push({ src: this.rinshan, i });
+    });
+    this.uraIndicators.forEach((t, i) => {
+      if (!this.locked.has(t) && pred(t)) cands.push({ src: this.uraIndicators, i });
+    });
+    if (cands.length === 0) return false;
+    const c = cands[rng.int(cands.length)];
+    [dst[0], c.src[c.i]] = [c.src[c.i], dst[0]];
+    return true;
+  }
+
   // 把符合条件的牌换成第 i 张里宝牌指示牌（还没翻开，和了时才看得到）。来源是牌山、岭上牌和后面的里宝牌指示牌
   // from：牌山里只从这些位置找
   bringToUra(i: number, pred: (t: TileId) => boolean, rng: Rng, from?: (j: number) => boolean): boolean {

@@ -83,6 +83,8 @@ export const LOOKS: Record<string, Look> = {
   rii: { model: 'models/vroid-g.v2.glb', hair: '#3a4258', eyes: '#4a6a9a', hairContrast: 0.5, reveal: 'slam', pose: 'crossed', borrowed: true },
   // 鹤田姬子：先占位，借怜的短发模型换成棕色头发、棕色眼睛
   himeko: { model: 'models/vroid-f.v2.glb', hair: '#6a4430', eyes: '#8a5a3a', hairContrast: 0.6, reveal: 'wave', pose: 'edge', borrowed: true },
+  // 花田煌：先占位，借咲的短发模型换成栗色头发、绿色眼睛
+  kirame: { model: 'models/vroid-e.v2.glb', hair: '#8a5a2e', eyes: '#4a7a4a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
 };
 
 // 牌桌上要用到的全部模型文件

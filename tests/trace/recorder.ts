@@ -222,10 +222,10 @@ function install() {
   );
 
   patch(Game.prototype, 'applyDrawAbilities', (orig) =>
-    function (this: Game, seat: number, rinshan: boolean) {
+    function (this: Game, seat: number, rinshan: boolean, ...rest: unknown[]) {
       inApply = true;
       try {
-        orig.call(this, seat, rinshan);
+        orig.call(this, seat, rinshan, ...rest);
       } finally {
         inApply = false;
       }
