@@ -1,14 +1,15 @@
 import type { Game, WinInfo } from '../engine/game';
 import { evaluateWin, type WinResult } from '../engine/score';
 import { shanten, waitingKinds } from '../engine/shanten';
-import { EAST, TileId, isRed, kindOf, toCounts } from '../engine/tiles';
+import { EAST, Kind, TileId, isRed, kindOf, toCounts } from '../engine/tiles';
+import { readOthers } from './hiroe';
 import { isDoraTile } from './kuro';
 import type { Ability } from './types';
 
 // 宫永照（白糸台）：
 // - 照魔镜：第一局只看不和（这一局她和不了牌），看过以后整场都看得穿别人：
 //   玩家操作她时，别人的头像旁边多一面镜子，点开能看到这家能力现在的状态（Ability.insight）；
-//   电脑的照读得出立直的人听什么，不打给他们
+//   读得出立直的人听什么（teruDanger）：电脑的照不打给他们，玩家操作她时手里的这种铳牌标红
 // - 别人的能力动不了她（Ability.immune）：不被封印，别人对她的配牌、摸牌定的规矩不算；只有玄的宝牌她也得守
 // - 天梯（连续和了）：八层，1 番、2 番、3 番、4 番、满贯、跳满、倍满、三倍满，塔尖是役满。只算役的番数，宝牌、赤宝牌、里宝牌加的番不算。
 //   起胡必须是 1 番，之后每次和了必须正好是下一层，大了小了都断；别人和了、流局也断，从塔底重来。
@@ -67,6 +68,12 @@ export function teruTier(r: WinResult): number {
 // 照魔镜看过了没有（第一局结束以后）
 export function teruMirrored(g: Game, seat: number): boolean {
   return (gameStateOf(g, seat).rounds ?? 0) > 1;
+}
+
+// 照魔镜读得出的铳牌：看得见立直的人听的牌（小莳的天照照不进去）；第一局只看不和，不算
+export function teruDanger(g: Game, seat: number): Set<Kind> {
+  if (!teruMirrored(g, seat)) return new Set();
+  return new Set(readOthers(g, seat).filter((r) => g.seesRiichi(r.seat, seat) && !g.active(r.seat)?.mirrorProof?.(g, r.seat)).flatMap((r) => r.ron));
 }
 
 // 天梯：站在第几层、下一次要和第几层、上一次断掉的原因、叽叽叽的次数
@@ -196,7 +203,7 @@ export const teruAbility: Ability = {
   name: '照魔镜·连续和了',
   immune: true,
   description:
-    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看）。天梯（只算役的番数，宝牌、赤宝牌、里宝牌不算）：起胡 1 番，之后每次必须正好和出下一层（2 番、3 番、4 番、满贯、跳满、倍满、三倍满），大了小了、别人和了、流局都从头来；役满直接登顶。站得越高，配牌和摸牌帮得越多。压制：别人的进张常被换走，刚起步压得最狠，越往上越轻。叽叽叽：一场自摸满八次，第九次必定九莲宝灯。',
+    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看），也读得出立直的人听什么（手里打出去会放铳的牌标红）。天梯（只算役的番数，宝牌、赤宝牌、里宝牌不算）：起胡 1 番，之后每次必须正好和出下一层（2 番、3 番、4 番、满贯、跳满、倍满、三倍满），大了小了、别人和了、流局都从头来；役满直接登顶。站得越高，配牌和摸牌帮得越多。压制：别人的进张常被换走，刚起步压得最狠，越往上越轻。叽叽叽：一场自摸满八次，第九次必定九莲宝灯。',
 
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);

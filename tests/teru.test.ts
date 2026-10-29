@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { TERU, TERU_TOP, teruLadder, teruMirrored, teruTier } from '../src/abilities/teru';
+import { TERU, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruTier } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import type { WinResult } from '../src/engine/score';
 import { shanten } from '../src/engine/shanten';
-import { toCounts } from '../src/engine/tiles';
+import { parseKinds, parseTiles, toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -218,4 +218,18 @@ describe('宫永照', () => {
     console.log({ withTeru: withTeru.toFixed(2), without: without.toFixed(2) });
     expect(withTeru).toBeLessThan(without - 0.05);
   }, 120000);
+  it('铳牌：照魔镜看过以后，读得出立直的人听的牌；没立直的、第一局都不算', () => {
+    const g = new Game({ seed: 1, players: ['teru', 'kuro', 'mako', 'ako'].map((id) => ({ name: id, ability: byId(id).ability })) });
+    const p = g.players[1];
+    p.hand = parseTiles('13m456p678s789m55s');
+    p.melds = [];
+    p.riichi = true;
+    const gs = (g.abilityGameState[0] ??= {}) as { rounds?: number };
+    gs.rounds = 1;
+    expect(teruDanger(g, 0).size).toBe(0);
+    gs.rounds = 2;
+    expect([...teruDanger(g, 0)]).toEqual(parseKinds('2m'));
+    p.riichi = false;
+    expect(teruDanger(g, 0).size).toBe(0);
+  });
 });
