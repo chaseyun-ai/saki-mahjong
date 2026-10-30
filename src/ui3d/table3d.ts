@@ -51,7 +51,7 @@ const SIDE_HAND_PUSH_25D = 0.7;
 // 整排手牌就露出来了。牌山收进去以后右上角的缝变窄，右边（下家）的牌山整排往下挪一点，上下两个转角的缝一样宽
 const TOP_WALL_IN_25D = 0.8;
 const TOP_HAND_PUSH_25D = 0.8;
-const RIGHT_WALL_DOWN_25D = 0.4;
+const RIGHT_WALL_DOWN_25D = 0.2;
 
 // 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
 // 手牌、牌河、桌边、座位这些尺寸可以调，见 tableLayout.ts
