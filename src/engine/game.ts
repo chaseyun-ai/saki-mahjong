@@ -10,6 +10,7 @@ import {
   isRed,
   isWind,
   kindOf,
+  setRedFives,
   toCounts,
 } from './tiles';
 import { Wall, isCornerDraw } from './wall';
@@ -91,6 +92,22 @@ export interface PlayerConfig {
   manual?: boolean;
 }
 
+// 对局规则（单人对局开局前的设置弹窗里选）
+export interface Rules {
+  // 一位必要点数：东风战、半庄战打到最后一局，第一名要到这么多才结束（东风战不到就南入）
+  target: number;
+  // 击飞：有人点数小于 0 就结束。关了以后负分照打
+  tobi: boolean;
+  // 赤宝牌几张：0 没有，3 每种一张，4 筒子两张
+  red: 0 | 3 | 4;
+  // 食断：鸣了牌的断幺九算不算
+  kuitan: boolean;
+  // 番缚：和牌至少要几番（不算宝牌、赤宝牌、里宝牌；役满都行）
+  minHan: 1 | 2 | 4;
+}
+
+export const DEFAULT_RULES: Rules = { target: 30000, tobi: true, red: 3, kuitan: true, minHan: 1 };
+
 export interface GameOptions {
   seed: number;
   players: PlayerConfig[];
@@ -101,11 +118,14 @@ export interface GameOptions {
   riichiSticks?: number;
   // 起家（东 1 局的庄家）坐哪：界面开局时随机给；不给是 0 号位。片冈优希在场时一定是她
   firstDealer?: number;
+  // one：一局战，东 1 局打完就结束（连庄也结束）；
   // east：东风战（东 4 局后有人到 30000 就结束，不到就南入）；
   // south：半庄战（东南两场，南 4 局结束；南 4 局庄家连庄时，庄家第一、到 30000 就结束）；
   // team：团体赛的半庄，打满东南两场，南 4 局庄家没连庄就结束，谁到 30000 都不提前结束，有人小于 0 立刻结束，
   //   剩下的立直棒不给第一名，留给下一个位置
-  format?: 'east' | 'south' | 'team';
+  format?: 'one' | 'east' | 'south' | 'team';
+  // 规则，不写的照 DEFAULT_RULES（30000 是 rules.target）
+  rules?: Partial<Rules>;
   // 团体赛：每个座位自己队里的全部队员（角色 id，包括自己和不在这一桌的人）
   allies?: string[][];
   // 团体赛：同队的白水哩在之前的位置拿到的钥匙（每个座位一份），鹤田姬子在同一个场、局、本场用
@@ -125,7 +145,8 @@ export class Game {
   abilityGameState: Record<string, unknown>[] = [{}, {}, {}, {}];
   // 哪些座位是玩家操作的（见 PlayerConfig.manual）
   manual: boolean[] = [false, false, false, false];
-  format: 'east' | 'south' | 'team' = 'east';
+  format: 'one' | 'east' | 'south' | 'team' = 'east';
+  rules: Rules = { ...DEFAULT_RULES };
   // 每个座位的队友（见 GameOptions.allies），不是团体赛是空的
   allies: string[][] = [[], [], [], []];
   // 每个座位从之前的位置带来的钥匙（见 GameOptions.keys）
@@ -191,6 +212,8 @@ export class Game {
     this.firstDealer = yuuki >= 0 ? yuuki : (opts.firstDealer ?? 0) % 4;
     this.manual = opts.players.map((p) => !!p.manual);
     this.format = opts.format ?? 'east';
+    this.rules = { ...DEFAULT_RULES, ...opts.rules };
+    setRedFives(this.rules.red);
     if (opts.allies) this.allies = opts.allies.map((a) => [...a]);
     if (opts.keys) this.keys = opts.keys.map((k) => [...k]);
     this.riichiSticks = opts.riichiSticks ?? 0;
@@ -214,12 +237,12 @@ export class Game {
 
   // 打满东南两场（半庄战、团体赛）
   get fullHanchan(): boolean {
-    return this.format !== 'east';
+    return this.format !== 'east' && this.format !== 'one';
   }
 
   // 照计划这一局是不是最后 n 局里的（东风战最后是东 4，半庄战、团体赛是南 4；南入、连庄以后一直算）
   isLastRounds(n: number): boolean {
-    const last = this.fullHanchan ? 7 : 3;
+    const last = this.format === 'one' ? 0 : this.fullHanchan ? 7 : 3;
     return this.roundWind * 4 + this.roundNumber > last - n;
   }
 
@@ -425,6 +448,7 @@ export class Game {
   // seat 打出 tile 放铳的话会不会被击飞。chankan：加杠被抢杠。last：这张打出去是不是河底（默认按现在的牌山算）
   // 三家和了是途中流局，不算放铳
   dealInBusts(seat: number, tile: TileId, chankan = false, last = this.wall.remaining === 0): boolean {
+    if (!this.rules.tobi) return false;
     const prev = this.callKind;
     this.callKind = chankan ? 'chankan' : 'discard';
     try {
@@ -753,9 +777,10 @@ export class Game {
       dora.push(this.wall.doraIndicators[dora.length]);
       ura.push(this.wall.uraIndicators[ura.length]);
     }
-    return evaluateWin({
+    const r = evaluateWin({
       closed,
       melds: p.melds,
+      kuitan: this.rules.kuitan,
       winTile: tile,
       tsumo,
       seatWind: this.seatWind(seat),
@@ -773,6 +798,13 @@ export class Game {
       doraIndicators: dora.map(kindOf),
       uraIndicators: ura.map(kindOf),
     });
+    return this.minHanOk(r);
+  }
+
+  // 番缚：只数役的番，宝牌不算；不够的当没役（null）
+  minHanOk(r: WinResult | null): WinResult | null {
+    if (r && !r.yakuman && r.han - r.dora - r.aka - r.ura < this.rules.minHan) return null;
+    return r;
   }
 
   // ---------- 执行操作 ----------
@@ -1114,7 +1146,7 @@ export class Game {
       // 不会被击飞的人：不听罚符最多付到 0 点，少付的从听牌的人收的里面平摊扣掉
       for (let s = 0; s < 4; s++) {
         const short = -(this.players[s].score + deltas[s]);
-        if (!this.abilities[s]?.unbustable || short <= 0) continue;
+        if (!this.abilities[s]?.unbustable || !this.rules.tobi || short <= 0) continue;
         deltas[s] += short;
         const got = [0, 1, 2, 3].filter((t) => tenpai[t]);
         got.forEach((t, i) => (deltas[t] -= Math.floor(short / n) + (i < short % n ? 1 : 0)));
@@ -1150,18 +1182,21 @@ export class Game {
     const top = Math.max(...scores);
     const isLast = this.roundNumber === 3;
     const dealerTop = scores[this.dealer] === top && scores.filter((s) => s === top).length === 1;
-    let end = scores.some((s) => s < 0);
-    if (this.format === 'team') {
+    const target = this.rules.target;
+    let end = this.rules.tobi && scores.some((s) => s < 0);
+    if (this.format === 'one') {
+      end = true;
+    } else if (this.format === 'team') {
       if (this.roundWind === 1 && isLast && !renchan) end = true;
     } else if (this.format === 'south') {
-      if (this.roundWind >= 1 && isLast && renchan && dealerTop && top >= 30000) end = true;
+      if (this.roundWind >= 1 && isLast && renchan && dealerTop && top >= target) end = true;
       if (this.roundWind >= 1 && isLast && !renchan) end = true;
     } else if (this.roundWind === 0) {
-      if (isLast && renchan && dealerTop && top >= 30000) end = true;
-      if (isLast && !renchan && top >= 30000) end = true;
+      if (isLast && renchan && dealerTop && top >= target) end = true;
+      if (isLast && !renchan && top >= target) end = true;
     } else {
-      // 南入后谁先到 30000 点就结束
-      if (top >= 30000) end = true;
+      // 南入后谁先到一位必要点数就结束
+      if (top >= target) end = true;
       if (isLast && !renchan) end = true;
     }
     if (end) {
@@ -1257,5 +1292,8 @@ function distinctPairs(ids: TileId[]): [TileId, TileId][] {
   const out: [TileId, TileId][] = [];
   if (plain.length >= 2) out.push([plain[0], plain[1]]);
   if (red !== undefined && plain.length >= 1) out.push([red, plain[0]]);
+  // 四赤：两张赤五一起碰
+  const reds = ids.filter(isRed);
+  if (reds.length >= 2) out.push([reds[0], reds[1]]);
   return out;
 }

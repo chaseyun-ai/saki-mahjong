@@ -183,8 +183,8 @@ function allLastHold(g: Game, seat: number, tsumo: boolean): boolean {
   after[seat] += bonus;
   const rank = (sc: number[]) => sc.filter((v, s) => s !== seat && v > sc[seat]).length;
   const rankAfter = rank(after);
-  // 东风战东 4 局：没人到 30000 就南入，对局不结束
-  if (g.format === 'east' && g.roundWind === 0 && Math.max(...after) < 30000) return false;
+  // 东风战东 4 局：没人到一位必要点数就南入，对局不结束
+  if (g.format === 'east' && g.roundWind === 0 && Math.max(...after) < g.rules.target) return false;
   return rankAfter > 0 && rankAfter === rank(g.players.map((q) => q.score));
 }
 
@@ -651,10 +651,11 @@ function ronValue(g: Game, seat: number, hand: TileId[], riichi: boolean): numbe
   let best = 0;
   if (!furiten) {
     for (const k of waits) {
-      const tile = k * 4 + 1;
-      const r = evaluateWin({
+      const tile = k * 4 + 3;
+      const r = g.minHanOk(evaluateWin({
         closed: [...hand, tile],
         melds: p.melds,
+        kuitan: g.rules.kuitan,
         winTile: tile,
         tsumo: false,
         seatWind: g.seatWind(seat),
@@ -664,7 +665,7 @@ function ronValue(g: Game, seat: number, hand: TileId[], riichi: boolean): numbe
         doubleRiichi: false,
         ippatsu: false,
         doraIndicators: dora,
-      });
+      }));
       if (r) best = Math.max(best, r.ron);
     }
   }
@@ -753,10 +754,11 @@ function ronTiers(g: Game, seat: number, hand: TileId[], riichi: boolean): Set<n
   if (waits.some((k) => p.discards.some((d) => kindOf(d.tile) === k))) return out;
   const dora = g.wall.visibleDoraIndicators().map(kindOf);
   for (const k of waits) {
-    const tile = k * 4 + 1;
+    const tile = k * 4 + 3;
     const r = evaluateWin({
       closed: [...hand, tile],
       melds: p.melds,
+      kuitan: g.rules.kuitan,
       winTile: tile,
       tsumo: false,
       seatWind: g.seatWind(seat),

@@ -43,11 +43,12 @@ export function waitInfo(g: Game, seat: number, discard: TileId | null = null, r
   if (discard !== null) discarded.add(kindOf(discard));
   const dora = g.wall.visibleDoraIndicators().map(kindOf);
   const evaluate = (k: Kind, tsumo: boolean) => {
-    // 拿这一种里不是赤宝牌的那张来算（kind × 4 + 1 一定不是赤五）
-    const tile = k * 4 + 1;
-    return evaluateWin({
+    // 拿这一种里不是赤宝牌的那张来算（kind × 4 + 3 三赤、四赤都不是赤五）
+    const tile = k * 4 + 3;
+    return g.minHanOk(evaluateWin({
       closed: [...hand, tile],
       melds: p.melds,
+      kuitan: g.rules.kuitan,
       winTile: tile,
       tsumo,
       seatWind: g.seatWind(seat),
@@ -57,7 +58,7 @@ export function waitInfo(g: Game, seat: number, discard: TileId | null = null, r
       doubleRiichi: p.doubleRiichi,
       ippatsu: p.ippatsu,
       doraIndicators: dora,
-    });
+    }));
   };
   return {
     tiles: kinds.map((k) => ({ kind: k, left: Math.max(0, 4 - seen[k]), ron: evaluate(k, false), tsumo: evaluate(k, true) })),
