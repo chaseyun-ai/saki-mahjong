@@ -4,7 +4,8 @@ import { chooseAction } from '../src/ai/ai';
 import { Game, Rules } from '../src/engine/game';
 import { Meld, evaluateWin } from '../src/engine/score';
 import { EAST, RED_FIVES, SOUTH, isRed, kindOf, parseKinds, parseTiles, setRedFives } from '../src/engine/tiles';
-import { DEFAULT_SETTINGS, parseTarget, rulesOf, setOption } from '../src/ui/matchSetup';
+import { Rng } from '../src/engine/rng';
+import { DEFAULT_SETTINGS, parseTarget, pickOpponents, rulesOf, setOption } from '../src/ui/matchSetup';
 
 // 赤宝牌是整页共用的，别的测试照三赤
 afterEach(() => setRedFives(3));
@@ -94,7 +95,19 @@ describe('对局规则', () => {
 
 describe('设置弹窗', () => {
   it('默认：半庄、25000、30000、击飞开、四赤、食断开、一番缚、不公开手牌', () => {
-    expect(DEFAULT_SETTINGS).toEqual({ length: 'south', start: 25000, target: 30000, tobi: true, red: 4, kuitan: true, minHan: 1, open: false });
+    expect(DEFAULT_SETTINGS).toEqual({ length: 'south', start: 25000, target: 30000, tobi: true, red: 4, kuitan: true, minHan: 1, open: false, opponents: ['', '', ''] });
+  });
+
+  it('选对手：选了的照坐，随机、重复的、选了自己的从剩下的抽', () => {
+    const [a, b, c] = CHARACTERS.map((x) => x.id);
+    for (let seed = 1; seed < 20; seed++) {
+      const got = pickOpponents({ ...DEFAULT_SETTINGS, opponents: [b, '', a] }, a, new Rng(seed)).map((x) => x.id);
+      expect(got[0]).toBe(b);
+      expect(new Set([a, ...got]).size).toBe(4);
+      const dup = pickOpponents({ ...DEFAULT_SETTINGS, opponents: [c, c, ''] }, a, new Rng(seed)).map((x) => x.id);
+      expect(dup[0]).toBe(c);
+      expect(new Set([a, ...dup]).size).toBe(4);
+    }
   });
 
   it('按钮上的值换回设置', () => {

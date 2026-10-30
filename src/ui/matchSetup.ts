@@ -1,4 +1,7 @@
+import { CHARACTERS, type Character } from '../abilities/characters';
 import type { Rules } from '../engine/game';
+import type { Rng } from '../engine/rng';
+import { SCHOOLS, membersOf } from './schools';
 
 // 单人对局开局前的设置弹窗：点了角色以后弹出来，选好规则再开局。上次选的记在浏览器里，下次照着弹
 
@@ -12,7 +15,11 @@ export interface MatchSettings {
   minHan: 1 | 2 | 4;
   // 公开手牌：别人的手牌亮着打（只是画面上看得见，电脑照旧不看别人的牌）
   open: boolean;
+  // 对手：下家、对家、上家坐谁（角色 id），空的是随机
+  opponents: string[];
 }
+
+export const SEAT_NAMES = ['下家', '对家', '上家'];
 
 export const DEFAULT_SETTINGS: MatchSettings = {
   length: 'south',
@@ -23,6 +30,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   kuitan: true,
   minHan: 1,
   open: false,
+  opponents: ['', '', ''],
 };
 
 const KEY = 'saki-match-settings';
@@ -121,7 +129,31 @@ function sanitize(s: MatchSettings): MatchSettings {
     setOption(out, r.key, String(s[r.key]));
   }
   out.target = parseTarget(String(s.target));
+  const ids = Array.isArray(s.opponents) ? s.opponents : [];
+  out.opponents = [0, 1, 2].map((i) => (CHARACTERS.some((c) => c.id === ids[i]) ? ids[i] : ''));
   return out;
+}
+
+// 三个对手（下家、对家、上家）：选了的照选的坐，选了自己、重复的和“随机”从剩下的角色里随机抽
+export function pickOpponents(s: MatchSettings, me: string, rng: Rng): Character[] {
+  const taken = new Set([me]);
+  const chosen = s.opponents.map((id) => {
+    if (!id || taken.has(id)) return null;
+    taken.add(id);
+    return CHARACTERS.find((c) => c.id === id) ?? null;
+  });
+  const pool = rng.shuffle(CHARACTERS.filter((c) => !taken.has(c.id)));
+  return chosen.map((c) => c ?? pool.pop()!);
+}
+
+function opponentsHtml(s: MatchSettings): string {
+  const groups = SCHOOLS.map(
+    (sc) => `<optgroup label="${sc.name}">${membersOf(sc.name).map((c) => `<option value="${c.id}">${c.name}</option>`).join('')}</optgroup>`,
+  ).join('');
+  return SEAT_NAMES.map((seat, i) => {
+    const html = `<option value="">随机</option>${groups}`.replace(`value="${s.opponents[i]}"`, `value="${s.opponents[i]}" selected`);
+    return `<label class="setup-seat"><span>${seat}</span><select class="setup-select" data-seat="${i}" aria-label="${seat}">${html}</select></label>`;
+  }).join('');
 }
 
 export function rulesOf(s: MatchSettings): Partial<Rules> {
@@ -142,10 +174,12 @@ export function setupHtml(s: MatchSettings, name: string, color: string): string
             .join('');
     return `<div class="setup-row"><span class="setup-name">${r.name}</span><div class="setup-opts">${body}</div></div>`;
   }).join('');
+  const opponents = `<div class="setup-row"><span class="setup-name">对手</span><div class="setup-opts setup-seats">${opponentsHtml(s)}</div></div>`;
   return `
     <div class="modal setup-modal" role="dialog" aria-modal="true" aria-label="对局设置">
       <div class="setup" style="--c:${color}">
         <h2>对局设置<small>${name}</small></h2>
+        ${opponents}
         ${rows}
         <div class="setup-actions">
           <button data-ui="setup-cancel">返回</button>

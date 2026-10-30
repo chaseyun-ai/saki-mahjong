@@ -32,7 +32,7 @@ import { THEMES, ThemeId, currentTheme, setTheme } from './theme';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
-import { MatchSettings, loadSettings, parseTarget, rulesOf, saveSettings, setOption, setupHtml } from './matchSetup';
+import { MatchSettings, loadSettings, parseTarget, pickOpponents, rulesOf, saveSettings, setOption, setupHtml } from './matchSetup';
 import { ForecastCache } from '../ai/forecast';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
@@ -346,17 +346,18 @@ export class App {
     slot.innerHTML = c ? setupHtml(this.settings, c.name, c.color) : '';
   }
 
-  // 自由输入的一位必要点数：弹窗重画、开局之前先收进来
+  // 自由输入的一位必要点数、下拉选的对手：弹窗重画、开局之前先收进来
   private readTarget(): void {
     const input = this.root.querySelector<HTMLInputElement>('#setup-target');
     if (input) this.settings.target = parseTarget(input.value);
+    this.root.querySelectorAll<HTMLSelectElement>('.setup-select').forEach((el) => (this.settings.opponents[Number(el.dataset.seat)] = el.value));
   }
 
   private startGame(charId: string): void {
     const mine = CHARACTERS.find((c) => c.id === charId)!;
     const seed = Math.floor(Math.random() * 2 ** 31);
-    // 对手从其余角色里随机抽三个，座位也随机
-    const others = new Rng(seed ^ 0x5a17).shuffle(CHARACTERS.filter((c) => c.id !== charId)).slice(0, 3);
+    // 对手：设置里选了的照选的坐，随机的从其余角色里抽
+    const others = pickOpponents(this.settings, charId, new Rng(seed ^ 0x5a17));
     this.team = null;
     this.auto = false;
     const st = this.settings;

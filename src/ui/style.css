@@ -3761,6 +3761,28 @@ html:root .select-screen.team-screen.tm-draft {
   font-weight: 700;
 }
 
+.setup-seats {
+  gap: 8px;
+}
+
+.setup-seat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.setup-select {
+  min-width: 108px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  color: #fff;
+  background: #0b2024;
+  font-size: 14px;
+}
+
 .setup-input {
   width: 120px;
   padding: 6px 10px;
@@ -3807,6 +3829,15 @@ html:root .select-screen.team-screen.tm-draft {
   }
   .setup-name {
     flex: none;
+  }
+  .setup-seat {
+    flex: 1;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+  .setup-select {
+    min-width: 0;
   }
   .setup-opts button {
     flex: 1;
