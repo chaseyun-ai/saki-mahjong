@@ -30,6 +30,8 @@ export interface Meld {
 export interface WinContext {
   closed: TileId[]; // 门内手牌，包含和了牌，共 14 - 3 × 副露数 张
   melds: Meld[];
+  // 食断：false 时鸣了牌的断幺九不算（不写算）
+  kuitan?: boolean;
   winTile: TileId;
   tsumo: boolean;
   seatWind: Kind;
@@ -234,7 +236,7 @@ function scoreShape(ctx: WinContext, shape: Shape, counts: number[], menzen: boo
     shape.wait === 'ryanmen' &&
     isYakuhaiKind(head, ctx) === 0;
   if (pinfu) yaku.push({ name: '平和', han: 1 });
-  if (kinds.every(isSimple)) yaku.push({ name: '断幺九', han: 1 });
+  if (kinds.every(isSimple) && (menzen || ctx.kuitan !== false)) yaku.push({ name: '断幺九', han: 1 });
 
   if (menzen) {
     const seqKinds = sequences.map((s) => s.kind).sort((a, b) => a - b);

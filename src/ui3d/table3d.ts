@@ -167,6 +167,8 @@ const STACKS_HALF = 9;
 const STANDING = new THREE.Euler(0, 0, 0);
 const FACE_UP = new THREE.Euler(-Math.PI / 2, 0, 0);
 const FACE_DOWN = new THREE.Euler(Math.PI / 2, 0, Math.PI);
+// 公开手牌：立着往后仰（再整个转半圈，牌面朝桌子中间）
+const OPEN_HAND = new THREE.Euler(0.5, 0, 0);
 
 interface Placement {
   pos: THREE.Vector3;
@@ -192,6 +194,8 @@ export interface SyncView {
   tintBacks?: Set<TileId>; // 美穗子睁眼：这些牌的牌背按花色上色（万红、筒蓝、索绿、字牌白）
   deadly?: Set<TileId>; // 龙华的无极天：自己手里打出去会放铳的牌，牌身染红
   akaBacks?: Set<TileId>; // 丰音的赤口：没公开的赤宝牌（别人手里、牌山里），牌背发金红光
+  handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
+  openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
 }
 
 export class Table3D {
@@ -1077,7 +1081,8 @@ export class Table3D {
 
     // 手牌：自己的稍微后仰朝向镜头，别人的立着背对我们
     let drawn = p.drawn;
-    let hand: (TileId | null)[] = p.hand.filter((t) => t !== drawn).sort((a, b) => a - b);
+    const order = mine ? this.lastSync?.view.handOrder : undefined;
+    let hand: (TileId | null)[] = order ? order.filter((t) => p.hand.includes(t) && t !== drawn) : p.hand.filter((t) => t !== drawn).sort((a, b) => a - b);
     // 摸到的牌还在等上家的牌落桌：留在牌山原处，手牌先不给它留位置
     const hd = this.heldDraw;
     if (hd && hd.seat === s && hd.tile === drawn) {
@@ -1112,8 +1117,11 @@ export class Table3D {
     const handEdge = mine ? this.sameScreenX(s, me, edge, this.dim.meldZ, this.dim.handZ + (hs - 1) * 1.2) : edge;
     const shift = p.melds.length ? Math.max(0, width / 2 - handEdge) : 0;
     let x = -width / 2 - shift + TILE_W / 2;
-    const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : STANDING;
-    const y = tilting ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
+    // 公开手牌：上家、下家的手牌像倒牌那样摊开；对家的摊开会被牌山挡住，改成转过来牌面朝桌子中间、往后仰
+    const open = !mine && !tilting && !!this.lastSync?.view.openHands;
+    const facing = open && (s - me + 4) % 4 === 2;
+    const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : facing ? OPEN_HAND : open ? FACE_UP : STANDING;
+    const y = tilting || (open && !facing) ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
     // 2.5D 时上家、下家的手牌斜着看过去离牌山很近，往桌边推一点
     const side = this.style === '25d' && (s - me + 4) % 2 === 1 ? SIDE_HAND_PUSH_25D : 0;
     const hz = this.dim.handZ + side + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
@@ -1123,7 +1131,7 @@ export class Table3D {
     const fan = mine && this.style === '25d' && !tilting ? this.view25.fan : 0;
     const place = (t: TileId | null) => {
       const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
-      const yaw = fan ? (-fan * (x + shift)) / (width / 2) : 0;
+      const yaw = (fan ? (-fan * (x + shift)) / (width / 2) : 0) + (facing ? Math.PI : 0);
       if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, rot, yaw, hs) };
       if (t !== null && p.hand.includes(t)) out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
       x += step;

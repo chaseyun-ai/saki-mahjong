@@ -1,6 +1,6 @@
 // 牌的表示：
 // - 牌种 kind: 0-8 万子 1-9，9-17 筒子，18-26 索子，27-30 东南西北，31-33 白发中
-// - 牌 id: 0-135，kind = id >> 2；每种的第一张五（id 16、52、88）是赤宝牌
+// - 牌 id: 0-135，kind = id >> 2；赤宝牌见 RED_FIVES
 
 export type TileId = number;
 export type Kind = number;
@@ -8,7 +8,13 @@ export type Kind = number;
 export const KIND_COUNT = 34;
 export const TILE_COUNT = 136;
 
-export const RED_FIVES: readonly TileId[] = [16, 52, 88];
+// 赤宝牌：三赤是每种的第一张五（id 16、52、88），四赤再加一张筒子五（53），关闭就没有。
+// 一桌牌局开始时由 Game 按规则设好（见 setRedFives），整个页面同时只打一桌
+export const RED_FIVES: TileId[] = [16, 52, 88];
+const RED_BY_COUNT: Record<number, TileId[]> = { 0: [], 3: [16, 52, 88], 4: [16, 52, 53, 88] };
+export function setRedFives(count: 0 | 3 | 4): void {
+  RED_FIVES.splice(0, RED_FIVES.length, ...RED_BY_COUNT[count]);
+}
 
 export const EAST = 27;
 export const SOUTH = 28;

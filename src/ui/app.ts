@@ -32,6 +32,7 @@ import { THEMES, ThemeId, currentTheme, setTheme } from './theme';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
+import { MatchSettings, loadSettings, parseTarget, rulesOf, saveSettings, setOption, setupHtml } from './matchSetup';
 import { ForecastCache } from '../ai/forecast';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
@@ -46,8 +47,9 @@ const AI_CALL_DELAY = 250;
 // 自己立直后摸切：摸到的牌飞到空中要多久（和牌桌的摸牌飞行一样），在空中停多久（毫秒）
 const AIR_FLIGHT = 250;
 const AIR_PAUSE = 250;
-// 开局点数，终局排名的 ± 从这里算
-const START_SCORE = 25000;
+// 自动和牌、自动摸切：牌落定以后停这么久再替玩家做（毫秒）
+const ASSIST_DELAY = 450;
+// 团体赛以外开局的点数在设置弹窗里选（matchSetup.ts），终局排名的 ± 从那里算
 // 托管时结算画面停多久自动进下一局
 const AUTO_NEXT = 2600;
 // 怜“看下一巡”的体力：满 100，看一次 35，每局开始回 20。同一回合可以看两次，看第二次的话下一局不能用
@@ -91,8 +93,13 @@ export class App {
   private freshDiscard: string | null = null;
   // 25d：3D 牌桌、不坐人物，从上往下看（默认）；3d：坐着人物的实验版；2d：网页画的平面牌桌
   private mode: '25d' | '3d' | '2d' = '25d';
-  // 单人对局打东风战还是半庄战
-  private length: 'east' | 'south' = 'south';
+  // 单人对局的规则（设置弹窗），setupFor 是弹窗开着时选的角色
+  private settings: MatchSettings = loadSettings();
+  private setupFor: string | null = null;
+  // 牌桌右边的四个开关：理（自动理牌）、和（自动和牌）、鸣（不吃碰杠）、切（自动摸切）
+  private assist = { sort: true, win: false, call: false, cut: false };
+  // 不自动理牌时自己手牌的摆法（不含刚摸的那张）；null 是照顺序排
+  private handOrder: TileId[] | null = null;
   private table3d: Table3D | null = null;
   // 打牌前预览：轮到自己时，打出去以后能听牌的牌和打掉它以后听什么；鼠标停在哪张牌上
   private preview = new Map<TileId, WaitInfo>();
@@ -206,11 +213,7 @@ export class App {
       <div class="select-screen">
         <div class="sel-main">
         <h1>超能力麻将</h1>
-        <p class="subtitle">选择你的角色（鼠标停在头像上看能力，手机上点一下看、再点一下开始），对手从其余角色里随机抽三位，由电脑操作。赤宝牌 3 张。</p>
-        <div class="mode-switch">
-          <button class="${this.length === 'east' ? 'on' : ''}" data-ui="len-east">东风战</button>
-          <button class="${this.length === 'south' ? 'on' : ''}" data-ui="len-south">半庄战（东南）</button>
-        </div>
+        <p class="subtitle">选择你的角色（鼠标停在头像上看能力，手机上点一下看、再点一下选定），选好以后设置规则开始对战。对手从其余角色里随机抽三位，由电脑操作。</p>
         <div class="mode-switch">
           <button class="${this.mode === '25d' ? 'on' : ''}" data-ui="mode-25d">2.5D 牌桌</button>
           <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 实验</button>
@@ -224,6 +227,7 @@ export class App {
         <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物由 VRoid 官方 CC0 示例模型改色</p>
         </div>
         <div class="char-tip" hidden></div>
+        <div id="setup"></div>
       </div>`;
     // 换了皮肤的选人页：介绍不再是浮窗，固定在左边当大立绘面板，先放第一位
     if (this.heroTip()) {
@@ -334,6 +338,20 @@ export class App {
     tip.style.top = `${Math.round(Math.min(Math.max(8, y), innerHeight - 8 - h))}px`;
   }
 
+  // 选了角色：先弹规则设置，按“开始对战”再开局
+  private renderSetup(): void {
+    const slot = this.root.querySelector('#setup');
+    if (!slot) return;
+    const c = this.setupFor ? CHARACTERS.find((x) => x.id === this.setupFor) : null;
+    slot.innerHTML = c ? setupHtml(this.settings, c.name, c.color) : '';
+  }
+
+  // 自由输入的一位必要点数：弹窗重画、开局之前先收进来
+  private readTarget(): void {
+    const input = this.root.querySelector<HTMLInputElement>('#setup-target');
+    if (input) this.settings.target = parseTarget(input.value);
+  }
+
   private startGame(charId: string): void {
     const mine = CHARACTERS.find((c) => c.id === charId)!;
     const seed = Math.floor(Math.random() * 2 ** 31);
@@ -341,7 +359,13 @@ export class App {
     const others = new Rng(seed ^ 0x5a17).shuffle(CHARACTERS.filter((c) => c.id !== charId)).slice(0, 3);
     this.team = null;
     this.auto = false;
-    this.beginGame([mine, ...others], new Game({ seed, format: this.length, startScore: START_SCORE, firstDealer: Math.floor(Math.random() * 4), players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
+    const st = this.settings;
+    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer: Math.floor(Math.random() * 4), players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
+  }
+
+  // 公开手牌：单人对局按设置，团体赛不公开
+  private openHands(): boolean {
+    return !this.team && this.settings.open;
   }
 
   // 团体赛的一场：玩家的队坐 0 号位，每人带着自己队伍现在的点数上场
@@ -375,6 +399,7 @@ export class App {
     this.showResult = false;
     this.pdPicks = null;
     this.pdValues = null;
+    this.handOrder = null;
     this.tableBuilt = false;
     // 第一局发牌前就要选技能：先在选角色的画面上弹出来，选好再建牌桌
     if (this.game.phase === 'predeal') {
@@ -510,6 +535,7 @@ export class App {
       }, (this.mode === '25d' ? AI_TURN_DELAY_25D : this.mode === '3d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
       return;
     }
+    if (!this.auto && !v && this.runAssist(g)) return;
     if (g.phase === 'turn' && g.turn === this.me) {
       // 立直后没有别的选择时自动摸切。3D、2.5D 牌桌上这张牌不进手牌，飞到手牌上方停一下（AIR_PAUSE），直接打进牌河：
       // 等它从牌山出发（busyMs）、飞完，再停一下
@@ -519,6 +545,67 @@ export class App {
         this.timer = window.setTimeout(() => this.playerAct(legal[0]), wait);
       }
     }
+  }
+
+  // 理和鸣切里的“和”“鸣”“切”：轮到自己时能替玩家做的就排上计时器，返回 true
+  private runAssist(g: Game): boolean {
+    if (!g.waitingSeats().includes(this.me)) return false;
+    const legal = g.legalActions(this.me);
+    const act = (a: Action) => {
+      this.timer = window.setTimeout(() => this.playerAct(a), this.busyMs() + ASSIST_DELAY);
+      return true;
+    };
+    const win = legal.find((a) => a.type === 'ron' || a.type === 'tsumo');
+    if (this.assist.win && win) return act(win);
+    if (g.phase === 'calls') {
+      // 不吃碰杠：能荣和的那次还是问玩家
+      if (this.assist.call && !win) {
+        this.timer = window.setTimeout(() => this.playerAct({ type: 'pass' }), this.busyMs());
+        return true;
+      }
+      return false;
+    }
+    // 自动摸切：能自摸的时候还是等玩家（开着“和”的话上面已经和了）；立直后的摸切照原来的
+    const p = g.players[this.me];
+    if (!this.assist.cut || win || p.riichi || p.drawn === null) return false;
+    const cut = legal.find((a) => a.type === 'discard' && a.tile === p.drawn && !a.riichi);
+    return cut ? act(cut) : false;
+  }
+
+  private assistHtml(): string {
+    const g = this.game!;
+    if (g.phase === 'gameEnd' || this.vision || this.auto) return '';
+    const btns: [keyof App['assist'], string, string][] = [
+      ['sort', '理', '自动理牌'],
+      ['win', '和', '自动和牌'],
+      ['call', '鸣', '不吃碰杠'],
+      ['cut', '切', '自动摸切'],
+    ];
+    const html = btns
+      .map(([k, ch, tip]) => `<button class="${this.assist[k] ? 'on' : ''}" aria-pressed="${this.assist[k]}" title="${tip}" aria-label="${tip}" data-ui="assist" data-k="${k}">${ch}</button>`)
+      .join('');
+    return `<div class="assist-bar">${html}</div>`;
+  }
+
+  private toggleAssist(k: keyof App['assist']): void {
+    this.assist[k] = !this.assist[k];
+    if (k === 'sort') this.handOrder = null;
+    this.riichiMode = false;
+    this.step();
+  }
+
+  // 自己手牌（不含刚摸的那张）从左到右怎么摆：自动理牌照顺序排，不然新进手的牌接在最后
+  private myHand(): TileId[] {
+    const p = this.game!.players[this.me];
+    const rest = p.hand.filter((t) => t !== p.drawn);
+    if (this.assist.sort) {
+      this.handOrder = null;
+      return rest.sort((a, b) => a - b);
+    }
+    const keep = (this.handOrder ?? []).filter((t) => rest.includes(t));
+    const add = rest.filter((t) => !keep.includes(t)).sort((a, b) => a - b);
+    this.handOrder = [...keep, ...add];
+    return this.handOrder;
   }
 
   // 挂机：电脑替自己打（能力的取舍也交给电脑），结算看一会儿自动下一局；再按一次收回
@@ -566,6 +653,8 @@ export class App {
     this.updateFaces(e);
     if (e.type === 'roundStart') {
       this.roundBanner();
+      // 新的一局配牌先理好
+      this.handOrder = null;
       this.cutinSeen.clear();
       this.stamina = Math.min(STAMINA_MAX, this.stamina + STAMINA_REGEN);
       this.blocked = this.penaltyNext;
@@ -673,7 +762,27 @@ export class App {
         this.showCharTip(el);
         return;
       }
-      this.startGame(el.dataset.pick);
+      this.setupFor = el.dataset.pick;
+      this.renderSetup();
+      return;
+    }
+    if (el.dataset.ui === 'setup-opt' && el.dataset.k && el.dataset.v) {
+      this.readTarget();
+      setOption(this.settings, el.dataset.k, el.dataset.v);
+      this.renderSetup();
+      return;
+    }
+    if (el.dataset.ui === 'setup-cancel') {
+      this.setupFor = null;
+      this.renderSetup();
+      return;
+    }
+    if (el.dataset.ui === 'setup-go' && this.setupFor) {
+      this.readTarget();
+      saveSettings(this.settings);
+      const id = this.setupFor;
+      this.setupFor = null;
+      this.startGame(id);
       return;
     }
     if (el.dataset.ui === 'lab') {
@@ -708,11 +817,6 @@ export class App {
       this.renderSelect();
       return;
     }
-    if (el.dataset.ui === 'len-east' || el.dataset.ui === 'len-south') {
-      this.length = el.dataset.ui === 'len-east' ? 'east' : 'south';
-      this.renderSelect();
-      return;
-    }
     if (el.dataset.ui === 'mode-25d' || el.dataset.ui === 'mode-3d' || el.dataset.ui === 'mode-2d') {
       this.mode = el.dataset.ui.slice(5) as '25d' | '3d' | '2d';
       this.renderSelect();
@@ -730,6 +834,10 @@ export class App {
     }
     if (el.dataset.ui === 'auto') {
       this.toggleAuto();
+      return;
+    }
+    if (el.dataset.ui === 'assist' && el.dataset.k && el.dataset.k in this.assist) {
+      this.toggleAssist(el.dataset.k as keyof App['assist']);
       return;
     }
     if (el.dataset.ui === 'riichi') {
@@ -868,6 +976,8 @@ export class App {
       airDraw: this.airDraw(),
       tintBacks: this.eyeOpen() && !this.vision ? new Set([1, 2, 3].flatMap((d) => g.players[(this.me + d) % 4].hand)) : undefined,
       akaBacks: this.vision ? undefined : this.akaSpots(),
+      handOrder: this.myHand(),
+      openHands: this.openHands(),
     });
   }
 
@@ -1226,7 +1336,13 @@ export class App {
     const order = tint ? [...p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b), ...(p.drawn !== null ? [p.drawn] : [])] : p.hand;
     const aka = this.vision ? new Set<TileId>() : this.akaSpots();
     // 隐身的桃子的手牌也看不见
-    const backs = g.stealthed(s, this.me) ? '' : order.map((t) => backHtml('pond', aka.has(t) ? 'aka' : tint ? tintOf(t) : undefined)).join('');
+    // 公开手牌：照顺序排好亮出来
+    const open = this.openHands() ? [...p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b), ...(p.drawn !== null ? [p.drawn] : [])] : null;
+    const backs = g.stealthed(s, this.me)
+      ? ''
+      : open
+        ? open.map((t) => tileHtml(t, { size: 'pond' })).join('')
+        : order.map((t) => backHtml('pond', aka.has(t) ? 'aka' : tint ? tintOf(t) : undefined)).join('');
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="nameplate">
@@ -1267,7 +1383,7 @@ export class App {
     // 挂机时电脑替她打，不出按钮
     const legal = this.auto ? [] : this.vision ? g.legalActions(this.me).filter((a) => a.type === 'discard') : g.legalActions(this.me);
     const discardable = this.discardable();
-    const sorted = p.hand.filter((t) => t !== p.drawn).sort((a, b) => a - b);
+    const sorted = this.myHand();
     // 能打的牌亮着，打出去能听牌的上面加个小三角
     const deadly = this.deadlyTiles();
     const classes = (t: TileId) => [discardable.has(t) ? 'can' : 'dim', ...(this.preview.has(t) ? ['tenpai'] : []), ...(deadly.has(t) ? ['deadly'] : [])];
@@ -1296,7 +1412,7 @@ export class App {
               'mini',
             )}</span>`
           : a.type === 'ankan'
-            ? tileHtml(a.kind * 4 + 1, { size: 'mini' })
+            ? tileHtml(a.kind * 4 + 3, { size: 'mini' })
             : a.type === 'kakan'
               ? tileHtml(a.tile, { size: 'mini' })
               : '';
@@ -1317,7 +1433,7 @@ export class App {
     return `
       <div class="me" style="--c:${c.color}">
         <div class="actions">${buttons.join('')}</div>
-        ${this.autoBtnHtml()}
+        ${this.autoBtnHtml()}${this.assistHtml()}
         ${waitHtml}${hint}
         ${
           withHand
@@ -1340,7 +1456,7 @@ export class App {
         const st = status[i];
         const label = st === 'ron' ? hanLabel(w.ron!) : st === 'tsumo' ? '仅自摸' : '无役';
         const dead = st === 'none' || w.left === 0;
-        return `<div class="wait${dead ? ' dead' : ''}">${tileHtml(w.kind * 4 + 1, { size: 'pond' })}<span class="wait-left">余 ${w.left}</span><span class="wait-han ${st}">${label}</span></div>`;
+        return `<div class="wait${dead ? ' dead' : ''}">${tileHtml(w.kind * 4 + 3, { size: 'pond' })}<span class="wait-left">余 ${w.left}</span><span class="wait-han ${st}">${label}</span></div>`;
       })
       .join('');
     const title = prefix + (status.every((st) => st === 'none') ? '形式听牌（无役）' : '听牌');
@@ -1687,7 +1803,7 @@ export class App {
       .ranking()
       .map((s, i) => {
         const score = g.players[s].score;
-        const d = score - START_SCORE;
+        const d = score - this.settings.start;
         const cls = d > 0 ? 'plus' : d < 0 ? 'minus' : '';
         // 自己那一行用 mine，不能叫 me：me 是牌桌上自己手牌区的样式
         return `<div class="rank-row ${s === this.me ? 'mine' : ''}" style="--c:${this.chars[s].color}"><span class="rank">${i + 1} 位</span><span>${this.chars[s].name}</span><span>${score}</span><span class="${cls}">${d > 0 ? '+' : d < 0 ? '' : '±'}${d}</span></div>`;
