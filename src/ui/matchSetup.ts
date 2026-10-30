@@ -15,6 +15,8 @@ export interface MatchSettings {
   minHan: 1 | 2 | 4;
   // 公开手牌：别人的手牌亮着打（只是画面上看得见，电脑照旧不看别人的牌）
   open: boolean;
+  // 摸牌路径（3D、2.5D 牌桌）：on 牌沿弧线从牌山飞进手里，off 在牌山上淡出、手里淡入，self 只有自己的飞
+  drawPath: 'on' | 'off' | 'self';
   // 对手：下家、对家、上家坐谁（角色 id），空的是随机
   opponents: string[];
 }
@@ -30,6 +32,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   kuitan: true,
   minHan: 1,
   open: false,
+  drawPath: 'on',
   opponents: ['', '', ''],
 };
 
@@ -106,6 +109,15 @@ const ROWS: Row[] = [
     ],
   },
   { key: 'open', name: '公开手牌', options: onOff },
+  {
+    key: 'drawPath',
+    name: '摸牌路径',
+    options: [
+      { label: '开启', value: 'on' },
+      { label: '关闭', value: 'off' },
+      { label: '仅自己', value: 'self' },
+    ],
+  },
 ];
 
 // 按钮上写的值换回设置里的值

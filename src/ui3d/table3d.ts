@@ -47,6 +47,11 @@ const WALL_PITCH = TILE_W + 0.02;
 const MELD_MIN_25D = 8 * (TILE_W + GAP) + 0.5;
 // 2.5D 时上家、下家的手牌比别的座位多往外推多少（牌宽）
 const SIDE_HAND_PUSH_25D = 0.7;
+// 2.5D 时对家的手牌在牌山后面，镜头斜着看过去会被牌山挡住：对家那一边的牌山往中间收一点、手牌往后挪一点，
+// 整排手牌就露出来了。牌山收进去以后右上角的缝变窄，右边（下家）的牌山整排往下挪一点，上下两个转角的缝一样宽
+const TOP_WALL_IN_25D = 0.8;
+const TOP_HAND_PUSH_25D = 0.8;
+const RIGHT_WALL_DOWN_25D = 0.4;
 
 // 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
 // 手牌、牌河、桌边、座位这些尺寸可以调，见 tableLayout.ts
@@ -93,6 +98,8 @@ const STICK_DROP_DELAY = 0.25;
 const STICK_DROP_HEIGHT = 3;
 // 摸牌不用手，牌自己沿弧线从牌山飞进手里
 const DRAW_FLIGHT = 0.25;
+// 摸牌路径关掉时：前一半在牌山上淡出，后一半在手里淡入
+const DRAW_FADE = 0.36;
 // 上一张打出的牌落桌后，隔这么久下一家才摸牌（雀魂约 0.15 秒）
 const DRAW_GAP = 0.1;
 // 立直后摸切：摸到的牌停在空中的样子，像右手把牌拿起来看一眼。
@@ -141,6 +148,8 @@ interface Flight {
   tile: TileId;
   t: number;
   start: THREE.Vector3;
+  // 不飞：在牌山上渐渐消失，再在手里渐渐出现（摸牌路径关掉时）
+  fade: boolean;
 }
 
 // 手的动作：tile 搬一张牌，stick 从抽屉拿立直棒，gesture 只是举手示意
@@ -196,6 +205,7 @@ export interface SyncView {
   akaBacks?: Set<TileId>; // 丰音的赤口：没公开的赤宝牌（别人手里、牌山里），牌背发金红光
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
+  drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
 }
 
 export class Table3D {
@@ -595,6 +605,7 @@ export class Table3D {
   // 立刻把所有牌放到位：停掉手上的动作、飞牌、发牌和理牌，人回到记下的静止样子
   snap(): void {
     this.handAnims = [];
+    for (const f of this.flights) if (f.fade) this.setTileOpacity(this.tiles[f.tile], 1);
     this.flights = [];
     this.heldDraw = null;
     this.frozen.clear();
@@ -681,7 +692,7 @@ export class Table3D {
         if (wait > 0 && obj.shown) {
           const from = { pos: obj.group.position.clone(), quat: obj.group.quaternion.clone(), scale: obj.group.scale.x };
           this.heldDraw = { seat: e.seat, tile: drawn, at: this.now + wait, from };
-        } else this.startFlight(drawn);
+        } else this.startFlight(drawn, e.seat);
       }
       const ch = this.characterAt(e.seat);
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
@@ -840,11 +851,36 @@ export class Table3D {
     if (tsumo) this.callFx(seat, 'call');
   }
 
-  private startFlight(tile: TileId): void {
+  private startFlight(tile: TileId, seat: number): void {
     const obj = this.tiles[tile];
     if (!obj.shown) return;
+    const path = this.lastSync?.view.drawPath ?? 'on';
+    const fade = path === 'off' || (path === 'self' && seat !== this.lastSync?.view.me);
     this.flights = this.flights.filter((f) => f.tile !== tile);
-    this.flights.push({ tile, t: 0, start: obj.group.position.clone() });
+    this.flights.push({ tile, t: 0, start: obj.group.position.clone(), fade });
+  }
+
+  // 摸牌淡出淡入：牌的材质是大家共用的，淡的时候这张牌换成自己的半透明复制品，淡完换回去
+  private setTileOpacity(tile: TileObj, opacity: number): void {
+    for (const m of tile.group.children as THREE.Mesh[]) {
+      const base = (m.userData.base as THREE.Material | undefined) ?? (m.material as THREE.Material);
+      if (opacity >= 1) {
+        if (m.userData.base) m.material = base;
+        (m.userData.fadeMat as THREE.Material | undefined)?.dispose();
+        m.userData.base = m.userData.fadeMat = undefined;
+        continue;
+      }
+      // 换过一次以后 sync 可能又把共用的材质放回来（立直、标红换了材质也一样），以现在的为准重新复制
+      if (m.material !== m.userData.fadeMat) {
+        (m.userData.fadeMat as THREE.Material | undefined)?.dispose();
+        const own = (m.material as THREE.Material).clone();
+        own.transparent = true;
+        m.userData.base = m.material;
+        m.userData.fadeMat = own;
+        m.material = own;
+      }
+      (m.material as THREE.Material).opacity = opacity;
+    }
   }
 
   // 这家的摸牌还要等多久才能飞（秒）：别家打出的牌落桌之后再隔 DRAW_GAP。
@@ -863,7 +899,7 @@ export class Table3D {
     if (!h) return;
     this.heldDraw = null;
     if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
-    this.startFlight(h.tile);
+    this.startFlight(h.tile, h.seat);
   }
 
   // 出牌：手牌在牌落进牌河之前保持原样，出牌的人看着牌河，手把牌搬过去。
@@ -1123,7 +1159,8 @@ export class Table3D {
     const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : facing ? OPEN_HAND : open ? FACE_UP : STANDING;
     const y = tilting || (open && !facing) ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
     // 2.5D 时上家、下家的手牌斜着看过去离牌山很近，往桌边推一点
-    const side = this.style === '25d' && (s - me + 4) % 2 === 1 ? SIDE_HAND_PUSH_25D : 0;
+    const top = this.style === '25d' && (s - me + 4) % 4 === 2;
+    const side = this.style === '25d' && (s - me + 4) % 2 === 1 ? SIDE_HAND_PUSH_25D : top ? TOP_HAND_PUSH_25D : 0;
     const hz = this.dim.handZ + side + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
     // 倒牌开始后不再更新：和牌以后手牌张数可能变了，倒牌要照着和牌前那一刻的位置
     if (!tilting && !this.reveal) this.handRows[s] = { x0: x, step, hs, z: hz };
@@ -1197,7 +1234,12 @@ export class Table3D {
   private wallPlacement(slot: WallSlot, me: number): Placement {
     const x = (STACKS_HALF - slot.stack) * WALL_PITCH;
     const y = slot.level === 0 ? TILE_T * 1.5 : TILE_T * 0.5;
-    return this.toWorld(slot.wall, me, x, y, WALL_Z, slot.faceUp ? FACE_UP : FACE_DOWN);
+    const rel = (slot.wall - me + 4) % 4;
+    const flat = this.style === '25d';
+    const out = this.toWorld(slot.wall, me, x, y, WALL_Z - (flat && rel === 2 ? TOP_WALL_IN_25D : 0), slot.faceUp ? FACE_UP : FACE_DOWN);
+    // 往画面下方挪：自己坐在世界的 +z 那边
+    if (flat && rel === 1) out.pos.z += RIGHT_WALL_DOWN_25D;
+    return out;
   }
 
   // 发牌动画：还没轮到发的牌先留在牌山里
@@ -1398,7 +1440,7 @@ export class Table3D {
     const dir = new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch));
     const myZ = d.handZ + (v.hand - 1) * 1.2;
     const myHalf = this.myHandHalf();
-    const far = d.handZ + TILE_T;
+    const far = d.handZ + TILE_T + TOP_HAND_PUSH_25D;
     const side = WALL_Z + TILE_H;
     const pts = [
       // 对家的手牌（立着，算上牌的高度）
@@ -1569,6 +1611,22 @@ export class Table3D {
       f.t += dt;
       const tile = this.tiles[f.tile];
       const dest = tile.target;
+      if (f.fade) {
+        if (!dest || f.t >= DRAW_FADE) {
+          this.setTileOpacity(tile, 1);
+          return false;
+        }
+        const k = f.t / DRAW_FADE;
+        const at = k < 0.5 ? f.start : dest.pos;
+        tile.group.position.copy(at);
+        if (k >= 0.5) {
+          tile.group.quaternion.copy(dest.quat);
+          tile.group.scale.setScalar(dest.scale);
+        }
+        this.setTileOpacity(tile, Math.abs(1 - 2 * k));
+        this.held.add(f.tile);
+        return true;
+      }
       if (!dest || f.t >= DRAW_FLIGHT) return false;
       const k = f.t / DRAW_FLIGHT;
       const e = k * k * (3 - 2 * k);

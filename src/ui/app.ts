@@ -979,6 +979,7 @@ export class App {
       akaBacks: this.vision ? undefined : this.akaSpots(),
       handOrder: this.myHand(),
       openHands: this.openHands(),
+      drawPath: this.settings.drawPath,
     });
   }
 
