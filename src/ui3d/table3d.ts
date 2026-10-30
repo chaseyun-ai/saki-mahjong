@@ -8,7 +8,8 @@ import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
 import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
-import { Effects } from './effects';
+import { Effects, TileBox } from './effects';
+import { DEFAULT_WIN_FX, WinFxSkin } from './winSkins';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
@@ -76,7 +77,7 @@ const DEAL_END = DEAL_SORT + SORT_TILT + 0.15;
 const REVEAL_DELAY = 0.7;
 const TOPPLE_TIME = 0.24;
 const TOPPLE_STAGGER = 0.07;
-// 2.5D 照雀魂的节奏：“荣和/自摸”的切入放完，1.2 秒闪电打在和的那张牌上，1.4 秒倒牌，倒得也快一些
+// 2.5D 照雀魂的节奏：“荣和/自摸”的切入放完，1.2 秒（荣和时）闪电打在铳牌上，1.4 秒倒牌，倒得也快一些
 const REVEAL_DELAY_25D = 1.4;
 const BOLT_LEAD = 0.2;
 const TOPPLE_STAGGER_25D = 0.03;
@@ -139,7 +140,8 @@ interface RevealState {
   at: number; // 开始倒牌的时间
   fxAt: number; // 倒完、放和牌特效的时间
   fxDone: boolean;
-  boltAt: number | null; // 闪电打在和的那张牌上的时间（3D 不放闪电），放过了就是 null
+  fxEnd: number; // 和牌特效主要的部分放完的时间（放特效时才知道，之前和 fxAt 一样）
+  boltAt: number | null; // 荣和时闪电打在铳牌上的时间，自摸、流局或者放过了就是 null
   stagger: number; // 一张张往下倒，相邻两张隔多久
   wins: { seat: number; tsumo: boolean; tile: TileId }[];
   topple: Map<TileId, { at: number; from: Placement | null }>;
@@ -185,6 +187,9 @@ interface Placement {
   quat: THREE.Quaternion;
   scale: number;
 }
+
+// 牌摆在 p 时的大小和位置，给特效用
+const tileBox = (p: Placement): TileBox => ({ pos: p.pos.clone(), quat: p.quat.clone(), size: new THREE.Vector3(TILE_W, TILE_H, TILE_T).multiplyScalar(p.scale) });
 
 interface TileObj {
   group: THREE.Group;
@@ -251,6 +256,8 @@ export class Table3D {
   // 别人打出的牌还在半空时摸到的牌：先留在牌山原处，落桌后再飞进手里
   private heldDraw: { seat: number; tile: TileId; at: number; from: Placement } | null = null;
   private effects: Effects;
+  // 和牌特效的皮肤（winSkins.ts）
+  winSkin: WinFxSkin = DEFAULT_WIN_FX;
   private riichiSticks: THREE.Mesh[] = [];
   // 立直棒：hidden 还在抽屉里，anim 正被手拿着，placed 已经放到桌上
   private stickState: ('hidden' | 'anim' | 'placed')[] = ['hidden', 'hidden', 'hidden', 'hidden'];
@@ -671,7 +678,7 @@ export class Table3D {
     for (const a of this.handAnims) if (a.kind === 'tile') until = Math.max(until, this.now - a.t + a.timing.reach + a.timing.carry);
     // 摸到的牌还没从牌山出发
     if (this.heldDraw) until = Math.max(until, this.heldDraw.at);
-    if (this.reveal) until = Math.max(until, this.reveal.fxAt);
+    if (this.reveal) until = Math.max(until, this.reveal.fxAt, this.reveal.fxEnd);
     return Math.max(0, (until - this.now) * 1000);
   }
 
@@ -822,9 +829,14 @@ export class Table3D {
     if (kind !== 'call') this.effects.ring(at, color, 12, 1.1);
     if (kind === 'kan') this.effects.beam(at, color, 10, 1);
     this.shake = Math.max(this.shake, kind === 'call' ? 0.25 : 0.45);
-    // 举起右手亮一下（立直时手要去拿立直棒，不举手）
+    // 立直时手要去拿立直棒，不举手
+    if (kind !== 'riichi') this.gesture(seat);
+  }
+
+  // 举起右手亮一下（自己的座位没有人物）
+  private gesture(seat: number): void {
     const av = this.characterAt(seat)?.avatar;
-    if (av && kind !== 'riichi' && seat !== this.lastSync?.view.me) {
+    if (av && seat !== this.lastSync?.view.me) {
       this.cancelHandAnims(seat);
       this.handAnims.push({
         seat,
@@ -838,18 +850,29 @@ export class Table3D {
     }
   }
 
-  // 和牌：金色光柱、闪光粒子，镜头往和牌的人那边推一点
-  private winFx(seat: number, tsumo: boolean): void {
-    const at = this.seatPoint(seat, 0, 0.1, this.dim.handZ - 2.5);
-    this.effects.beam(at, FX_GOLD, 14, 2.2);
-    this.effects.ring(at, FX_GOLD, 14, 1.2);
-    this.effects.ring(at, '#ffffff', 8, 0.8);
-    this.effects.sparkles(at, FX_GOLD, 70, 5, 2.2);
-    this.effects.flash(at.clone().setY(3), '#fff2c4', 18, 0.6);
+  // 和牌：按特效皮肤放（winSkins.ts）。门清的包住倒下的手牌，有鸣牌的放在手牌前的桌上；镜头往和牌的人那边推一点。
+  // 返回要等多少秒再出结算
+  private winFx(seat: number, tsumo: boolean, win: TileId): number {
+    const g = this.lastSync?.g;
+    if (!g) return 0;
+    const p = g.players[seat];
+    const c = { fx: this.effects, eye: this.camera.position.clone() };
+    const skin = this.winSkin;
+    let wait = 0;
+    if (p.melds.every((m) => m.type === 'ankan')) {
+      // 从和牌的人左手边第一张排到和的那张（倒牌时就是这个顺序，见 placeReveal）
+      const order = [...p.hand.filter((t) => t !== win).sort((a, b) => a - b), win];
+      const hand = order.map((t) => this.tiles[t].target).filter((x): x is Placement => !!x).map(tileBox);
+      if (hand.length) wait = (tsumo ? skin.tsumoClosed : skin.ronClosed)?.(c, hand) ?? 0;
+    } else {
+      const at = this.seatPoint(seat, 0, 0.1, this.dim.handZ - 2.5);
+      wait = (tsumo ? skin.tsumoOpen : skin.ronOpen)?.(c, at) ?? 0;
+    }
     this.shake = 0.6;
     if (seat !== this.lastSync?.view.me) this.zoom = { t: 0, target: this.seatPoint(seat, 0, 4, this.dim.seatZ - 2) };
     // 自摸的人举手，荣和的人身体前倾
-    if (tsumo) this.callFx(seat, 'call');
+    if (tsumo) this.gesture(seat);
+    return wait;
   }
 
   private startFlight(tile: TileId, seat: number): void {
@@ -979,7 +1002,8 @@ export class Table3D {
       at,
       fxAt,
       fxDone: false,
-      boltAt: flat && r.wins.length ? at - BOLT_LEAD : null,
+      fxEnd: fxAt,
+      boltAt: r.wins.some((w) => w.from !== null) ? at - BOLT_LEAD : null,
       stagger,
       wins: r.wins.map((w) => ({ seat: w.seat, tsumo: w.from === null, tile: w.tile })),
       topple: new Map(),
@@ -1793,26 +1817,26 @@ export class Table3D {
     return true;
   }
 
-  // 倒牌：每张牌绕着靠桌子中心那条底边往前倒，倒下去越来越快。2.5D 倒牌前先有闪电打在和的那张牌上
-  // （荣和是牌河里放铳的那张，自摸是手里摸到的那张）
+  // 倒牌：每张牌绕着靠桌子中心那条底边往前倒，倒下去越来越快。荣和时倒牌前先有闪电打在牌河里放铳的那张牌上
   private animateReveal(): void {
     const rv = this.reveal;
     if (!rv) return;
     if (rv.boltAt !== null && this.now >= rv.boltAt) {
       rv.boltAt = null;
-      for (const w of rv.wins) {
-        const at = this.tiles[w.tile].group.position.clone();
+      // 一炮双响也只劈一次
+      for (const tile of new Set(rv.wins.filter((w) => !w.tsumo).map((w) => w.tile))) {
+        const at = this.tiles[tile].group.position.clone();
         // 从画面上沿（靠中间一点）斜着劈下来：起点和那张牌一样远，牌在画面上方时闪电也不会大半截出了画面
         const p = at.clone().project(this.camera);
         const top = new THREE.Vector3(p.x * 0.3, 1.08, p.z).unproject(this.camera);
-        this.effects.bolt(top, at, FX_GOLD, this.camera.position);
+        this.winSkin.dealIn?.({ fx: this.effects, eye: this.camera.position.clone() }, at, top);
       }
       this.shake = 0.5;
     }
     if (!rv.fxDone && this.now >= rv.fxAt) {
       rv.fxDone = true;
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
-      for (const w of rv.wins) this.winFx(w.seat, w.tsumo);
+      for (const w of rv.wins) rv.fxEnd = Math.max(rv.fxEnd, this.now + this.winFx(w.seat, w.tsumo, w.tile));
     }
     const pivot = (p: Placement) => new THREE.Vector3(0, -TILE_H / 2, -TILE_T / 2).multiplyScalar(p.scale).applyQuaternion(p.quat);
     for (const [id, e] of rv.topple) {
