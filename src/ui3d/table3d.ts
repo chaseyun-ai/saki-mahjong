@@ -1623,7 +1623,9 @@ export class Table3D {
           tile.group.quaternion.copy(dest.quat);
           tile.group.scale.setScalar(dest.scale);
         }
-        this.setTileOpacity(tile, out ? 1 - f.t / DRAW_FADE_OUT : (f.t - DRAW_FADE_OUT) / DRAW_FADE_IN);
+        // 淡入先快后慢：一开始就显出大半，实体牌露出来的时间长一点
+        const k = (f.t - DRAW_FADE_OUT) / DRAW_FADE_IN;
+        this.setTileOpacity(tile, out ? 1 - f.t / DRAW_FADE_OUT : 1 - (1 - k) ** 3);
         this.held.add(f.tile);
         return true;
       }
