@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { toyoneCanUse, toyoneMode, toyoneRedHidden, type RokuyouId } from '../src/abilities/toyone';
+import { toyoneCanUse, toyoneLurks, toyoneMode, toyoneRedHidden, type RokuyouId } from '../src/abilities/toyone';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { RED_FIVES, kindOf } from '../src/engine/tiles';
@@ -111,6 +111,30 @@ describe('姊带丰音', () => {
     expect(chased).toBeGreaterThan(0);
     expect(fed).toBeGreaterThan(0);
   }, 60000);
+
+  it('她还没用别的技能（先负等着）时，别的电脑不轻易立直', () => {
+    const ids = ['toyone', 'hisa', 'yuuki', 'sera'];
+    const plain = ['mako', 'hisa', 'yuuki', 'sera'];
+    // 别人（1–3 号位）立直了几次：丰音在、先负等着的时候；换成真子的同样的牌局
+    let lurking = 0;
+    let without = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const g = newGame(seed, ids);
+      expect(toyoneLurks(g, 1)).toBe(!toyoneMode(g, 0));
+      expect(toyoneLurks(g, 0)).toBe(false);
+      g.onEvent((e) => {
+        if (e.type === 'discard' && e.seat !== 0 && e.riichi && !(g.abilityState[0] as { mode?: string }).mode && g.active(0)) lurking++;
+      });
+      run(g, ids);
+      const h = newGame(seed, plain);
+      h.onEvent((e) => {
+        if (e.type === 'discard' && e.seat !== 0 && e.riichi) without++;
+      });
+      run(h, plain);
+    }
+    expect(without).toBeGreaterThan(10);
+    expect(lurking).toBeLessThan(without / 3);
+  }, 120000);
 
   it('友引：四副露单骑，下一次摸牌必定自摸', () => {
     const ids = ['toyone', 'mako', 'ako', 'izumi'];

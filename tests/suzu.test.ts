@@ -51,7 +51,7 @@ function run(g: Game, ids: string[], me: number, draws?: { burst: boolean; high:
 }
 
 describe('上重漫', () => {
-  it('3 费；每一局（连庄不算）加上强敌数，超过 9 爆发并清零', () => {
+  it('3 费；每一局（连庄不算）加上强敌数，超过 9 爆发并清零；爆发过以后到 5 就再触发', () => {
     expect(byId('suzu').cost).toBe(3);
     for (let seed = 1; seed <= 6; seed++) {
       const snaps = run(newGame(seed, STRONG), STRONG, 0);
@@ -62,7 +62,7 @@ describe('上重漫', () => {
       for (const s of snaps) {
         if (s.slot !== prev) {
           counter += 3;
-          if (counter > SUZU.trigger) {
+          if (burst ? counter >= SUZU.retrigger : counter > SUZU.trigger) {
             counter = 0;
             burst = true;
           }
@@ -71,6 +71,8 @@ describe('上重漫', () => {
         expect(s.counter).toBe(counter);
         expect(!!s.burst).toBe(burst);
       }
+      // 爆发以后计数器不会到 5
+      expect(snaps.every((s) => !s.burst || s.counter < SUZU.retrigger)).toBe(true);
       // 第 4 个不同的局开始爆发
       const fourth = snaps.findIndex((_, i) => new Set(snaps.slice(0, i + 1).map((x) => x.slot)).size === 4);
       if (fourth >= 0) {

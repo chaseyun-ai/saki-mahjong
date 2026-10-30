@@ -194,7 +194,8 @@ describe('涅莉的宣言局', () => {
     }
     expect(rounds).toBeGreaterThan(10);
     expect(suitTiles / tiles).toBeGreaterThan(0.6);
-    expect(wins / rounds).toBeGreaterThan(0.4);
-    expect(big / wins).toBeGreaterThan(0.6);
+    expect(wins / rounds).toBeGreaterThan(0.55);
+    // 染成一门以后有什么和什么，小牌也和；大牌（16000 以上）的局数不比以前少
+    expect(big / rounds).toBeGreaterThan(0.3);
   }, 240000);
 });

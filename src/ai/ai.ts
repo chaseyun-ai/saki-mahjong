@@ -20,7 +20,7 @@ import { takamiHarvest, takamiSeeds } from '../abilities/takami';
 import { NELLY, nellyDeclared, nellyLuck, nellySuit } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { komakiActiveGod } from '../abilities/komaki';
-import { toyoneMode } from '../abilities/toyone';
+import { toyoneLurks, toyoneMode } from '../abilities/toyone';
 import { TERU, teruDanger, teruFits, teruLadder, teruMirrored, teruTier, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import { himekoExtra, himekoPlan } from '../abilities/himeko';
@@ -514,8 +514,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (style.keepDora && !kuroMustRiichi(g, seat, p.hand.filter((t) => t !== best.a.tile))) return best.a;
     // 涅莉负运势的局：有人逼近时不立直（立直以后只能摸切，危险牌也得打）
     if (style.waves && nellyLuck(g, seat) < 0 && threats(g, seat).length) return best.a;
-    // 涅莉的宣言局：手里还有别的花色就先不立直，接着换牌往大里做
-    if (declared && suit !== null && g.wall.remaining > NELLY.declLate && p.hand.some((t) => t !== best.a.tile && kindOf(t) < 27 && Math.floor(kindOf(t) / 9) !== suit)) return best.a;
+    // 涅莉的宣言局不立直：手牌留着能动，接着往大里做；和了牌被别人拿光了（死听）也换得了听
+    if (style.waves && nellyDeclared(g, seat)) return best.a;
     // 衣：海底不是自己的、这一局也没法再挪给自己，就不立直，留着吃碰把海底挪过来（打掉这张以后，最后一张轮到谁：从下家起数）
     // 衣：海底捞月还会发动的局一律默听（海底本身就是役）。立直以后不能吃碰，别人鸣牌错开牌序时就没法把海底挪回来了。
     // 这一局海底没发动才照常立直
@@ -534,10 +534,18 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (style.damaMin && damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) >= style.damaMin) return best.a;
     // 能力发动中的局：牌还小、牌山还多，先默听等改良，牌够大了再立直
     if (growing && g.wall.remaining > BIG.late && ronValue(g, seat, p.hand.filter((t) => t !== best.a.tile), true) < bigEnough(g, seat, BIG.riichi)) return best.a;
+    // 同桌的丰音还没用别的技能（先负等着）：不轻易立直。有役就默听；没役的也默听等自摸，只有听得很宽才立直
+    if (!style.rokuyou && toyoneLurks(g, seat)) {
+      if (damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) > 0) return best.a;
+      if (ukeire(c, p.melds.length, visible) < TOYONE_WIDE) return best.a;
+    }
     if (ukeire(c, p.melds.length, visible) > 0) return riichi;
   }
   return best.a;
 }
+
+// 丰音的先负等着时，没役的听牌听到这么多张（自己看不到的）才立直
+const TOYONE_WIDE = 8;
 
 // ---------- 差し込み ----------
 
@@ -716,10 +724,13 @@ function sumireSkips(g: Game, seat: number, style: AiStyle): boolean {
 const foresees = (g: Game, seat: number) => g.abilities[seat]?.foresightOn?.(g, seat) ?? true;
 
 // 照：这一手和了接不上连和（比上一次小），牌山还多，就先不和、等更大的
-// 涅莉的宣言局：牌还不够大（不到 NELLY.declMin），牌山还多，就先不和
+// 涅莉的宣言局：牌还不够大（不到 NELLY.declMin）、手里还有别的花色能换，牌山还多，就先不和。
+// 已经染成一门了（再等也大不了多少，和了牌却会被自己打光）、有人立直逼近了（别让人抢走这一局）就有什么和什么
 function nellyHolds(g: Game, seat: number, tsumo: boolean): boolean {
-  if (!nellyDeclared(g, seat) || g.wall.remaining <= NELLY.declLate) return false;
+  if (!nellyDeclared(g, seat) || g.wall.remaining <= NELLY.declLate || threats(g, seat).length) return false;
   const p = g.players[seat];
+  const suit = nellySuit(g, seat);
+  if (suit !== null && [...p.hand, ...p.melds.flatMap((m) => m.tiles)].every((t) => kindOf(t) >= 27 || Math.floor(kindOf(t) / 9) === suit)) return false;
   const tile = tsumo ? p.drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
   const r = g.winResult(seat, tile, tsumo);
   return !!r && teruWinValue(r, tsumo, seat === g.dealer) < NELLY.declMin;
