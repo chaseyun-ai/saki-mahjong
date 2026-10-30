@@ -114,21 +114,6 @@ export interface TileBox {
 // 牌的本地坐标 → 世界坐标
 const onTile = (b: TileBox, x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(b.quat).add(b.pos);
 
-// 牌四周一圈上的点：k 从 0 到 1 绕一圈，pad 是往外扩多少
-function rim(b: TileBox, k: number, pad: number): [number, number] {
-  const w = b.size.x / 2 + pad;
-  const h = b.size.y / 2 + pad;
-  const per = 4 * (w + h);
-  let d = (((k % 1) + 1) % 1) * per;
-  if (d < 2 * w) return [-w + d, -h];
-  d -= 2 * w;
-  if (d < 2 * h) return [w, -h + d];
-  d -= 2 * h;
-  if (d < 2 * w) return [w - d, h];
-  d -= 2 * w;
-  return [-w, h - d];
-}
-
 // 圆角矩形的光晕：中间实，四边柔和地淡出。垫在牌底下，露出来的一圈就像牌在发光
 function haloTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -271,8 +256,9 @@ export class Effects {
   }
 
   // 从天上 top 劈下来打在 at 上的闪电：外面一层彩色的光、里面一条白芯，带两根分叉。
-  // 一共闪三下，每下换个形状、一下比一下暗；打中的地方炸一团光和一圈冲击波。eye 是镜头位置，光带朝着镜头
-  bolt(top: THREE.Vector3, at: THREE.Vector3, color: THREE.ColorRepresentation, eye: THREE.Vector3, duration = 0.55): void {
+  // 一共闪三下，每下换个形状、一下比一下暗；打中的地方炸一团光和一圈冲击波。eye 是镜头位置，光带朝着镜头；
+  // width 是粗细的倍数，细的闪电打中时的光也小一些
+  bolt(top: THREE.Vector3, at: THREE.Vector3, color: THREE.ColorRepresentation, eye: THREE.Vector3, duration = 0.55, width = 1): void {
     const height = top.y - at.y;
     const glowMat = additive(color, this.strip);
     const coreMat = additive('#ffffff', this.strip);
@@ -289,8 +275,8 @@ export class Effects {
         lines.push(jagged(p, end, 4, 0.8));
       }
       for (const [mesh, w] of [
-        [glow, 1.8],
-        [core, 0.45],
+        [glow, 1.8 * width],
+        [core, 0.45 * width],
       ] as const) {
         const pos: number[] = [];
         const uv: number[] = [];
@@ -331,11 +317,12 @@ export class Effects {
       coreMat.opacity = o;
     });
     // 打中的光不要太大，那张牌还看得见
-    this.flash(at.clone().setY(at.y + 1), '#ffffff', 4, 0.3);
-    this.flash(at.clone().setY(at.y + 1), color, 8, 0.6);
-    this.ring(at, color, 7, 0.6);
-    this.ring(at, '#ffffff', 4, 0.4);
-    this.sparkles(at, color, 30, 6, 0.9);
+    const hit = 0.4 + 0.6 * width;
+    this.flash(at.clone().setY(at.y + 1), '#ffffff', 4 * hit, 0.3);
+    this.flash(at.clone().setY(at.y + 1), color, 8 * hit, 0.6);
+    this.ring(at, color, 7 * hit, 0.6);
+    this.ring(at, '#ffffff', 4 * hit, 0.4);
+    this.sparkles(at, color, Math.round(30 * hit), 6 * hit, 0.9);
   }
 
   // 每张牌底下垫一块光晕，返回材质，透明度由调用的人逐张控制
@@ -351,14 +338,36 @@ export class Effects {
     });
   }
 
-  // 电流包住手牌：从 tiles[0] 开始每 step 秒点亮一张，一圈锯齿状的电弧绕着牌跳，相邻的牌之间连着电弧，
-  // 走到最后一张后再亮 hold 秒、淡出。返回走到最后一张、闪完要多久
-  current(tiles: TileBox[], color: THREE.ColorRepresentation, eye: THREE.Vector3, step = 0.07, hold = 0.9): number {
+  // 烧引线：一个亮点从 tiles[0] 的左边沿着手牌一路烧到最后一张的右边，后面拖一小截光尾、往外喷火星；
+  // 亮点经过的牌亮一下，烧过就灭。kind 是 fire（火星往上蹦再落下）或 spark（蓝白电火花，头上跳着几道小电弧）。
+  // time 是烧完全程的秒数；返回烧完、收尾要多久
+  fuse(tiles: TileBox[], kind: 'fire' | 'spark', color: THREE.ColorRepresentation, eye: THREE.Vector3, time = 0.5): number {
     const n = tiles.length;
-    const sweep = (n - 1) * step;
-    const fade = 0.45;
-    const duration = sweep + hold + fade;
+    if (!n) return 0;
+    const unit = tiles[0].size.x;
+    const electric = kind === 'spark';
+    // 引线：牌面上方一点，穿过每张牌的中心
+    const path: THREE.Vector3[] = [onTile(tiles[0], -tiles[0].size.x / 2, 0, tiles[0].size.z * 0.6)];
+    for (const b of tiles) path.push(onTile(b, 0, 0, b.size.z * 0.6));
+    path.push(onTile(tiles[n - 1], tiles[n - 1].size.x / 2, 0, tiles[n - 1].size.z * 0.6));
+    const at: number[] = [0];
+    for (let i = 1; i < path.length; i++) at.push(at[i - 1] + path[i].distanceTo(path[i - 1]));
+    const total = at[at.length - 1];
+    const point = (d: number) => {
+      d = THREE.MathUtils.clamp(d, 0, total);
+      let i = 1;
+      while (i < at.length - 1 && at[i] < d) i++;
+      const u = (d - at[i - 1]) / Math.max(1e-6, at[i] - at[i - 1]);
+      return path[i - 1].clone().lerp(path[i], u);
+    };
+    // 烧得先快后稍慢一点点，收尾利落
+    const head = (t: number) => total * (1 - Math.pow(1 - Math.min(1, t / time), 1.6));
+    const tail = 0.35;
+    const duration = time + tail;
+    const trailLen = unit * (electric ? 1.6 : 2.2);
     const group = new THREE.Group();
+    const halos = this.halos(tiles, electric ? color : '#ff8a2a', group);
+    // 光尾：外面一层彩色、里面一条白芯
     const glowMat = additive(color, this.strip);
     const coreMat = additive('#ffffff', this.strip);
     glowMat.vertexColors = coreMat.vertexColors = true;
@@ -366,104 +375,12 @@ export class Effects {
     const core = new THREE.Mesh(new THREE.BufferGeometry(), coreMat);
     glow.frustumCulled = core.frustumCulled = false;
     group.add(glow, core);
-    const halos = this.halos(tiles, color, group);
-    const unit = tiles[0]?.size.x ?? 1;
-    // 每张牌现在多亮：刚点亮时冲一下，之后闪烁着保持
-    const level = (i: number, t: number) => {
-      const r = t - i * step;
-      if (r < 0) return 0;
-      return r < 0.18 ? 1.7 - r * 4 : 0.75 + Math.random() * 0.35;
-    };
-    let frame = -1;
-    let lit = 0;
-    this.add(group, duration, (k) => {
-      const t = k * duration;
-      const out = t > sweep + hold ? Math.max(0, 1 - (t - sweep - hold) / fade) : 1;
-      glowMat.opacity = out * 0.8;
-      coreMat.opacity = out * 0.6;
-      halos.forEach((m, i) => (m.opacity = Math.min(1, level(i, t)) * 0.75 * out));
-      // 走到一张新牌：那张牌上闪一下
-      while (lit < n && t >= lit * step) {
-        const b = tiles[lit++];
-        this.flash(onTile(b, 0, 0, b.size.z), '#ffffff', unit * 2.2, 0.18);
-        this.flash(onTile(b, 0, 0, b.size.z), color, unit * 3.4, 0.3);
-      }
-      // 电弧每 0.045 秒换一个形状
-      const f = Math.floor(t / 0.045);
-      if (f === frame) return;
-      frame = f;
-      const lines: { pts: THREE.Vector3[]; w: number; v: number }[] = [];
-      for (let i = 0; i < n; i++) {
-        const v = level(i, t);
-        if (v <= 0) break;
-        const b = tiles[i];
-        const amp = b.size.x * 0.09;
-        // 绕牌一圈：在牌的四周、上下厚度之间乱跳
-        const m = 22;
-        const start = Math.random();
-        const loop: THREE.Vector3[] = [];
-        for (let j = 0; j <= m; j++) {
-          const [x, y] = rim(b, start + j / m, b.size.x * 0.12);
-          const jit = j === m ? loop[0] : null;
-          loop.push(jit ? jit.clone() : onTile(b, x + (Math.random() - 0.5) * 2 * amp, y + (Math.random() - 0.5) * 2 * amp, (Math.random() - 0.3) * b.size.z));
-        }
-        lines.push({ pts: loop, w: 1, v });
-        // 偶尔有一道从牌面上横穿过去
-        if (Math.random() < 0.2) {
-          const a = rim(b, Math.random(), b.size.x * 0.1);
-          const c = rim(b, Math.random(), b.size.x * 0.1);
-          const from = onTile(b, a[0], a[1], b.size.z * 0.6);
-          const to = onTile(b, c[0], c[1], b.size.z * 0.6);
-          lines.push({ pts: jagged(from, to, 6, amp * 1.5).map((p) => p.setY(Math.max(p.y, from.y))), w: 0.7, v });
-        }
-        // 和前一张连上
-        if (i > 0) {
-          const p = tiles[i - 1];
-          const from = onTile(p, p.size.x * 0.55, (Math.random() - 0.5) * p.size.y * 0.6, p.size.z * 0.3);
-          const to = onTile(b, -b.size.x * 0.55, (Math.random() - 0.5) * b.size.y * 0.6, b.size.z * 0.3);
-          lines.push({ pts: jagged(from, to, 4, amp), w: 0.8, v });
-        }
-      }
-      for (const [mesh, w] of [
-        [glow, unit * 0.42],
-        [core, unit * 0.08],
-      ] as const) {
-        const pos: number[] = [];
-        const uv: number[] = [];
-        const col: number[] = [];
-        const index: number[] = [];
-        for (const l of lines) {
-          const r = ribbon(l.pts, eye, w * l.w, w * l.w);
-          const base = pos.length / 3;
-          pos.push(...r.pos);
-          uv.push(...r.uv);
-          for (let j = 0; j < r.pos.length / 3; j++) col.push(l.v, l.v, l.v);
-          index.push(...r.index.map((x) => x + base));
-        }
-        mesh.geometry.dispose();
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-        geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-        geo.setIndex(index);
-        mesh.geometry = geo;
-      }
-    });
-    return sweep + 0.3;
-  }
-
-  // 火焰包住手牌：从 tiles[0] 开始每 step 秒点着一张，火苗从牌的四周往上蹿，走到最后一张后再烧 hold 秒、熄掉。
-  // 返回走到最后一张、点着要多久
-  fire(tiles: TileBox[], step = 0.07, hold = 1): number {
-    const n = tiles.length;
-    const sweep = (n - 1) * step;
-    const fade = 0.5;
-    const duration = sweep + hold + fade;
-    const stopAt = sweep + hold; // 这之后不再冒新的火苗
-    const group = new THREE.Group();
-    const halos = this.halos(tiles, '#ff7a1a', group);
-    const per = 46; // 每张牌同时有多少火苗
-    const count = n * per;
+    // 亮点
+    const headGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glow, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    const headCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glow, color: '#ffffff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    group.add(headGlow, headCore);
+    // 火星
+    const count = 220;
     const pos = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
     const size = new Float32Array(count);
@@ -472,73 +389,72 @@ export class Effects {
     geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
     geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
     const uniforms = { map: { value: this.glow }, uHalfH: { value: 400 } };
-    const mat = new THREE.ShaderMaterial({
-      uniforms,
-      vertexShader: SPARK_VERT,
-      fragmentShader: SPARK_FRAG,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
+    const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: SPARK_VERT, fragmentShader: SPARK_FRAG, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     const buf = new THREE.Vector2();
     pts.onBeforeRender = (r) => (uniforms.uHalfH.value = r.getDrawingBufferSize(buf).y / 2);
     group.add(pts);
-    // 每个火苗：从哪冒出来、往哪飘、一次烧多久、第几轮（换一轮重新找位置）
-    const life = new Float32Array(count);
-    const phase = new Float32Array(count);
-    const cycle = new Int32Array(count).fill(-1);
-    const from: THREE.Vector3[] = [];
-    const vel: THREE.Vector3[] = [];
-    for (let j = 0; j < count; j++) {
-      life[j] = 0.38 + Math.random() * 0.3;
-      phase[j] = Math.random() * life[j];
-      from.push(new THREE.Vector3());
-      vel.push(new THREE.Vector3());
-    }
+    const sp = Array.from({ length: count }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), age: 0, life: 0 }));
+    let next = 0;
+    let emitted = 0;
+    let last = 0;
+    const tint = new THREE.Color(color);
     const c = new THREE.Color();
-    let lit = 0;
+    const rate = electric ? 360 : 420; // 每秒喷多少颗
+    let frame = -1;
     this.add(group, duration, (k) => {
       const t = k * duration;
-      const out = t > stopAt ? Math.max(0, 1 - (t - stopAt) / fade) : 1;
+      const dt = Math.max(0, t - last);
+      last = t;
+      const burning = t < time;
+      const d = head(t);
+      const hp = point(d);
+      const fade = burning ? 1 : Math.max(0, 1 - (t - time) / tail);
+      // 牌：亮点快到时亮起来，烧过一张多一点就灭
       halos.forEach((m, i) => {
-        const r = t - i * step;
-        m.opacity = r < 0 ? 0 : Math.min(1, r * 6) * (0.75 + Math.random() * 0.2) * out;
+        const x = d - at[i + 1];
+        const v = x < -unit ? 0 : x < 0 ? 1 + x / unit : Math.max(0, 1 - x / (unit * 1.4));
+        m.opacity = v * 0.8 * fade;
       });
-      while (lit < n && t >= lit * step) {
-        const b = tiles[lit++];
-        this.flash(onTile(b, 0, 0, b.size.z), '#ffb347', b.size.x * 3, 0.3);
+      // 亮点闪烁
+      const flick = 0.85 + Math.random() * 0.3;
+      headGlow.position.copy(hp);
+      headCore.position.copy(hp);
+      headGlow.scale.setScalar(unit * (electric ? 3.2 : 2.8) * flick * fade);
+      headCore.scale.setScalar(unit * 1.1 * flick * fade);
+      headGlow.material.opacity = fade;
+      headCore.material.opacity = fade;
+      // 喷火星
+      if (burning) {
+        const want = Math.floor(t * rate);
+        for (; emitted < want; emitted++) {
+          const s = sp[next];
+          next = (next + 1) % count;
+          s.p.copy(point(d - Math.random() * unit * 0.3));
+          const a = Math.random() * Math.PI * 2;
+          const r = (electric ? 3 + Math.random() * 5 : 1.5 + Math.random() * 3.5) * unit;
+          s.v.set(Math.cos(a) * r, (electric ? (Math.random() - 0.2) * 4 : 2.5 + Math.random() * 4) * unit, Math.sin(a) * r);
+          s.age = 0;
+          s.life = electric ? 0.12 + Math.random() * 0.16 : 0.22 + Math.random() * 0.25;
+        }
       }
       for (let j = 0; j < count; j++) {
-        const i = Math.floor(j / per);
-        const b = tiles[i];
-        const age0 = t - i * step - phase[j];
-        const cy = Math.floor(age0 / life[j]);
-        const born = i * step + phase[j] + cy * life[j];
-        if (age0 < 0 || born > stopAt) {
+        const s = sp[j];
+        if (s.life <= 0 || s.age >= s.life) {
           size[j] = 0;
           continue;
         }
-        if (cy !== cycle[j]) {
-          cycle[j] = cy;
-          // 牌四周（一部分从牌面上）冒出来，往上蹿，稍微往外飘
-          const top = Math.random() < 0.12;
-          const [x, y] = top ? [(Math.random() - 0.5) * b.size.x, (Math.random() - 0.5) * b.size.y] : rim(b, Math.random(), b.size.x * 0.05);
-          from[j].copy(onTile(b, x, y, top ? b.size.z / 2 : (Math.random() - 0.5) * b.size.z));
-          const outward = onTile(b, x, y, 0).sub(b.pos).setY(0).multiplyScalar(0.6);
-          vel[j].set((Math.random() - 0.5) * 0.5, (2.2 + Math.random() * 1.6) * b.size.x, (Math.random() - 0.5) * 0.5).add(outward);
-        }
-        const age = age0 - cy * life[j];
-        const u = age / life[j];
-        const p = from[j].clone().addScaledVector(vel[j], age);
-        // 火苗往上收拢，左右摆一点
-        p.x += Math.sin(age * 18 + j) * 0.06 * b.size.x;
-        pos[j * 3] = p.x;
-        pos[j * 3 + 1] = p.y;
-        pos[j * 3 + 2] = p.z;
-        size[j] = b.size.x * (0.55 + 0.75 * Math.sin(Math.PI * Math.min(1, u * 1.4))) * (1 - u * 0.5);
-        fireColor(u, c).multiplyScalar(out * 0.9);
+        s.age += dt;
+        s.v.y -= (electric ? 4 : 14) * unit * dt;
+        s.p.addScaledVector(s.v, dt);
+        const u = Math.min(1, s.age / s.life);
+        pos[j * 3] = s.p.x;
+        pos[j * 3 + 1] = s.p.y;
+        pos[j * 3 + 2] = s.p.z;
+        size[j] = unit * (electric ? 0.32 : 0.42) * (1 - u * 0.6);
+        if (electric) c.setRGB(1, 1, 1).lerp(tint, Math.min(1, u * 1.5)).multiplyScalar(1 - u);
+        else fireColor(u, c);
         col[j * 3] = c.r;
         col[j * 3 + 1] = c.g;
         col[j * 3 + 2] = c.b;
@@ -546,8 +462,65 @@ export class Effects {
       geo.attributes.position.needsUpdate = true;
       geo.attributes.aColor.needsUpdate = true;
       geo.attributes.aSize.needsUpdate = true;
+      // 光尾和电弧：电的每 0.03 秒换个形状，火的每帧跟着走
+      const f = Math.floor(t / 0.03);
+      if (electric && f === frame) return;
+      frame = f;
+      const lines: { pts: THREE.Vector3[]; v0: number; v1: number; w: number }[] = [];
+      if (fade > 0) {
+        const m = 10;
+        const trail: THREE.Vector3[] = [];
+        for (let j = 0; j <= m; j++) {
+          const p = point(d - trailLen * (1 - j / m));
+          if (electric && j > 0 && j < m) p.add(new THREE.Vector3((Math.random() - 0.5) * 0.3 * unit, (Math.random() - 0.5) * 0.2 * unit, (Math.random() - 0.5) * 0.3 * unit));
+          trail.push(p);
+        }
+        lines.push({ pts: trail, v0: 0, v1: fade, w: 1 });
+        if (electric) {
+          // 头上跳着的小电弧
+          for (let j = 0; j < 4; j++) {
+            const a = Math.random() * Math.PI * 2;
+            const end = hp.clone().add(new THREE.Vector3(Math.cos(a), (Math.random() - 0.6) * 0.8, Math.sin(a)).multiplyScalar(unit * (0.6 + Math.random() * 0.9)));
+            lines.push({ pts: jagged(hp, end, 4, unit * 0.18), v0: fade, v1: 0.3 * fade, w: 0.75 });
+          }
+        }
+      }
+      for (const [mesh, w] of [
+        [glow, unit * (electric ? 0.5 : 0.6)],
+        [core, unit * (electric ? 0.14 : 0.16)],
+      ] as const) {
+        const p: number[] = [];
+        const uv: number[] = [];
+        const cl: number[] = [];
+        const index: number[] = [];
+        for (const l of lines) {
+          const r = ribbon(l.pts, eye, w * l.w * 0.3, w * l.w);
+          const base = p.length / 3;
+          p.push(...r.pos);
+          uv.push(...r.uv);
+          for (let j = 0; j < l.pts.length; j++) {
+            const v = THREE.MathUtils.lerp(l.v0, l.v1, j / (l.pts.length - 1));
+            cl.push(v, v, v, v, v, v);
+          }
+          index.push(...r.index.map((x) => x + base));
+        }
+        mesh.geometry.dispose();
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        g.setAttribute('color', new THREE.Float32BufferAttribute(cl, 3));
+        g.setIndex(index);
+        mesh.geometry = g;
+      }
     });
-    return sweep + 0.3;
+    // 烧到头炸一小下
+    const end = path[path.length - 1];
+    const boom = () => {
+      this.flash(end, '#ffffff', unit * 2.5, 0.2);
+      this.flash(end, color, unit * 4.5, 0.35);
+    };
+    this.add(new THREE.Group(), time, (k) => k >= 1 && boom());
+    return time + 0.15;
   }
 
   update(dt: number): void {

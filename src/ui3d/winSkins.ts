@@ -3,7 +3,7 @@ import type { Effects, TileBox } from './effects';
 
 // 和牌特效皮肤。一套皮肤管下面几个时刻，没写的那个时刻就什么也不放：
 //  dealIn       荣和时倒牌前，打在牌河里放铳的那张牌上（top 是从画面上方劈下来的起点）
-//  ronClosed    门清（暗杠也算门清）荣和，牌倒完以后包住手牌，从和牌的人左手边第一张走到和的那张
+//  ronClosed    门清（暗杠也算门清）荣和，牌倒完以后从和牌的人左手边第一张走到和的那张
 //  tsumoClosed  门清自摸，同上
 //  ronOpen      有鸣牌的荣和，at 是和牌的人手牌前面的桌面
 //  tsumoOpen    有鸣牌的自摸，同上
@@ -38,12 +38,12 @@ export const WIN_FX_SKINS: WinFxSkin[] = [
   {
     id: 'storm',
     name: '雷火',
-    // 一道黄色闪电劈在铳牌上
-    dealIn: (c, tile, top) => c.fx.bolt(top, tile, '#ffe24a', c.eye),
-    // 门清荣和：蓝色电流
-    ronClosed: (c, hand) => c.fx.current(hand, '#2f8cff', c.eye),
-    // 门清自摸：火焰
-    tsumoClosed: (c, hand) => c.fx.fire(hand),
+    // 一道细的黄色闪电劈在铳牌上
+    dealIn: (c, tile, top) => c.fx.bolt(top, tile, '#ffe24a', c.eye, 0.5, 0.45),
+    // 门清荣和：蓝色电火花像烧引线一样从左到右窜过手牌
+    ronClosed: (c, hand) => c.fx.fuse(hand, 'spark', '#3d9bff', c.eye),
+    // 门清自摸：火烧引线
+    tsumoClosed: (c, hand) => c.fx.fuse(hand, 'fire', '#ff9a2e', c.eye),
     ronOpen: burst,
     tsumoOpen: burst,
   },
