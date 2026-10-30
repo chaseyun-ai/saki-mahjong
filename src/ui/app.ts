@@ -539,10 +539,10 @@ export class App {
     if (!this.auto && !v && this.runAssist(g)) return;
     if (g.phase === 'turn' && g.turn === this.me) {
       // 立直后没有别的选择时自动摸切。3D、2.5D 牌桌上这张牌不进手牌，飞到手牌上方停一下（AIR_PAUSE），直接打进牌河：
-      // 等它从牌山出发（busyMs）、飞完，再停一下
+      // 等它从牌山出发（busyMs）、飞完，再停一下。摸牌路径关掉时和“切”一样：牌淡入手里，停一下再打
       const legal = g.legalActions(this.me);
       if (g.players[this.me].riichi && legal.length === 1) {
-        const wait = this.table3d ? this.busyMs() + AIR_FLIGHT + AIR_PAUSE : 600;
+        const wait = !this.table3d ? 600 : this.settings.drawPath === 'off' ? this.busyMs() + ASSIST_DELAY : this.busyMs() + AIR_FLIGHT + AIR_PAUSE;
         this.timer = window.setTimeout(() => this.playerAct(legal[0]), wait);
       }
     }
@@ -1004,10 +1004,11 @@ export class App {
     return new Set(g.players[this.me].hand.filter((t) => kinds.has(kindOf(t))));
   }
 
-  // 自己立直后摸到、和不了也杠不了的那张（只能摸切）：牌桌上让它停在空中
+  // 自己立直后摸到、和不了也杠不了的那张（只能摸切）：牌桌上让它停在空中。摸牌路径关掉时照常进手牌
   private airDraw(): TileId | null {
     const g = this.game!;
     const p = g.players[this.me];
+    if (this.settings.drawPath === 'off') return null;
     if (g.phase !== 'turn' || g.turn !== this.me || !p.riichi || this.showResult) return null;
     return g.legalActions(this.me).length === 1 ? p.drawn : null;
   }

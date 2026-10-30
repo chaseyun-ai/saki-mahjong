@@ -98,8 +98,9 @@ const STICK_DROP_DELAY = 0.25;
 const STICK_DROP_HEIGHT = 3;
 // 摸牌不用手，牌自己沿弧线从牌山飞进手里
 const DRAW_FLIGHT = 0.25;
-// 摸牌路径关掉时：前一半在牌山上淡出，后一半在手里淡入
-const DRAW_FADE = 0.36;
+// 摸牌路径关掉时：先在牌山上淡出（DRAW_FADE_OUT 秒），再在手里淡入（DRAW_FADE_IN 秒）
+const DRAW_FADE_OUT = 0.12;
+const DRAW_FADE_IN = 0.18;
 // 上一张打出的牌落桌后，隔这么久下一家才摸牌（雀魂约 0.15 秒）
 const DRAW_GAP = 0.1;
 // 立直后摸切：摸到的牌停在空中的样子，像右手把牌拿起来看一眼。
@@ -199,7 +200,7 @@ export interface SyncView {
   colors: string[];
   ids: string[];
   marked?: Set<TileId>; // 上方加个小三角的手牌（打出去能听牌的）
-  airDraw?: TileId | null; // 自己立直后摸到、和不了的那张：不进手牌，停在手牌上方的空中，接着直接打进牌河
+  airDraw?: TileId | null; // 自己立直后摸到、和不了的那张：不进手牌，停在手牌上方的空中，接着直接打进牌河（摸牌路径关掉时没有）
   tintBacks?: Set<TileId>; // 美穗子睁眼：这些牌的牌背按花色上色（万红、筒蓝、索绿、字牌白）
   deadly?: Set<TileId>; // 龙华的无极天：自己手里打出去会放铳的牌，牌身染红
   akaBacks?: Set<TileId>; // 丰音的赤口：没公开的赤宝牌（别人手里、牌山里），牌背发金红光
@@ -1612,18 +1613,17 @@ export class Table3D {
       const tile = this.tiles[f.tile];
       const dest = tile.target;
       if (f.fade) {
-        if (!dest || f.t >= DRAW_FADE) {
+        if (!dest || f.t >= DRAW_FADE_OUT + DRAW_FADE_IN) {
           this.setTileOpacity(tile, 1);
           return false;
         }
-        const k = f.t / DRAW_FADE;
-        const at = k < 0.5 ? f.start : dest.pos;
-        tile.group.position.copy(at);
-        if (k >= 0.5) {
+        const out = f.t < DRAW_FADE_OUT;
+        tile.group.position.copy(out ? f.start : dest.pos);
+        if (!out) {
           tile.group.quaternion.copy(dest.quat);
           tile.group.scale.setScalar(dest.scale);
         }
-        this.setTileOpacity(tile, Math.abs(1 - 2 * k));
+        this.setTileOpacity(tile, out ? 1 - f.t / DRAW_FADE_OUT : (f.t - DRAW_FADE_OUT) / DRAW_FADE_IN);
         this.held.add(f.tile);
         return true;
       }
