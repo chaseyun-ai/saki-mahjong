@@ -9,11 +9,12 @@ import type { Ability } from './types';
 // 计数器超过 9 时进入“爆发”，计数器清零。爆发一直持续到这一场结束：
 // - 配牌偏向 6–9 的数牌（万、筒、索）：换掉几张别的牌，不让向听变差
 // - 摸牌偏向 6–9 的数牌：下一张不是进张就常换成 6–9；是进张也可能换成 6–9 的进张
-// 爆发中和一次以后倾向减弱（还在爆发），直到计数器再超过 9：恢复全力，计数器再清零。
+// 爆发中和一次以后倾向减弱（还在爆发），直到计数器再到 5（爆发过以后门槛降到 5）：恢复全力，计数器再清零。
 // 计数器照常走，被封印的局也走（她只是那一局使不出来）。
 export const SUZU = {
   strongCost: 3, // 几费以上算强敌
   trigger: 9, // 计数器超过这个数爆发
+  retrigger: 5, // 爆发过以后，计数器到这个数就再触发（恢复全力）
   dealSwaps: 4, // 配牌最多换几张（全力）
   dealSwapsWeak: 2, // 和过一次以后
   draw: 0.45, // 摸牌换成 6–9 的概率（全力）
@@ -40,13 +41,13 @@ export function suzuStrong(g: Game, seat: number): number {
   return [0, 1, 2, 3].filter((s) => s !== seat && seatCost(g, s) >= SUZU.strongCost).length;
 }
 
-// 新的一局开始：不是连庄就加上强敌数，超过 9 就爆发（或者恢复全力）、清零
+// 新的一局开始：不是连庄就加上强敌数，超过 9 就爆发、清零；爆发过以后到 5 就恢复全力、清零
 function startSlot(g: Game, seat: number, gs: SuzuGameState, slot: number, round: number): void {
   const fresh = gs.slot !== slot;
   gs.slot = slot;
   if (!fresh) return;
   gs.counter = (gs.counter ?? 0) + suzuStrong(g, seat);
-  if (gs.counter > SUZU.trigger) {
+  if (gs.burst ? gs.counter >= SUZU.retrigger : gs.counter > SUZU.trigger) {
     gs.counter = 0;
     gs.burst = true;
     gs.weak = false;
@@ -90,7 +91,7 @@ const burstNow = (g: Game, seat: number): boolean => (sync(g, seat).bursts ?? []
 export const suzuAbility: Ability = {
   id: 'suzu',
   name: '爆发',
-  description: `被动。看不见的计数器：每一局（连庄不算）桌上每有一位 ${SUZU.strongCost} 费以上的对手加一，超过 ${SUZU.trigger} 进入爆发、计数器清零。爆发一直持续：配牌、摸牌偏向 6–9 的数牌；和一次以后倾向减弱，直到计数器再超过 ${SUZU.trigger} 恢复全力。`,
+  description: `被动。看不见的计数器：每一局（连庄不算）桌上每有一位 ${SUZU.strongCost} 费以上的对手加一，超过 ${SUZU.trigger} 进入爆发、计数器清零。爆发一直持续：配牌、摸牌偏向 6–9 的数牌；和一次以后倾向减弱，爆发过以后计数器到 ${SUZU.retrigger} 就恢复全力、再清零。`,
 
   // 配牌：把不是 6–9 的牌换成 6–9 的数牌，向听不变差
   beforeDeal(g, seat) {

@@ -1,5 +1,5 @@
 import type { Game } from '../engine/game';
-import { shanten } from '../engine/shanten';
+import { shanten, waitingKinds } from '../engine/shanten';
 import { TileId, kindOf, suitOf, toCounts } from '../engine/tiles';
 import { PRIORITY, type Ability, type PreDealOption } from './types';
 
@@ -10,6 +10,7 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 //   · +1 到 +3（顺流）：摸牌常换成进张，别人的进张偶尔被换走，可以用七姐妹
 //   · +4 以上（宣言局）：这一局是她的。配牌偏向一种花色，摸牌几乎都是进张（先补成那门花色，牌够大再来和了牌），
 //     别人的进张大多被换走，别人要自摸时七姐妹自动封住（不扣次数、不扣运势）。
+//     运势越高越稳：每多 1，摸牌换成进张、别人进张被换走的概率都再加；听牌了和了牌却被别人拿光（死听）时送一张能换听的牌。
 //     宣言不公开：别人看不到她的运势，不知道她哪一局动手。照不受影响
 // - 七姐妹：一场 7 次。别人要自摸时（下一张就是他的和了牌）用掉一次：那张和了牌被换走，这一局那家也和不了了（自摸、荣和都不行）。
 //   顺流的局里用，每用一次这一局的运势减 1（七姐妹和摸牌变好是同一份运势）
@@ -27,9 +28,10 @@ export const NELLY = {
   declare: 4, // 运势到这个数就是宣言局
   declDeal: 0.45, // 宣言局配牌里别的花色换成那门花色的概率（+4），每多 1 加 declDealPer
   declDealPer: 0.1,
-  declGood: 0.7, // 宣言局摸牌换成有用的牌的概率
+  declGood: 0.7, // 宣言局摸牌换成有用的牌的概率（+4），每多 1 加 declGoodPer
+  declGoodPer: 0.15,
   declDeny: 0.3, // 宣言局别人进张被换走的概率（+4），每多 1 加 declDenyPer
-  declDenyPer: 0.05,
+  declDenyPer: 0.15,
   declMin: 12000, // 宣言局里电脑的涅莉的牌不到这么大（默听算）就先不和、不立直，接着往大里做
   declLate: 18, // 牌山剩这么多以下就有什么和什么
   badRisk: 4, // 负运势的局：要打的牌危险度到这个数（不是现物、筋、见了的字牌）就不打，弃和
@@ -166,6 +168,25 @@ const useful = (g: Game, seat: number) => {
   };
 };
 
+// 听牌了、牌山里却一张和了牌都没有（死听）：摸了 t 以后打掉一张还能听牌、而且听的牌牌山里还有
+const reshape = (g: Game, seat: number) => {
+  const p = g.players[seat];
+  const counts = toCounts(p.hand);
+  const live = new Set(g.wall.live.slice(1).map(kindOf));
+  return (t: TileId) => {
+    counts[kindOf(t)]++;
+    let ok = false;
+    for (let d = 0; d < 34 && !ok; d++) {
+      if (!counts[d] || d === kindOf(t)) continue;
+      counts[d]--;
+      if (shanten(counts, p.melds.length) === 0) ok = waitingKinds(counts, p.melds.length).some((k) => live.has(k));
+      counts[d]++;
+    }
+    counts[kindOf(t)]--;
+    return ok;
+  };
+};
+
 const fmt = (v: number) => (v > 0 ? `+${v}` : `${v}`);
 
 const inSuit = (suit: number) => (t: TileId) => kindOf(t) < 27 && suitOf(kindOf(t)) === suit;
@@ -265,15 +286,20 @@ export const nellyAbility: Ability = {
     const w = g.wall;
     const good = useful(g, seat);
     if (v >= NELLY.declare) {
-      if (!g.rng.chance(NELLY.declGood)) return;
+      if (!g.rng.chance(NELLY.declGood + NELLY.declGoodPer * (v - NELLY.declare))) return;
       const suit = stateOf(g, seat).suit;
       const pred = suit === undefined ? () => true : inSuit(suit);
       const p = g.players[seat];
       const sh = shanten(toCounts(p.hand), p.melds.length);
-      // 听牌了但牌还不够大（手里还有别的花色）：先来那门花色的牌，把别的花色换掉；够大了再来和了牌
+      // 听牌了但牌还不够大（手里还有别的花色）：先来那门花色的牌，把别的花色换掉；够大了再来和了牌。
+      // 立直了（手牌动不了）、牌山快摸完了（电脑这时有什么和什么）就直接来和了牌
       const off = p.hand.some((t) => kindOf(t) < 27 && !pred(t));
-      if (sh === 0 && off) w.bringToLive(0, (t) => pred(t) && !good(t), g.rng) || w.bringToLive(0, good, g.rng);
-      else w.bringToLive(0, (t) => good(t) && (pred(t) || kindOf(t) >= 27), g.rng) || w.bringToLive(0, good, g.rng);
+      if (sh === 0 && off && !p.riichi && g.wall.remaining > NELLY.declLate) w.bringToLive(0, (t) => pred(t) && !good(t), g.rng) || w.bringToLive(0, good, g.rng);
+      else if (!(w.bringToLive(0, (t) => good(t) && (pred(t) || kindOf(t) >= 27), g.rng) || w.bringToLive(0, good, g.rng)) && sh === 0 && !p.riichi) {
+        // 死听：来一张能换听的牌
+        const fix = reshape(g, seat);
+        w.bringToLive(0, (t) => fix(t) && (pred(t) || kindOf(t) >= 27), g.rng) || w.bringToLive(0, fix, g.rng);
+      }
     } else if (v > 0) {
       if (g.rng.chance(Math.min(NELLY.goodMax, NELLY.goodPer * v)) && !good(w.live[0])) w.bringToLive(0, good, g.rng);
     } else if (v < 0 && good(w.live[0]) && g.rng.chance(NELLY.badPer * -v)) w.bringToLive(0, (t) => !good(t), g.rng);

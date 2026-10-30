@@ -13,10 +13,11 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 // - 佛灭（主动，一场一次）：这一局所有控场的能力（别人的配牌、摸牌规矩，封印，不许和牌，整理牌山）全部无效。玄的宝牌是作者钦定的，照样算
 // 主动的四种在发牌前选，也可以在这一局里随时按（这一局还没有别的技能起作用时）。
 // 电脑的丰音：大安、佛灭留到落后或者最后两局、桌上有强的控场能力时用；坐庄时一半的概率开先胜；手里有赤宝牌时开赤口
+// 别的电脑：她还没用别的技能（先负等着）时不轻易立直（见 ai.ts 的 toyoneLurks）
 export const TOYONE = {
   senbuDraw: 0.5, // 先负发动后摸牌换成进张的概率
   senshoTurns: 10, // 先胜加速的巡数
-  senshoDraw: 0.5, // 先胜前 10 巡换成进张的概率
+  senshoDraw: 0.4, // 先胜前 10 巡换成进张的概率
   senshoDeal: 0.4, // 先胜第 11 巡起摸到别人铳牌的概率
   senshoSlow: 0.3, // 先胜第 11 巡起进张被换走的概率
   shakku: 0.3, // 赤口：进张加减的幅度
@@ -56,6 +57,11 @@ export function toyoneMode(g: Game, seat: number): RokuyouId | null {
   // 佛灭连封印也破了，不看封印
   if (mode === 'butsumetsu') return mode;
   return g.active(seat) ? mode : null;
+}
+
+// 桌上有别家的丰音、她还能用的被动先负在等着（这一局还没有技能起作用、没被封印）：seat 立直就会被她追上
+export function toyoneLurks(g: Game, seat: number): boolean {
+  return [0, 1, 2, 3].some((o) => o !== seat && g.abilities[o]?.id === 'toyone' && !!g.active(o) && !stateOf(g, o).mode && !g.players[o].riichi);
 }
 
 // 这一局还能不能开 id（没有别的技能起作用、一场一次的没用过）
