@@ -9,6 +9,7 @@ import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects } from './effects';
+import { WallMist } from './mist';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
@@ -207,6 +208,7 @@ export interface SyncView {
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
+  mist?: number; // 高鸭稳乃的深山：牌山上的雾有几级（0 没有）
 }
 
 export class Table3D {
@@ -251,6 +253,8 @@ export class Table3D {
   // 别人打出的牌还在半空时摸到的牌：先留在牌山原处，落桌后再飞进手里
   private heldDraw: { seat: number; tile: TileId; at: number; from: Placement } | null = null;
   private effects: Effects;
+  private mist = new WallMist();
+  private mistFor = -1; // 雾按哪个座位的视角摆的
   private riichiSticks: THREE.Mesh[] = [];
   // 立直棒：hidden 还在抽屉里，anim 正被手拿着，placed 已经放到桌上
   private stickState: ('hidden' | 'anim' | 'placed')[] = ['hidden', 'hidden', 'hidden', 'hidden'];
@@ -322,6 +326,7 @@ export class Table3D {
     this.buildTiles();
     this.scene.add(this.dice.group);
     this.effects = new Effects(this.scene);
+    this.scene.add(this.mist.group);
     this.buildRiichiSticks();
     // 牌面画好、仪表盘用的字体下载好以后，仪表盘重画一次
     const redrawConsole = () => {
@@ -1062,6 +1067,17 @@ export class Table3D {
       }
     }
     this.drawConsole(g, view);
+    this.syncMist(view);
+  }
+
+  // 深山的雾：贴着四排牌山顶上
+  private syncMist(view: SyncView): void {
+    if (this.mistFor !== view.me) {
+      this.mistFor = view.me;
+      const top = (wall: number, stack: number) => this.wallPlacement({ wall, stack, level: 0, faceUp: false }, view.me).pos.clone().setY(TILE_T * 2);
+      this.mist.setWalls([0, 1, 2, 3].map((w) => [top(w, 1), top(w, 17)] as [THREE.Vector3, THREE.Vector3]));
+    }
+    this.mist.setLevel(view.mist ?? 0);
   }
 
   private toWorld(seat: number, me: number, x: number, y: number, z: number, rot: THREE.Euler, extraY = 0, scale = 1): Placement {
@@ -1876,6 +1892,7 @@ export class Table3D {
     }
     this.animateReveal();
     this.effects.update(dt);
+    this.mist.update(dt);
     this.updateCamera(dt);
     const slow = 1 - Math.exp(-dt * 16);
     const fast = 1 - Math.exp(-dt * 60);

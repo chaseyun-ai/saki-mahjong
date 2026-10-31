@@ -130,6 +130,9 @@ export interface Ability {
   // 不会被击飞（花田煌）：别人摸不到自摸了会把她击飞的牌，她也打不出放铳会被击飞的牌，流局罚符最多付到 0 点。
   // 一直起作用：不看封印、佛灭，immune 的人也一样摸不到（Game.bustRules、Game.dealInBusts）
   unbustable?: boolean;
+  // 削弱别人的能力（高鸭稳乃的深山）：别人的能力每次发动（定配牌规矩和调整配牌算一次、摸牌前的规矩、自己摸牌的能力）
+  // 有这个概率不起作用。absolute、immune 的人不受影响；被封印、佛灭时不起作用（Game.damped）
+  dampens?(g: Game, seat: number): number;
 }
 
 export interface PreDealOption {

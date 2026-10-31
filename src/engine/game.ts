@@ -379,6 +379,18 @@ export class Game {
     return !this.isImmune(target) && !this.fieldVoid();
   }
 
+  // 别人削弱了这家这一次发动的能力（稳乃的深山：每个标记 5%）。absolute、immune 的不受影响，佛灭时也不起作用；
+  // 没有人削弱时不掷随机数
+  damped(seat: number): boolean {
+    if (this.isAbsolute(seat) || this.isImmune(seat) || this.fieldVoid()) return false;
+    for (let o = 0; o < 4; o++) {
+      if (o === seat) continue;
+      const p = this.active(o)?.dampens?.(this, o) ?? 0;
+      if (p > 0 && this.rng.chance(p)) return true;
+    }
+    return false;
+  }
+
   // target 这一下挡住了 from 的影响（天使和：一半的概率）。absolute 的挡不住；没有 resist 的人不掷随机数
   private shrugs(from: number, target: number): boolean {
     if (from === target || this.isAbsolute(from)) return false;
@@ -577,13 +589,16 @@ export class Game {
     // 配牌：先由所有人定规矩，再依次调整（换牌不能让任何一条规矩变差），最后统一锁定、发牌
     const order = this.abilityOrder();
     this.dealRules = [];
+    // 稳乃的深山：这一局配牌时能力不起作用的人（定规矩、调整配牌都不做）
+    const damped = new Set(order.filter((s) => (this.active(s)?.dealRules || this.active(s)?.beforeDeal) && this.damped(s)));
     // 爽最先动：上一局叫的蛇神威封住的人这里就不再出手
-    for (const s of order) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []).filter((r) => this.binds(r.seat, r.target) && !this.shrugs(r.seat, r.target)));
+    for (const s of order) if (!damped.has(s)) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []).filter((r) => this.binds(r.seat, r.target) && !this.shrugs(r.seat, r.target)));
     this.dealShrugged.clear();
     for (const s of order) for (let t = 0; t < 4; t++) if (this.shrugs(s, t)) this.dealShrugged.add(`${s}-${t}`);
     this.wall.guard = (changes) => this.dealChangeOk(changes);
     try {
       for (const s of order) {
+        if (damped.has(s)) continue;
         this.dealActor = s;
         this.active(s)?.beforeDeal?.(this, s);
       }
@@ -650,7 +665,7 @@ export class Game {
     const calm = this.fieldVoid();
     for (const s of this.abilityOrder()) {
       const a = this.active(s)!;
-      if (!a.beforeAnyDraw || (calm && !this.isAbsolute(s))) continue;
+      if (!a.beforeAnyDraw || (calm && !this.isAbsolute(s)) || this.damped(s)) continue;
       w.deny = union(rules.length);
       const r = a.beforeAnyDraw(this, s, seat, rinshan);
       // 管不到 immune 的人：定的规矩不算（能力自己整理牌山的部分照做，比如衣安排海底）
@@ -658,7 +673,7 @@ export class Game {
       if (r && this.binds(s, seat) && !this.shrugs(s, seat)) rules.push(r);
     }
     w.deny = union(rules.length);
-    this.active(seat)?.beforeDraw?.(this, seat, rinshan);
+    if (this.active(seat)?.beforeDraw && !this.damped(seat)) this.active(seat)!.beforeDraw!(this, seat, rinshan);
     w.deny = null;
     if (rules.length === 0) return;
     const next = () => (rinshan ? w.rinshan[0] : w.live[0]);

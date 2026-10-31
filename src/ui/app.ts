@@ -5,6 +5,7 @@ import { akoDistance, akoSense } from '../abilities/ako';
 import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored } from '../abilities/teru';
 import { nellyBlocked } from '../abilities/nelly';
 import { mihokoEyeOpen } from '../abilities/mihoko';
+import { shizunoMist } from '../abilities/shizuno';
 import { kuroLost } from '../abilities/kuro';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
@@ -943,6 +944,7 @@ export class App {
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
       ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
+    table.dataset.mist = String(this.mistLevel());
     this.freshDiscard = null;
     this.renderToasts();
   }
@@ -983,7 +985,15 @@ export class App {
       handOrder: this.myHand(),
       openHands: this.openHands(),
       drawPath: this.settings.drawPath,
+      mist: this.mistLevel(),
     });
+  }
+
+  // 高鸭稳乃的深山：牌山上的雾有几级（谁都看得见；被封印的那一局没有雾）
+  private mistLevel(): number {
+    const g = this.game;
+    if (!g) return 0;
+    return Math.max(0, ...[0, 1, 2, 3].filter((s) => this.chars[s]?.id === 'shizuno' && g.active(s)).map(() => shizunoMist(g)));
   }
 
   // 丰音的赤口：没公开的赤宝牌在哪（别人手里的、牌山里的）
