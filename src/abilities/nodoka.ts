@@ -23,10 +23,12 @@ export function nodokaStrong(g: Game, seat: number): number {
 }
 
 // 看不见的计数：开局 start，每过完一局减去比她强的人数（本场不算）
+// 平行宇宙清空过的话（since：清空时是第几局），那一局和之前的都不算
 export function nodokaCounter(g: Game, seat: number): number {
   const now = g.roundWind * 4 + g.roundNumber;
+  const since = (g.abilityGameState[seat] as { since?: number }).since ?? -1;
   const done = new Set<number>();
-  for (const e of g.events) if (e.type === 'roundStart' && e.slot !== undefined && e.slot < now) done.add(e.slot);
+  for (const e of g.events) if (e.type === 'roundStart' && e.slot !== undefined && e.slot < now && e.slot > since) done.add(e.slot);
   return NODOKA.start - nodokaStrong(g, seat) * done.size;
 }
 
@@ -48,6 +50,10 @@ export const nodokaAbility: Ability = {
   id: 'nodoka',
   name: '天使和',
   description: '平时是不受场况影响的数字派。对局里遇到比自己强的人会越来越专注，到了某一局就变成天使和：别人对她配牌、摸牌的影响减半，封印不了，不再失误，看得出 8000 点以上的铳牌',
+  // 平行宇宙：计数回到开头，这一局也不算
+  resetMarks(g, seat) {
+    (g.abilityGameState[seat] as { since?: number }).since = g.roundWind * 4 + g.roundNumber;
+  },
   // 计数到 0 就封印不了（不看 active，不然会绕回 isSealed）
   unsealable(g, seat) {
     return nodokaCounter(g, seat) <= 0;

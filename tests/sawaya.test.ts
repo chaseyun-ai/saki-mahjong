@@ -150,6 +150,8 @@ describe('狮子原爽', () => {
             }
             if (e.type !== 'draw' || g.rinshanDraw || g.wall.remaining < 20) return;
             const honor = isHonor(kindOf(g.players[e.seat].drawn!));
+            // 字牌只流给一家，别的牌被摸光以后牌山里只剩字牌：挡也挡不住，不算
+            if (honor && !g.wall.live.some((t) => !isHonor(kindOf(t)))) return;
             if (red === me) {
               if (e.seat !== me && g.binds(me, e.seat)) {
                 selfDraws++;

@@ -380,6 +380,45 @@ button {
   animation: eye-in 0.6s ease-out both;
 }
 
+/* 淡的高维领域：黑暗笼罩牌桌。四周压暗、带一点星光，中间留亮，牌桌还看得清 */
+.awai-dark::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 29;
+  background:
+    radial-gradient(1.5px 1.5px at 12% 18%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 82% 12%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1.5px 1.5px at 90% 72%, rgba(200, 180, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 6% 80%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 30% 92%, rgba(200, 180, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 70% 6%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(ellipse at 50% 52%, rgba(10, 4, 30, 0.12) 25%, rgba(8, 2, 24, 0.42) 62%, rgba(4, 0, 14, 0.72) 100%);
+  animation: eye-in 0.8s ease-out both;
+}
+
+/* 淡的巨引力源（2D 牌桌）：牌桌中间一个慢慢转的黑色引力圆 */
+.awai-source .center::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 150%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(6, 3, 16, 0.15) 0%, rgba(4, 2, 12, 0.55) 70%, rgba(130, 90, 255, 0.5) 95%, transparent 100%);
+  animation: awai-spin 8s linear infinite;
+}
+
+@keyframes awai-spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
 @keyframes eye-in {
   from {
     opacity: 0;
@@ -4145,6 +4184,16 @@ html:root .select-screen.team-screen.tm-draft {
   min-width: 0;
   padding: 5px 4px;
   font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 按钮多（淡的七个技能）时折成几行 */
+.skill-choices.many {
+  flex-wrap: wrap;
+}
+
+.skill-choices.many .deep-btn {
+  flex: 1 0 76px;
   white-space: nowrap;
 }
 

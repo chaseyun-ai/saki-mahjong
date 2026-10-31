@@ -197,7 +197,7 @@ export interface TraceLine {
 
 // 不换牌的能力消息，有的换个说法更好懂
 const NOTE_TEXT: Record<string, (who: string) => string> = {
-  'awai-绝对安全圈': (who) => `${who}展开了绝对安全圈：另外三家的配牌都在 ${AWAI.safeShanten} 向听以上。`,
+  'awai-时间迟滞': (who) => `${who}的时间迟滞：另外三家的配牌压到 ${AWAI.slowShanten}–${AWAI.slowShanten + 1} 向听（挡得住、会支配牌山的人是 ${AWAI.slowShantenWeak} 向听）。`,
   'koromo-海底捞月': (who) => `${who}摸到了牌山最后一张：海底捞月。`,
   ...Object.fromEntries(
     MOON_PHASES.map((m) => [`koromo-${m.name}`, (who: string) => `今晚是${m.name}${m.icon}，${who}的能力${m.power >= 1 ? '全开' : `只有满月时的 ${Math.round(m.power * 100)}%`}。`]),

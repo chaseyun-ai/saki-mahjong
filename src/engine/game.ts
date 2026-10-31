@@ -292,6 +292,12 @@ export class Game {
     return this.abilities.some((a, s) => !!a?.nullifies?.(this, s));
   }
 
+  // 这家控牌山的能力这一局被别人压住了（淡的高维领域、巨引力源）。absolute、immune 的人不受影响
+  quelled(seat: number): boolean {
+    if (this.isAbsolute(seat) || this.isImmune(seat)) return false;
+    return this.abilities.some((a, s) => s !== seat && !!a?.quells?.(this, s) && !this.isSealed(s, this.round));
+  }
+
   // 这一局起作用的能力：被封印的算没有
   active(seat: number): Ability | null {
     const a = this.abilities[seat];
@@ -376,7 +382,7 @@ export class Game {
   // from 的能力管不管得到 target（照这样 immune 的人只听自己和 absolute 的）
   binds(from: number, target: number): boolean {
     if (from === target || this.isAbsolute(from)) return true;
-    return !this.isImmune(target) && !this.fieldVoid();
+    return !this.isImmune(target) && !this.fieldVoid() && !this.quelled(from);
   }
 
   // target 这一下挡住了 from 的影响（天使和：一半的概率）。absolute 的挡不住；没有 resist 的人不掷随机数
@@ -650,7 +656,8 @@ export class Game {
     const calm = this.fieldVoid();
     for (const s of this.abilityOrder()) {
       const a = this.active(s)!;
-      if (!a.beforeAnyDraw || (calm && !this.isAbsolute(s))) continue;
+      // 高维领域、巨引力源：被压住的人不出手
+      if (!a.beforeAnyDraw || (calm && !this.isAbsolute(s)) || this.quelled(s)) continue;
       w.deny = union(rules.length);
       const r = a.beforeAnyDraw(this, s, seat, rinshan);
       // 管不到 immune 的人：定的规矩不算（能力自己整理牌山的部分照做，比如衣安排海底）
@@ -658,7 +665,7 @@ export class Game {
       if (r && this.binds(s, seat) && !this.shrugs(s, seat)) rules.push(r);
     }
     w.deny = union(rules.length);
-    this.active(seat)?.beforeDraw?.(this, seat, rinshan);
+    if (!this.quelled(seat)) this.active(seat)?.beforeDraw?.(this, seat, rinshan);
     w.deny = null;
     if (rules.length === 0) return;
     const next = () => (rinshan ? w.rinshan[0] : w.live[0]);

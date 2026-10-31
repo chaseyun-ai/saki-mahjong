@@ -204,6 +204,8 @@ export interface SyncView {
   tintBacks?: Set<TileId>; // 美穗子睁眼：这些牌的牌背按花色上色（万红、筒蓝、索绿、字牌白）
   deadly?: Set<TileId>; // 龙华的无极天：自己手里打出去会放铳的牌，牌身染红
   akaBacks?: Set<TileId>; // 丰音的赤口：没公开的赤宝牌（别人手里、牌山里），牌背发金红光
+  waveBacks?: Set<TileId>; // 淡的引力波：牌山里她的和了牌，牌背发紫光
+  gravity?: boolean; // 淡的巨引力源：黑色的引力圆罩住整个牌山
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
@@ -218,6 +220,9 @@ export class Table3D {
   private backMat: THREE.Material | null = null;
   private tintMats: THREE.Material[] = [];
   private akaMat: THREE.Material | null = null;
+  private waveMat: THREE.Material | null = null;
+  // 淡的巨引力源：桌面上的黑色引力圆（用到时才建）
+  private gravityDisc: THREE.Mesh | null = null;
   private bodyMat: THREE.Material | null = null;
   private deadlyMat: THREE.Material | null = null;
   private faceGeoms: THREE.PlaneGeometry[] = [];
@@ -454,6 +459,7 @@ export class Table3D {
       (c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.35, roughness: matte || 0.4 }),
     );
     this.akaMat = new THREE.MeshStandardMaterial({ color: '#ff5a2e', emissive: '#ff7a1e', emissiveIntensity: 0.7, roughness: matte || 0.4 });
+    this.waveMat = new THREE.MeshStandardMaterial({ color: '#9b6bff', emissive: '#7c4dff', emissiveIntensity: 0.85, roughness: matte || 0.4 });
     const faceMat = new THREE.MeshStandardMaterial({ map: this.atlas.texture, transparent: true, roughness: matte || 0.35 });
     for (let id = 0; id < TILE_COUNT; id++) {
       const group = new THREE.Group();
@@ -1043,7 +1049,7 @@ export class Table3D {
       const t = this.tiles[id];
       const target = targets.get(id) ?? null;
       t.target = target;
-      const mat = view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
+      const mat = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
       if (mat && t.back.material !== mat) t.back.material = mat;
       const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
@@ -1061,7 +1067,27 @@ export class Table3D {
         t.shown = true;
       }
     }
+    this.showGravity(!!view.gravity);
     this.drawConsole(g, view);
+  }
+
+  // 巨引力源：黑色的引力圆，直径比牌山的对角线还大一点，整个牌山都在圆里。贴在桌面上，牌压在它上面
+  private showGravity(on: boolean): void {
+    if (!on) {
+      if (this.gravityDisc) this.gravityDisc.visible = false;
+      return;
+    }
+    if (!this.gravityDisc) {
+      const r = Math.hypot(WALL_Z + TILE_T, (STACKS_HALF - 1) * WALL_PITCH + TILE_W) * 1.04;
+      const mat = new THREE.MeshBasicMaterial({ map: gravityTexture(), transparent: true, depthWrite: false });
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 96), mat);
+      disc.rotation.x = -Math.PI / 2;
+      disc.position.y = 0.012;
+      disc.renderOrder = 1;
+      this.scene.add(disc);
+      this.gravityDisc = disc;
+    }
+    this.gravityDisc.visible = true;
   }
 
   private toWorld(seat: number, me: number, x: number, y: number, z: number, rot: THREE.Euler, extraY = 0, scale = 1): Placement {
@@ -1876,6 +1902,11 @@ export class Table3D {
     }
     this.animateReveal();
     this.effects.update(dt);
+    // 引力圆慢慢转、一胀一缩
+    if (this.gravityDisc?.visible) {
+      this.gravityDisc.rotation.z += dt * 0.25;
+      this.gravityDisc.scale.setScalar(1 + 0.012 * Math.sin(this.now * 2.2));
+    }
     this.updateCamera(dt);
     const slow = 1 - Math.exp(-dt * 16);
     const fast = 1 - Math.exp(-dt * 60);
@@ -2018,6 +2049,43 @@ function placeholder(color: string): THREE.Group {
   body.castShadow = head.castShadow = true;
   g.add(body, head);
   return g;
+}
+
+// 巨引力源的贴图：中间透一点能看清桌子，越往外越黑，边上一圈紫色的光；几道旋臂让它转起来看得出来
+function gravityTexture(): THREE.CanvasTexture {
+  const n = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = n;
+  const ctx = c.getContext('2d')!;
+  const h = n / 2;
+  const grad = ctx.createRadialGradient(h, h, 0, h, h, h);
+  grad.addColorStop(0, 'rgba(8, 4, 20, 0.18)');
+  grad.addColorStop(0.55, 'rgba(6, 3, 16, 0.42)');
+  grad.addColorStop(0.86, 'rgba(2, 1, 8, 0.72)');
+  grad.addColorStop(0.95, 'rgba(120, 80, 255, 0.55)');
+  grad.addColorStop(0.985, 'rgba(40, 20, 90, 0.35)');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, n, n);
+  // 旋臂
+  ctx.globalCompositeOperation = 'source-atop';
+  ctx.strokeStyle = 'rgba(150, 120, 255, 0.16)';
+  ctx.lineWidth = 6;
+  for (let arm = 0; arm < 4; arm++) {
+    ctx.beginPath();
+    for (let t = 0; t <= 1; t += 0.01) {
+      const a = arm * (Math.PI / 2) + t * Math.PI * 1.6;
+      const r = h * (0.12 + 0.82 * t);
+      const x = h + Math.cos(a) * r;
+      const y = h + Math.sin(a) * r;
+      if (t === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 function feltTexture(colors: TableColors): THREE.CanvasTexture {

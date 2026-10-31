@@ -91,6 +91,14 @@ const burstNow = (g: Game, seat: number): boolean => (sync(g, seat).bursts ?? []
 export const suzuAbility: Ability = {
   id: 'suzu',
   name: '爆发',
+  // 平行宇宙：计数器清零，爆发也没了
+  resetMarks(g, seat) {
+    sync(g, seat);
+    const gs = gameStateOf(g, seat);
+    gs.counter = 0;
+    gs.burst = false;
+    gs.weak = false;
+  },
   description: `被动。看不见的计数器：每一局（连庄不算）桌上每有一位 ${SUZU.strongCost} 费以上的对手加一，超过 ${SUZU.trigger} 进入爆发、计数器清零。爆发一直持续：配牌、摸牌偏向 6–9 的数牌；和一次以后倾向减弱，爆发过以后计数器到 ${SUZU.retrigger} 就恢复全力、再清零。`,
 
   // 配牌：把不是 6–9 的牌换成 6–9 的数牌，向听不变差

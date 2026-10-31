@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AWAI } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
 import { SUZU, isHigh, suzuBurst, suzuCounter } from '../src/abilities/suzu';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { kindOf } from '../src/engine/tiles';
+
+// 同桌的大星淡不按主动技能（平行宇宙会清掉计数，高维领域会压住别人的规矩）
+beforeAll(() => Object.assign(AWAI, { aiSkills: false }));
+afterAll(() => Object.assign(AWAI, { aiSkills: true }));
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 // 三个 3 费以上：每局加三，第 4 局爆发

@@ -16,8 +16,8 @@ const OTHERS = ['saki', 'kuro', 'toki', 'nodoka'];
 const lineup = (seed: number) => ['awai', 'kasumi', 'koromo', OTHERS[seed % OTHERS.length]].map(byId);
 const priorityOf = (id: string) => CHARACTERS.find((c) => c.id === id)?.ability?.priority ?? PRIORITY.self;
 
-// 配牌阶段换牌的上限：淡摆配牌 13 + 转角 1 + 里宝 2 + 打坏三家各 80 步；霞换三家配牌最多 39 张
-const DEAL_SWAP_LIMIT = 13 + 1 + 2 + 3 * 80 + 39;
+// 配牌阶段换牌的上限：淡摆配牌 13 + 转角 1 + 里宝 2 + 打坏三家各 100 步（再加清掉违反别人规矩的牌 13 张）；霞换三家配牌最多 39 张
+const DEAL_SWAP_LIMIT = 13 + 1 + 2 + 3 * (100 + 13) + 39;
 
 afterAll(uninstallRecorder);
 
