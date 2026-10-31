@@ -1,6 +1,7 @@
 import { CHARACTERS, type Character } from '../abilities/characters';
 import type { Rules } from '../engine/game';
 import type { Rng } from '../engine/rng';
+import { WIN_FX_SKINS } from '../ui3d/winSkins';
 import { SCHOOLS, membersOf } from './schools';
 
 // 单人对局开局前的设置弹窗：点了角色以后弹出来，选好规则再开局。上次选的记在浏览器里，下次照着弹
@@ -17,6 +18,8 @@ export interface MatchSettings {
   open: boolean;
   // 摸牌路径（3D、2.5D 牌桌）：on 牌沿弧线从牌山飞进手里，off 在牌山上淡出、手里淡入，self 只有自己的飞
   drawPath: 'on' | 'off' | 'self';
+  // 和牌特效的皮肤（3D、2.5D 牌桌，见 winSkins.ts）；现在几版只差点和的闪电
+  winFx: string;
   // 对手：下家、对家、上家坐谁（角色 id），空的是随机
   opponents: string[];
 }
@@ -33,6 +36,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   minHan: 1,
   open: false,
   drawPath: 'on',
+  winFx: 'storm',
   opponents: ['', '', ''],
 };
 
@@ -118,6 +122,7 @@ const ROWS: Row[] = [
       { label: '仅自己', value: 'self' },
     ],
   },
+  { key: 'winFx', name: '点和闪电', options: WIN_FX_SKINS.map((k) => ({ label: k.name, value: k.id })) },
 ];
 
 // 按钮上写的值换回设置里的值
