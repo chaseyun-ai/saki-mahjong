@@ -94,7 +94,7 @@ function ribbon(pts: THREE.Vector3[], eye: THREE.Vector3, w0: number, w1: number
   return { pos, uv, index };
 }
 
-const additive = (color: THREE.ColorRepresentation, map?: THREE.Texture) =>
+export const additive = (color: THREE.ColorRepresentation, map?: THREE.Texture) =>
   new THREE.MeshBasicMaterial({
     color,
     ...(map ? { map } : {}),
@@ -112,7 +112,7 @@ export interface TileBox {
 }
 
 // 牌的本地坐标 → 世界坐标
-const onTile = (b: TileBox, x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(b.quat).add(b.pos);
+export const onTile = (b: TileBox, x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(b.quat).add(b.pos);
 
 // 圆角矩形的光晕：中间实，四边柔和地淡出。垫在牌底下，露出来的一圈就像牌在发光
 function haloTexture(): THREE.CanvasTexture {
@@ -132,7 +132,7 @@ function haloTexture(): THREE.CanvasTexture {
 }
 
 // 一个个大小、颜色都不一样的光点（火苗用）。aSize 是世界单位的直径，aColor 乘上贴图的透明度后加到画面上
-const SPARK_VERT = `
+export const SPARK_VERT = `
 attribute float aSize;
 attribute vec3 aColor;
 uniform float uHalfH;
@@ -143,7 +143,7 @@ void main() {
   gl_Position = projectionMatrix * mv;
   gl_PointSize = aSize * projectionMatrix[1][1] * uHalfH / -mv.z;
 }`;
-const SPARK_FRAG = `
+export const SPARK_FRAG = `
 uniform sampler2D map;
 varying vec3 vColor;
 void main() {
@@ -159,7 +159,7 @@ const FIRE_STOPS: [number, THREE.Color][] = [
   [0.85, new THREE.Color(0.5, 0.08, 0.02)],
   [1, new THREE.Color(0, 0, 0)],
 ];
-function fireColor(u: number, out: THREE.Color): THREE.Color {
+export function fireColor(u: number, out: THREE.Color): THREE.Color {
   for (let i = 1; i < FIRE_STOPS.length; i++) {
     const [b, cb] = FIRE_STOPS[i];
     if (u <= b) {
@@ -170,16 +170,39 @@ function fireColor(u: number, out: THREE.Color): THREE.Color {
   return out.setRGB(0, 0, 0);
 }
 
+// 引线：牌面上方一点，从 tiles[0] 的左边穿过每张牌的中心到最后一张的右边。at[i + 1] 是走到第 i 张牌中心的距离，
+// point(d) 是走了 d 的位置
+export function fuseTrack(tiles: TileBox[]): { path: THREE.Vector3[]; at: number[]; total: number; point: (d: number) => THREE.Vector3 } {
+  const n = tiles.length;
+  const path: THREE.Vector3[] = [onTile(tiles[0], -tiles[0].size.x / 2, 0, tiles[0].size.z * 0.6)];
+  for (const b of tiles) path.push(onTile(b, 0, 0, b.size.z * 0.6));
+  path.push(onTile(tiles[n - 1], tiles[n - 1].size.x / 2, 0, tiles[n - 1].size.z * 0.6));
+  const at: number[] = [0];
+  for (let i = 1; i < path.length; i++) at.push(at[i - 1] + path[i].distanceTo(path[i - 1]));
+  const total = at[at.length - 1];
+  const point = (d: number) => {
+    d = THREE.MathUtils.clamp(d, 0, total);
+    let i = 1;
+    while (i < at.length - 1 && at[i] < d) i++;
+    const u = (d - at[i - 1]) / Math.max(1e-6, at[i] - at[i - 1]);
+    return path[i - 1].clone().lerp(path[i], u);
+  };
+  return { path, at, total, point };
+}
+
+// 引线烧到哪了：time 秒烧完全程，先快后稍慢一点点，收尾利落
+export const fuseHead = (total: number, time: number, t: number): number => total * (1 - Math.pow(1 - Math.min(1, t / time), 1.6));
+
 export class Effects {
   private list: Effect[] = [];
-  private glow = glowTexture();
+  readonly glow = glowTexture();
   private pillar = pillarTexture();
   private strip = stripTexture();
   private halo = haloTexture();
 
   constructor(private scene: THREE.Scene) {}
 
-  private add(obj: THREE.Object3D, duration: number, update: (k: number) => void): void {
+  add(obj: THREE.Object3D, duration: number, update: (k: number) => void): void {
     this.scene.add(obj);
     this.list.push({ obj, t: 0, duration, update });
     update(0);
@@ -326,7 +349,7 @@ export class Effects {
   }
 
   // 每张牌底下垫一块光晕，返回材质，透明度由调用的人逐张控制
-  private halos(tiles: TileBox[], color: THREE.ColorRepresentation, group: THREE.Group): THREE.MeshBasicMaterial[] {
+  halos(tiles: TileBox[], color: THREE.ColorRepresentation, group: THREE.Group): THREE.MeshBasicMaterial[] {
     return tiles.map((b) => {
       const mat = additive(color, this.halo);
       mat.side = THREE.FrontSide;
@@ -346,22 +369,8 @@ export class Effects {
     if (!n) return 0;
     const unit = tiles[0].size.x;
     const electric = kind === 'spark';
-    // 引线：牌面上方一点，穿过每张牌的中心
-    const path: THREE.Vector3[] = [onTile(tiles[0], -tiles[0].size.x / 2, 0, tiles[0].size.z * 0.6)];
-    for (const b of tiles) path.push(onTile(b, 0, 0, b.size.z * 0.6));
-    path.push(onTile(tiles[n - 1], tiles[n - 1].size.x / 2, 0, tiles[n - 1].size.z * 0.6));
-    const at: number[] = [0];
-    for (let i = 1; i < path.length; i++) at.push(at[i - 1] + path[i].distanceTo(path[i - 1]));
-    const total = at[at.length - 1];
-    const point = (d: number) => {
-      d = THREE.MathUtils.clamp(d, 0, total);
-      let i = 1;
-      while (i < at.length - 1 && at[i] < d) i++;
-      const u = (d - at[i - 1]) / Math.max(1e-6, at[i] - at[i - 1]);
-      return path[i - 1].clone().lerp(path[i], u);
-    };
-    // 烧得先快后稍慢一点点，收尾利落
-    const head = (t: number) => total * (1 - Math.pow(1 - Math.min(1, t / time), 1.6));
+    const { path, at, total, point } = fuseTrack(tiles);
+    const head = (t: number) => fuseHead(total, time, t);
     const tail = 0.35;
     const duration = time + tail;
     const trailLen = unit * (electric ? 1.6 : 2.2);

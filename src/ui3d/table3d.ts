@@ -9,7 +9,7 @@ import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects, TileBox } from './effects';
-import { DEFAULT_WIN_FX, WinFxSkin } from './winSkins';
+import { DEFAULT_WIN_FX, WinFxContext, WinFxSkin } from './winSkins';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
@@ -258,6 +258,8 @@ export class Table3D {
   private effects: Effects;
   // 和牌特效的皮肤（winSkins.ts）
   winSkin: WinFxSkin = DEFAULT_WIN_FX;
+  // 和牌特效要的慢动作：从 slow.at 起 slow.secs 秒（动画时间）里速度从 slow.scale 慢慢回到 1
+  private slow = { at: 0, secs: 0, scale: 1 };
   private riichiSticks: THREE.Mesh[] = [];
   // 立直棒：hidden 还在抽屉里，anim 正被手拿着，placed 已经放到桌上
   private stickState: ('hidden' | 'anim' | 'placed')[] = ['hidden', 'hidden', 'hidden', 'hidden'];
@@ -850,13 +852,41 @@ export class Table3D {
     }
   }
 
+  private slowFactor(): number {
+    const k = (this.now - this.slow.at) / this.slow.secs;
+    if (!(k >= 0 && k < 1)) return 1;
+    return this.slow.scale + (1 - this.slow.scale) * k * k;
+  }
+
+  // 给特效皮肤的东西：特效、镜头位置，和画面上的配合（慢动作、震屏、整屏的暗角闪白）。
+  // 手机（粗指针）上用省电版；网址带 ?fx=full 或 ?fx=lite 可以强制
+  private fxContext(): WinFxContext {
+    const q = new URLSearchParams(location.search).get('fx');
+    const lite = q === 'lite' || (q !== 'full' && window.matchMedia?.('(pointer: coarse)').matches);
+    return {
+      fx: this.effects,
+      eye: this.camera.position.clone(),
+      stage: {
+        lite,
+        slow: (scale, secs) => (this.slow = { at: this.now, secs, scale }),
+        shake: (a) => (this.shake = Math.max(this.shake, a)),
+        veil: (kind) => {
+          const el = document.createElement('div');
+          el.className = `winfx-veil ${kind}`;
+          this.container.appendChild(el);
+          el.addEventListener('animationend', () => el.remove());
+        },
+      },
+    };
+  }
+
   // 和牌：按特效皮肤放（winSkins.ts）。门清的包住倒下的手牌，有鸣牌的放在手牌前的桌上；镜头往和牌的人那边推一点。
   // 返回要等多少秒再出结算
   private winFx(seat: number, tsumo: boolean, win: TileId): number {
     const g = this.lastSync?.g;
     if (!g) return 0;
     const p = g.players[seat];
-    const c = { fx: this.effects, eye: this.camera.position.clone() };
+    const c = this.fxContext();
     const skin = this.winSkin;
     let wait = 0;
     if (p.melds.every((m) => m.type === 'ankan')) {
@@ -1829,7 +1859,7 @@ export class Table3D {
         // 从画面上沿（靠中间一点）斜着劈下来：起点和那张牌一样远，牌在画面上方时闪电也不会大半截出了画面
         const p = at.clone().project(this.camera);
         const top = new THREE.Vector3(p.x * 0.3, 1.08, p.z).unproject(this.camera);
-        this.winSkin.dealIn?.({ fx: this.effects, eye: this.camera.position.clone() }, at, top);
+        this.winSkin.dealIn?.(this.fxContext(), at, top);
       }
       this.shake = 0.5;
     }
@@ -1865,7 +1895,7 @@ export class Table3D {
 
   private loop = (): void => {
     this.frame = requestAnimationFrame(this.loop);
-    this.tick(Math.min(this.clock.getDelta(), 0.05) * this.timeScale);
+    this.tick(Math.min(this.clock.getDelta(), 0.05) * this.timeScale * this.slowFactor());
     this.beforeRender?.();
     this.renderer.render(this.scene, this.camera);
   };

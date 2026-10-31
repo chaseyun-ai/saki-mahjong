@@ -19,6 +19,7 @@ import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { Table3D } from '../ui3d/table3d';
+import { winFxSkin } from '../ui3d/winSkins';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
 import { backHtml, tileHtml, tintOf } from './tile';
@@ -437,6 +438,7 @@ export class App {
       this.cutinSeen.clear();
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d');
       this.table3d.onHover = (id) => this.hoverTile(id);
+      this.table3d.winSkin = winFxSkin(this.settings.winFx);
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
       if (this.mode === '25d') {
         this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel')].map((el) => el.getBoundingClientRect());
@@ -494,12 +496,19 @@ export class App {
       const wins = g.roundResult?.wins.length ?? 0;
       const wait =
         this.mode === '2d' ? 0 : this.mode === '25d' && wins ? Math.max(3400, this.busyMs() + 900) : (wins ? 2400 : 1400) + this.busyMs();
-      this.timer = window.setTimeout(() => {
+      const show = (): void => {
+        // 和牌特效放完以前（有慢动作的皮肤会比算好的久）再等一会儿
+        const more = this.mode === '2d' ? 0 : this.busyMs();
+        if (more > 0) {
+          this.timer = window.setTimeout(show, more + 300);
+          return;
+        }
         this.showResult = true;
         this.render();
         // 托管：结算看一会儿自己点“下一局”
         if (this.auto && g.phase === 'roundEnd') this.timer = window.setTimeout(() => this.advance(), AUTO_NEXT);
-      }, wait);
+      };
+      this.timer = window.setTimeout(show, wait);
       return;
     }
     const waiting = g.waitingSeats();

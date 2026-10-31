@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { blaze, type BlazeStage } from './blaze';
 import type { Effects, TileBox } from './effects';
 
 // 和牌特效皮肤。一套皮肤管下面几个时刻，没写的那个时刻就什么也不放：
@@ -11,6 +12,7 @@ import type { Effects, TileBox } from './effects';
 export interface WinFxContext {
   fx: Effects;
   eye: THREE.Vector3; // 镜头位置，光带朝着镜头
+  stage: BlazeStage; // 慢动作、震屏、整屏的暗角闪白；lite 是手机上的省电版
 }
 
 export interface WinFxSkin {
@@ -34,19 +36,23 @@ const burst = (c: WinFxContext, at: THREE.Vector3): number => {
   return 0;
 };
 
+const STORM: WinFxSkin = {
+  id: 'storm',
+  name: '雷火',
+  // 一道细的黄色闪电劈在铳牌上
+  dealIn: (c, tile, top) => c.fx.bolt(top, tile, '#ffe24a', c.eye, 0.5, 0.45),
+  // 门清荣和：蓝色电火花像烧引线一样从左到右窜过手牌
+  ronClosed: (c, hand) => c.fx.fuse(hand, 'spark', '#3d9bff', c.eye),
+  // 门清自摸：火烧引线
+  tsumoClosed: (c, hand) => c.fx.fuse(hand, 'fire', '#ff9a2e', c.eye),
+  ronOpen: burst,
+  tsumoOpen: burst,
+};
+
 export const WIN_FX_SKINS: WinFxSkin[] = [
-  {
-    id: 'storm',
-    name: '雷火',
-    // 一道细的黄色闪电劈在铳牌上
-    dealIn: (c, tile, top) => c.fx.bolt(top, tile, '#ffe24a', c.eye, 0.5, 0.45),
-    // 门清荣和：蓝色电火花像烧引线一样从左到右窜过手牌
-    ronClosed: (c, hand) => c.fx.fuse(hand, 'spark', '#3d9bff', c.eye),
-    // 门清自摸：火烧引线
-    tsumoClosed: (c, hand) => c.fx.fuse(hand, 'fire', '#ff9a2e', c.eye),
-    ronOpen: burst,
-    tsumoOpen: burst,
-  },
+  STORM,
+  // 华丽版：门清自摸换成「炎舞」（blaze.ts），别的时刻和雷火一样
+  { ...STORM, id: 'blaze', name: '炎舞', tsumoClosed: (c, hand) => blaze(c.fx, hand, c.eye, c.stage) },
 ];
 
 export const DEFAULT_WIN_FX = WIN_FX_SKINS[0];
