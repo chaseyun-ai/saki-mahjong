@@ -993,7 +993,7 @@ export class App {
   private mistLevel(): number {
     const g = this.game;
     if (!g) return 0;
-    return Math.max(0, ...[0, 1, 2, 3].filter((s) => this.chars[s]?.id === 'shizuno' && g.active(s)).map(() => shizunoMist(g)));
+    return Math.max(0, ...[0, 1, 2, 3].filter((s) => this.chars[s]?.id === 'shizuno' && g.active(s)).map((s) => shizunoMist(g, s)));
   }
 
   // 丰音的赤口：没公开的赤宝牌在哪（别人手里的、牌山里的）

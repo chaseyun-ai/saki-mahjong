@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { SHIZUNO, shizunoDora, shizunoMarks, shizunoMist, shizunoPower } from '../src/abilities/shizuno';
+import { SHIZUNO, shizunoAbility, shizunoDora, shizunoMarks, shizunoMist, shizunoPower } from '../src/abilities/shizuno';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { doraFromIndicator, kindOf, toCounts } from '../src/engine/tiles';
@@ -35,14 +35,14 @@ describe('高鸭稳乃', () => {
     expect(byId('shizuno').cost).toBe(4);
     const g = newGame(1, PLAIN);
     const seen: number[] = [];
-    play(g, PLAIN, () => seen.push(shizunoMarks(g)));
+    play(g, PLAIN, () => seen.push(shizunoMarks(g, 0)));
     // 第一局就有一个，之后每一局加一
     expect(seen[0]).toBe(1);
     for (let i = 1; i < seen.length; i++) expect(seen[i] - seen[i - 1]).toBe(1);
 
     const at = (round: number) => {
       g.round = round;
-      return { power: shizunoPower(g), dora: shizunoDora(g), mist: shizunoMist(g) };
+      return { power: shizunoPower(g, 0), dora: shizunoDora(g, 0), mist: shizunoMist(g, 0) };
     };
     const phase = g.phase;
     (g as { phase: string }).phase = 'turn';
@@ -56,6 +56,18 @@ describe('高鸭稳乃', () => {
     expect(at(20)).toEqual({ power: SHIZUNO.cap, dora: true, mist: 4 });
     (g as { phase: string }).phase = phase;
   }, 60000);
+
+  it('淡的平行宇宙清空深山标记，这一局也不算，下一局从 1 个重新数', () => {
+    const g = newGame(2, PLAIN);
+    g.round = 9;
+    expect(shizunoMarks(g, 0)).toBe(9);
+    shizunoAbility.resetMarks(g, 0);
+    expect(shizunoMarks(g, 0)).toBe(0);
+    expect(shizunoPower(g, 0)).toBe(0);
+    expect(shizunoMist(g, 0)).toBe(0);
+    g.round = 10;
+    expect(shizunoMarks(g, 0)).toBe(1);
+  });
 
   it('别人的能力按标记数的概率不起作用；玄、照不受影响', () => {
     const g = newGame(3, ['shizuno', 'awai', 'kuro', 'teru']);
@@ -79,7 +91,7 @@ describe('高鸭稳乃', () => {
     for (let seed = 1; seed <= 8; seed++) {
       const g = newGame(seed, PLAIN);
       play(g, PLAIN, () => {
-        if (!shizunoDora(g)) return;
+        if (!shizunoDora(g, 0)) return;
         rounds++;
         const counts = toCounts(g.players[0].hand.slice(0, 13));
         const dora = doraFromIndicator(kindOf(g.wall.doraIndicators[0]));
