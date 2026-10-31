@@ -8,8 +8,8 @@ export const STACKS = 17; // 每排牌山几墩
 const MAX_LEVEL = 4;
 // 每级：亮出来几成的雾团、雾的不透明度、雾团大小
 const SHOWN = [0, 0.5, 0.7, 0.85, 1];
-const OPACITY = [0, 0.46, 0.6, 0.72, 0.82];
-const SIZE = [0, 1.9, 2.15, 2.4, 2.65];
+const OPACITY = [0, 0.55, 0.7, 0.82, 0.9];
+const SIZE = [0, 2.1, 2.35, 2.6, 2.85];
 
 // 柔和的云片：几个错开的径向渐变叠在一起，边缘完全透明
 function cloudTexture(): THREE.CanvasTexture {
