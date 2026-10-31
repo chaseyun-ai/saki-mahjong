@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import { blaze, type BlazeStage } from './blaze';
-import type { Effects, TileBox } from './effects';
+import type { BoltStyle, Effects, TileBox } from './effects';
 
 // 和牌特效皮肤。一套皮肤管下面几个时刻，没写的那个时刻就什么也不放：
 //  dealIn       荣和时倒牌前，打在牌河里放铳的那张牌上（top 是从画面上方劈下来的起点）
@@ -12,7 +11,6 @@ import type { Effects, TileBox } from './effects';
 export interface WinFxContext {
   fx: Effects;
   eye: THREE.Vector3; // 镜头位置，光带朝着镜头
-  stage: BlazeStage; // 慢动作、震屏、整屏的暗角闪白；lite 是手机上的省电版
 }
 
 export interface WinFxSkin {
@@ -38,9 +36,9 @@ const burst = (c: WinFxContext, at: THREE.Vector3): number => {
 
 const STORM: WinFxSkin = {
   id: 'storm',
-  name: '雷火',
+  name: '细金雷',
   // 一道细的黄色闪电劈在铳牌上
-  dealIn: (c, tile, top) => c.fx.bolt(top, tile, '#ffe24a', c.eye, 0.5, 0.45),
+  dealIn: (c, tile, top) => c.fx.bolt(top, tile, c.eye, { color: '#ffe24a', width: 0.45, duration: 0.5 }),
   // 门清荣和：蓝色电火花像烧引线一样从左到右窜过手牌
   ronClosed: (c, hand) => c.fx.fuse(hand, 'spark', '#3d9bff', c.eye),
   // 门清自摸：火烧引线
@@ -49,10 +47,60 @@ const STORM: WinFxSkin = {
   tsumoOpen: burst,
 };
 
+// 别的几版只换点和的闪电
+const dealIn = (id: string, name: string, style: BoltStyle): WinFxSkin => ({
+  ...STORM,
+  id,
+  name,
+  dealIn: (c, tile, top) => c.fx.bolt(top, tile, c.eye, style),
+});
+
 export const WIN_FX_SKINS: WinFxSkin[] = [
   STORM,
-  // 华丽版：门清自摸换成「炎舞」（blaze.ts），别的时刻和雷火一样
-  { ...STORM, id: 'blaze', name: '炎舞', tsumoClosed: (c, hand) => blaze(c.fx, hand, c.eye, c.stage) },
+  // 蓝白色、稍粗，四根分叉，快速闪四下
+  dealIn('white', '白雷', {
+    color: '#8fd0ff',
+    width: 0.8,
+    branches: 4,
+    duration: 0.6,
+    strikes: [
+      [0, 1],
+      [0.2, 0.6],
+      [0.38, 0.95],
+      [0.6, 0.8],
+    ],
+    sparkColor: '#cfeaff',
+  }),
+  // 紫色、很碎，分叉又多又长，像蜘蛛网
+  dealIn('violet', '紫电', { color: '#b46bff', core: '#f6eaff', width: 0.6, branches: 5, forkLen: 0.35, segments: 18, amp: 2.4, duration: 0.55 }),
+  // 细金雷从正上方和左右两边接连劈三道
+  dealIn('triple', '三连雷', {
+    color: '#ffe24a',
+    width: 0.4,
+    bolts: 3,
+    stagger: 0.11,
+    duration: 0.4,
+    strikes: [
+      [0, 1],
+      [0.5, 0.7],
+    ],
+  }),
+  // 粗、几乎是直的，一根分叉，闪得久，打中的光大一些
+  dealIn('heaven', '天雷', {
+    color: '#ffc93a',
+    core: '#fffbe8',
+    width: 1.3,
+    branches: 1,
+    amp: 0.7,
+    duration: 0.75,
+    hit: 1.3,
+    strikes: [
+      [0, 1],
+      [0.2, 0.85],
+      [0.4, 1],
+      [0.62, 0.8],
+    ],
+  }),
 ];
 
 export const DEFAULT_WIN_FX = WIN_FX_SKINS[0];

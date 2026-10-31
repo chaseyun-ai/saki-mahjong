@@ -18,7 +18,7 @@ export interface MatchSettings {
   open: boolean;
   // 摸牌路径（3D、2.5D 牌桌）：on 牌沿弧线从牌山飞进手里，off 在牌山上淡出、手里淡入，self 只有自己的飞
   drawPath: 'on' | 'off' | 'self';
-  // 和牌特效的皮肤（3D、2.5D 牌桌，见 winSkins.ts）
+  // 和牌特效的皮肤（3D、2.5D 牌桌，见 winSkins.ts）；现在几版只差点和的闪电
   winFx: string;
   // 对手：下家、对家、上家坐谁（角色 id），空的是随机
   opponents: string[];
@@ -122,7 +122,7 @@ const ROWS: Row[] = [
       { label: '仅自己', value: 'self' },
     ],
   },
-  { key: 'winFx', name: '和牌特效', options: WIN_FX_SKINS.map((k) => ({ label: k.name, value: k.id })) },
+  { key: 'winFx', name: '点和闪电', options: WIN_FX_SKINS.map((k) => ({ label: k.name, value: k.id })) },
 ];
 
 // 按钮上写的值换回设置里的值
