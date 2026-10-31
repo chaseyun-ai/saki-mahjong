@@ -115,3 +115,33 @@ describe('高鸭稳乃', () => {
     expect(wins[0]).toBeGreaterThan(others);
   }, 120000);
 });
+
+describe('深山削弱别人的能力不会弄坏别人的状态', () => {
+  // 削弱的概率拉满：别人每次发动都不起作用，能力自己的状态（衣的月相、涅莉的运势、淡的能量……）照样走下去
+  const full = { ...shizunoAbility, id: 'shizuno', dampens: () => 1 };
+  const groups = [
+    ['koromo', 'nelly', 'awai'],
+    ['sawaya', 'kasumi', 'toyone'],
+    ['komaki', 'suzu', 'rii'],
+    ['saki', 'himeko', 'teru'],
+  ];
+  it('别人的配牌、摸牌能力全被削弱时整场打得完', () => {
+    for (const [i, ids] of groups.entries()) {
+      for (let seed = 1; seed <= 3; seed++) {
+        const all = ['shizuno', ...ids];
+        const g = new Game({ seed: seed * 10 + i, format: 'east', players: all.map((id, s) => ({ name: id, ability: s === 0 ? full : byId(id).ability })) });
+        let steps = 0;
+        while (g.phase !== 'gameEnd' && ++steps < 20000) {
+          if (g.phase === 'roundEnd') {
+            g.nextRound();
+            continue;
+          }
+          const s = g.waitingSeats()[0];
+          g.act(s, chooseAction(g, s, byId(all[s]).ai));
+        }
+        expect(g.phase).toBe('gameEnd');
+        expect(g.wall.allTiles().length + g.players.reduce((n, p) => n + p.hand.length + p.melds.reduce((m, x) => m + x.tiles.length, 0) + p.discards.filter((d) => !d.called).length, 0)).toBe(136);
+      }
+    }
+  }, 120000);
+});

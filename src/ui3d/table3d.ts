@@ -9,7 +9,7 @@ import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects } from './effects';
-import { WallMist } from './mist';
+import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
@@ -255,6 +255,7 @@ export class Table3D {
   private effects: Effects;
   private mist = new WallMist();
   private mistFor = -1; // 雾按哪个座位的视角摆的
+  private mistTops: THREE.Vector3[][] = []; // 每一墩牌山顶上的位置
   private riichiSticks: THREE.Mesh[] = [];
   // 立直棒：hidden 还在抽屉里，anim 正被手拿着，placed 已经放到桌上
   private stickState: ('hidden' | 'anim' | 'placed')[] = ['hidden', 'hidden', 'hidden', 'hidden'];
@@ -1067,17 +1068,22 @@ export class Table3D {
       }
     }
     this.drawConsole(g, view);
-    this.syncMist(view);
+    this.syncMist(g, view);
   }
 
-  // 深山的雾：贴着四排牌山顶上
-  private syncMist(view: SyncView): void {
+  // 深山的雾：每一墩牌山顶上一团，只罩在还有牌的墩上
+  private syncMist(g: Game, view: SyncView): void {
     if (this.mistFor !== view.me) {
       this.mistFor = view.me;
-      const top = (wall: number, stack: number) => this.wallPlacement({ wall, stack, level: 0, faceUp: false }, view.me).pos.clone().setY(TILE_T * 2);
-      this.mist.setWalls([0, 1, 2, 3].map((w) => [top(w, 1), top(w, 17)] as [THREE.Vector3, THREE.Vector3]));
+      this.mistTops = [0, 1, 2, 3].map((wall) =>
+        Array.from({ length: MIST_STACKS }, (_, i) => this.wallPlacement({ wall, stack: i + 1, level: 0, faceUp: false }, view.me).pos.clone().setY(TILE_T * 2)),
+      );
     }
-    this.mist.setLevel(view.mist ?? 0);
+    const level = view.mist ?? 0;
+    this.mist.setLevel(level);
+    const filled = [0, 1, 2, 3].map(() => new Array<boolean>(MIST_STACKS).fill(false));
+    for (const slot of wallSlots(g).values()) filled[slot.wall][slot.stack - 1] = true;
+    this.mist.setStacks(this.mistTops.map((row, w) => row.map((pos, i) => ({ pos, filled: filled[w][i] }))));
   }
 
   private toWorld(seat: number, me: number, x: number, y: number, z: number, rot: THREE.Euler, extraY = 0, scale = 1): Placement {

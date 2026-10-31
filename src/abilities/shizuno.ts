@@ -12,7 +12,11 @@ import type { Ability } from './types';
 //   牌山上起一层白雾；之后每多 2 个，雾厚一级
 export const SHIZUNO = {
   per: 0.05, // 每个标记的影响
-  cap: 0.6, // 影响最多到这么多（12 个标记）
+  cap: 0.6, // 削弱别人最多到这么多（12 个标记）
+  // 自己顺利：原定每个标记 5%，模拟下来一位率 82%（比照还强），压到 1.5%、最多 15%，听牌后摸和了牌再打三折
+  selfPer: 0.015, // 每个标记自己顺利多少
+  selfCap: 0.15, // 自己顺利最多到这么多
+  tenpai: 0.3, // 听牌以后，换成和了牌的概率再乘这个（不然后半场几乎巡巡自摸）
   doraAt: 6, // 几个标记起控制宝牌、起雾
   mistStep: 2, // 之后每多几个标记雾厚一级
   mistMax: 4, // 雾最厚几级
@@ -32,6 +36,11 @@ export function shizunoMarks(g: Game, seat: number): number {
 // 标记带来的影响（别人能力不起作用的概率，也是她自己顺利的概率）
 export function shizunoPower(g: Game, seat: number): number {
   return Math.min(SHIZUNO.cap, shizunoMarks(g, seat) * SHIZUNO.per);
+}
+
+// 她自己配牌、进张顺利的概率
+export function shizunoLuck(g: Game, seat: number): number {
+  return Math.min(SHIZUNO.selfCap, shizunoMarks(g, seat) * SHIZUNO.selfPer);
 }
 
 // 能不能控制宝牌
@@ -87,7 +96,7 @@ const stateOf = (g: Game, seat: number) => g.abilityState[seat] as ShizunoState;
 export const shizunoAbility: Ability & { resetMarks(g: Game, seat: number): void } = {
   id: 'shizuno',
   name: '深山',
-  description: `被动。牌局每进行一场（本场也算）累计一个深山标记。每个标记让别人的能力每次发动有 ${SHIZUNO.per * 100}% 的概率不起作用，自己的配牌、进张顺利 ${SHIZUNO.per * 100}%（最多 ${SHIZUNO.cap * 100}%）。满 ${SHIZUNO.doraAt} 个起控制宝牌、杠宝牌、里宝牌：宝牌变成她手里最多的牌，别人该有的宝牌换走；牌山起雾，之后每多 ${SHIZUNO.mistStep} 个雾厚一级。`,
+  description: `被动。牌局每进行一场（本场也算）累计一个深山标记。每个标记让别人的能力每次发动有 ${SHIZUNO.per * 100}% 的概率不起作用，自己的配牌、进张顺利 ${Math.round(SHIZUNO.selfPer * 1000) / 10}%（别人最多受 ${SHIZUNO.cap * 100}% 影响，自己最多顺 ${SHIZUNO.selfCap * 100}%）。满 ${SHIZUNO.doraAt} 个起控制宝牌、杠宝牌、里宝牌：宝牌变成她手里最多的牌，别人该有的宝牌换走；牌山起雾，之后每多 ${SHIZUNO.mistStep} 个雾厚一级。`,
 
   // 平行宇宙：深山标记清零，这一局也不算（下一局从 1 个重新数）；雾跟着散掉
   resetMarks(g, seat) {
@@ -102,7 +111,7 @@ export const shizunoAbility: Ability & { resetMarks(g: Game, seat: number): void
   beforeDeal(g, seat) {
     const w = g.wall;
     const mine = g.dealIndices(seat);
-    const p = shizunoPower(g, seat);
+    const p = shizunoLuck(g, seat);
     for (let n = 0; n < SHIZUNO.dealTries; n++) {
       if (!g.rng.chance(p)) continue;
       const counts = toCounts(mine.map((j) => w.live[j]));
@@ -157,10 +166,10 @@ export const shizunoAbility: Ability & { resetMarks(g: Game, seat: number): void
 
   // 摸牌：按影响的概率，下一张不是有效进张就换成有效进张（听牌时就是和了牌）
   beforeDraw(g, seat, rinshan) {
-    if (!g.rng.chance(shizunoPower(g, seat))) return;
     const pl = g.players[seat];
     const counts = toCounts(pl.hand);
     const sh = shanten(counts, pl.melds.length);
+    if (!g.rng.chance(shizunoLuck(g, seat) * (sh === 0 ? SHIZUNO.tenpai : 1))) return;
     const useful = (t: TileId) => {
       counts[kindOf(t)]++;
       const after = shanten(counts, pl.melds.length);
@@ -194,8 +203,9 @@ export const shizunoAbility: Ability & { resetMarks(g: Game, seat: number): void
   skill(g, seat) {
     const m = shizunoMarks(g, seat);
     const pct = Math.round(shizunoPower(g, seat) * 100);
+    const luck = Math.round(shizunoLuck(g, seat) * 100);
     const extra = shizunoDora(g, seat) ? '，控制宝牌' : `，再 ${SHIZUNO.doraAt - m} 个控制宝牌`;
-    return { label: '', note: `深山 ×${m}：别人能力 -${pct}%，自己 +${pct}%${extra}`, enabled: false, active: shizunoDora(g, seat), meter: { value: Math.min(m, 12), max: 12 } };
+    return { label: '', note: `深山 ×${m}：别人能力 -${pct}%，自己 +${luck}%${extra}`, enabled: false, active: shizunoDora(g, seat), meter: { value: Math.min(m, 12), max: 12 } };
   },
 
   badge(g, seat) {
@@ -205,6 +215,7 @@ export const shizunoAbility: Ability & { resetMarks(g: Game, seat: number): void
   insight(g, seat) {
     const m = shizunoMarks(g, seat);
     const pct = Math.round(shizunoPower(g, seat) * 100);
-    return [`深山 ${m} 个：别人的能力 ${pct}% 不起作用，自己配牌、进张顺利 ${pct}%`, shizunoDora(g, seat) ? `宝牌、杠宝牌、里宝牌往她有利的方向变（雾 ${shizunoMist(g, seat)} 级）` : `满 ${SHIZUNO.doraAt} 个起控制宝牌`];
+    const luck = Math.round(shizunoLuck(g, seat) * 100);
+    return [`深山 ${m} 个：别人的能力 ${pct}% 不起作用，自己配牌、进张顺利 ${luck}%`, shizunoDora(g, seat) ? `宝牌、杠宝牌、里宝牌往她有利的方向变（雾 ${shizunoMist(g, seat)} 级）` : `满 ${SHIZUNO.doraAt} 个起控制宝牌`];
   },
 };

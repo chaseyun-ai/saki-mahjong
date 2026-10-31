@@ -30,9 +30,24 @@ export class Locks {
     return [...(this.owners.get(t) ?? [])].sort();
   }
 
+  copy(): Locks {
+    const out = new Locks();
+    for (const [t, set] of this.owners) out.owners.set(t, new Set(set));
+    return out;
+  }
+
   [Symbol.iterator](): IterableIterator<TileId> {
     return this.owners.keys();
   }
+}
+
+export interface WallSnapshot {
+  live: TileId[];
+  rinshan: TileId[];
+  dora: TileId[];
+  ura: TileId[];
+  overflow: TileId[];
+  locks: Locks;
 }
 
 // 牌山：前 122 张是可摸的牌（live[0] 是下一张），后 14 张是王牌
@@ -201,6 +216,20 @@ export class Wall {
     const c = cands[rng.int(cands.length)];
     [this.doraIndicators[i], c.src[c.i]] = [c.src[c.i], this.doraIndicators[i]];
     return true;
+  }
+
+  // 记下牌山现在的样子（牌的位置和锁），restore 恢复。别人削弱了能力那一次调整配牌白做（稳乃的深山）
+  snapshot(): WallSnapshot {
+    return { live: [...this.live], rinshan: [...this.rinshan], dora: [...this.doraIndicators], ura: [...this.uraIndicators], overflow: [...this.overflow], locks: this.locked.copy() };
+  }
+
+  restore(s: WallSnapshot): void {
+    this.live = [...s.live];
+    this.rinshan = [...s.rinshan];
+    this.doraIndicators = [...s.dora];
+    this.uraIndicators = [...s.ura];
+    this.overflow = [...s.overflow];
+    this.locked = s.locks.copy();
   }
 
   allTiles(): TileId[] {

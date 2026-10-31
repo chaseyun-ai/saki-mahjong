@@ -592,15 +592,25 @@ export class Game {
     // 稳乃的深山：这一局配牌时能力不起作用的人（定规矩、调整配牌都不做）
     const damped = new Set(order.filter((s) => (this.active(s)?.dealRules || this.active(s)?.beforeDeal) && this.damped(s)));
     // 爽最先动：上一局叫的蛇神威封住的人这里就不再出手
-    for (const s of order) if (!damped.has(s)) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []).filter((r) => this.binds(r.seat, r.target) && !this.shrugs(r.seat, r.target)));
+    // 被深山削弱的人照样调用（能力自己的状态要走下去，比如衣定月相、涅莉分运势），只是定的规矩不算
+    for (const s of order) {
+      const rules = this.active(s)?.dealRules?.(this, s) ?? [];
+      if (!damped.has(s)) this.dealRules.push(...rules.filter((r) => this.binds(r.seat, r.target) && !this.shrugs(r.seat, r.target)));
+    }
     this.dealShrugged.clear();
     for (const s of order) for (let t = 0; t < 4; t++) if (this.shrugs(s, t)) this.dealShrugged.add(`${s}-${t}`);
     this.wall.guard = (changes) => this.dealChangeOk(changes);
     try {
       for (const s of order) {
-        if (damped.has(s)) continue;
         this.dealActor = s;
+        // 被深山削弱的人：能力照样调用，调整完把牌山（和这期间补的规矩）恢复原样
+        const snap = damped.has(s) ? this.wall.snapshot() : null;
+        const ruleCount = this.dealRules.length;
         this.active(s)?.beforeDeal?.(this, s);
+        if (snap) {
+          this.wall.restore(snap);
+          this.dealRules.length = ruleCount;
+        }
       }
     } finally {
       this.wall.guard = null;
