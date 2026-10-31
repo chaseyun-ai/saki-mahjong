@@ -180,6 +180,32 @@ export class Wall {
     return true;
   }
 
+  // 把符合条件的牌换成第 i 张宝牌指示牌（还没翻开的才换）。来源是牌山、岭上牌、里宝牌指示牌和后面的宝牌指示牌
+  // from：牌山里只从这些位置找
+  bringToDora(i: number, pred: (t: TileId) => boolean, rng: Rng, from?: (j: number) => boolean): boolean {
+    if (i >= this.doraIndicators.length || this.locked.has(this.doraIndicators[i])) return false;
+    if (pred(this.doraIndicators[i])) return true;
+    const cands: { src: TileId[]; i: number }[] = [];
+    this.doraIndicators.forEach((t, j) => {
+      if (j > i && j >= this.doraRevealed && !this.locked.has(t) && pred(t)) cands.push({ src: this.doraIndicators, i: j });
+    });
+    this.uraIndicators.forEach((t, j) => {
+      if (!this.locked.has(t) && pred(t)) cands.push({ src: this.uraIndicators, i: j });
+    });
+    this.live.forEach((t, j) => {
+      if (this.locked.has(t) || (from && !from(j)) || !pred(t)) return;
+      if (this.guard && !this.guard([[j, this.doraIndicators[i]]])) return;
+      cands.push({ src: this.live, i: j });
+    });
+    this.rinshan.forEach((t, j) => {
+      if (!this.locked.has(t) && pred(t)) cands.push({ src: this.rinshan, i: j });
+    });
+    if (cands.length === 0) return false;
+    const c = cands[rng.int(cands.length)];
+    [this.doraIndicators[i], c.src[c.i]] = [c.src[c.i], this.doraIndicators[i]];
+    return true;
+  }
+
   allTiles(): TileId[] {
     return [...this.live, ...this.rinshan, ...this.doraIndicators, ...this.uraIndicators, ...this.overflow];
   }

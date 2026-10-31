@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { NELLY, nellyAiBet, nellyBlocked, nellyPool, nellySenses, nellySensesTenpai, nellySisters, nellySuit, nellyTier } from '../src/abilities/nelly';
+import { NELLY, nellyAiBet, nellyBlocked, nellyPool, nellySenses, nellySensesTenpai, nellySisters, nellyTier } from '../src/abilities/nelly';
+import { teruWinValue } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
-import { kindOf } from '../src/engine/tiles';
+import { shanten } from '../src/engine/shanten';
+import { toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -95,6 +97,8 @@ describe('涅莉·薇萨拉兹', () => {
               used++;
               expect(nellyTier(g, me)).toBeGreaterThan(0);
               const victim = nellyBlocked(g, me).at(-1)!;
+              // 押几点最多封几家
+              expect(nellyBlocked(g, me).length).toBeLessThanOrEqual(nellyTier(g, me));
               expect(nellySensesTenpai(g, victim)).toBe(true);
               expect(nellySisters(g, me)).toBeGreaterThanOrEqual(0);
             }
@@ -107,8 +111,27 @@ describe('涅莉·薇萨拉兹', () => {
     expect(used).toBeGreaterThan(5);
   }, 120000);
 
-  it('押了运势：配牌偏向一种花色，档越高和得越大', () => {
-    const stat = [0, 1, 2, 3].map(() => ({ rounds: 0, wins: 0, value: 0, big: 0, suit: 0, nums: 0 }));
+  it('七姐妹一场 7 次、不恢复', () => {
+    for (let seed = 1; seed <= 4; seed++) {
+      play(
+        seed,
+        LINEUPS[seed % 4],
+        (g, me) => {
+          let last = NELLY.sisters;
+          g.onEvent(() => {
+            const n = nellySisters(g, me);
+            expect(n).toBeLessThanOrEqual(last);
+            expect(n).toBeGreaterThanOrEqual(0);
+            last = n;
+          });
+        },
+        { pick: 3, format: 'team' },
+      );
+    }
+  }, 120000);
+
+  it('押了运势：配牌照常发，到那一巡左右才和（3 点 6 巡、2 点 12 巡、1 点 15 巡），档越高和得越大', () => {
+    const stat = [0, 1, 2, 3].map(() => ({ rounds: 0, wins: 0, value: 0, big: 0, early: 0, turns: 0, sh: 0 }));
     for (let seed = 1; seed <= 24; seed++) {
       for (const pick of [1, 2, 3]) {
         play(
@@ -121,18 +144,21 @@ describe('涅莉·薇萨拉兹', () => {
                 v = nellyTier(g, me);
                 const s = stat[v];
                 s.rounds++;
-                if (!v) return;
-                const suit = nellySuit(g, me)!;
-                const nums = g.players[me].hand.filter((t) => kindOf(t) < 27);
-                s.nums += nums.length;
-                s.suit += nums.filter((t) => Math.floor(kindOf(t) / 9) === suit).length;
+                const p = g.players[me];
+                s.sh += shanten(toCounts(p.hand.slice(0, 13)), 0);
               }
-              if (e.type === 'roundEnd' && e.result.wins.some((w) => w.seat === me)) {
+              const win = e.type === 'roundEnd' ? e.result.wins.find((w) => w.seat === me) : undefined;
+              if (win) {
                 const s = stat[v];
                 const target = NELLY.target[v] * (me === g.dealer ? 1.5 : 1);
+                const turn = g.players[me].discards.length + 1;
+                const value = teruWinValue(win.result, win.from === null, me === g.dealer);
                 s.wins++;
-                s.value += e.result.deltas[me];
-                if (v && e.result.deltas[me] >= target) s.big++;
+                s.turns += turn;
+                s.value += value;
+                // 牌山快摸完了（有什么和什么）不算提早
+                if (v && turn < NELLY.turn[v] - 1 && g.wall.remaining > NELLY.late) s.early++;
+                if (v && value >= target) s.big++;
               }
             });
           },
@@ -140,13 +166,19 @@ describe('涅莉·薇萨拉兹', () => {
         );
       }
     }
-    console.log(stat.map((s, i) => `${i}: ${s.rounds} 局 和${s.wins} 平均${Math.round(s.value / Math.max(1, s.wins))} 够大${s.big} 花色${(s.suit / Math.max(1, s.nums)).toFixed(2)}`));
+    const avg = (a: number, b: number) => a / Math.max(1, b);
+    console.log(stat.map((s, i) => `${i}: ${s.rounds} 局 和${s.wins} 平均${Math.round(avg(s.value, s.wins))} 够大${s.big} 平均第${avg(s.turns, s.wins).toFixed(1)}巡 提早${s.early} 配牌向听${avg(s.sh, s.rounds).toFixed(2)}`));
     for (const v of [1, 2, 3]) {
       expect(stat[v].rounds).toBeGreaterThan(20);
-      expect(stat[v].suit / stat[v].nums).toBeGreaterThan(0.55);
-      expect(stat[v].wins / stat[v].rounds).toBeGreaterThan(0.35);
+      // 配牌照常发：向听数和没押的局差不多
+      expect(Math.abs(avg(stat[v].sh, stat[v].rounds) - avg(stat[0].sh, stat[0].rounds))).toBeLessThan(0.5);
+      // 装装样子：几乎不会提早和
+      expect(stat[v].early / Math.max(1, stat[v].wins)).toBeLessThan(0.1);
     }
-    expect(stat[3].value / stat[3].wins).toBeGreaterThan(stat[1].value / stat[1].wins);
-    expect(stat[1].value / stat[1].wins).toBeGreaterThan(stat[0].value / Math.max(1, stat[0].wins));
-  }, 300000);
+    expect(stat[3].wins / stat[3].rounds).toBeGreaterThan(0.6);
+    expect(avg(stat[3].turns, stat[3].wins)).toBeLessThan(avg(stat[2].turns, stat[2].wins));
+    expect(avg(stat[2].turns, stat[2].wins)).toBeLessThan(avg(stat[1].turns, stat[1].wins));
+    expect(avg(stat[3].value, stat[3].wins)).toBeGreaterThan(avg(stat[2].value, stat[2].wins));
+    expect(avg(stat[2].value, stat[2].wins)).toBeGreaterThan(avg(stat[1].value, stat[1].wins));
+  }, 600000);
 });

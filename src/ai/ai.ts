@@ -17,7 +17,7 @@ import { yuukiActive } from '../abilities/yuuki';
 import { makoDanger, makoSuit } from '../abilities/mako';
 import { KYOUKO, kyoukoTargets } from '../abilities/kyouko';
 import { takamiHarvest, takamiSeeds } from '../abilities/takami';
-import { NELLY, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier } from '../abilities/nelly';
+import { NELLY, nellyDue, nellyLiveWaits, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier, nellyTurn } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneLurks, toyoneMode } from '../abilities/toyone';
@@ -513,8 +513,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       return shanten(c, p.melds.length) === -1 ? riichi : best.a;
     }
     if (style.keepDora && !kuroMustRiichi(g, seat, p.hand.filter((t) => t !== best.a.tile))) return best.a;
-    // 涅莉押了运势的局：手里还有别的花色（还在往大里做）就不立直，手牌留着能动；死听也换得了听
-    if (style.waves && nellyOffSuit(g, seat) && g.wall.remaining > NELLY.late) return best.a;
+    // 涅莉押了运势的局：离该和的那一巡还早就默听，手牌留着往大里做；该和的前一巡再立直（下一巡一发自摸；押 2、3 点立直以后里宝牌往她手里变）。
+    // 听的牌牌山里不到两张也先默听换听
+    if (style.waves && nellyTier(g, seat) > 0 && !g.isSealed(seat) && g.wall.remaining > NELLY.late) {
+      if (nellyTurn(g, seat) < nellyDue(g, seat) - 1 || nellyLiveWaits(g, p.hand.filter((t) => t !== best.a.tile), p.melds.length) < 2) return best.a;
+      return riichi;
+    }
     // 衣：海底不是自己的、这一局也没法再挪给自己，就不立直，留着吃碰把海底挪过来（打掉这张以后，最后一张轮到谁：从下家起数）
     // 衣：海底捞月还会发动的局一律默听（海底本身就是役）。立直以后不能吃碰，别人鸣牌错开牌序时就没法把海底挪回来了。
     // 这一局海底没发动才照常立直
@@ -724,18 +728,16 @@ function sumireSkips(g: Game, seat: number, style: AiStyle): boolean {
 const foresees = (g: Game, seat: number) => g.abilities[seat]?.foresightOn?.(g, seat) ?? true;
 
 // 照：这一手和了接不上连和（比上一次小），牌山还多，就先不和、等更大的
-// 涅莉押了运势的局：手里还有别的花色的数牌（还能往那门花色做）
-function nellyOffSuit(g: Game, seat: number): boolean {
-  if (nellyTier(g, seat) <= 0) return false;
-  const suit = nellySuit(g, seat);
-  return suit !== null && g.players[seat].hand.some((t) => kindOf(t) < 27 && Math.floor(kindOf(t) / 9) !== suit);
-}
-
-// 涅莉押了运势的局：牌还不够大（不到押的那一档）、手里还有别的花色能换，牌山还多，就先不和。
-// 已经染成一门了（再等也大不了多少，和了牌却会被自己打光）、有人立直逼近了（别让人抢走这一局）就有什么和什么
+// 涅莉押了运势的局：装装样子，该和的那一巡（押 3 点第 6 巡、2 点第 12 巡、1 点第 18 巡）之前不和（荣和可以早一巡）；
+// 到了那一巡牌还不够大（不到押的那一档），再等几巡接着做大。牌山快摸完了、有人逼近了就有什么和什么
 function nellyHolds(g: Game, seat: number, tsumo: boolean): boolean {
-  if (!nellyOffSuit(g, seat) || g.wall.remaining <= NELLY.late || threats(g, seat).length) return false;
+  if (nellyTier(g, seat) <= 0 || g.isSealed(seat) || g.wall.remaining <= NELLY.late) return false;
   const p = g.players[seat];
+  const turn = p.discards.length + 1;
+  const due = nellyDue(g, seat);
+  if (turn < due - 1) return true;
+  // 立直了摸到和了牌不和就只能打掉（振听），到了那一巡就和
+  if (p.riichi || turn >= due + NELLY.grace || threats(g, seat).length) return false;
   const tile = tsumo ? p.drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
   const r = g.winResult(seat, tile, tsumo);
   return !!r && teruWinValue(r, tsumo, seat === g.dealer) < nellyTarget(g, seat);
