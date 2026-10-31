@@ -3,7 +3,7 @@ import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored } from '../abilities/teru';
-import { nellyBlocked } from '../abilities/nelly';
+import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { kuroLost } from '../abilities/kuro';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
@@ -1090,6 +1090,10 @@ export class App {
     if (this.chars[this.me]?.id === 'ryuuka' && ryuukaMugoku(g, this.me)) {
       return ryuukaSensesTenpai(g, s) ? '<span class="dist tenpai" title="无极天：听牌了">听</span>' : '';
     }
+    // 涅莉：手里还有运势就看得出谁听牌了
+    if (this.chars[this.me]?.id === 'nelly' && !g.isSealed(this.me) && nellySenses(g, this.me)) {
+      return nellySensesTenpai(g, s) ? '<span class="dist tenpai" title="运势：听牌了">听</span>' : '';
+    }
     if (this.chars[this.me]?.id !== 'ako' || !akoSense(g, this.me)) return '';
     const d = akoDistance(g, s);
     const inner = d === 0 ? '听' : '●'.repeat(Math.min(3, d));
@@ -1491,7 +1495,7 @@ export class App {
     const b = !this.vision && ab?.skill?.(g, this.me);
     if (!b) return '';
     const meter = b.meter
-      ? `<span class="stamina energy" title="能量"><i style="width:${(b.meter.value / b.meter.max) * 100}%"></i></span><span class="st-num">${b.meter.value}</span>`
+      ? `<span class="stamina energy" title="${b.meter.label ?? '能量'}"><i style="width:${(b.meter.value / b.meter.max) * 100}%"></i></span><span class="st-num">${b.meter.value}</span>`
       : '';
     // 有按钮的技能（pressSkill）画按钮；发牌前选的技能（淡、霞）只显示状态
     // 要选对象的（爽的瘟神威）一个对象一个按钮
@@ -1523,12 +1527,13 @@ export class App {
     const meter = ab?.skill?.(g, this.me)?.meter;
     const spend = opts.filter((o) => this.pdPicks!.has(o.id)).reduce((sum, o) => sum + (o.cost ?? 0), 0);
     const left = meter ? meter.value - spend : Infinity;
+    const unit = meter?.label ?? '能量';
     const rows = opts
       .map((o) => {
         const on = this.pdPicks!.has(o.id);
         const affordable = on || (o.cost ?? 0) <= left;
         const usable = o.enabled && affordable;
-        const note = !o.enabled ? (o.note ?? '') : !affordable ? '能量不够' : o.cost ? `能量 -${o.cost}` : '';
+        const note = !o.enabled ? (o.note ?? '') : !affordable ? `${unit}不够` : o.cost ? `${unit} -${o.cost}` : '';
         return `<button class="pd-opt${on ? ' on' : ''}" data-ui="pd" data-pd="${o.id}"${o.group ? ` data-group="${o.group}"` : ''} ${usable ? '' : 'disabled'}>
           <span class="pd-check">${on ? '✓' : ''}</span>
           <span class="pd-text"><b>${o.name}</b><small>${o.desc}</small></span>
@@ -1536,7 +1541,7 @@ export class App {
       })
       .join('');
     const energy = meter
-      ? `<div class="pd-energy">能量 <span class="stamina energy"><i style="width:${(Math.max(0, left) / meter.max) * 100}%"></i></span> ${Math.max(0, left)} / ${meter.max}${spend ? `（这一局 -${spend}）` : ''}</div>`
+      ? `<div class="pd-energy">${unit} <span class="stamina energy"><i style="width:${(Math.max(0, left) / meter.max) * 100}%"></i></span> ${Math.max(0, left)} / ${meter.max}${spend ? `（这一局 -${spend}）` : ''}</div>`
       : '';
     // 配牌后选（爽）：把手牌摆在上面，看着手牌选
     const hand = post

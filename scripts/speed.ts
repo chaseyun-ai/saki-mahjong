@@ -6,7 +6,7 @@ import { Game } from '../src/engine/game';
 import { Rng } from '../src/engine/rng';
 import { shanten } from '../src/engine/shanten';
 import { toCounts } from '../src/engine/tiles';
-import { nellyLuck } from '../src/abilities/nelly';
+import { nellyPool, nellyTier } from '../src/abilities/nelly';
 import { toyoneMode } from '../src/abilities/toyone';
 
 const games = Number(process.argv[2] ?? 300);
@@ -29,7 +29,7 @@ for (let seed = from; seed < from + games; seed++) {
   const tag = () => {
     keys = order.map((c, s) => {
       const k = [c.name];
-      if (c.id === 'nelly') k.push(`涅莉 运势${nellyLuck(g, s)}`);
+      if (c.id === 'nelly') k.push(`涅莉 押${nellyTier(g, s)} 剩${nellyPool(g, s)}`);
       return k;
     });
   };

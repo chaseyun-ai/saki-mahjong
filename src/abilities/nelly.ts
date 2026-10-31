@@ -1,61 +1,53 @@
 import type { Game } from '../engine/game';
 import { shanten, waitingKinds } from '../engine/shanten';
 import { TileId, kindOf, suitOf, toCounts } from '../engine/tiles';
+import { teruWinValue } from './teru';
 import { PRIORITY, type Ability, type PreDealOption } from './types';
 
-// 涅莉·薇萨拉兹（临海女子）：分配运势的人。家里穷，打得亮眼才拉得到赞助，所以她要和就和三倍满这种大牌。
-// - 分配运势（开场）：给这一场的每一局（东风战东 1–4，团体赛东 1–南 4）各分一个运势值，加起来必须是 0。
-//   流局重打的局沿用同一局的值；她在这一局和过一次，这一局的运势就用完了，连庄的局变成 0；南入以后多出来的局是 0。运势分三档：
-//   · 负（蓄势）：她的进张有时被换走，电脑的涅莉这几局以防守为主
-//   · +1 到 +3（顺流）：摸牌常换成进张，别人的进张偶尔被换走，可以用七姐妹
-//   · +4 以上（宣言局）：这一局是她的。配牌偏向一种花色，摸牌几乎都是进张（先补成那门花色，牌够大再来和了牌），
-//     别人的进张大多被换走，别人要自摸时七姐妹自动封住（不扣次数、不扣运势）。
-//     运势越高越稳：每多 1，摸牌换成进张、别人进张被换走的概率都再加；听牌了和了牌却被别人拿光（死听）时送一张能换听的牌。
-//     宣言不公开：别人看不到她的运势，不知道她哪一局动手。照不受影响
-// - 七姐妹：一场 7 次。别人要自摸时（下一张就是他的和了牌）用掉一次：那张和了牌被换走，这一局那家也和不了了（自摸、荣和都不行）。
-//   顺流的局里用，每用一次这一局的运势减 1（七姐妹和摸牌变好是同一份运势）
-// 电脑的涅莉：挑几局押上全部运势（8 局押 3 局，都是宣言局；4 局押 2 局），其余的局压到最低。
-// 押哪几局看同桌：别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不去抢，自己坐庄的局优先。
-// 负运势的局不做危险进攻：有人立直、副露逼近时不打危险牌、不立直。玩家操作时开场自己分，七姐妹用技能按钮开关（默认开着）
+// 涅莉·薇萨拉兹（临海女子）：分配运势的人。家里穷，打得亮眼才拉得到赞助，所以她要和就和大牌。
+// - 运势：开场 10 点，每打满 4 局恢复 1 点（第 5、9、13……局开始时，连庄、流局重打的局也算一局）。
+// - 分配运势（每一局发牌前）：这一局押几点，押了就扣掉，和没和都不退：
+//   · 1 点：配牌和进张朝满贯发展
+//   · 2 点：朝倍满发展
+//   · 3 点：朝三倍满发展，而且这一局她的和牌别人挡不住（别人的能力管不到她：不许和、换走和了牌、封印都不算）
+//   做法：配牌偏向一种花色（档越高偏得越多），摸牌常换成那门花色的进张；听牌了但牌还不够大，就先来能把牌做大的牌，够大了再来和了牌。
+//   押了几点只有她自己知道
+// - 感知听牌：手里还有运势（押完这一局还剩 1 点以上）就看得出别人听没听牌（不知道听什么）。
+// - 七姐妹：一场 7 次。押了运势的局自动开着：每有一家听牌，用掉一次封住他，这一局他和不了（自摸、荣和都不行）。
+//   照这样别人能力管不到的人封不住；次数用完了就不封了
+// 电脑的涅莉：自己坐庄的局（连庄的不算）押 3 点；别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不押；
+// 其余的局把运势平摊到剩下的局里（最后一局押光）。押了运势的局门清做大，牌不够大先不和
 export const NELLY = {
-  min: -3, // 一局最少
-  max: 7, // 一局最多
-  goodPer: 0.15, // 运势每 +1，摸牌换成进张的概率加多少
-  goodMax: 0.75,
-  denyPer: 0.03, // 运势每 +1，别人的进张被换走的概率加多少
-  badPer: 0.1, // 运势每 -1，她的进张被换走的概率加多少
+  start: 10, // 开场的运势
+  every: 4, // 每打满几局恢复 1 点
+  maxBet: 3, // 一局最多押几点
   sisters: 7,
-  declare: 4, // 运势到这个数就是宣言局
-  declDeal: 0.45, // 宣言局配牌里别的花色换成那门花色的概率（+4），每多 1 加 declDealPer
-  declDealPer: 0.1,
-  declGood: 0.7, // 宣言局摸牌换成有用的牌的概率（+4），每多 1 加 declGoodPer
-  declGoodPer: 0.15,
-  declDeny: 0.3, // 宣言局别人进张被换走的概率（+4），每多 1 加 declDenyPer
-  declDenyPer: 0.15,
-  declMin: 12000, // 宣言局里电脑的涅莉的牌不到这么大（默听算）就先不和、不立直，接着往大里做
-  declLate: 18, // 牌山剩这么多以下就有什么和什么
-  badRisk: 4, // 负运势的局：要打的牌危险度到这个数（不是现物、筋、见了的字牌）就不打，弃和
+  // 押 1/2/3 点时这一局要做到多大（子家的点数，庄家按 1.5 倍）：满贯、倍满、三倍满
+  target: [0, 8000, 16000, 24000],
+  deal: [0, 0.35, 0.55, 0.75], // 配牌里别的花色换成那门花色的概率
+  good: [0, 0.55, 0.7, 0.85], // 摸牌换成有用的牌的概率
+  late: 18, // 牌山剩这么多以下就有什么和什么（不再先做大）
 };
 
+const TIER_NAMES = ['', '满贯', '倍满', '三倍满'];
+
 interface NellyGameState {
-  luck?: number[]; // 每一局（按东 1、东 2……排）的运势，开场分好
-  plan?: number[]; // 玩家在发牌前界面分的
+  spent?: number; // 一共押掉了几点
+  pick?: number; // 玩家在发牌前界面押的
   sisters?: number; // 七姐妹还剩几次
-  off?: boolean; // 玩家把七姐妹关了
-  used?: number[]; // 每一局用掉的运势（七姐妹）
-  spent?: boolean[]; // 她和过的局：这一局的运势用完了
-  seen?: number; // g.events 里看到哪了
-  cur?: number; // 看到的最后一个 roundStart 是第几局
+  log?: number[]; // 每一局押了几点（照魔镜看得到）
 }
 interface NellyState {
+  bet?: number; // 这一局押了几点
   blocked?: number[]; // 这一局被七姐妹封住、和不了的人
-  suit?: number; // 宣言局做的花色
+  suit?: number; // 这一局做的花色
 }
 
 const gameStateOf = (g: Game, seat: number) => {
   const gs = g.abilityGameState[seat] as NellyGameState;
   gs.sisters ??= NELLY.sisters;
-  gs.used ??= [];
+  gs.spent ??= 0;
+  gs.log ??= [];
   return gs;
 };
 const stateOf = (g: Game, seat: number) => {
@@ -64,77 +56,76 @@ const stateOf = (g: Game, seat: number) => {
   return st;
 };
 
-// 这一场有几局可以分（东风战 4 局，团体赛 8 局）
-export const nellySlots = (g: Game) => (g.fullHanchan ? 8 : 4);
-const SLOT_NAMES = ['东1', '东2', '东3', '东4', '南1', '南2', '南3', '南4'];
+// 第 round 局（从 1 数）开始时一共恢复了几点
+const regen = (round: number) => Math.floor(Math.max(0, round - 1) / NELLY.every);
 
-// 第几局（东 1 是 0）
-const slotOf = (g: Game) => g.roundWind * 4 + g.roundNumber;
+// 一局打完到下一局发牌之间（还没押）。电脑的局发牌时 phase 还是 roundEnd，要看这一局结算了没有
+const between = (g: Game) => g.round === 0 || g.phase === 'predeal' || (g.phase === 'roundEnd' && g.roundResult !== null);
 
-// 别人能力最强的局（按局的序号，8 局或 4 局）：这几局别人也要和，涅莉不去抢
+// 还剩几点运势。一局打完以后、发牌前（还没押）算的是马上要开的那一局能押的（算上这一局恢复的）
+export function nellyPool(g: Game, seat: number): number {
+  const round = between(g) ? g.round + 1 : g.round;
+  if (!between(g)) tierOf(g, seat);
+  return NELLY.start + regen(round) - gameStateOf(g, seat).spent!;
+}
+
+// 别人能力最强的局（第几局，东 1 是 0；8 局或 4 局）：这几局别人也要和，涅莉不去抢
 const HOT: Record<string, (slots: number) => number[]> = {
   yuuki: (n) => (n === 8 ? [0, 1, 2, 3, 7] : [0, 1, 2, 3]), // 东场；最后一局有塔可饼
   takami: (n) => [n - 1], // 收获的局
   sawaya: (n) => [n - 2, n - 1], // 最后两局把云和神威用掉
 };
 
-// 电脑的分法：挑 bet 局押上运势（8 局押 3 局、4 局押 2 局），其余的局都是最低（NELLY.min）。
-// 挑法：自己坐庄的局 +2，别人能力最强的局每有一个人 -3，同分挑靠后的局。押的局里坐庄那局多给（庄家和了是 1.5 倍）。
-// dealerRound 是她每圈第几局坐庄；contested 是别人能力最强的局（一个人一次）
-export function nellyAiPlan(slots: number, dealerRound = slots / 4 - 1, contested: number[] = []): number[] {
-  const bet = slots === 8 ? 3 : 2;
-  const score = (i: number) => (i % 4 === dealerRound ? 2 : 0) - 3 * contested.filter((c) => c === i).length + i * 0.1;
-  const picks = Array.from({ length: slots }, (_, i) => i)
-    .sort((a, b) => score(b) - score(a))
-    .slice(0, bet);
-  const plan = new Array<number>(slots).fill(NELLY.min);
-  let pot = -NELLY.min * (slots - bet);
-  // 坐庄那局一定是宣言局，其余押的局尽量也是；从靠后的局往前分
-  const dealerSlot = picks.filter((i) => i % 4 === dealerRound).sort((a, b) => b - a)[0];
-  if (dealerSlot !== undefined) {
-    plan[dealerSlot] = Math.min(NELLY.max, Math.max(NELLY.declare, pot - NELLY.declare * (bet - 1)));
-    pot -= plan[dealerSlot];
-  }
-  const rest = picks.filter((i) => i !== dealerSlot).sort((a, b) => b - a);
-  rest.forEach((i, n) => {
-    plan[i] = Math.min(NELLY.max, Math.max(NELLY.declare, Math.floor(pot / (rest.length - n))), pot);
-    pot -= plan[i];
-  });
-  return plan;
+// 电脑押几点。pool：能押的运势（算上剩下的局还会恢复的）；left：包括这一局还剩几局；dealer：这一局她坐庄（连庄的不算）；
+// contested：这一局是别人能力最强的局
+export function nellyAiBet(pool: number, left: number, dealer: boolean, contested: boolean): number {
+  const cap = Math.min(NELLY.maxBet, pool);
+  if (cap <= 0) return 0;
+  if (left <= 1 || dealer) return cap;
+  // 运势多到每一局都能押满，抢手的局也押
+  if (contested && pool < NELLY.maxBet * left) return 0;
+  return Math.min(cap, Math.max(1, Math.round(pool / left)));
 }
 
-const aiPlan = (g: Game, seat: number) => {
-  const n = nellySlots(g);
-  const contested = [0, 1, 2, 3].filter((s) => s !== seat).flatMap((s) => HOT[g.abilities[s]?.id ?? '']?.(n) ?? []);
-  return nellyAiPlan(n, g.dealerRound(seat), contested);
+const aiBet = (g: Game, seat: number) => {
+  const slots = g.fullHanchan ? 8 : 4;
+  const slot = g.roundWind * 4 + g.roundNumber;
+  const left = Math.max(1, slots - slot);
+  const contested = [0, 1, 2, 3].some((s) => s !== seat && (HOT[g.abilities[s]?.id ?? '']?.(slots) ?? []).includes(slot));
+  const pool = nellyPoolBefore(g, seat);
+  // 平摊时把后面还会恢复的算进去（东风战 4 局恢复不了；连庄会多出几局，按 1 局算）
+  const plan = pool + Math.floor((left - 1) / NELLY.every);
+  return Math.min(pool, nellyAiBet(plan, left + (g.honba > 0 ? 1 : 0), seat === g.dealer && g.honba === 0, contested));
 };
 
-// 分法合不合规矩：不合给原因
-export function nellyPlanError(plan: number[]): string | null {
-  if (plan.some((v) => v < NELLY.min || v > NELLY.max)) return `每一局在 ${NELLY.min} 到 +${NELLY.max} 之间`;
-  const sum = plan.reduce((a, b) => a + b, 0);
-  return sum === 0 ? null : `加起来是 ${sum > 0 ? '+' : ''}${sum}，要正好是 0`;
+// 这一局押之前有几点
+const nellyPoolBefore = (g: Game, seat: number) => NELLY.start + regen(g.round) - gameStateOf(g, seat).spent!;
+
+// 这一局押了几点：一局开始以后第一次问到时定下来、扣掉（谁先问都一样：别人定配牌规矩时就要知道她是不是三倍满的局）
+function tierOf(g: Game, seat: number): number {
+  const st = stateOf(g, seat);
+  if (st.bet !== undefined) return st.bet;
+  if (between(g)) return 0;
+  const gs = gameStateOf(g, seat);
+  const pool = nellyPoolBefore(g, seat);
+  const want = g.manual[seat] ? gs.pick ?? 0 : aiBet(g, seat);
+  // 玩家押的不够就不押（发牌前界面上押不了）
+  const bet = want > pool ? (g.manual[seat] ? 0 : pool) : Math.max(0, Math.min(NELLY.maxBet, want));
+  st.bet = bet;
+  gs.spent! += bet;
+  gs.log!.push(bet);
+  return bet;
 }
 
-// 她和过的局（看到哪算到哪）：和过一次，这一局的运势就用完了
-function spentSlots(g: Game, seat: number): boolean[] {
-  const gs = gameStateOf(g, seat);
-  gs.spent ??= [];
-  for (let i = gs.seen ?? 0; i < g.events.length; i++) {
-    const e = g.events[i];
-    if (e.type === 'roundStart' && e.slot !== undefined) gs.cur = e.slot;
-    if (e.type === 'roundEnd' && gs.cur !== undefined && e.result.wins.some((w) => w.seat === seat)) gs.spent[gs.cur] = true;
-  }
-  gs.seen = g.events.length;
-  return gs.spent;
+// 这一局押了几点（0 是没押）
+export function nellyTier(g: Game, seat: number): number {
+  return tierOf(g, seat);
 }
 
-// 这一局的运势（用过七姐妹的已经扣掉；和过一次就是 0）
-export function nellyLuck(g: Game, seat: number): number {
-  const gs = gameStateOf(g, seat);
-  const i = slotOf(g);
-  if (spentSlots(g, seat)[i]) return 0;
-  return (gs.luck?.[i] ?? 0) - (gs.used![i] ?? 0);
+// 这一局要做到多大（按她的点数算：庄家 1.5 倍）
+export function nellyTarget(g: Game, seat: number): number {
+  const t = NELLY.target[tierOf(g, seat)];
+  return seat === g.dealer ? t * 1.5 : t;
 }
 
 export function nellySisters(g: Game, seat: number): number {
@@ -146,14 +137,34 @@ export function nellyBlocked(g: Game, seat: number): number[] {
   return stateOf(g, seat).blocked!;
 }
 
-// 这一局是不是宣言局
-export function nellyDeclared(g: Game, seat: number): boolean {
-  return nellyLuck(g, seat) >= NELLY.declare;
+// 这一局做的花色（没押是 null）
+export function nellySuit(g: Game, seat: number): number | null {
+  return tierOf(g, seat) > 0 ? stateOf(g, seat).suit ?? null : null;
 }
 
-// 宣言局做的花色（不是宣言局是 null）
-export function nellySuit(g: Game, seat: number): number | null {
-  return nellyDeclared(g, seat) ? stateOf(g, seat).suit ?? null : null;
+// 还有运势：看得出别人听没听牌
+export function nellySenses(g: Game, seat: number): boolean {
+  return g.round >= 1 && nellyPool(g, seat) > 0;
+}
+
+// target 听牌了没有（涅莉感知到的，只看听没听）
+export function nellySensesTenpai(g: Game, target: number): boolean {
+  const p = g.players[target];
+  return shanten(toCounts(p.hand), p.melds.length) <= 0;
+}
+
+// 七姐妹：押了运势的局，每有一家听牌用掉一次封住他
+function sweep(g: Game, seat: number): void {
+  if (tierOf(g, seat) <= 0) return;
+  const gs = gameStateOf(g, seat);
+  const st = stateOf(g, seat);
+  for (let o = 0; o < 4 && gs.sisters! > 0; o++) {
+    if (o === seat || st.blocked!.includes(o) || !g.binds(seat, o) || !nellySensesTenpai(g, o)) continue;
+    gs.sisters!--;
+    st.blocked!.push(o);
+    // 不写 target：七姐妹要放切入（写了 target 的是悄悄换牌）
+    g.emit({ type: 'ability', seat, ability: 'nelly', text: '七姐妹' });
+  }
 }
 
 const useful = (g: Game, seat: number) => {
@@ -165,6 +176,25 @@ const useful = (g: Game, seat: number) => {
     const after = shanten(counts, p.melds.length);
     counts[kindOf(t)]--;
     return after < sh;
+  };
+};
+
+// 摸到 t 自摸的话和多少（和不了是 0）
+const drawValue = (g: Game, seat: number) => {
+  const p = g.players[seat];
+  const memo = new Map<number, number>();
+  return (t: TileId) => {
+    const k = kindOf(t);
+    if (!memo.has(k)) {
+      p.hand.push(t);
+      try {
+        const r = g.winResult(seat, t, true);
+        memo.set(k, r ? teruWinValue(r, true, seat === g.dealer) : 0);
+      } finally {
+        p.hand.pop();
+      }
+    }
+    return memo.get(k)!;
   };
 };
 
@@ -187,180 +217,137 @@ const reshape = (g: Game, seat: number) => {
   };
 };
 
-const fmt = (v: number) => (v > 0 ? `+${v}` : `${v}`);
-
 const inSuit = (suit: number) => (t: TileId) => kindOf(t) < 27 && suitOf(kindOf(t)) === suit;
 
 export const nellyAbility: Ability = {
   id: 'nelly',
   name: '运势·七姐妹',
-  description: `开场给这一场的每一局分运势（每局 ${NELLY.min} 到 +${NELLY.max}，加起来是 0）：负的局摸牌差；+1 到 +3 摸牌顺；+${NELLY.declare} 以上是宣言局，这一局是她的：配牌偏向一种花色、摸牌几乎都是进张、别人的进张大多被换走。她在一局里和过一次，这一局的运势就用完了（连庄的局是 0）。运势只有她自己知道。七姐妹一场 ${NELLY.sisters} 次：别人要自摸时封住他，这一局他和不了；顺流的局每用一次运势减 1，宣言局里自动发动、不扣次数。`,
+  description: `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点。每一局发牌前可以押运势：1 点配牌和进张朝满贯发展，2 点朝倍满，3 点朝三倍满（这一局她的和牌别人挡不住）。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次：押了运势的局自动开着，每有一家听牌用掉一次，封住他这一局和不了。`,
   priority: PRIORITY.nelly,
 
-  dealRules(g, seat) {
-    const gs = gameStateOf(g, seat);
-    if (gs.luck) return;
-    gs.luck = g.manual[seat] && gs.plan && !nellyPlanError(gs.plan) ? gs.plan : aiPlan(g, seat);
+  // 三倍满的局别人挡不住她（别人的能力管不到她）
+  shielded(g, seat) {
+    if (between(g)) return false;
+    return tierOf(g, seat) >= 3;
   },
 
-  // 宣言局：选她配牌里最多的花色，别的花色的数牌换成这门花色；单张字牌也换掉（对子留着做混一色）
+  dealRules(g, seat) {
+    tierOf(g, seat);
+  },
+
+  // 押了运势：选她配牌里最多的花色，别的花色的数牌换成这门花色；单张字牌也换掉（对子留着做混一色）
   beforeDeal(g, seat) {
-    const v = nellyLuck(g, seat);
+    const v = tierOf(g, seat);
     const st = stateOf(g, seat);
-    if (v < NELLY.declare) return;
+    if (v <= 0) return;
     const per = [0, 0, 0];
     for (const t of g.dealHand(seat)) if (kindOf(t) < 27) per[suitOf(kindOf(t))]++;
     const suit = per.indexOf(Math.max(...per));
     st.suit = suit;
     const pred = inSuit(suit);
-    const chance = Math.min(1, NELLY.declDeal + NELLY.declDealPer * (v - NELLY.declare));
     const hand = g.dealHand(seat).map(kindOf);
     for (const i of g.dealIndices(seat)) {
       const k = kindOf(g.wall.live[i]);
       if (pred(g.wall.live[i])) continue;
       if (k >= 27 && hand.filter((x) => x === k).length >= 2) continue;
-      if (!g.rng.chance(chance)) continue;
+      if (!g.rng.chance(NELLY.deal[v])) continue;
       const swap = () => g.wall.bringToLive(i, pred, g.rng, (j) => j >= 52);
       if (!swap()) g.dealFallback(seat, swap);
     }
   },
 
   onRoundStart(g, seat) {
-    const gs = gameStateOf(g, seat);
-    if (slotOf(g) === 0 && g.honba === 0) g.emit({ type: 'ability', seat, ability: 'nelly', text: '分配运势' });
-    // 运势只有她自己知道：电脑的涅莉不报
-    const v = nellyLuck(g, seat);
-    if (!g.manual[seat] || v <= 0 || !gs.luck) return;
-    g.emit({ type: 'ability', seat, ability: 'nelly', text: v >= NELLY.declare ? '宣言' : `运势 ${fmt(v)}` });
+    // 押了几点只有她自己知道：电脑的涅莉不报
+    const v = tierOf(g, seat);
+    if (!g.manual[seat] || v <= 0) return;
+    g.emit({ type: 'ability', seat, ability: 'nelly', text: `运势·${TIER_NAMES[v]}` });
   },
 
-  // 别人摸牌：七姐妹（下一张就是他的和了牌时封住他）；运势为正时他的进张有时被换走（宣言局大多被换走）
-  beforeAnyDraw(g, seat, drawer, rinshan) {
-    if (drawer === seat) return;
-    const gs = gameStateOf(g, seat);
-    const st = stateOf(g, seat);
-    const v = nellyLuck(g, seat);
-    const declared = v >= NELLY.declare;
-    const next = rinshan ? g.wall.rinshan[0] : g.wall.live[0];
-    const can = declared || (gs.sisters! > 0 && !gs.off);
-    const p = g.players[drawer];
-    // 摸了 t 就和了（按现在的手牌算，摸进来以后再问也一样）
-    const base = toCounts(p.hand);
-    const melds = p.melds.length;
-    const wins = (t: TileId) => {
-      base[kindOf(t)]++;
-      const done = shanten(base, melds) < 0;
-      base[kindOf(t)]--;
-      return done;
-    };
-    // 七姐妹：那张和了牌换走（他摸到的是别的牌），这一局他也和不了了。换不走就不发动。
-    // 再定一条规矩，摸牌的人自己的能力也不能把和了牌换回来
-    if (v > 0 && can && next !== undefined && g.binds(seat, drawer) && !st.blocked!.includes(drawer) && g.canWin(drawer) && wins(next)) {
-      const w = g.wall;
-      const swapped = rinshan ? w.bringToRinshan((t) => !wins(t), g.rng) : w.bringToLive(0, (t) => !wins(t), g.rng);
-      if (swapped) {
-        if (!declared) {
-          gs.sisters!--;
-          gs.used![slotOf(g)] = (gs.used![slotOf(g)] ?? 0) + 1;
-        }
-        st.blocked!.push(drawer);
-        // 不写 target：七姐妹要放切入（写了 target 的是悄悄换牌）
-        g.emit({ type: 'ability', seat, ability: 'nelly', text: '七姐妹' });
-        return { seat, ability: 'nelly', text: '七姐妹', deny: wins };
-      }
-    }
-    if (rinshan || v <= 0) return;
-    const deny = declared ? NELLY.declDeny + NELLY.declDenyPer * (v - NELLY.declare) : NELLY.denyPer * v;
-    if (!g.rng.chance(deny)) return;
-    return { seat, ability: 'nelly', text: '运势', deny: useful(g, drawer) };
+  // 每次有人摸牌前看一眼：谁听牌了就用七姐妹封住
+  beforeAnyDraw(g, seat) {
+    sweep(g, seat);
   },
 
-  // 七姐妹封住的人这一局和不了
+  // 七姐妹封住的人这一局和不了（问到时也先看一眼：刚听牌的人马上就封）
   forbidsWin(g, seat, target) {
-    return nellyBlocked(g, seat).includes(target);
+    if (!stateOf(g, seat).blocked!.includes(target)) sweep(g, seat);
+    return stateOf(g, seat).blocked!.includes(target);
   },
 
   beforeDraw(g, seat, rinshan) {
     if (rinshan) return;
-    const v = nellyLuck(g, seat);
+    const v = tierOf(g, seat);
+    if (v <= 0 || !g.rng.chance(NELLY.good[v])) return;
     const w = g.wall;
     const good = useful(g, seat);
-    if (v >= NELLY.declare) {
-      if (!g.rng.chance(NELLY.declGood + NELLY.declGoodPer * (v - NELLY.declare))) return;
-      const suit = stateOf(g, seat).suit;
-      const pred = suit === undefined ? () => true : inSuit(suit);
-      const p = g.players[seat];
-      const sh = shanten(toCounts(p.hand), p.melds.length);
-      // 听牌了但牌还不够大（手里还有别的花色）：先来那门花色的牌，把别的花色换掉；够大了再来和了牌。
-      // 立直了（手牌动不了）、牌山快摸完了（电脑这时有什么和什么）就直接来和了牌
-      const off = p.hand.some((t) => kindOf(t) < 27 && !pred(t));
-      if (sh === 0 && off && !p.riichi && g.wall.remaining > NELLY.declLate) w.bringToLive(0, (t) => pred(t) && !good(t), g.rng) || w.bringToLive(0, good, g.rng);
-      else if (!(w.bringToLive(0, (t) => good(t) && (pred(t) || kindOf(t) >= 27), g.rng) || w.bringToLive(0, good, g.rng)) && sh === 0 && !p.riichi) {
-        // 死听：来一张能换听的牌
-        const fix = reshape(g, seat);
-        w.bringToLive(0, (t) => fix(t) && (pred(t) || kindOf(t) >= 27), g.rng) || w.bringToLive(0, fix, g.rng);
-      }
-    } else if (v > 0) {
-      if (g.rng.chance(Math.min(NELLY.goodMax, NELLY.goodPer * v)) && !good(w.live[0])) w.bringToLive(0, good, g.rng);
-    } else if (v < 0 && good(w.live[0]) && g.rng.chance(NELLY.badPer * -v)) w.bringToLive(0, (t) => !good(t), g.rng);
+    const suit = stateOf(g, seat).suit;
+    const pred = suit === undefined ? () => true : inSuit(suit);
+    const p = g.players[seat];
+    const sh = shanten(toCounts(p.hand), p.melds.length);
+    if (sh > 0) {
+      w.bringToLive(0, (t) => good(t) && (pred(t) || kindOf(t) >= 27), g.rng) || w.bringToLive(0, good, g.rng);
+      return;
+    }
+    // 听牌了：和了牌够大就来和了牌
+    const value = drawValue(g, seat);
+    const target = nellyTarget(g, seat);
+    if (w.bringToLive(0, (t) => value(t) >= target, g.rng)) return;
+    // 牌还不够大：手牌还能动、牌山还多，就先来那门花色的牌，把别的花色换掉
+    const off = p.hand.some((t) => kindOf(t) < 27 && !pred(t));
+    if (off && !p.riichi && w.remaining > NELLY.late && w.bringToLive(0, (t) => pred(t) && !good(t), g.rng)) return;
+    // 做不大了：来最大的和了牌；死听就来一张能换听的牌
+    if (w.bringToLive(0, (t) => value(t) > 0, g.rng)) return;
+    if (p.riichi) return;
+    const fix = reshape(g, seat);
+    w.bringToLive(0, (t) => fix(t) && (pred(t) || kindOf(t) >= 27), g.rng) || w.bringToLive(0, fix, g.rng);
   },
 
-  // 开场分运势
+  // 发牌前押运势：不选就是不押
   preDeal(g, seat): PreDealOption[] {
+    const pool = nellyPool(g, seat);
     const gs = gameStateOf(g, seat);
-    if (gs.luck) return [];
-    const plan = gs.plan ?? aiPlan(g, seat);
-    return plan.map((v, i) => ({
-      id: `luck${i}`,
-      name: SLOT_NAMES[i],
-      desc: '',
-      enabled: true,
-      picked: false,
-      stepper: { value: v, min: NELLY.min, max: NELLY.max },
+    return [1, 2, 3].map((n) => ({
+      id: `luck${n}`,
+      name: `押 ${n} 点 · ${TIER_NAMES[n]}`,
+      desc: n === 3 ? '配牌和进张朝三倍满发展，这一局和牌别人挡不住' : `配牌和进张朝${TIER_NAMES[n]}发展`,
+      cost: n,
+      enabled: n <= pool,
+      picked: gs.pick === n && n <= pool,
+      note: n <= pool ? undefined : '运势不够',
+      group: 'luck',
     }));
   },
 
-  preDealCheck(_g, _seat, values) {
-    return nellyPlanError(Object.keys(values).sort().map((k) => values[k]));
-  },
-
-  setPreDeal(g, seat, _picked, values) {
-    if (!values) return;
-    const plan = Object.keys(values)
-      .filter((k) => k.startsWith('luck'))
-      .sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)))
-      .map((k) => values[k]);
-    gameStateOf(g, seat).plan = plan;
+  setPreDeal(g, seat, picked) {
+    const id = picked.find((p) => p.startsWith('luck'));
+    gameStateOf(g, seat).pick = id ? Number(id.slice(4)) : 0;
   },
 
   skill(g, seat) {
     const gs = gameStateOf(g, seat);
-    const v = nellyLuck(g, seat);
-    const label = gs.off ? '七姐妹：关' : '七姐妹：开';
+    const pool = nellyPool(g, seat);
+    const v = between(g) ? 0 : tierOf(g, seat);
     const note =
-      v >= NELLY.declare
-        ? `宣言局（运势 ${fmt(v)}）：七姐妹自动发动、不扣次数；还剩 ${gs.sisters} 次`
-        : `这一局运势 ${fmt(v)}；七姐妹还剩 ${gs.sisters} 次${v > 0 ? '' : '（运势为正的局才能用）'}`;
-    return { label, note, enabled: gs.sisters! > 0, meter: { value: gs.sisters!, max: NELLY.sisters }, active: v > 0 };
+      (v > 0 ? `这一局押了 ${v} 点（${TIER_NAMES[v]}），七姐妹自动开着` : '这一局没押运势，七姐妹不发动') +
+      `；七姐妹还剩 ${gs.sisters} 次${pool > 0 ? '；看得出别人听没听牌' : ''}`;
+    return { label: '运势', note, enabled: false, meter: { value: pool, max: Math.max(NELLY.start, pool), label: '运势' }, active: v > 0 };
   },
 
-  pressSkill(g, seat) {
-    const gs = gameStateOf(g, seat);
-    gs.off = !gs.off;
-  },
-
-  // 运势只有她自己知道：电脑的涅莉不挂
+  // 押了几点只有她自己知道：电脑的涅莉不挂
   badge(g, seat) {
-    if (!g.manual[seat]) return null;
-    const v = nellyLuck(g, seat);
-    return v >= NELLY.declare ? '宣言' : v ? `运${fmt(v)}` : null;
+    if (!g.manual[seat] || between(g)) return null;
+    const v = tierOf(g, seat);
+    return v > 0 ? TIER_NAMES[v] : null;
   },
 
   // 照魔镜看得到
   insight(g, seat) {
     const gs = gameStateOf(g, seat);
-    const spent = spentSlots(g, seat);
-    const plan = gs.luck ? gs.luck.map((v, i) => `${SLOT_NAMES[i]} ${spent[i] ? '用完' : fmt(v - (gs.used![i] ?? 0))}`).join('，') : '还没分';
-    return [`运势：${plan}`, nellyDeclared(g, seat) ? '这一局是宣言局' : '', `七姐妹还剩 ${gs.sisters} 次`].filter(Boolean);
+    const v = between(g) ? 0 : tierOf(g, seat);
+    return [
+      `运势还剩 ${nellyPool(g, seat)} 点${gs.log!.length ? `（押过：${gs.log!.join('、')}）` : ''}`,
+      v > 0 ? `这一局押了 ${v} 点，冲${TIER_NAMES[v]}` : '这一局没押',
+      `七姐妹还剩 ${gs.sisters} 次`,
+    ];
   },
 };
