@@ -123,7 +123,7 @@ export interface Ability {
   // 各人对自己的能力照样起作用；absolute 的照样管得到
   nullifies?(g: Game, seat: number): boolean;
   // 这一局别人控牌山的能力失效（淡的高维领域、巨引力源）：别人给摸牌、配牌定的规矩不算，摸牌前整理牌山、自己摸牌前换牌都不动。
-  // 和佛灭不同，她自己的能力照样起作用；absolute、immune 的人不受影响（Game.quelled）
+  // 和佛灭不同，她自己的能力照样起作用；absolute、immune 的人不受影响（Game.quelled）。只管牌山：别人不许和牌、封印照样算（Game.rulesBind）
   quells?(g: Game, seat: number): boolean;
   // 平行宇宙（淡）：把这家累计的标记清空（照的连续和了、漫的计数器、和的计数……），这一局也不算数。没写就是没有要清的
   resetMarks?(g: Game, seat: number): void;

@@ -30,9 +30,9 @@ describe('石户霞', () => {
           if (suit === null) return;
           summoned = true;
           summonedRounds++;
-          for (const p of g.players) if (p.seat !== me && g.binds(me, p.seat)) expect(p.hand.some(inSuit(suit))).toBe(false);
+          for (const p of g.players) if (p.seat !== me && g.rulesBind(me, p.seat)) expect(p.hand.some(inSuit(suit))).toBe(false);
         }
-        if (e.type === 'draw' && e.seat !== me && g.binds(me, e.seat) && !g.rinshanDraw) {
+        if (e.type === 'draw' && e.seat !== me && g.rulesBind(me, e.seat) && !g.rinshanDraw) {
           const suit = kasumiSuit(g, me);
           if (suit === null) return;
           const p = g.players[e.seat];

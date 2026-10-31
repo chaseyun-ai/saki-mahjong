@@ -262,7 +262,9 @@ describe('大星淡：主动技能', () => {
     expect(g.quelled(3)).toBe(true);
     expect(g.quelled(2)).toBe(false); // 玄是作者钦定
     expect(g.quelled(0)).toBe(false);
-    expect(g.binds(3, 1)).toBe(false);
+    expect(g.rulesBind(3, 1)).toBe(false);
+    // 只压牌山：不许和牌（七姐妹）、封印这些照样管得到
+    expect(g.binds(3, 1)).toBe(true);
     restart(g);
     expect(awaiDomainOn(g)).toBe(false);
     expect(g.quelled(1)).toBe(false);

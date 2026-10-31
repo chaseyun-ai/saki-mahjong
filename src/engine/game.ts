@@ -362,7 +362,7 @@ export class Game {
 
   // 配牌调整期间补一条规矩（比如淡定好了自己的配牌以后）
   addDealRule(r: DealRule): boolean {
-    if (!this.binds(r.seat, r.target) || this.shrugs(r.seat, r.target)) return false;
+    if (!this.rulesBind(r.seat, r.target) || this.shrugs(r.seat, r.target)) return false;
     this.dealRules.push(r);
     return true;
   }
@@ -382,7 +382,13 @@ export class Game {
   // from 的能力管不管得到 target（照这样 immune 的人只听自己和 absolute 的）
   binds(from: number, target: number): boolean {
     if (from === target || this.isAbsolute(from)) return true;
-    return !this.isImmune(target) && !this.fieldVoid() && !this.quelled(from);
+    return !this.isImmune(target) && !this.fieldVoid();
+  }
+
+  // from 给 target 的配牌、摸牌定的规矩算不算：管得到，而且 from 控牌山的能力没被压住（淡的高维领域、巨引力源）。
+  // 只管牌山：不许和牌（涅莉的七姐妹）、封印这些不走这里
+  rulesBind(from: number, target: number): boolean {
+    return this.binds(from, target) && (from === target || !this.quelled(from));
   }
 
   // target 这一下挡住了 from 的影响（天使和：一半的概率）。absolute 的挡不住；没有 resist 的人不掷随机数
@@ -416,7 +422,7 @@ export class Game {
     }
     for (const [seat, ch] of bySeat) {
       // 别人换不到 immune 的人的配牌
-      if (this.dealActor !== null && !this.binds(this.dealActor, seat)) return false;
+      if (this.dealActor !== null && !this.rulesBind(this.dealActor, seat)) return false;
       if (this.dealShrugged.has(`${this.dealActor}-${seat}`)) return false;
       const idx = this.dealIndices(seat);
       const before = idx.map((i) => this.wall.live[i]);
@@ -584,7 +590,7 @@ export class Game {
     const order = this.abilityOrder();
     this.dealRules = [];
     // 爽最先动：上一局叫的蛇神威封住的人这里就不再出手
-    for (const s of order) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []).filter((r) => this.binds(r.seat, r.target) && !this.shrugs(r.seat, r.target)));
+    for (const s of order) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []).filter((r) => this.rulesBind(r.seat, r.target) && !this.shrugs(r.seat, r.target)));
     this.dealShrugged.clear();
     for (const s of order) for (let t = 0; t < 4; t++) if (this.shrugs(s, t)) this.dealShrugged.add(`${s}-${t}`);
     this.wall.guard = (changes) => this.dealChangeOk(changes);
