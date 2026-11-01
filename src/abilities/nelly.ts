@@ -1,6 +1,7 @@
 import type { Game } from '../engine/game';
 import { shanten, waitingKinds } from '../engine/shanten';
 import { TileId, doraFromIndicator, kindOf, suitOf, toCounts } from '../engine/tiles';
+import { kuroSeat } from './doraControl';
 import { isDoraTile, kuroLost } from './kuro';
 import { teruWinValue } from './teru';
 import { PRIORITY, type Ability, type PreDealOption } from './types';
@@ -320,11 +321,18 @@ function projHan(g: Game, seat: number, hand: TileId[], t: TileId): number {
   }
 }
 
+// 玄的能力还在（不是她自己）：和牌中不了里宝牌
+const kuroBlocks = (g: Game, seat: number) => {
+  const k = kuroSeat(g);
+  return k !== null && k !== seat;
+};
+
 // 立直以后第一张里宝牌指示牌能换成指向几张她的牌（和 setUra 一样按 13 张加暗杠里张数多的挑，指示牌找得到才算）
 function uraGain(g: Game, seat: number, hand: TileId[]): number {
   const w = g.wall;
   const counts = toCounts([...hand, ...g.players[seat].melds.filter((m) => m.type === 'ankan').flatMap((m) => m.tiles)]);
-  if (!w.uraIndicators.length || w.locked.has(w.uraIndicators[0])) return 0;
+  // 玄的能力还在：别人中不了里宝牌
+  if (!w.uraIndicators.length || w.locked.has(w.uraIndicators[0]) || kuroBlocks(g, seat)) return 0;
   const pool = [w.uraIndicators[0], ...w.uraIndicators.slice(1), ...w.live, ...w.rinshan].filter((t) => !w.locked.has(t));
   const ok = new Set(pool.map((t) => doraFromIndicator(kindOf(t))));
   let best = 0;
@@ -360,7 +368,7 @@ function reachable(g: Game, seat: number, t: TileId): boolean {
 }
 
 // 押 3 点：定一手三倍满（立直、一发、自摸再加里宝牌）的目标牌，和手里的牌重合得越多越好，缺的牌牌山里要有：
-// - 清一色（6 番）：有对子、里宝牌能指向它就够 11 番；七对子也行
+// - 清一色（6 番）：有对子、里宝牌能指向它就够 11 番；七对子也行。玄在场中不了里宝牌：七对子、一气通贯、断幺九加一盃口
 // - 混一色（3 番）：宝牌能动的时候，要有宝牌刻子（宝牌、里宝牌各 3 番）；七对子要有宝牌对子
 function planBig(g: Game, seat: number): number[] | null {
   const st = stateOf(g, seat);
@@ -374,7 +382,7 @@ function planBig(g: Game, seat: number): number[] | null {
   const uraOk = new Set(
     [w.uraIndicators[0], ...w.uraIndicators.slice(1), ...w.live, ...w.rinshan].filter((t) => t !== undefined && !w.locked.has(t)).map((t) => doraFromIndicator(kindOf(t))),
   );
-  if (!w.uraIndicators.length || w.locked.has(w.uraIndicators[0])) uraOk.clear();
+  if (!w.uraIndicators.length || w.locked.has(w.uraIndicators[0]) || kuroBlocks(g, seat)) uraOk.clear();
   const dora = new Set(w.visibleDoraIndicators().map((d) => doraFromIndicator(kindOf(d))));
   const base = flush.suit * 9;
   const F = [...Array.from({ length: 9 }, (_, i) => base + i), ...(flush.honors ? [27, 28, 29, 30, 31, 32, 33] : [])];
@@ -385,8 +393,20 @@ function planBig(g: Game, seat: number): number[] | null {
   const prev = st.plan?.join();
   let best: number[] | null = null;
   let bestScore = -1;
+  // 玄的能力还在：中不了里宝牌，清一色要靠七对子、一气通贯、断幺九加一盃口凑够 11 番
+  const noUra = kuroBlocks(g, seat);
+  const chosen: number[] = []; // 4 组面子挑了 sets 里的哪几组
   const valid = (pairs: boolean) => {
     const mixed = t.some((n, k) => n > 0 && k >= 27);
+    if (noUra) {
+      if (mixed) return false;
+      if (pairs) return true;
+      // 一气通贯（123、456、789 都在）；或者断幺九加一盃口（同一组顺子两次）
+      const ittsu = [0, 3, 6].every((i) => chosen.includes(i));
+      const tanyao = t[base] === 0 && t[base + 8] === 0;
+      const peikou = chosen.some((i, j) => i < 7 && chosen.indexOf(i) !== j);
+      return ittsu || (tanyao && peikou);
+    }
     for (const k of F) {
       if (!uraOk.has(k)) continue;
       if (!mixed && t[k] >= 2) return true;
@@ -414,7 +434,9 @@ function planBig(g: Game, seat: number): number[] | null {
     }
     for (let i = from; i < sets.length; i++) {
       for (const k of sets[i]) t[k]++;
+      chosen.push(i);
       if (sets[i].every(fits)) pick(i, left - 1);
+      chosen.pop();
       for (const k of sets[i]) t[k]--;
     }
   };
@@ -745,6 +767,11 @@ export const nellyAbility: Ability = {
   },
 
   // 照魔镜看得到
+  // 押 2、3 点立直和牌：里宝牌变成她手里最多的那种牌（摸牌时也先换好，算番用；和牌这一刻再定一次，见 doraControl）
+  claimUra(g, seat) {
+    if (NELLY.dora[tierOf(g, seat)]) setUra(g, seat);
+  },
+
   insight(g, seat) {
     const gs = gameStateOf(g, seat);
     const v = between(g) ? 0 : tierOf(g, seat);

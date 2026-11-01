@@ -67,7 +67,7 @@ describe('清水谷龙华', () => {
 
   it('无极天的局：摸牌更常是进张；电脑的龙华不打会放铳的牌', () => {
     const n = { on: 0, onGood: 0, off: 0, offGood: 0, checked: 0 };
-    for (let seed = 1; seed <= 10; seed++) {
+    for (let seed = 1; seed <= 24; seed++) {
       play(
         seed,
         ['ryuuka', 'saki', 'kuro', 'hiroe'],

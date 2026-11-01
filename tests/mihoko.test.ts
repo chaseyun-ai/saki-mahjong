@@ -36,7 +36,7 @@ describe('福路美穗子', () => {
   it('玩家牌局中随时能睁眼：花体力、睁到这一局结束，体力不够睁不开', () => {
     let opened = 0;
     let refused = 0;
-    for (let seed = 1; seed <= 6; seed++) {
+    for (let seed = 1; seed <= 24; seed++) {
       play(seed, LINEUPS[seed % 4], {
         manual: true,
         setup: (g, me) => {

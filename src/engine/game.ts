@@ -1,4 +1,5 @@
 import { PRIORITY, type Ability, type BindKey, type DealRule, type DrawRule } from '../abilities/types';
+import { settleKanDora, settleUra } from '../abilities/doraControl';
 import { Rng } from './rng';
 import { Meld, WinResult, evaluateWin } from './score';
 import { shanten, waitingKinds } from './shanten';
@@ -894,10 +895,7 @@ export class Game {
     this.lastDiscard = { seat, tile };
     this.emit({ type: 'discard', seat, tile, riichi });
     this.active(seat)?.afterDiscard?.(this, seat, tile);
-    while (this.pendingDora > 0) {
-      this.wall.revealDora();
-      this.pendingDora--;
-    }
+    this.revealPendingDora();
 
     this.callKind = 'discard';
     this.pending.clear();
@@ -1073,7 +1071,7 @@ export class Game {
     this.kanBy.push(seat);
     for (const q of this.players) q.ippatsu = false;
     this.noCallsYet = false;
-    this.wall.revealDora();
+    this.flipDora();
     this.emit({ type: 'call', seat, call: '暗杠' });
     this.drawFor(seat, true);
   }
@@ -1114,17 +1112,27 @@ export class Game {
 
   // ---------- 结算 ----------
 
+  // 翻一张杠宝牌：翻开前一刻按宝牌控制的规矩定指示牌（doraControl.settleKanDora）
+  private flipDora(): void {
+    if (this.wall.doraRevealed >= 5) return;
+    const kanner = this.kanBy[this.wall.doraRevealed - 1];
+    settleKanDora(this, this.wall.doraRevealed, kanner);
+    this.wall.revealDora();
+  }
+
   private revealPendingDora(): void {
     while (this.pendingDora > 0) {
-      this.wall.revealDora();
+      this.flipDora();
       this.pendingDora--;
     }
   }
 
   private doTsumo(seat: number): void {
     const p = this.players[seat];
-    const result = this.winResult(seat, p.drawn!, true)!;
+    // 先翻完杠宝牌、定里宝牌，再算点
     this.revealPendingDora();
+    settleUra(this, [seat]);
+    const result = this.winResult(seat, p.drawn!, true)!;
     const deltas = [0, 0, 0, 0];
     for (let o = 0; o < 4; o++) {
       if (o === seat) continue;
@@ -1144,8 +1152,10 @@ export class Game {
   }
 
   private doRon(seats: number[], from: number, tile: TileId): void {
-    const results = seats.map((s) => this.winResult(s, tile, false)!);
+    // 先翻完杠宝牌、定里宝牌（一炮双响按头跳顺序第一家定），再算点
     this.revealPendingDora();
+    settleUra(this, seats, tile);
+    const results = seats.map((s) => this.winResult(s, tile, false)!);
     const deltas = [0, 0, 0, 0];
     const wins: WinInfo[] = [];
     seats.forEach((s, i) => {

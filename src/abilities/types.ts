@@ -140,6 +140,9 @@ export interface Ability {
   // 削弱别人的能力（高鸭稳乃的深山）：别人的能力每次发动（定配牌规矩和调整配牌算一次、摸牌前的规矩、自己摸牌的能力）
   // 有这个概率不起作用。absolute、immune 的人不受影响；被封印、佛灭时不起作用（Game.damped）
   dampens?(g: Game, seat: number): number;
+  // 她和牌（立直过）的那一刻定里宝牌（爽的海神威、涅莉押 2、3 点、稳乃深山、咲不给自己里宝牌）。winTile 是荣和的那张，自摸不给。
+  // 只有和牌的那家调，玄的能力还在时不调；被封印、压住、削弱时不调（doraControl.settleUra）
+  claimUra?(g: Game, seat: number, winTile?: TileId): void;
 }
 
 export interface PreDealOption {

@@ -1,3 +1,4 @@
+import { kuroSeat } from '../src/abilities/doraControl';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AWAI, awaiCanUse, awaiDomainOn, awaiEnergy, awaiStarPlan, awaiWaitingForCorner, awaiWaveTiles } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
@@ -90,6 +91,7 @@ describe('大星淡：被动', () => {
     let kans = 0;
     let wins = 0;
     let uraHits = 0;
+    let kuroWins = 0;
     let tenhou = 0;
     for (let seed = 1; seed <= 20; seed++) {
       play(seed, (g) => {
@@ -105,18 +107,25 @@ describe('大星淡：被动', () => {
             const w = e.result.wins.find((x) => x.seat === awai);
             if (w?.result.yaku.some((y) => y.name === '天和' || y.name === '地和')) tenhou++;
             if (kanKind >= 0 && w && w.from === null) {
+              const hit = w.uraIndicators.some((i) => doraFromIndicator(kindOf(i)) === kanKind);
+              // 玄的能力还在：谁都中不了里宝牌，淡的杠里也一样
+              if (kuroSeat(g) !== null) {
+                kuroWins++;
+                expect(w.result.ura).toBe(0);
+                return;
+              }
               wins++;
-              if (w.uraIndicators.some((i) => doraFromIndicator(kindOf(i)) === kanKind)) uraHits++;
+              if (hit) uraHits++;
             }
           }
         });
       });
     }
-    console.log({ kans, wins, uraHits, tenhou });
+    console.log({ kans, wins, kuroWins, uraHits, tenhou });
     expect(tenhou).toBe(0);
     expect(kans).toBeGreaterThan(10);
-    // 杠完以后被别人和掉、被流局，都有可能；但大多数时候她会自摸，而且里宝牌就是杠的那张
-    expect(wins).toBeGreaterThan(kans * 0.6);
+    // 杠完以后被别人和掉、被流局，都有可能；但大多数时候她会自摸，而且玄的能力不在时里宝牌就是杠的那张
+    expect(wins + kuroWins).toBeGreaterThan(kans * 0.6);
     expect(uraHits).toBeGreaterThan(wins * 0.9);
   }, 120000);
 

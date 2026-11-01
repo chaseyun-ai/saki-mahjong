@@ -86,12 +86,6 @@ function steer(kinds: Kind[], current: TileId, bring: (pred: (t: TileId) => bool
 const kuroHoldsDora = (g: Game, seat: number): boolean =>
   [0, 1, 2, 3].some((s) => s !== seat && g.abilities[s]?.id === 'kuro' && !!g.active(s) && !(g.abilityGameState[s] as { lost?: boolean }).lost);
 
-interface ShizunoState {
-  uraSet?: boolean; // 立直时已经把里宝牌换好了
-}
-
-const stateOf = (g: Game, seat: number) => g.abilityState[seat] as ShizunoState;
-
 // resetMarks 是淡的平行宇宙用的钩子（淡那边加进 Ability）；这里先自己声明，合并以后也不冲突
 export const shizunoAbility: Ability & { resetMarks(g: Game, seat: number): void } = {
   id: 'shizuno',
@@ -139,7 +133,9 @@ export const shizunoAbility: Ability & { resetMarks(g: Game, seat: number): void
         if (done) break;
       }
     }
-    if (shizunoDora(g, seat) && !kuroHoldsDora(g, seat)) {
+    // 涅莉押 3 点的局（别人的能力管不到她）不动开局宝牌，不然她定好的三倍满会被打乱
+    const shielded = [0, 1, 2, 3].some((s) => s !== seat && !!g.abilities[s]?.shielded?.(g, s));
+    if (shizunoDora(g, seat) && !kuroHoldsDora(g, seat) && !shielded) {
       // 宝牌指示牌还没翻开：换成指向她最多的牌。别人对配牌的规矩（比如姬子的“不碰宝牌”）不能因此变差
       const others = [0, 1, 2, 3].filter((s) => s !== seat).flatMap((s) => g.dealHand(s));
       const kinds = bestDoraKinds(g, g.dealHand(seat), others);
@@ -180,24 +176,23 @@ export const shizunoAbility: Ability & { resetMarks(g: Game, seat: number): void
     else g.wall.bringToLive(0, useful, g.rng);
   },
 
-  // 自己打完牌：没翻开的杠宝牌指示牌换成指向她最多的牌；立直时把里宝牌也换好
+  // 自己打完牌：没翻开的杠宝牌指示牌换成指向她最多的牌
   afterDiscard(g, seat) {
-    if (!shizunoDora(g, seat)) return;
+    if (!shizunoDora(g, seat) || kuroHoldsDora(g, seat)) return;
     const w = g.wall;
     const { mine, others } = handsNow(g, seat);
     const kinds = bestDoraKinds(g, mine, others);
-    if (!kuroHoldsDora(g, seat)) {
-      for (let i = w.doraRevealed; i < w.doraIndicators.length; i++) steer(kinds, w.doraIndicators[i], (pred) => w.bringToDora(i, pred, g.rng));
-    }
-    const p = g.players[seat];
-    const st = stateOf(g, seat);
-    if (!p.riichiPending || st.uraSet) return;
-    st.uraSet = true;
-    // 已经被杠翻开过的那几张里宝牌不动（别人的能力可能早就定好了，比如淡的杠里）
-    for (let i = 0; i < w.uraIndicators.length; i++) {
-      if (i > 0 && i < w.doraRevealed) continue;
-      steer(kinds, w.uraIndicators[i], (pred) => w.bringToUra(i, pred, g.rng));
-    }
+    for (let i = w.doraRevealed; i < w.doraIndicators.length; i++) steer(kinds, w.doraIndicators[i], (pred) => w.bringToDora(i, pred, g.rng));
+  },
+
+  // 她立直和牌：翻开的里宝牌都换成指向她最多的牌（玄的能力还在时不调，见 doraControl）
+  claimUra(g, seat, winTile) {
+    if (!shizunoDora(g, seat)) return;
+    const w = g.wall;
+    const { mine, others } = handsNow(g, seat);
+    if (winTile !== undefined) mine.push(winTile);
+    const kinds = bestDoraKinds(g, mine, others);
+    for (let i = 0; i < w.doraRevealed; i++) steer(kinds, w.uraIndicators[i], (pred) => w.bringToUra(i, pred, g.rng));
   },
 
   skill(g, seat) {
