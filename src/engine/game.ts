@@ -173,6 +173,8 @@ export class Game {
   kakanInfo: { seat: number; tile: TileId } | null = null;
   rinshanDraw = false;
   pendingDora = 0;
+  // 正在给谁摸牌（摸牌前的能力在动的时候），摸完是 null。淡的巨引力源看这一张在不在引力圆里
+  drawing: { seat: number; rinshan: boolean } | null = null;
   kanBy: number[] = [];
   noCallsYet = true;
   roundResult: RoundResult | null = null;
@@ -662,11 +664,13 @@ export class Game {
       this.exhaustiveDraw();
       return;
     }
+    this.drawing = { seat, rinshan };
     const bust = this.bustRules(seat, rinshan);
     this.applyDrawAbilities(seat, rinshan, bust);
     if (!rinshan && seat === this.dealer && this.isFirstTurn(seat)) this.denyTenhou(seat, bust);
     this.bustFallback(seat, rinshan, bust);
     const tile = rinshan ? this.wall.drawRinshan() : this.wall.draw();
+    this.drawing = null;
     const p = this.players[seat];
     p.hand.push(tile);
     p.drawn = tile;

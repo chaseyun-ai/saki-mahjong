@@ -1,5 +1,6 @@
 import { kuroSeat } from '../src/abilities/doraControl';
 import { afterEach, describe, expect, it } from 'vitest';
+import { stackAt } from '../src/engine/wall';
 import { AWAI, awaiCanUse, awaiDomainOn, awaiEnergy, awaiStarPlan, awaiWaitingForCorner, awaiWaveTiles } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
 import { suzuCounter } from '../src/abilities/suzu';
@@ -348,23 +349,49 @@ describe('大星淡：主动技能', () => {
     expect(kept).toBeGreaterThan(2);
   });
 
-  it('巨引力源：没听牌时她摸的都是进张，别人控牌山的能力失效', () => {
+  it('巨引力源：引力圆只罩住每边中间 7 墩，摸到圆里的牌时别人控牌山的能力失效、她没听牌必定进张', () => {
     const { g, chars } = manualGame(['saki', 'nodoka', 'koromo'], 5);
     runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
     g.abilities[0]!.pressSkill!(g, 0, 'source');
-    expect(g.quelled(1)).toBe(true);
+    // 不在摸牌的时候不算
+    expect(g.quelled(1)).toBe(false);
+    // 第 d 张摸到的牌在不在圆里：每边 17 墩里的第 6–12 墩
+    const covered = (d: number) => Math.abs(stackAt(g.dealer, g.dice[0] + g.dice[1], Math.floor(d / 2)).stack - 9) <= AWAI.sourceSpan;
+    // 咲摸牌前整理牌山的能力：圆里的那几张一次都不该动
+    const called = new Set<number>();
+    const before = g.abilities[1]!.beforeAnyDraw;
+    g.abilities[1]!.beforeAnyDraw = (gg, seat, drawer, rinshan) => {
+      if (!rinshan) called.add(gg.wall.frontDrawn);
+      return before?.call(g.abilities[1], gg, seat, drawer, rinshan);
+    };
+    let inside = 0;
+    let outside = 0;
+    let quelledDraws = 0;
+    g.onEvent((e) => {
+      if (e.type !== 'draw' || g.rinshanDraw) return;
+      const d = g.wall.frontDrawn - 1;
+      if (covered(d)) {
+        quelledDraws++;
+        expect(called.has(d)).toBe(false);
+      } else expect(called.has(d)).toBe(true);
+    });
     const p = g.players[0];
-    let improved = 0;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 12; i++) {
       // 打成一向听
       const back = g.legalActions(0).find((a) => a.type === 'discard' && !a.riichi && shanten(toCounts(p.hand.filter((t) => t !== a.tile))) >= 1);
       if (!back) break;
       g.act(0, back);
-      const before = shanten(toCounts(p.hand));
+      const sh = shanten(toCounts(p.hand));
       if (!runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0 && p.drawn !== null)) break;
-      expect(shanten(toCounts(p.hand))).toBeLessThan(before);
-      improved++;
+      if (g.rinshanDraw) continue;
+      if (covered(g.wall.frontDrawn - 1)) {
+        inside++;
+        expect(shanten(toCounts(p.hand))).toBeLessThan(sh);
+      } else outside++;
     }
-    expect(improved).toBeGreaterThan(1);
+    console.log({ inside, outside, quelledDraws });
+    expect(inside).toBeGreaterThan(1);
+    expect(outside).toBeGreaterThan(0);
+    expect(quelledDraws).toBeGreaterThan(3);
   });
 });
