@@ -9,6 +9,7 @@ import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects } from './effects';
+import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
@@ -210,6 +211,7 @@ export interface SyncView {
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
+  mist?: number; // 高鸭稳乃的深山：牌山上的雾有几级（0 没有）
 }
 
 export class Table3D {
@@ -259,6 +261,9 @@ export class Table3D {
   // 别人打出的牌还在半空时摸到的牌：先留在牌山原处，落桌后再飞进手里
   private heldDraw: { seat: number; tile: TileId; at: number; from: Placement } | null = null;
   private effects: Effects;
+  private mist = new WallMist();
+  private mistFor = -1; // 雾按哪个座位的视角摆的
+  private mistTops: THREE.Vector3[][] = []; // 每一墩牌山顶上的位置
   private riichiSticks: THREE.Mesh[] = [];
   // 立直棒：hidden 还在抽屉里，anim 正被手拿着，placed 已经放到桌上
   private stickState: ('hidden' | 'anim' | 'placed')[] = ['hidden', 'hidden', 'hidden', 'hidden'];
@@ -330,6 +335,7 @@ export class Table3D {
     this.buildTiles();
     this.scene.add(this.dice.group);
     this.effects = new Effects(this.scene);
+    this.scene.add(this.mist.group);
     this.buildRiichiSticks();
     // 牌面画好、仪表盘用的字体下载好以后，仪表盘重画一次
     const redrawConsole = () => {
@@ -1076,6 +1082,22 @@ export class Table3D {
     }
     this.showGravity(!!view.gravity);
     this.drawConsole(g, view);
+    this.syncMist(g, view);
+  }
+
+  // 深山的雾：每一墩牌山顶上一团，只罩在还有牌的墩上
+  private syncMist(g: Game, view: SyncView): void {
+    if (this.mistFor !== view.me) {
+      this.mistFor = view.me;
+      this.mistTops = [0, 1, 2, 3].map((wall) =>
+        Array.from({ length: MIST_STACKS }, (_, i) => this.wallPlacement({ wall, stack: i + 1, level: 0, faceUp: false }, view.me).pos.clone().setY(TILE_T * 2)),
+      );
+    }
+    const level = view.mist ?? 0;
+    this.mist.setLevel(level);
+    const filled = [0, 1, 2, 3].map(() => new Array<boolean>(MIST_STACKS).fill(false));
+    for (const slot of wallSlots(g).values()) filled[slot.wall][slot.stack - 1] = true;
+    this.mist.setStacks(this.mistTops.map((row, w) => row.map((pos, i) => ({ pos, filled: filled[w][i] }))));
   }
 
   // 巨引力源：黑色的引力圆，直径比牌山的对角线还大一点，整个牌山都在圆里。贴在桌面上，牌压在它上面
@@ -1911,6 +1933,7 @@ export class Table3D {
     }
     this.animateReveal();
     this.effects.update(dt);
+    this.mist.update(dt);
     // 引力圆慢慢转、一胀一缩
     if (this.gravityDisc?.visible) {
       this.gravityDisc.rotation.z += dt * 0.25;

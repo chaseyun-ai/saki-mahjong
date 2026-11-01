@@ -556,6 +556,33 @@ button {
   gap: 4px;
 }
 
+/* 高鸭稳乃的深山：2D 牌桌没有牌山，雾围着中间的牌山信息飘（几级就有多浓） */
+#table[data-mist] .center::before {
+  content: '';
+  position: absolute;
+  inset: -46px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(closest-side at 30% 40%, rgba(244, 247, 250, 0.7), transparent),
+    radial-gradient(closest-side at 70% 35%, rgba(244, 247, 250, 0.6), transparent),
+    radial-gradient(closest-side at 55% 70%, rgba(244, 247, 250, 0.65), transparent),
+    radial-gradient(closest-side at 22% 72%, rgba(244, 247, 250, 0.5), transparent),
+    radial-gradient(closest-side at 80% 70%, rgba(244, 247, 250, 0.5), transparent);
+  filter: blur(10px);
+  transition: opacity 2s ease;
+  animation: mist-drift 9s ease-in-out infinite alternate;
+}
+#table[data-mist='1'] .center::before { opacity: 0.32; }
+#table[data-mist='2'] .center::before { opacity: 0.45; }
+#table[data-mist='3'] .center::before { opacity: 0.58; }
+#table[data-mist='4'] .center::before { opacity: 0.7; }
+@keyframes mist-drift {
+  from { transform: translateX(-8px) scale(1); }
+  to { transform: translateX(8px) scale(1.06); }
+}
+
 .round {
   font-size: 18px;
   font-weight: 700;

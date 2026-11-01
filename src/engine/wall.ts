@@ -30,9 +30,24 @@ export class Locks {
     return [...(this.owners.get(t) ?? [])].sort();
   }
 
+  copy(): Locks {
+    const out = new Locks();
+    for (const [t, set] of this.owners) out.owners.set(t, new Set(set));
+    return out;
+  }
+
   [Symbol.iterator](): IterableIterator<TileId> {
     return this.owners.keys();
   }
+}
+
+export interface WallSnapshot {
+  live: TileId[];
+  rinshan: TileId[];
+  dora: TileId[];
+  ura: TileId[];
+  overflow: TileId[];
+  locks: Locks;
 }
 
 // 牌山：前 122 张是可摸的牌（live[0] 是下一张），后 14 张是王牌
@@ -178,6 +193,43 @@ export class Wall {
     const c = cands[rng.int(cands.length)];
     [this.uraIndicators[i], c.src[c.i]] = [c.src[c.i], this.uraIndicators[i]];
     return true;
+  }
+
+  // 把符合条件的牌换成第 i 张宝牌指示牌。翻开过的不能换，只有配牌之前（第一张还没亮出来）能换第 0 张。
+  // 来源是牌山（from：只从这些位置找）、岭上牌和后面没翻开的宝牌指示牌
+  bringToDora(i: number, pred: (t: TileId) => boolean, rng: Rng, from?: (j: number) => boolean): boolean {
+    if (i >= this.doraIndicators.length || this.locked.has(this.doraIndicators[i])) return false;
+    if (pred(this.doraIndicators[i])) return true;
+    const cands: { src: TileId[]; i: number }[] = [];
+    this.doraIndicators.forEach((t, j) => {
+      if (j > i && j >= this.doraRevealed && !this.locked.has(t) && pred(t)) cands.push({ src: this.doraIndicators, i: j });
+    });
+    this.live.forEach((t, j) => {
+      if (this.locked.has(t) || (from && !from(j)) || !pred(t)) return;
+      if (this.guard && !this.guard([[j, this.doraIndicators[i]]])) return;
+      cands.push({ src: this.live, i: j });
+    });
+    this.rinshan.forEach((t, j) => {
+      if (!this.locked.has(t) && pred(t)) cands.push({ src: this.rinshan, i: j });
+    });
+    if (cands.length === 0) return false;
+    const c = cands[rng.int(cands.length)];
+    [this.doraIndicators[i], c.src[c.i]] = [c.src[c.i], this.doraIndicators[i]];
+    return true;
+  }
+
+  // 记下牌山现在的样子（牌的位置和锁），restore 恢复。别人削弱了能力那一次调整配牌白做（稳乃的深山）
+  snapshot(): WallSnapshot {
+    return { live: [...this.live], rinshan: [...this.rinshan], dora: [...this.doraIndicators], ura: [...this.uraIndicators], overflow: [...this.overflow], locks: this.locked.copy() };
+  }
+
+  restore(s: WallSnapshot): void {
+    this.live = [...s.live];
+    this.rinshan = [...s.rinshan];
+    this.doraIndicators = [...s.dora];
+    this.uraIndicators = [...s.ura];
+    this.overflow = [...s.overflow];
+    this.locked = s.locks.copy();
   }
 
   allTiles(): TileId[] {
