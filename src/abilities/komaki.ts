@@ -292,6 +292,10 @@ function sameKinds(hand: TileId[], kinds: Kind[]): boolean {
 export const komakiAbility: Ability = {
   id: 'komaki',
   name: '神降',
+  // 平行宇宙：神乐积的点清零
+  resetMarks(g, seat) {
+    sync(g, seat).kagura = 0;
+  },
   description: `开局就睡着，随机一位神明附身（${KOMAKI_GODS.filter((x) => x.id !== 'uzume')
     .map((x) => x.name)
     .join('、')}），各有各的能力。桌上的强者（${KOMAKI.strongCost} 费以上）越多、她自己和得越多，醒得越早；醒来后变回无能力者，换成天宇受卖命的神乐（封印不了）：被自摸或放铳一次积一点，满 ${KOMAKI.kagura} 点立刻降下新神。`,

@@ -1,5 +1,5 @@
 import type { AiStyle } from '../abilities/characters';
-import { awaiWaitingForCorner } from '../abilities/awai';
+import { awaiStarPlan, awaiStarsExtra, awaiWaitingForCorner } from '../abilities/awai';
 import { dangerKinds, readOthers } from '../abilities/hiroe';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import { momoStealthNext } from '../abilities/momo';
@@ -247,6 +247,17 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const visible = visibleCounts(g, seat);
     const risk = (t: TileId) => Math.max(0, ...threats(g, seat).map((o) => danger(g, seat, o, kindOf(t), visible)));
     const extra = himekoExtra(g, seat, twin).sort((a, b) => risk(a) - risk(b));
+    const out = extra.map((t) => legal.find((a) => a.type === 'discard' && !a.riichi && a.tile === t)).find((a) => a);
+    if (out) return out;
+  }
+
+  // 淡的星符汇聚：往大七星做，先打用不上的牌（数牌、字牌第三张），不立直
+  if (style.cornerKan && awaiStarPlan(g, seat)) {
+    const win = find('tsumo');
+    if (win) return win;
+    const visible = visibleCounts(g, seat);
+    const risk = (t: TileId) => Math.max(0, ...threats(g, seat).map((o) => danger(g, seat, o, kindOf(t), visible)));
+    const extra = awaiStarsExtra(g, seat).sort((a, b) => risk(a) - risk(b));
     const out = extra.map((t) => legal.find((a) => a.type === 'discard' && !a.riichi && a.tile === t)).find((a) => a);
     if (out) return out;
   }
@@ -792,6 +803,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const pass = legal.find((a) => a.type === 'pass')!;
   // 姬子钥匙的那一局：门清自摸才是那副牌的番数，不鸣牌也不荣和
   if (style.twin && himekoPlan(g, seat)) return pass;
+  // 淡的星符汇聚：门清做大七星，不鸣牌
+  if (style.cornerKan && awaiStarPlan(g, seat)) return legal.find((a) => a.type === 'ron') ?? pass;
   const ron = legal.find((a) => a.type === 'ron');
   // 淡：等转角暗杠自摸，不荣和
   if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false)) && !growHolds(g, seat, style, false) && !seraHolds(g, seat, style, false) && !sumireSkips(g, seat, style) && !allLastHold(g, seat, false)) return ron;

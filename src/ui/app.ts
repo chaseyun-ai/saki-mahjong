@@ -4,6 +4,7 @@ import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored } from '../abilities/teru';
 import { nellyBlocked } from '../abilities/nelly';
+import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shizunoMist } from '../abilities/shizuno';
 import { kuroLost } from '../abilities/kuro';
@@ -203,7 +204,7 @@ export class App {
     this.cutins?.clear();
     this.table3d?.dispose();
     this.table3d = null;
-    this.root.classList.remove('mihoko-eye');
+    this.root.classList.remove('mihoko-eye', 'awai-dark', 'awai-source');
   }
 
   private renderSelect(): void {
@@ -941,6 +942,10 @@ export class App {
   private render(): void {
     // 美穗子睁开右眼：画面罩一层蓝色
     this.root.classList.toggle('mihoko-eye', !!this.game && this.eyeOpen() && !this.vision);
+    // 淡的高维领域：黑暗笼罩牌桌（所有人都看得到）；巨引力源：2D 牌桌中间一个黑色引力圆（3D 画在桌面上）
+    const playing = !!this.game && (this.game.phase === 'turn' || this.game.phase === 'calls');
+    this.root.classList.toggle('awai-dark', playing && awaiDomainOn(this.game!));
+    this.root.classList.toggle('awai-source', playing && !this.table3d && awaiSourceOn(this.game!));
     if (this.table3d) {
       this.render3d();
       return;
@@ -996,6 +1001,8 @@ export class App {
       airDraw: this.airDraw(),
       tintBacks: this.eyeOpen() && !this.vision ? new Set([1, 2, 3].flatMap((d) => g.players[(this.me + d) % 4].hand)) : undefined,
       akaBacks: this.vision ? undefined : this.akaSpots(),
+      waveBacks: this.vision || (g.phase !== 'turn' && g.phase !== 'calls') ? undefined : awaiWaveTiles(g, this.me),
+      gravity: (g.phase === 'turn' || g.phase === 'calls') && awaiSourceOn(g),
       handOrder: this.myHand(),
       openHands: this.openHands(),
       drawPath: this.settings.drawPath,
@@ -1520,7 +1527,7 @@ export class App {
     // 有按钮的技能（pressSkill）画按钮；发牌前选的技能（淡、霞）只显示状态
     // 要选对象的（爽的瘟神威）一个对象一个按钮
     const body = b.choices
-      ? `<div class="fs-note skill-state">${b.note}</div><div class="skill-choices">${b.choices
+      ? `<div class="fs-note skill-state">${b.note}</div><div class="skill-choices${b.choices.length > 4 ? ' many' : ''}">${b.choices
           .map((c) => `<button class="deep-btn" data-ui="skill" data-choice="${c.id}" ${c.enabled ? '' : 'disabled'}>${c.label}</button>`)
           .join('')}</div>`
       : ab!.pressSkill

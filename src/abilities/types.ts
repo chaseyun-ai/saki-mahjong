@@ -122,6 +122,11 @@ export interface Ability {
   // 这一局控场的能力全部无效（丰音的佛灭）：别人的配牌、摸牌规矩，封印，不许和牌，摸牌前整理牌山都不起作用。
   // 各人对自己的能力照样起作用；absolute 的照样管得到
   nullifies?(g: Game, seat: number): boolean;
+  // 这一局别人控牌山的能力失效（淡的高维领域、巨引力源）：别人给摸牌、配牌定的规矩不算，摸牌前整理牌山、自己摸牌前换牌都不动。
+  // 和佛灭不同，她自己的能力照样起作用；absolute、immune 的人不受影响（Game.quelled）。只管牌山：别人不许和牌、封印照样算（Game.rulesBind）
+  quells?(g: Game, seat: number): boolean;
+  // 平行宇宙（淡）：把这家累计的标记清空（照的连续和了、漫的计数器、和的计数……），这一局也不算数。没写就是没有要清的
+  resetMarks?(g: Game, seat: number): void;
   // 现在是第二形态（天使和）：返回素材页里这个形态的动画 id。头像框换成能力发动头像，和牌放 `${id}-win` 的动画
   form?(g: Game, seat: number): string | null;
   // 隐身（东横桃子）：她打满几张牌起 viewer 就看不见她，null 是 viewer 看得见她。

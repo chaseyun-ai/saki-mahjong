@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AWAI } from '../src/abilities/awai';
 import { CHARACTERS, baseAi } from '../src/abilities/characters';
 import { NODOKA, angelDanger, nodokaAngel, nodokaCounter } from '../src/abilities/nodoka';
 import { setCosts as setNodokaCosts } from '../src/abilities/costs';
@@ -7,6 +8,10 @@ import type { Ability } from '../src/abilities/types';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { TileId, kindOf } from '../src/engine/tiles';
+
+// 同桌的大星淡不按主动技能（平行宇宙会清掉计数，高维领域会压住别人的规矩）
+beforeAll(() => Object.assign(AWAI, { aiSkills: false }));
+afterAll(() => Object.assign(AWAI, { aiSkills: true }));
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 const COSTS = Object.fromEntries(CHARACTERS.map((c) => [c.id, c.cost]));
