@@ -1,5 +1,6 @@
 import type { Game } from '../engine/game';
 import { isDragon, kindOf, suitOf, toCounts } from '../engine/tiles';
+import { shanten } from '../engine/shanten';
 import { isDoraTile } from './kuro';
 import type { Ability, BindKey } from './types';
 
@@ -9,7 +10,8 @@ import type { Ability, BindKey } from './types';
 //   得到一把钥匙；没和成（别人和了、流局），得到一把破碎的钥匙；和了但番数不对，什么也没有。
 //   钥匙记着是哪一局（东/南场几局几本场）。鹤田姬子在钥匙记的那一局能和出两倍番缚的牌（见 himeko.ts）。
 //   缚没缚只有她自己知道：不出字、不放切入，头像框上也不显示；只有宫永照的照魔镜看得穿（Ability.insight）
-export const RII = { resist: 0.5, maxBind: 7 };
+// aiBindShanten：电脑的哩只在第一次出牌前手牌不差于几向听时才番缚（烂牌缚了也和不了，只会给姬子一把破碎的钥匙）
+export const RII = { resist: 0.5, maxBind: 7, aiBindShanten: 2 };
 
 interface RiiState {
   bind?: number; // 这一局缚了几番
@@ -59,9 +61,13 @@ export const riiAbility: Ability = {
     return RII.resist;
   },
 
-  // 电脑的哩：第一次出牌前缚上估出来的番数
+  // 电脑的哩：第一次出牌前手牌够好才缚上估出来的番数。烂牌也缚的话大多数局和不了，
+  // 每一局都会拿到破碎的钥匙，同桌的姬子就几乎一直是破碎的钥匙
   afterDraw(g, seat) {
-    if (!g.manual[seat] && riiCanBind(g, seat)) stateOf(g, seat).bind = riiGuess(g, seat);
+    if (g.manual[seat] || !riiCanBind(g, seat)) return;
+    const p = g.players[seat];
+    if (shanten(toCounts(p.hand), p.melds.length) > RII.aiBindShanten) return;
+    stateOf(g, seat).bind = riiGuess(g, seat);
   },
 
   onRoundEnd(g, seat, result) {
