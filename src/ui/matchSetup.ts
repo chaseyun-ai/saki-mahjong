@@ -17,6 +17,8 @@ export interface MatchSettings {
   open: boolean;
   // 摸牌路径（3D、2.5D 牌桌）：on 牌沿弧线从牌山飞进手里，off 在牌山上淡出、手里淡入，self 只有自己的飞
   drawPath: 'on' | 'off' | 'self';
+  // 微变化：落桌声、电脑思考时间、出牌动作、牌河摆放每次都差一点点，久玩不腻（vary.ts）
+  vary: boolean;
   // 对手：下家、对家、上家坐谁（角色 id），空的是随机
   opponents: string[];
 }
@@ -33,6 +35,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   minHan: 1,
   open: false,
   drawPath: 'on',
+  vary: true,
   opponents: ['', '', ''],
 };
 
@@ -118,6 +121,7 @@ const ROWS: Row[] = [
       { label: '仅自己', value: 'self' },
     ],
   },
+  { key: 'vary', name: '微变化', options: onOff },
 ];
 
 // 按钮上写的值换回设置里的值
