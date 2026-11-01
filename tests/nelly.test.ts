@@ -130,7 +130,7 @@ describe('涅莉·薇萨拉兹', () => {
     }
   }, 120000);
 
-  it('押了运势：配牌照常发，到那一巡左右才和（3 点 6 巡、2 点 12 巡、1 点 15 巡），档越高和得越大', () => {
+  it('押了运势：配牌照常发，到那一巡左右才和（3 点 8 巡、2 点 12 巡、1 点 15 巡），档越高和得越大，3 点多半和出三倍满', () => {
     const stat = [0, 1, 2, 3].map(() => ({ rounds: 0, wins: 0, value: 0, big: 0, early: 0, turns: 0, sh: 0 }));
     for (let seed = 1; seed <= 24; seed++) {
       for (const pick of [1, 2, 3]) {
@@ -176,6 +176,7 @@ describe('涅莉·薇萨拉兹', () => {
       expect(stat[v].early / Math.max(1, stat[v].wins)).toBeLessThan(0.1);
     }
     expect(stat[3].wins / stat[3].rounds).toBeGreaterThan(0.6);
+    expect(stat[3].big / stat[3].wins).toBeGreaterThan(0.45);
     expect(avg(stat[3].turns, stat[3].wins)).toBeLessThan(avg(stat[2].turns, stat[2].wins));
     expect(avg(stat[2].turns, stat[2].wins)).toBeLessThan(avg(stat[1].turns, stat[1].wins));
     expect(avg(stat[3].value, stat[3].wins)).toBeGreaterThan(avg(stat[2].value, stat[2].wins));

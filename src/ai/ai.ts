@@ -17,7 +17,7 @@ import { yuukiActive } from '../abilities/yuuki';
 import { makoDanger, makoSuit } from '../abilities/mako';
 import { KYOUKO, kyoukoTargets } from '../abilities/kyouko';
 import { takamiHarvest, takamiSeeds } from '../abilities/takami';
-import { NELLY, nellyDue, nellyLiveWaits, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier, nellyTurn } from '../abilities/nelly';
+import { NELLY, nellyDue, nellyFlush, nellyLiveWaits, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier, nellyTurn } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneLurks, toyoneMode } from '../abilities/toyone';
@@ -375,8 +375,11 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const seeds = style.harvest && !sealed && takamiHarvest(g, seat) ? new Set(takamiSeeds(g, seat)) : null;
   // 爽：留住云、神威送来的牌
   const focus = style.clouds ? sawayaFocus(g, seat) : null;
+  // 涅莉押 3 点做染手：别的牌先打，宁可退向听（进张都是那几种牌）
+  const flush = style.waves && !sealed ? nellyFlush(g, seat) : null;
+  const inFlush = (k: Kind) => (flush ? (k >= 27 ? flush.honors : Math.floor(k / 9) === flush.suit) : false);
   const keep = (c: Cand) =>
-    (suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) ||
+    (flush ? inFlush(kindOf(c.a.tile)) : suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) ||
     (style.warm && warmKind(kindOf(c.a.tile))) ||
     seeds?.has(kindOf(c.a.tile)) ||
     focus?.keep(kindOf(c.a.tile))
@@ -387,7 +390,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 堇听牌时：两种听法都有牌可和，挑听目标多余牌的
   const aimOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.aim - x.aim || y.fit - x.fit : 0);
   const attackOrder = (x: Cand, y: Cand) =>
-    x.hit - y.hit || x.sh - y.sh || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
+    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
   cands.sort(attackOrder);
   // 怜：假设打掉现在最想打的那张，演算自己下一次摸到什么，按它重排。
   // 失误先掷（随机数用掉的时刻和别人一样），再演算：演算拿到的随机数和之后真的牌局一致
@@ -728,7 +731,7 @@ function sumireSkips(g: Game, seat: number, style: AiStyle): boolean {
 const foresees = (g: Game, seat: number) => g.abilities[seat]?.foresightOn?.(g, seat) ?? true;
 
 // 照：这一手和了接不上连和（比上一次小），牌山还多，就先不和、等更大的
-// 涅莉押了运势的局：装装样子，该和的那一巡（押 3 点第 6 巡、2 点第 12 巡、1 点第 18 巡）之前不和（荣和可以早一巡）；
+// 涅莉押了运势的局：装装样子，该和的那一巡（押 3 点第 8 巡、2 点第 12 巡、1 点第 15 巡）之前不和（荣和可以早一巡）；
 // 到了那一巡牌还不够大（不到押的那一档），再等几巡接着做大。牌山快摸完了、有人逼近了就有什么和什么
 function nellyHolds(g: Game, seat: number, tsumo: boolean): boolean {
   if (nellyTier(g, seat) <= 0 || g.isSealed(seat) || g.wall.remaining <= NELLY.late) return false;

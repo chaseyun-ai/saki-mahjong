@@ -9,7 +9,7 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 // - 分配运势（每一局发牌前）：这一局押几点，押了就扣掉，和没和都不退：
 //   · 1 点：进张朝 3 番到满贯发展，第 15 巡左右（快流局时）和
 //   · 2 点：朝跳满发展，第 12 巡左右和
-//   · 3 点：朝三倍满发展，第 6 巡以内和，而且这一局她的和牌别人挡不住（别人的能力管不到她：不许和、换走和了牌、封印都不算）
+//   · 3 点：朝三倍满发展（做染手：配牌里那门花色够 5 张做清一色，不够做混一色），第 8 巡左右和，而且这一局她的和牌别人挡不住（别人的能力管不到她：不许和、换走和了牌、封印都不算）
 //   配牌照常发，不动（押 2、3 点时宝牌指示牌指向她配牌里最多的那种牌）。装装样子：到那一巡之前摸不到和了牌（摸牌按巡数慢慢变好，听牌了先来把牌做大的牌：
 //   那门花色、宝牌、字牌对子），到了那一巡牌够大就来和了牌。押 2、3 点立直了里宝牌往她手里最多的牌上变，有宝牌暗刻就在那一巡来第四张开暗杠、岭上开花。押了几点只有她自己知道
 // - 感知听牌：手里还有运势（押完这一局还剩 1 点以上）就看得出别人听没听牌（不知道听什么）。
@@ -29,10 +29,13 @@ export const NELLY = {
   // 押 2、3 点：发牌前把宝牌指示牌换成指向她配牌里最多的那种牌（配牌本身不动）
   dora: [false, false, true, true],
   // 押 1/2/3 点时第几巡和（她摸第几张牌）：之前摸不到和了牌
-  turn: [0, 15, 12, 6],
+  turn: [0, 15, 12, 8],
   // 到了那一巡牌还不够大，再等几巡就有什么和什么
   grace: 3,
   late: 8, // 牌山剩这么多以下就有什么和什么
+  // 押 3 点：配牌里那门花色有这么多张就做清一色，不然做混一色（那门花色 + 字牌）
+  flush: [false, false, false, true],
+  chin: 5,
 };
 
 const TIER_NAMES = ['', '3番–满贯', '跳满', '三倍满'];
@@ -47,6 +50,7 @@ interface NellyState {
   bet?: number; // 这一局押了几点
   blocked?: number[]; // 这一局被七姐妹封住、和不了的人
   suit?: number; // 这一局做的花色
+  honors?: boolean; // 做染手：带字牌（混一色）还是不带（清一色）。undefined 是不做染手
 }
 
 const gameStateOf = (g: Game, seat: number) => {
@@ -147,6 +151,20 @@ export function nellyBlocked(g: Game, seat: number): number[] {
 export function nellySuit(g: Game, seat: number): number | null {
   return tierOf(g, seat) > 0 ? stateOf(g, seat).suit ?? null : null;
 }
+
+// 这一局做染手：做哪门花色、带不带字牌（不做是 null）
+export function nellyFlush(g: Game, seat: number): { suit: number; honors: boolean } | null {
+  const st = stateOf(g, seat);
+  return tierOf(g, seat) > 0 && st.suit !== undefined && st.honors !== undefined ? { suit: st.suit, honors: st.honors } : null;
+}
+
+const inFlush = (f: { suit: number; honors: boolean }) => (k: number) => (k >= 27 ? f.honors : suitOf(k) === f.suit);
+
+// 只看染手那几种牌的向听
+const flushShanten = (counts: number[], melds: number, f: { suit: number; honors: boolean }) => {
+  const ok = inFlush(f);
+  return shanten(counts.map((n, k) => (ok(k) ? n : 0)), melds);
+};
 
 // 还有运势：看得出别人听没听牌
 export function nellySenses(g: Game, seat: number): boolean {
@@ -280,7 +298,7 @@ const inSuit = (suit: number) => (t: TileId) => kindOf(t) < 27 && suitOf(kindOf(
 export const nellyAbility: Ability = {
   id: 'nelly',
   name: '运势·七姐妹',
-  description: `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点。每一局发牌前可以押运势（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满，第 ${NELLY.turn[3]} 巡以内和，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次封住他这一局和不了，押几点最多封几家。`,
+  description: `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点。每一局发牌前可以押运势（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（进张往一门花色走，做清一色或混一色），第 ${NELLY.turn[3]} 巡左右和，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次封住他这一局和不了，押几点最多封几家。`,
   priority: PRIORITY.nelly,
 
   // 三倍满的局别人挡不住她（别人的能力管不到她）
@@ -301,7 +319,9 @@ export const nellyAbility: Ability = {
     const hand = g.dealHand(seat).map(kindOf);
     const per = [0, 0, 0];
     for (const k of hand) if (k < 27) per[suitOf(k)]++;
-    stateOf(g, seat).suit = per.indexOf(Math.max(...per));
+    const st = stateOf(g, seat);
+    st.suit = per.indexOf(Math.max(...per));
+    if (NELLY.flush[v]) st.honors = per[st.suit] < NELLY.chin;
     if (!NELLY.dora[v] || [0, 1, 2, 3].some((s) => s !== seat && g.isAbsolute(s))) return;
     const n = (k: number) => hand.filter((x) => x === k).length;
     // 张数多的先；一样多挑 5（有赤宝牌）
@@ -354,7 +374,28 @@ export const nellyAbility: Ability = {
     const wins = (t: TileId) => value(t) > 0;
     // 把牌做大的牌：那门花色、宝牌、手里有的字牌
     const held = toCounts(p.hand);
-    const shapes = (t: TileId) => pred(t) || isDora(g, t) || (kindOf(t) >= 27 && held[kindOf(t)] > 0);
+    const shapes = (t: TileId) => pred(t) || isDora(g, t) || (kindOf(t) >= 27 && held[kindOf(t)] > 0 && stateOf(g, seat).honors !== false);
+    const flush = nellyFlush(g, seat);
+    const off = flush ? p.hand.filter((t) => !inFlush(flush)(kindOf(t))).length : 0;
+    if (flush && off > 0 && !late) {
+      // 做染手：手里还有别的牌就一张一张来那几种牌（先来让染手向听变少的，再来连得上的）。到那一巡之前不来和了牌
+      const ok = inFlush(flush);
+      const counts = toCounts(p.hand);
+      const fs = flushShanten(counts, p.melds.length, flush);
+      const lower = (t: TileId) => {
+        counts[kindOf(t)]++;
+        const after = flushShanten(counts, p.melds.length, flush);
+        counts[kindOf(t)]--;
+        return after < fs;
+      };
+      const near = (t: TileId) => {
+        const k = kindOf(t);
+        if (counts[k] > 0) return true;
+        return k < 27 && [-2, -1, 1, 2].some((d) => k + d >= 0 && Math.floor((k + d) / 9) === Math.floor(k / 9) && counts[k + d] > 0);
+      };
+      const safe = (t: TileId) => ok(kindOf(t)) && (turn >= due || !wins(t));
+      if (w.bringToLive(0, (t) => safe(t) && lower(t), g.rng) || w.bringToLive(0, (t) => safe(t) && near(t), g.rng) || w.bringToLive(0, safe, g.rng)) return;
+    }
     if (turn < due && !late) {
       // 还没到那一巡：不给和了牌。离听牌还远就按剩下的巡数来进张，听牌了来把牌做大的牌
       if (sh > 0) {
@@ -409,7 +450,7 @@ export const nellyAbility: Ability = {
       name: `押 ${n} 点 · ${TIER_NAMES[n]}`,
       desc:
         n === 3
-          ? `进张朝三倍满发展，第 ${NELLY.turn[3]} 巡以内和；和牌别人挡不住；七姐妹封三家`
+          ? `进张往一门花色走、朝三倍满发展，第 ${NELLY.turn[3]} 巡左右和；和牌别人挡不住；七姐妹封三家`
           : `进张朝${TIER_NAMES[n]}发展，第 ${NELLY.turn[n]} 巡左右和；七姐妹封${n === 2 ? '两' : '一'}家`,
       cost: n,
       enabled: n <= pool,
