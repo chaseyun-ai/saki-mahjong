@@ -1,3 +1,4 @@
+import { nellyTier } from '../src/abilities/nelly';
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
 import { sawayaOn, sawayaPlagueTarget, sawayaRedTarget } from '../src/abilities/sawaya';
@@ -213,6 +214,8 @@ describe('狮子原爽', () => {
           g.onEvent((e) => {
             // 淡的高维领域、巨引力源压住了她控牌山的能力
             if (e.type !== 'draw' || e.seat === me || !sawayaOn(g, me, 'akkoro') || g.quelled(me)) return;
+            // 涅莉押了 2、3 点立直以后，里宝牌往她手里变（两个人都在换第一张里宝牌指示牌）
+            if ([0, 1, 2, 3].some((s) => g.abilities[s]?.id === 'nelly' && g.players[s].riichi && nellyTier(g, s) >= 2)) return;
             const counts = toCounts(g.players[me].hand);
             const most = Math.max(...counts.slice(0, 9));
             if (most === 0) return;
