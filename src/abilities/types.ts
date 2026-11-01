@@ -170,4 +170,6 @@ export interface SkillButton {
   active?: boolean;
   // 要选对象的技能（爽的瘟神威给哪一家）：一个对象一个按钮，按下去调 pressSkill(g, seat, id)
   choices?: { id: string; label: string; enabled: boolean }[];
+  // 拖到头像上用的镜片（臼泽塞）：max 枚里还剩 left 枚，这一局盯上了 target，现在能拖到 targets 这几家头像上（拖上去调 pressSkill(g, seat, String(座位))）
+  lenses?: { max: number; left: number; target: number | null; targets: number[] };
 }

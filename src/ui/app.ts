@@ -13,6 +13,8 @@ import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryu
 import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneRedHidden } from '../abilities/toyone';
 import { riiKeys } from '../abilities/rii';
+import { saeCanAim, saeAim, snipedBy } from '../abilities/sae';
+import { initLensDrag, lensMarkHtml, lensSlotsHtml, playLensShot } from './lensDrag';
 import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
@@ -146,6 +148,7 @@ export class App {
   ) {
     this.root = root;
     root.addEventListener('click', (e) => this.onClick(e));
+    this.initLens();
     root.addEventListener('mouseover', (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>('.hand [data-tile]');
       this.hoverTile(el ? Number(el.dataset.tile) : null);
@@ -693,6 +696,11 @@ export class App {
         return;
       }
       playChime();
+      // 臼泽塞的镜片：狙击镜落到被盯上的人的头像上（等这一下重画完再找头像）
+      if (e.ability === 'sae') {
+        const t = this.game!.abilityState[e.seat].target as number | undefined;
+        if (t !== undefined) requestAnimationFrame(() => playLensShot(t));
+      }
       // 这个技能在素材页换了自己的动画：每次发动都放（三种视角都放）
       const c = this.chars[e.seat];
       const skill = c.skillArts?.find((k) => k.name === e.text);
@@ -979,7 +987,7 @@ export class App {
       : [1, 2, 3]
           .map((s) => {
             const c = this.chars[s];
-            return `<div class="nameplate float ${POS[s]}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.sistersBlocked(s) ? '被七姐妹封住' : (c.ability?.name ?? '无能力')}</div></div>${this.towerHtml(s)}</div>`;
+            return `<div class="nameplate float ${POS[s]}" data-seat="${s}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>${this.towerHtml(s)}</div>`;
           })
           .join('');
     hud.innerHTML = `
@@ -1058,9 +1066,9 @@ export class App {
     const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
     const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·封住' : c.ability?.badge?.(g, s);
     return `
-      <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" style="--c:${c.color}">
+      <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}</div>
         ${this.towerHtml(s)}
         <div class="seat-info">${c.name}</div>
       </div>`;
@@ -1167,6 +1175,43 @@ export class App {
     const lines = proof ? ['天岩户：照魔镜照不进去'] : c.ability ? c.ability.insight?.(g, s) ?? [c.ability.description] : ['没有能力，只靠牌效和防守'];
     const name = c.ability ? c.ability.name : '无能力';
     return `<span class="mirror" tabindex="0" aria-label="照魔镜：${c.name}">镜<span class="mirror-pop"><b>${c.name} · ${name}</b>${lines.map((l) => `<span>${l}</span>`).join('')}</span></span>`;
+  }
+
+  // ---------- 臼泽塞：镜片 ----------
+
+  // 这一局谁的镜片盯上了 s（谁都看得见）
+  private sniper(s: number): number | null {
+    const g = this.game!;
+    return g.phase === 'turn' || g.phase === 'calls' ? snipedBy(g, s) : null;
+  }
+
+  private lensMark(s: number): string {
+    const by = this.sniper(s);
+    return by === null ? '' : lensMarkHtml(this.chars[by].name);
+  }
+
+  // 名牌上能力那一行：这一局和不了的写原因
+  private blockedText(s: number): string | null {
+    if (this.sistersBlocked(s)) return '被七姐妹封住';
+    if (this.sniper(s) !== null) return '被镜片盯上';
+    return null;
+  }
+
+  private lensDragging = false;
+
+  private initLens(): void {
+    initLensDrag(this.root, {
+      canDrop: (s) => !!this.game && !this.vision && this.chars[this.me]?.id === 'sae' && saeCanAim(this.game, this.me, s),
+      nameOf: (s) => this.chars[s].name,
+      onDrop: (s) => {
+        if (this.game && !this.vision) saeAim(this.game, this.me, s);
+        this.render();
+      },
+      onLift: (on) => {
+        this.lensDragging = on;
+        this.render();
+      },
+    });
   }
 
   // 这一局被涅莉的七姐妹封住、和不了
@@ -1386,9 +1431,9 @@ export class App {
         : order.map((t) => backHtml('pond', aka.has(t) ? 'aka' : tint ? tintOf(t) : undefined)).join('');
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
-        <div class="nameplate">
-          <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}</div>
-          <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.sistersBlocked(s) ? '被七姐妹封住' : (c.ability?.name ?? '无能力')}</div></div>
+        <div class="nameplate" data-seat="${s}">
+          <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}</div>
+          <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>
           ${this.towerHtml(s)}
         </div>
         <div class="ohand">${backs}</div>
@@ -1468,7 +1513,7 @@ export class App {
     const waitHtml = `<div data-r="waits">${this.waitsSlotHtml()}</div>`;
     const hint =
       g.phase === 'turn' && g.turn === this.me && discardable.size > 0
-        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹封住，这一局和不了）' : ''}${this.bustBlocked() ? '（灰掉的牌放铳会被击飞，打不出去）' : ''}</div>`
+        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹封住，这一局和不了）' : ''}${this.sniper(this.me) !== null ? '（被镜片盯上，这一局和不了）' : ''}${this.bustBlocked() ? '（灰掉的牌放铳会被击飞，打不出去）' : ''}</div>`
         : '';
     const c = this.chars[this.me];
     return `
@@ -1530,7 +1575,9 @@ export class App {
       : '';
     // 有按钮的技能（pressSkill）画按钮；发牌前选的技能（淡、霞）只显示状态
     // 要选对象的（爽的瘟神威）一个对象一个按钮
-    const body = b.choices
+    const body = b.lenses
+      ? lensSlotsHtml(b.lenses, b.note, this.lensDragging)
+      : b.choices
       ? `<div class="fs-note skill-state">${b.note}</div><div class="skill-choices${b.choices.length > 4 ? ' many' : ''}">${b.choices
           .map((c) => `<button class="deep-btn" data-ui="skill" data-choice="${c.id}" ${c.enabled ? '' : 'disabled'}>${c.label}</button>`)
           .join('')}</div>`
