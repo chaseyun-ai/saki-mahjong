@@ -31,13 +31,13 @@ function play(g: Game, ids: string[], onDeal?: () => void) {
 }
 
 describe('高鸭稳乃', () => {
-  it('4 费；每开一局（本场也算）加一个深山标记，6 个起控制宝牌、起雾，之后每两个厚一级', () => {
+  it('4 费；东一局 0 个，之后每开一局（本场也算）加一个深山标记，6 个起控制宝牌、起雾，之后每两个厚一级', () => {
     expect(byId('shizuno').cost).toBe(4);
     const g = newGame(1, PLAIN);
     const seen: number[] = [];
     play(g, PLAIN, () => seen.push(shizunoMarks(g, 0)));
-    // 第一局就有一个，之后每一局加一
-    expect(seen[0]).toBe(1);
+    // 东一局还是 0 个，之后每一局加一
+    expect(seen[0]).toBe(0);
     for (let i = 1; i < seen.length; i++) expect(seen[i] - seen[i - 1]).toBe(1);
 
     const at = (round: number) => {
@@ -46,32 +46,32 @@ describe('高鸭稳乃', () => {
     };
     const phase = g.phase;
     (g as { phase: string }).phase = 'turn';
-    expect(at(1).power).toBeCloseTo(0.05);
-    expect(at(5)).toEqual({ power: expect.closeTo(0.25), dora: false, mist: 0 });
-    expect(at(6).mist).toBe(1);
+    expect(at(2).power).toBeCloseTo(0.05);
+    expect(at(6)).toEqual({ power: expect.closeTo(0.25), dora: false, mist: 0 });
     expect(at(7).mist).toBe(1);
-    expect(at(8).mist).toBe(2);
-    expect(at(10).mist).toBe(3);
-    expect(at(12).mist).toBe(4);
-    expect(at(20)).toEqual({ power: SHIZUNO.cap, dora: true, mist: 4 });
+    expect(at(8).mist).toBe(1);
+    expect(at(9).mist).toBe(2);
+    expect(at(11).mist).toBe(3);
+    expect(at(13).mist).toBe(4);
+    expect(at(21)).toEqual({ power: SHIZUNO.cap, dora: true, mist: 4 });
     (g as { phase: string }).phase = phase;
   }, 60000);
 
   it('淡的平行宇宙清空深山标记，这一局也不算，下一局从 1 个重新数', () => {
     const g = newGame(2, PLAIN);
-    g.round = 9;
+    g.round = 10;
     expect(shizunoMarks(g, 0)).toBe(9);
     shizunoAbility.resetMarks(g, 0);
     expect(shizunoMarks(g, 0)).toBe(0);
     expect(shizunoPower(g, 0)).toBe(0);
     expect(shizunoMist(g, 0)).toBe(0);
-    g.round = 10;
+    g.round = 11;
     expect(shizunoMarks(g, 0)).toBe(1);
   });
 
   it('别人的能力按标记数的概率不起作用；玄、照不受影响', () => {
     const g = newGame(3, ['shizuno', 'awai', 'kuro', 'teru']);
-    g.round = 8; // 8 个标记：40%
+    g.round = 9; // 8 个标记：40%
     let awai = 0;
     const N = 4000;
     for (let i = 0; i < N; i++) {
