@@ -196,13 +196,16 @@ export class Wall {
   }
 
   // 把符合条件的牌换成第 i 张宝牌指示牌。翻开过的不能换，只有配牌之前（第一张还没亮出来）能换第 0 张。
-  // 来源是牌山（from：只从这些位置找）、岭上牌和后面没翻开的宝牌指示牌
+  // 来源是牌山（from：只从这些位置找）、岭上牌、里宝牌指示牌和后面没翻开的宝牌指示牌
   bringToDora(i: number, pred: (t: TileId) => boolean, rng: Rng, from?: (j: number) => boolean): boolean {
     if (i >= this.doraIndicators.length || this.locked.has(this.doraIndicators[i])) return false;
     if (pred(this.doraIndicators[i])) return true;
     const cands: { src: TileId[]; i: number }[] = [];
     this.doraIndicators.forEach((t, j) => {
       if (j > i && j >= this.doraRevealed && !this.locked.has(t) && pred(t)) cands.push({ src: this.doraIndicators, i: j });
+    });
+    this.uraIndicators.forEach((t, j) => {
+      if (!this.locked.has(t) && pred(t)) cands.push({ src: this.uraIndicators, i: j });
     });
     this.live.forEach((t, j) => {
       if (this.locked.has(t) || (from && !from(j)) || !pred(t)) return;

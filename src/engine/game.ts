@@ -376,7 +376,7 @@ export class Game {
   // 别人的能力动不了她（照），或者这一局压过所有人（姬子拿到钥匙的那一局）
   isImmune(seat: number): boolean {
     const a = this.abilities[seat];
-    return !!a && (!!a.immune || !!a.supreme?.(this, seat));
+    return !!a && (!!a.immune || !!a.supreme?.(this, seat) || !!a.shielded?.(this, seat));
   }
 
   // from 的能力管不管得到 target（照这样 immune 的人只听自己和 absolute 的）
