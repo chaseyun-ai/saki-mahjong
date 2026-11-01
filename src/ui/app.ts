@@ -37,6 +37,7 @@ import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 import { MatchSettings, loadSettings, parseTarget, pickOpponents, rulesOf, saveSettings, setOption, setupHtml } from './matchSetup';
 import { ForecastCache } from '../ai/forecast';
+import { localRect, toLocal, viewH, viewW } from './landscape';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -156,13 +157,15 @@ export class App {
     let swipe: { x: number; y: number } | null = null;
     root.addEventListener('touchstart', (e) => {
       const t = e.touches[0];
-      swipe = !this.game && (e.target as HTMLElement).closest('.school-page') && e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null;
+      // 画面转成横屏时按 #app 里的方向算左右
+      swipe = !this.game && (e.target as HTMLElement).closest('.school-page') && e.touches.length === 1 ? toLocal(t.clientX, t.clientY) : null;
     });
     root.addEventListener('touchend', (e) => {
       const t = e.changedTouches[0];
       if (!swipe || !t) return;
-      const dx = t.clientX - swipe.x;
-      const dy = t.clientY - swipe.y;
+      const p = toLocal(t.clientX, t.clientY);
+      const dx = p.x - swipe.x;
+      const dy = p.y - swipe.y;
       swipe = null;
       if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) this.stepSchool(dx < 0 ? 1 : -1);
     });
@@ -327,7 +330,9 @@ export class App {
       tip.style.left = tip.style.top = '';
       return;
     }
-    const r = card.getBoundingClientRect();
+    const r = localRect(card.getBoundingClientRect());
+    const innerWidth = viewW();
+    const innerHeight = viewH();
     const w = tip.offsetWidth;
     const h = tip.offsetHeight;
     const gap = 10;
@@ -435,7 +440,7 @@ export class App {
     this.tableBuilt = true;
     if (this.mode !== '2d') {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
-      const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
+      const tip = this.mode === '25d' ? '<div class="rotate-tip">点顶上「横屏」，牌更大</div>' : '';
       this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div>${tip}</div>`;
       // 切入演出只在 2.5D 放；3D、2D 只放素材页换上的技能动画
       this.cutins = new Cutins(document.getElementById('cutins')!);
@@ -444,7 +449,7 @@ export class App {
       this.table3d.onHover = (id) => this.hoverTile(id);
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
       if (this.mode === '25d') {
-        this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel')].map((el) => el.getBoundingClientRect());
+        this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel')].map((el) => localRect(el.getBoundingClientRect()));
       }
       // 3D 牌桌上牌真正落到牌河时才响
       this.table3d.onMarker = (seat, _tile, name) => {
@@ -455,7 +460,7 @@ export class App {
       this.roundBanner();
     } else {
       this.root.innerHTML =
-        '<div class="stage"><div class="table"><div id="table" style="display: contents"></div><div id="toasts"></div></div></div><div class="cutin-layer" id="cutins"></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
+        '<div class="stage"><div class="table"><div id="table" style="display: contents"></div><div id="toasts"></div></div></div><div class="cutin-layer" id="cutins"></div><div class="rotate-tip">点顶上「横屏」，牌更大</div>';
       this.cutins = new Cutins(document.getElementById('cutins')!);
       this.cutinSeen.clear();
       this.fit();
@@ -466,7 +471,7 @@ export class App {
   private fit(): void {
     const table = document.querySelector<HTMLElement>('.stage .table');
     if (!table) return;
-    const scale = Math.min(window.innerWidth / 1040, window.innerHeight / 800, 1.4);
+    const scale = Math.min(viewW() / 1040, viewH() / 800, 1.4);
     table.style.transform = `scale(${scale})`;
   }
 

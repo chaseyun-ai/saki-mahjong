@@ -283,7 +283,7 @@
 }
 
 /* 窄屏（竖着的手机）：立绘面板放到上面一条 */
-@media (max-width: 760px) {
+@container (max-width: 760px) {
   :root:not([data-theme='classic']) .select-screen {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
@@ -299,7 +299,7 @@
 
   :root:not([data-theme='classic']) .char-tip {
     grid-row: 1;
-    min-height: 52vh;
+    min-height: 52cqh;
     padding: 0 16px 16px;
   }
 
@@ -317,7 +317,7 @@
 }
 
 /* 横着的手机：矮，立绘面板窄一点、字小一点 */
-@media (max-height: 500px) {
+@container (max-height: 500px) {
   :root:not([data-theme='classic']) .select-screen {
     grid-template-columns: 40% 1fr;
   }
@@ -1026,7 +1026,7 @@
 }
 
 /* 手机上：和风的操作按钮小一点 */
-@media (max-height: 500px), (max-width: 600px) {
+@container (max-height: 500px) or (max-width: 600px) {
   :root[data-theme='washi'] .act {
     min-width: 52px;
     min-height: 52px;
@@ -1059,7 +1059,7 @@
   white-space: normal;
 }
 
-@media (max-height: 500px), (max-width: 600px) {
+@container (max-height: 500px) or (max-width: 600px) {
   :root:not([data-theme='classic']) .hud .ability-panel.foresight-only {
     min-width: 0;
     max-width: 220px;
@@ -1071,7 +1071,7 @@
    太小看不清，太大会压到画面四个角的牌山 */
 
 .stage3d.flat {
-  --pw: clamp(64px, 19vh, 128px);
+  --pw: clamp(64px, 19cqh, 128px);
 }
 
 .stage3d.flat .seat-frame {
@@ -1093,7 +1093,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   text-align: center;
-  font-size: clamp(11px, 2.7vh, 16px);
+  font-size: clamp(11px, 2.7cqh, 16px);
   font-weight: 900;
   line-height: 1.35;
   color: #fff;
@@ -1127,7 +1127,7 @@
   border-radius: 2px;
   font-family: var(--t-title);
   font-weight: 400;
-  font-size: clamp(13px, 3.2vh, 19px);
+  font-size: clamp(13px, 3.2cqh, 19px);
   line-height: 1.25;
   color: var(--t-paper-ink);
   background: var(--t-paper);
@@ -1168,7 +1168,7 @@
   right: calc(var(--pw) + 40px);
 }
 
-@media (max-height: 500px), (max-width: 600px) {
+@container (max-height: 500px) or (max-width: 600px) {
   .stage3d.flat .hud .ability-panel.foresight-only {
     left: calc(var(--pw) + 20px);
     top: 6px;
@@ -1198,7 +1198,7 @@
   justify-content: center;
   gap: 0.8em;
   width: 100%;
-  padding: clamp(10px, 2.6vh, 20px) 0;
+  padding: clamp(10px, 2.6cqh, 20px) 0;
   white-space: nowrap;
   color: #fff;
   background: linear-gradient(90deg, transparent, rgba(6, 10, 16, 0.88) 18%, rgba(6, 10, 16, 0.88) 82%, transparent);
@@ -1215,7 +1215,7 @@
 }
 
 .rbn-main {
-  font-size: clamp(30px, 8.5vh, 64px);
+  font-size: clamp(30px, 8.5cqh, 64px);
   font-weight: 900;
   letter-spacing: 0.12em;
   color: var(--gold);
@@ -1223,7 +1223,7 @@
 }
 
 .rbn-sub {
-  font-size: clamp(16px, 4.2vh, 30px);
+  font-size: clamp(16px, 4.2cqh, 30px);
   font-weight: 700;
   letter-spacing: 0.1em;
   animation-delay: 0.08s;

@@ -16,6 +16,7 @@ import { TableMaterials, buildTableModel } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 import { TableColors, tableColors } from '../ui/theme';
 import { pondJitter, varyDiscard, vary } from '../ui/vary';
+import { Box, localRect, toLocal } from '../ui/landscape';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -275,7 +276,7 @@ export class Table3D {
   private rest = { pos: new THREE.Vector3(0, 18, 28.5), look: new THREE.Vector3(0, 0.5, -1.5) };
   private handTilt = -0.32;
   // 2.5D：画面上不能让副露压住的地方（头像框、能力说明），由外面给出，相对页面的矩形
-  keepOut: (() => DOMRect[]) | null = null;
+  keepOut: (() => Box[]) | null = null;
   // 2.5D：每家（按相对座位，0 是自己）第一组副露最远能摆到哪，画面大小变了重新算
   private meldLimit: number[] | null = null;
   private view25: View25 = { ...DEFAULT_VIEW_25D };
@@ -1586,7 +1587,7 @@ export class Table3D {
     const d = this.dim;
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
-    const box = this.container.getBoundingClientRect();
+    const box = localRect(this.container.getBoundingClientRect());
     const rects = this.keepOut?.() ?? [];
     const pad = 8;
     const cam = this.camera.clone();
@@ -1627,8 +1628,10 @@ export class Table3D {
   }
 
   private onPointerMove = (e: PointerEvent): void => {
-    const r = this.renderer.domElement.getBoundingClientRect();
-    this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    // 画面转成横屏时（src/ui/landscape.ts）先换回 #app 里的坐标
+    const r = localRect(this.renderer.domElement.getBoundingClientRect());
+    const p = toLocal(e.clientX, e.clientY);
+    this.pointer.set(((p.x - r.left) / r.width) * 2 - 1, -((p.y - r.top) / r.height) * 2 + 1);
   };
 
   private onClick = (e: MouseEvent): void => {
