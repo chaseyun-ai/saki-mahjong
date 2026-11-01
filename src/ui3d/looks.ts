@@ -75,6 +75,8 @@ export const LOOKS: Record<string, Look> = {
   komaki: { model: 'models/vroid-shino.v2.glb', hair: '#3a2a2a', eyes: '#7a5a9a', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
   // 姊带丰音：先占位，借霞的长发模型换成黑色头发、深紫色眼睛
   toyone: { model: 'models/vroid-shino.v2.glb', hair: '#1e1c24', eyes: '#5a4a7a', hairContrast: 0.5, reveal: 'slam', pose: 'lap', borrowed: true },
+  // 爱丽丝：先占位，借和的长发模型换成金色头发、蓝色眼睛
+  aislinn: { model: 'models/vroid-g.v2.glb', hair: '#e2c47a', eyes: '#4a78b8', hairContrast: 0.7, reveal: 'wave', pose: 'lap', borrowed: true },
   // 上重漫：先占位，借怜的短发模型换成深棕色头发、棕色眼睛
   suzu: { model: 'models/vroid-f.v2.glb', hair: '#4a2e22', eyes: '#8a5a32', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 东横桃子：先占位，借和的长发模型换成蓝黑色头发、灰蓝色眼睛

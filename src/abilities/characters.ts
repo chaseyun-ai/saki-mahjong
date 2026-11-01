@@ -30,6 +30,7 @@ import { riiAbility } from './rii';
 import { himekoAbility } from './himeko';
 import { kirameAbility } from './kirame';
 import { shizunoAbility } from './shizuno';
+import { aislinnAbility } from './aislinn';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -334,6 +335,20 @@ export const CHARACTERS: Character[] = [
     ability: toyoneAbility,
     skillArts: ROKUYOU.map(({ id, name }) => ({ id, name })),
     ai: { ...baseAi, mistakeRate: 0.04, rokuyou: true },
+  },
+  {
+    id: 'aislinn',
+    cost: 4,
+    name: '爱丽丝',
+    school: '宫守女子',
+    color: '#d8b04c',
+    ability: aislinnAbility,
+    skillArts: [
+      { id: 'sketch', name: '手绘板', hint: '配完牌、牌桌变成手绘板时放' },
+      { id: 'shatter', name: '画板破碎', label: '手绘板·破碎', hint: '有人鸣牌、手绘板碎掉时放' },
+      { id: 'redraw', name: '重绘', label: '画笔·重绘', hint: '用一支画笔再画一次时放' },
+    ],
+    ai: { ...baseAi, mistakeRate: 0.04 },
   },
   {
     id: 'suzu',

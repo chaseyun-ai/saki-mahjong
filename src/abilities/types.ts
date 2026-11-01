@@ -81,6 +81,8 @@ export interface Ability {
   beforeDraw?(g: Game, seat: number, rinshan: boolean): void;
   afterDraw?(g: Game, seat: number): void;
   afterDiscard?(g: Game, seat: number, tile: TileId): void;
+  // 有人鸣牌、开杠以后（call 事件发出之后）：caller 是谁，call 是“碰”“吃”“杠”“暗杠”“加杠”（爱丽丝的手绘板碎掉）
+  onCall?(g: Game, seat: number, caller: number, call: string): void;
   // 一局结算完、点数已经算进去，roundEnd 事件发出之前（白水哩的番缚在这里结算成钥匙）。被封印也照样调用
   onRoundEnd?(g: Game, seat: number, result: RoundResult): void;
   // 头像框上的小标签（比如衣的月相、霞绝掉的花色），没有就是 null
@@ -170,4 +172,6 @@ export interface SkillButton {
   active?: boolean;
   // 要选对象的技能（爽的瘟神威给哪一家）：一个对象一个按钮，按下去调 pressSkill(g, seat, id)
   choices?: { id: string; label: string; enabled: boolean }[];
+  // 一场比赛里几支画笔（爱丽丝）：技能栏画成一支支可以点的画笔，按下去调 pressSkill。ready 是现在能不能用
+  brushes?: { left: number; max: number; ready: boolean };
 }

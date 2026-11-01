@@ -24,6 +24,7 @@ import { toyoneLurks, toyoneMode } from '../abilities/toyone';
 import { TERU, teruDanger, teruFits, teruLadder, teruMirrored, teruTier, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import { himekoExtra, himekoPlan } from '../abilities/himeko';
+import { aislinnAiBrush, aislinnExtra, aislinnPlan } from '../abilities/aislinn';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
 import { kokushiShanten, shanten, standardShanten, waitingKinds } from '../engine/shanten';
@@ -240,6 +241,24 @@ function danger(g: Game, viewer: number, threat: number, k: Kind, visible: numbe
 function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Action {
   const p = g.players[seat];
   const find = (t: Action['type']) => legal.find((a) => a.type === t);
+
+  // 爱丽丝的手绘板：碎了先看要不要用画笔；画着就照画上的牌打，凑齐就自摸，听牌了立直
+  aislinnAiBrush(g, seat);
+  const sketch = aislinnPlan(g, seat);
+  if (sketch) {
+    const tsumo = find('tsumo');
+    if (tsumo) return tsumo;
+    const visible = visibleCounts(g, seat);
+    const risk = (t: TileId) => Math.max(0, ...threats(g, seat).map((o) => danger(g, seat, o, kindOf(t), visible)));
+    const extra = aislinnExtra(g, seat, sketch).sort((a, b) => risk(a) - risk(b));
+    // 只差最后自摸的那张时才立直（不然手牌锁住、凑不齐画上的牌）
+    const last = extra.length === 1 && sketch.needed.slice(sketch.step).filter((n) => n).length === 1;
+    for (const t of extra) {
+      const riichi = last ? legal.find((a) => a.type === 'discard' && a.riichi && a.tile === t) : undefined;
+      const plain = legal.find((a) => a.type === 'discard' && !a.riichi && a.tile === t);
+      if (riichi || plain) return riichi ?? plain!;
+    }
+  }
 
   // 姬子钥匙的那一局：照着那副牌打，凑齐就自摸，先打不要的牌，不立直
   const twin = style.twin ? himekoPlan(g, seat) : null;
@@ -823,6 +842,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const pass = legal.find((a) => a.type === 'pass')!;
   // 姬子钥匙的那一局：门清自摸才是那副牌的番数，不鸣牌也不荣和
   if (style.twin && himekoPlan(g, seat)) return pass;
+  // 爱丽丝画着手绘板：不鸣牌（一鸣就碎），能荣和照样和
+  if (aislinnPlan(g, seat)) return legal.find((a) => a.type === 'ron') ?? pass;
   // 淡的星符汇聚：门清做大七星，不鸣牌
   if (style.cornerKan && awaiStarPlan(g, seat)) return legal.find((a) => a.type === 'ron') ?? pass;
   const ron = legal.find((a) => a.type === 'ron');
