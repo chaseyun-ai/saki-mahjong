@@ -43,6 +43,8 @@ export const kasumiAbility: Ability = {
   name: '请神·绝一门',
   description: `落后时在发牌前请神上身（玩家操作时自己选），之后整场都不退。请神后每局定一种花色：别人的配牌里没有这种花色，摸牌也摸不到（岭上牌除外）；她自己摸牌有 ${KASUMI.drawChance * 100}% 的概率摸到这种花色或字牌。`,
   priority: PRIORITY.kasumi,
+  // 涅莉押 3 点的局也绝得到：她的和牌别人挡不住，但那门花色她一样拿不到
+  piercesShield: true,
 
   // 请神：选她配牌里最多的花色（按洗好的牌算，还没人动过），别人的配牌里不能有这种花色
   dealRules(g, seat) {

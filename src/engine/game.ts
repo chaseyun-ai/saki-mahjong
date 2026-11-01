@@ -383,9 +383,14 @@ export class Game {
   }
 
   // from 的能力管不管得到 target（照这样 immune 的人只听自己和 absolute 的）
+  // 涅莉押 3 点的护身（shielded）挡不住霞的绝一门这种整桌拿走一门花色的能力（piercesShield）
   binds(from: number, target: number): boolean {
     if (from === target || this.isAbsolute(from)) return true;
-    return !this.isImmune(target) && !this.fieldVoid();
+    if (this.fieldVoid()) return false;
+    const a = this.abilities[target];
+    if (!a) return true;
+    if (a.immune || a.supreme?.(this, target)) return false;
+    return !a.shielded?.(this, target) || !!this.abilities[from]?.piercesShield;
   }
 
   // 别人削弱了这家这一次发动的能力（稳乃的深山：每个标记 5%）。absolute、immune 的不受影响，佛灭时也不起作用；
