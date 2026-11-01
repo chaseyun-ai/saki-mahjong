@@ -1,6 +1,7 @@
 import type { Game } from '../engine/game';
 import { shanten, waitingKinds } from '../engine/shanten';
 import { TileId, doraFromIndicator, kindOf, suitOf, toCounts } from '../engine/tiles';
+import { isDoraTile, kuroLost } from './kuro';
 import { teruWinValue } from './teru';
 import { PRIORITY, type Ability, type PreDealOption } from './types';
 
@@ -9,7 +10,8 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 // - 分配运势（每一局发牌前）：这一局押几点，押了就扣掉，和没和都不退：
 //   · 1 点：进张朝 3 番到满贯发展，第 15 巡左右（快流局时）和
 //   · 2 点：朝跳满发展，第 12 巡左右和
-//   · 3 点：朝三倍满发展（做染手：配牌里那门花色够 5 张做清一色，不够做混一色），第 8 巡左右和，而且这一局她的和牌别人挡不住（别人的能力管不到她：不许和、换走和了牌、封印都不算）
+//   · 3 点：朝三倍满发展，第 8 巡左右立直、一发自摸三倍满（立直、一发、自摸加里宝牌，里宝牌往她手里最多的牌上变）。照配牌定好一手三倍满：
+//     宝牌能动就做混一色加宝牌刻子（宝牌指示牌指向它），玄在场宝牌动不了就做清一色（七对子也算），每巡来缺的那张；听牌了别人摸不走她要和的牌。而且这一局她的和牌别人挡不住（别人的能力管不到她：不许和、换走和了牌、封印都不算）
 //   配牌照常发，不动（押 2、3 点时宝牌指示牌指向她配牌里最多的那种牌）。装装样子：到那一巡之前摸不到和了牌（摸牌按巡数慢慢变好，听牌了先来把牌做大的牌：
 //   那门花色、宝牌、字牌对子），到了那一巡牌够大就来和了牌。押 2、3 点立直了里宝牌往她手里最多的牌上变，有宝牌暗刻就在那一巡来第四张开暗杠、岭上开花。押了几点只有她自己知道
 // - 感知听牌：手里还有运势（押完这一局还剩 1 点以上）就看得出别人听没听牌（不知道听什么）。
@@ -33,9 +35,10 @@ export const NELLY = {
   // 到了那一巡牌还不够大，再等几巡就有什么和什么
   grace: 3,
   late: 8, // 牌山剩这么多以下就有什么和什么
-  // 押 3 点：配牌里那门花色有这么多张就做清一色，不然做混一色（那门花色 + 字牌）
+  // 押 3 点做染手（配牌里最多的那门花色）
   flush: [false, false, false, true],
-  chin: 5,
+  // 三倍满：11 番
+  bigHan: 11,
 };
 
 const TIER_NAMES = ['', '3番–满贯', '跳满', '三倍满'];
@@ -51,6 +54,7 @@ interface NellyState {
   blocked?: number[]; // 这一局被七姐妹封住、和不了的人
   suit?: number; // 这一局做的花色
   honors?: boolean; // 做染手：带字牌（混一色）还是不带（清一色）。undefined 是不做染手
+  plan?: number[]; // 押 3 点：要做成的那手牌（14 张，按种类数）
 }
 
 const gameStateOf = (g: Game, seat: number) => {
@@ -270,10 +274,16 @@ function setUra(g: Game, seat: number): void {
   // 张数多的先；一样多挑宝牌（宝牌再加里宝牌）
   const kinds = Array.from({ length: 34 }, (_, k) => k).sort((a, b) => counts[b] - counts[a] || Number(dora.has(b)) - Number(dora.has(a)));
   const n = g.wall.visibleUraIndicators().length;
+  // 每一张从张数最多的那种牌挑起，指示牌找不到就换下一种
+  let from = 0;
   for (let i = 0; i < n; i++) {
-    const k = kinds[Math.min(i, kinds.length - 1)];
-    if (!counts[k]) break;
-    g.wall.bringToUra(i, (t) => doraFromIndicator(kindOf(t)) === k, g.rng);
+    for (let j = Math.min(from, kinds.length - 1); j < kinds.length && counts[kinds[j]] > 0; j++) {
+      const k = kinds[j];
+      if (g.wall.bringToUra(i, (t) => doraFromIndicator(kindOf(t)) === k, g.rng)) {
+        from = j + 1;
+        break;
+      }
+    }
   }
 }
 
@@ -293,12 +303,269 @@ function kanKind(g: Game, seat: number): number | null {
   return null;
 }
 
+// 手牌换成 hand（13 张）摸 t 自摸的话有几番：还没立直的算上立直、一发和里宝牌（里宝牌指示牌会换成指向手里最多的那种牌）。
+// 役满算 13 番；和不了是 0
+function projHan(g: Game, seat: number, hand: TileId[], t: TileId): number {
+  const p = g.players[seat];
+  const keep = p.hand;
+  p.hand = [...hand, t];
+  try {
+    const r = g.winResult(seat, t, true);
+    if (!r) return 0;
+    if (r.yakuman > 0) return 13;
+    if (p.riichi) return r.han;
+    return r.han + 2 + uraGain(g, seat, hand);
+  } finally {
+    p.hand = keep;
+  }
+}
+
+// 立直以后第一张里宝牌指示牌能换成指向几张她的牌（和 setUra 一样按 13 张加暗杠里张数多的挑，指示牌找得到才算）
+function uraGain(g: Game, seat: number, hand: TileId[]): number {
+  const w = g.wall;
+  const counts = toCounts([...hand, ...g.players[seat].melds.filter((m) => m.type === 'ankan').flatMap((m) => m.tiles)]);
+  if (!w.uraIndicators.length || w.locked.has(w.uraIndicators[0])) return 0;
+  const pool = [w.uraIndicators[0], ...w.uraIndicators.slice(1), ...w.live, ...w.rinshan].filter((t) => !w.locked.has(t));
+  const ok = new Set(pool.map((t) => doraFromIndicator(kindOf(t))));
+  let best = 0;
+  for (let k = 0; k < 34; k++) if (ok.has(k)) best = Math.max(best, counts[k]);
+  return best;
+}
+
+// 13 张的手：牌山里（没锁的）能自摸出三倍满的牌有几张，和自摸能到几番（只看牌山里还有的）
+function bigScore(g: Game, seat: number, hand: TileId[]): { big: number; han: number } {
+  const melds = g.players[seat].melds.length;
+  const counts = toCounts(hand);
+  if (shanten(counts, melds) !== 0) return { big: 0, han: -1 };
+  const live = g.wall.live.filter((t) => reachable(g, seat, t));
+  let big = 0;
+  let han = 0;
+  for (const k of waitingKinds(counts, melds)) {
+    const tiles = live.filter((t) => kindOf(t) === k);
+    if (!tiles.length) continue;
+    const h = projHan(g, seat, hand, tiles[0]);
+    han = Math.max(han, h);
+    if (h >= NELLY.bigHan) big += tiles.length;
+  }
+  return { big, han };
+}
+// 两张以上才算够（立直以后到她摸之前别人还要摸三张）
+const rank = (x: { big: number; han: number }) => (x.big >= 1 ? 100 + Math.min(x.big, 4) : x.han);
+
+// 她摸得到的牌：没锁、这一次摸牌的规矩不挡（玄在的话宝牌摸不到，谁的能力都挡不住玄）
+function reachable(g: Game, seat: number, t: TileId): boolean {
+  const w = g.wall;
+  if (w.locked.has(t) || w.deny?.(t)) return false;
+  return ![0, 1, 2, 3].some((s) => s !== seat && g.abilities[s]?.id === 'kuro' && g.isAbsolute(s) && !kuroLost(g, s) && isDoraTile(g, t));
+}
+
+// 押 3 点：定一手三倍满（立直、一发、自摸再加里宝牌）的目标牌，和手里的牌重合得越多越好，缺的牌牌山里要有：
+// - 清一色（6 番）：有对子、里宝牌能指向它就够 11 番；七对子也行
+// - 混一色（3 番）：宝牌能动的时候，要有宝牌刻子（宝牌、里宝牌各 3 番）；七对子要有宝牌对子
+function planBig(g: Game, seat: number): number[] | null {
+  const st = stateOf(g, seat);
+  const flush = nellyFlush(g, seat);
+  if (!flush) return null;
+  const w = g.wall;
+  const have = toCounts(g.players[seat].hand);
+  const cap = have.slice();
+  for (const t of w.live) if (reachable(g, seat, t)) cap[kindOf(t)]++;
+  for (let k = 0; k < 34; k++) cap[k] = Math.min(4, cap[k]);
+  const uraOk = new Set(
+    [w.uraIndicators[0], ...w.uraIndicators.slice(1), ...w.live, ...w.rinshan].filter((t) => t !== undefined && !w.locked.has(t)).map((t) => doraFromIndicator(kindOf(t))),
+  );
+  if (!w.uraIndicators.length || w.locked.has(w.uraIndicators[0])) uraOk.clear();
+  const dora = new Set(w.visibleDoraIndicators().map((d) => doraFromIndicator(kindOf(d))));
+  const base = flush.suit * 9;
+  const F = [...Array.from({ length: 9 }, (_, i) => base + i), ...(flush.honors ? [27, 28, 29, 30, 31, 32, 33] : [])];
+  const sets: number[][] = [];
+  for (let i = 0; i < 7; i++) sets.push([base + i, base + i + 1, base + i + 2]);
+  for (const k of F) sets.push([k, k, k]);
+  const t = new Array<number>(34).fill(0);
+  const prev = st.plan?.join();
+  let best: number[] | null = null;
+  let bestScore = -1;
+  const valid = (pairs: boolean) => {
+    const mixed = t.some((n, k) => n > 0 && k >= 27);
+    for (const k of F) {
+      if (!uraOk.has(k)) continue;
+      if (!mixed && t[k] >= 2) return true;
+      if (mixed && dora.has(k) && t[k] >= (pairs ? 2 : 3)) return true;
+    }
+    return false;
+  };
+  const consider = (pairs: boolean) => {
+    if (!valid(pairs)) return;
+    let score = 0;
+    for (const k of F) score += Math.min(have[k], t[k]);
+    score *= 2;
+    if (prev !== undefined && t.join() === prev) score += 1;
+    if (score > bestScore) [best, bestScore] = [t.slice(), score];
+  };
+  const fits = (k: number) => t[k] <= cap[k];
+  const pick = (from: number, left: number) => {
+    if (left === 0) {
+      for (const k of F) {
+        t[k] += 2;
+        if (fits(k)) consider(false);
+        t[k] -= 2;
+      }
+      return;
+    }
+    for (let i = from; i < sets.length; i++) {
+      for (const k of sets[i]) t[k]++;
+      if (sets[i].every(fits)) pick(i, left - 1);
+      for (const k of sets[i]) t[k]--;
+    }
+  };
+  pick(0, 4);
+  // 七对子
+  const pairKinds = F.filter((k) => cap[k] >= 2);
+  const choose = (from: number, left: number) => {
+    if (left === 0) return consider(true);
+    for (let i = from; i <= pairKinds.length - left; i++) {
+      t[pairKinds[i]] = 2;
+      choose(i + 1, left - 1);
+      t[pairKinds[i]] = 0;
+    }
+  };
+  choose(0, 7);
+  st.plan = best ?? undefined;
+  return best;
+}
+
+// 押 3 点：14 张的手打哪张（听牌的打法里挑三倍满的牌最多、番最多的）；打哪张都听不了牌是 null
+export function nellyBigDiscard(g: Game, seat: number): TileId | null {
+  const p = g.players[seat];
+  if (tierOf(g, seat) < 3 || p.riichi) return null;
+  // 有目标牌：打多出来的牌（先打目标里没有的）
+  const plan = planBig(g, seat);
+  if (plan) {
+    const have = toCounts(p.hand);
+    const extra = p.hand.filter((x) => have[kindOf(x)] > plan[kindOf(x)]);
+    if (extra.length) return extra.find((x) => plan[kindOf(x)] === 0) ?? extra[0];
+  }
+  // 清一色还没做好（别的花色的牌不止一张）就照常打（先打别的花色）
+  const flush = nellyFlush(g, seat);
+  if (flush && p.hand.filter((t) => !inFlush(flush)(kindOf(t))).length > 1) return null;
+  let best: TileId | null = null;
+  let score = -1;
+  const seen = new Set<number>();
+  for (const t of p.hand) {
+    if (seen.has(kindOf(t))) continue;
+    seen.add(kindOf(t));
+    const s = rank(bigScore(g, seat, p.hand.filter((x) => x !== t)));
+    if (s > score) [best, score] = [t, s];
+  }
+  return score >= 0 ? best : null;
+}
+
+// 押 3 点：13 张的手立直下去下一巡就能一发自摸三倍满
+export function nellyBigReady(g: Game, seat: number, hand: TileId[]): boolean {
+  return rank(bigScore(g, seat, hand)) >= 100;
+}
+
+// 押 3 点的摸牌：配牌照常发，每一巡来目标牌里缺的那张（没有目标牌就来那门花色的牌）；听牌了来把牌做到三倍满的牌（来了别的牌她打掉）；
+// 够三倍满了前一巡立直，下一巡一发自摸。到那一巡之前不来和了牌；牌山快摸完了有什么和什么
+function drawBig(g: Game, seat: number): void {
+  const w = g.wall;
+  const p = g.players[seat];
+  const turn = nellyTurn(g, seat);
+  const due = NELLY.turn[3];
+  const value = drawValue(g, seat);
+  const wins = (t: TileId) => value(t) > 0;
+  const bestWin = () => {
+    const best = Math.max(0, ...w.live.filter((t) => !w.locked.has(t)).map(value));
+    return best > 0 && w.bringToLive(0, (t) => value(t) >= best, g.rng);
+  };
+  if (p.riichi) {
+    setUra(g, seat);
+    if (w.bringToLive(0, (t) => projHan(g, seat, p.hand, t) >= NELLY.bigHan, g.rng)) return;
+    if (turn >= due + NELLY.grace && bestWin()) return;
+    if (wins(w.live[0])) w.bringToLive(0, (t) => !wins(t), g.rng);
+    return;
+  }
+  if (w.remaining <= NELLY.late) {
+    bestWin();
+    return;
+  }
+  const flush = nellyFlush(g, seat);
+  const ok = flush ? (t: TileId) => inFlush(flush)(kindOf(t)) : () => true;
+  const safe = (t: TileId) => !wins(t);
+  const counts = toCounts(p.hand);
+  const melds = p.melds.length;
+  // 有目标牌：缺几张就一巡来一张（缺的牌里先来牌山里剩得少的）；只差一张、够三倍满了就来一张她会打掉的牌，等立直
+  const plan = planBig(g, seat);
+  if (plan) {
+    const need = (t: TileId) => plan[kindOf(t)] > counts[kindOf(t)];
+    const missing = plan.reduce((n, c, k) => n + Math.max(0, c - counts[k]), 0);
+    if (missing >= 2) {
+      const left = toCounts(w.live.filter((t) => reachable(g, seat, t)));
+      const scarce = Math.min(...p.hand.length ? plan.map((c, k) => (c > counts[k] ? left[k] : 99)) : [99]);
+      if (w.bringToLive(0, (t) => need(t) && safe(t) && left[kindOf(t)] === scarce, g.rng) || w.bringToLive(0, (t) => need(t) && safe(t), g.rng)) return;
+    } else if (rank(bigScore(g, seat, p.hand)) >= 100) {
+      w.bringToLive(0, (t) => plan[kindOf(t)] === 0 && safe(t), g.rng) || w.bringToLive(0, (t) => !need(t) && safe(t), g.rng);
+      return;
+    }
+  }
+  if (flush && p.hand.some((t) => !ok(t))) {
+    // 手里还有别的牌：一张一张来那门的牌（先来让清一色向听变少的，再来连得上的）
+    const fs = flushShanten(counts, melds, flush);
+    const lower = (t: TileId) => {
+      counts[kindOf(t)]++;
+      const after = flushShanten(counts, melds, flush);
+      counts[kindOf(t)]--;
+      return after < fs;
+    };
+    const near = (t: TileId) => {
+      const k = kindOf(t);
+      return counts[k] > 0 || [-2, -1, 1, 2].some((d) => k + d >= 0 && k + d < 27 && Math.floor((k + d) / 9) === Math.floor(k / 9) && counts[k + d] > 0);
+    };
+    // 先凑宝牌刻子（立直以后里宝牌也变成它）
+    const doraSet = (t: TileId) => isDora(g, t) && counts[kindOf(t)] >= 1 && counts[kindOf(t)] < 3;
+    w.bringToLive(0, (t) => ok(t) && safe(t) && doraSet(t), g.rng) ||
+      w.bringToLive(0, (t) => ok(t) && safe(t) && lower(t), g.rng) || w.bringToLive(0, (t) => ok(t) && safe(t) && near(t), g.rng) || w.bringToLive(0, (t) => ok(t) && safe(t), g.rng);
+    return;
+  }
+  const sh = shanten(counts, melds);
+  if (sh > 0) {
+    const good = useful(g, seat);
+    w.bringToLive(0, (t) => good(t) && ok(t) && safe(t), g.rng) || w.bringToLive(0, (t) => good(t) && safe(t), g.rng) || w.bringToLive(0, (t) => ok(t) && safe(t), g.rng);
+    return;
+  }
+  // 听牌了
+  const now = rank(bigScore(g, seat, p.hand));
+  if (now >= 100) {
+    // 够三倍满了：来一张她会打掉的别的花色的牌，等立直
+    w.bringToLive(0, (t) => !ok(t) && safe(t), g.rng) || w.bringToLive(0, safe, g.rng);
+    return;
+  }
+  // 还不够大：挑一张摸进来、打掉一张以后最接近三倍满的牌
+  let pick: number | null = null;
+  let score = now;
+  const kinds = new Set(w.live.filter((t) => reachable(g, seat, t) && safe(t)).map(kindOf));
+  for (const k of kinds) {
+    const t = w.live.find((x) => kindOf(x) === k && reachable(g, seat, x))!;
+    const hand = [...p.hand, t];
+    const tried = new Set<number>();
+    for (const d of hand) {
+      if (tried.has(kindOf(d))) continue;
+      tried.add(kindOf(d));
+      const s = rank(bigScore(g, seat, hand.filter((x) => x !== d)));
+      if (s > score) [pick, score] = [k, s];
+    }
+  }
+  if (pick !== null && w.bringToLive(0, (t) => kindOf(t) === pick, g.rng)) return;
+  const good = useful(g, seat);
+  w.bringToLive(0, (t) => ok(t) && safe(t) && !good(t), g.rng) || w.bringToLive(0, safe, g.rng);
+}
+
 const inSuit = (suit: number) => (t: TileId) => kindOf(t) < 27 && suitOf(kindOf(t)) === suit;
 
 export const nellyAbility: Ability = {
   id: 'nelly',
   name: '运势·七姐妹',
-  description: `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点。每一局发牌前可以押运势（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（进张往一门花色走，做清一色或混一色），第 ${NELLY.turn[3]} 巡左右和，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次封住他这一局和不了，押几点最多封几家。`,
+  description: `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点。每一局发牌前可以押运势（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次封住他这一局和不了，押几点最多封几家。`,
   priority: PRIORITY.nelly,
 
   // 三倍满的局别人挡不住她（别人的能力管不到她）
@@ -321,11 +588,13 @@ export const nellyAbility: Ability = {
     for (const k of hand) if (k < 27) per[suitOf(k)]++;
     const st = stateOf(g, seat);
     st.suit = per.indexOf(Math.max(...per));
-    if (NELLY.flush[v]) st.honors = per[st.suit] < NELLY.chin;
-    if (!NELLY.dora[v] || [0, 1, 2, 3].some((s) => s !== seat && g.isAbsolute(s))) return;
+    // 宝牌能动（没有玄这样的人在）就做混一色、宝牌指示牌指向手里那门花色或字牌里最多的；动不了就做清一色
+    const free = ![0, 1, 2, 3].some((s) => s !== seat && g.isAbsolute(s));
+    if (NELLY.flush[v]) st.honors = free;
+    if (!NELLY.dora[v] || !free) return;
     const n = (k: number) => hand.filter((x) => x === k).length;
     // 张数多的先；一样多挑 5（有赤宝牌）
-    const kinds = [...new Set(hand)].sort((a, b) => n(b) - n(a) || (b < 27 && b % 9 === 4 ? 1 : 0) - (a < 27 && a % 9 === 4 ? 1 : 0));
+    const kinds = [...new Set(hand)].filter((k) => !NELLY.flush[v] || k >= 27 || suitOf(k) === st.suit).sort((a, b) => n(b) - n(a) || (b < 27 && b % 9 === 4 ? 1 : 0) - (a < 27 && a % 9 === 4 ? 1 : 0));
     for (const k of kinds.slice(0, 3)) if (g.wall.bringToDora(0, (t) => doraFromIndicator(kindOf(t)) === k, g.rng, (j) => j >= 52)) break;
   },
 
@@ -337,8 +606,18 @@ export const nellyAbility: Ability = {
   },
 
   // 每次有人摸牌前看一眼：谁听牌了就用七姐妹封住
-  beforeAnyDraw(g, seat) {
+  beforeAnyDraw(g, seat, drawer, rinshan) {
     sweep(g, seat);
+    // 押 3 点听着三倍满：别人摸不走她要和的牌
+    if (drawer === seat || tierOf(g, seat) < 3) return;
+    const p = g.players[seat];
+    if (shanten(toCounts(p.hand), p.melds.length) !== 0) return;
+    const waits = waitingKinds(toCounts(p.hand), p.melds.length);
+    const w = g.wall;
+    const next = rinshan ? w.rinshan[0] : w.live[0];
+    if (next === undefined || !waits.includes(kindOf(next))) return;
+    if (rinshan) w.bringToRinshan((t) => !waits.includes(kindOf(t)), g.rng);
+    else w.bringToLive(0, (t) => !waits.includes(kindOf(t)), g.rng);
   },
 
   // 七姐妹封住的人这一局和不了（问到时也先看一眼：刚听牌的人马上就封）
@@ -361,7 +640,11 @@ export const nellyAbility: Ability = {
       if (best > 0) w.bringToRinshan((t) => value(t) >= best, g.rng);
       return;
     }
-    // 立直了（押 2、3 点）：里宝牌变成她手里最多的那种牌
+    if (v >= 3) {
+      drawBig(g, seat);
+      return;
+    }
+    // 立直了（押 2 点）：里宝牌变成她手里最多的那种牌
     if (p.riichi && NELLY.dora[v]) setUra(g, seat);
     const good = useful(g, seat);
     const value = drawValue(g, seat);
@@ -375,27 +658,6 @@ export const nellyAbility: Ability = {
     // 把牌做大的牌：那门花色、宝牌、手里有的字牌
     const held = toCounts(p.hand);
     const shapes = (t: TileId) => pred(t) || isDora(g, t) || (kindOf(t) >= 27 && held[kindOf(t)] > 0 && stateOf(g, seat).honors !== false);
-    const flush = nellyFlush(g, seat);
-    const off = flush ? p.hand.filter((t) => !inFlush(flush)(kindOf(t))).length : 0;
-    if (flush && off > 0 && !late) {
-      // 做染手：手里还有别的牌就一张一张来那几种牌（先来让染手向听变少的，再来连得上的）。到那一巡之前不来和了牌
-      const ok = inFlush(flush);
-      const counts = toCounts(p.hand);
-      const fs = flushShanten(counts, p.melds.length, flush);
-      const lower = (t: TileId) => {
-        counts[kindOf(t)]++;
-        const after = flushShanten(counts, p.melds.length, flush);
-        counts[kindOf(t)]--;
-        return after < fs;
-      };
-      const near = (t: TileId) => {
-        const k = kindOf(t);
-        if (counts[k] > 0) return true;
-        return k < 27 && [-2, -1, 1, 2].some((d) => k + d >= 0 && Math.floor((k + d) / 9) === Math.floor(k / 9) && counts[k + d] > 0);
-      };
-      const safe = (t: TileId) => ok(kindOf(t)) && (turn >= due || !wins(t));
-      if (w.bringToLive(0, (t) => safe(t) && lower(t), g.rng) || w.bringToLive(0, (t) => safe(t) && near(t), g.rng) || w.bringToLive(0, safe, g.rng)) return;
-    }
     if (turn < due && !late) {
       // 还没到那一巡：不给和了牌。离听牌还远就按剩下的巡数来进张，听牌了来把牌做大的牌
       if (sh > 0) {
@@ -450,7 +712,7 @@ export const nellyAbility: Ability = {
       name: `押 ${n} 点 · ${TIER_NAMES[n]}`,
       desc:
         n === 3
-          ? `进张往一门花色走、朝三倍满发展，第 ${NELLY.turn[3]} 巡左右和；和牌别人挡不住；七姐妹封三家`
+          ? `进张朝三倍满发展（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸；和牌别人挡不住；七姐妹封三家`
           : `进张朝${TIER_NAMES[n]}发展，第 ${NELLY.turn[n]} 巡左右和；七姐妹封${n === 2 ? '两' : '一'}家`,
       cost: n,
       enabled: n <= pool,

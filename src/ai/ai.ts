@@ -17,7 +17,7 @@ import { yuukiActive } from '../abilities/yuuki';
 import { makoDanger, makoSuit } from '../abilities/mako';
 import { KYOUKO, kyoukoTargets } from '../abilities/kyouko';
 import { takamiHarvest, takamiSeeds } from '../abilities/takami';
-import { NELLY, nellyDue, nellyFlush, nellyLiveWaits, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier, nellyTurn } from '../abilities/nelly';
+import { NELLY, nellyBigDiscard, nellyBigReady, nellyDue, nellyFlush, nellyLiveWaits, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier, nellyTurn } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneLurks, toyoneMode } from '../abilities/toyone';
@@ -428,6 +428,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const value = new Map(live.map((x) => [x, ronValue(g, seat, p.hand.filter((t) => t !== x.a.tile), true)]));
     if (live.length > 1) best = live.sort((x, y) => value.get(y)! - value.get(x)! || cands.indexOf(x) - cands.indexOf(y))[0];
   }
+  // 涅莉押 3 点：能听牌就挑最接近三倍满的打法
+  if (style.waves && !sealed && nellyTier(g, seat) >= 3) {
+    const d = nellyBigDiscard(g, seat);
+    const pick = d === null ? undefined : cands.find((x) => kindOf(x.a.tile) === kindOf(d));
+    if (pick) best = pick;
+  }
 
   // 尧深：第一巡打一张孤张字牌种下（先挑种过、还没满三张的三元牌，再挑别的三元牌、别的字牌），不退向听才打
   if (style.harvest && !sealed && p.discards.length === 0 && p.melds.length === 0) {
@@ -519,7 +525,10 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     // 涅莉押了运势的局：离该和的那一巡还早就默听，手牌留着往大里做；该和的前一巡再立直（下一巡一发自摸；押 2、3 点立直以后里宝牌往她手里变）。
     // 听的牌牌山里不到两张也先默听换听
     if (style.waves && nellyTier(g, seat) > 0 && !g.isSealed(seat) && g.wall.remaining > NELLY.late) {
-      if (nellyTurn(g, seat) < nellyDue(g, seat) - 1 || nellyLiveWaits(g, p.hand.filter((t) => t !== best.a.tile), p.melds.length) < 2) return best.a;
+      if (nellyTurn(g, seat) < nellyDue(g, seat) - 1) return best.a;
+      // 押 3 点：立直下去下一巡一发自摸就是三倍满才立直
+      if (nellyTier(g, seat) >= 3) return nellyBigReady(g, seat, p.hand.filter((t) => t !== best.a.tile)) ? riichi : best.a;
+      if ( nellyLiveWaits(g, p.hand.filter((t) => t !== best.a.tile), p.melds.length) < 2) return best.a;
       return riichi;
     }
     // 衣：海底不是自己的、这一局也没法再挪给自己，就不立直，留着吃碰把海底挪过来（打掉这张以后，最后一张轮到谁：从下家起数）
@@ -739,10 +748,12 @@ function nellyHolds(g: Game, seat: number, tsumo: boolean): boolean {
   const turn = p.discards.length + 1;
   const due = nellyDue(g, seat);
   if (turn < due - 1) return true;
-  // 立直了摸到和了牌不和就只能打掉（振听），到了那一巡就和
-  if (p.riichi || turn >= due + NELLY.grace || threats(g, seat).length) return false;
   const tile = tsumo ? p.drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
   const r = g.winResult(seat, tile, tsumo);
+  // 押 3 点：不到三倍满不和
+  if (nellyTier(g, seat) >= 3) return !(p.riichi && turn >= due + NELLY.grace) && !!r && teruWinValue(r, tsumo, seat === g.dealer) < nellyTarget(g, seat);
+  // 立直了摸到和了牌不和就只能打掉（振听），到了那一巡就和
+  if (p.riichi || turn >= due + NELLY.grace || threats(g, seat).length) return false;
   return !!r && teruWinValue(r, tsumo, seat === g.dealer) < nellyTarget(g, seat);
 }
 
