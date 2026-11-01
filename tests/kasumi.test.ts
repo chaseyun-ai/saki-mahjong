@@ -136,4 +136,49 @@ describe('石户霞遇到做染手的对手', () => {
     }
     expect(behind).toBeGreaterThan(5);
   }, 60000);
+  it('涅莉押 3 点的局（别人挡不住她的和牌）也绝得到一门：配牌缺那门，摸也摸不到', () => {
+    let checked = 0;
+    let draws = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const ids = ['kasumi', 'nelly', 'nodoka', 'saki'];
+      const seats = [0, 1, 2, 3].map((i) => CHARACTERS.find((c) => c.id === ids[(i + seed) % 4])!);
+      const me = seats.findIndex((c) => c.id === 'kasumi');
+      const ne = seats.findIndex((c) => c.id === 'nelly');
+      const g = new Game({ seed, format: 'east', players: seats.map((c, i) => ({ name: c.id, ability: c.ability, manual: i === ne })) });
+      // 一开局就请神
+      (g.abilityGameState[me] as { summoned?: boolean }).summoned = true;
+      const bet = () => (g.abilityState[ne] as { bet?: number }).bet ?? 0;
+      g.onEvent((e) => {
+        const suit = kasumiSuit(g, me);
+        if (suit === null || bet() < 3) return;
+        if (e.type === 'roundStart') {
+          checked++;
+          expect(g.abilities[ne]!.shielded!(g, ne)).toBe(true);
+          expect(g.players[ne].hand.some(inSuit(suit))).toBe(false);
+        }
+        if (e.type === 'draw' && e.seat === ne && !g.rinshanDraw && g.wall.live.some((t) => !inSuit(suit)(t) && !g.wall.locked.has(t))) {
+          draws++;
+          expect(inSuit(suit)(g.players[ne].drawn!)).toBe(false);
+        }
+      });
+      let steps = 0;
+      while (g.phase !== 'gameEnd' && ++steps < 20000) {
+        if (g.phase === 'roundEnd') {
+          g.nextRound();
+          continue;
+        }
+        if (g.phase === 'predeal') {
+          const ab = g.abilities[ne]!;
+          const opt = ab.preDeal!(g, ne).find((o) => o.id === 'luck3' && o.enabled);
+          ab.setPreDeal!(g, ne, opt ? [opt.id] : []);
+          g.deal();
+          continue;
+        }
+        const s = g.waitingSeats()[0];
+        g.act(s, chooseAction(g, s, seats[s].ai));
+      }
+    }
+    expect(checked).toBeGreaterThan(5);
+    expect(draws).toBeGreaterThan(20);
+  }, 60000);
 });

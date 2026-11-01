@@ -64,6 +64,8 @@ export interface Ability {
   immune?: boolean;
   // 这一局别人的能力动不了她（涅莉押 3 点冲三倍满的局：和牌别人挡不住），和 immune 一样算
   shielded?(g: Game, seat: number): boolean;
+  // shielded 的人也要守她定的规矩（霞的绝一门：那门花色整桌都拿不到，涅莉押 3 点的局也一样缺一门）。immune 的人照样管不到
+  piercesShield?: boolean;
   // 开局必定坐庄（片冈优希）：她是起家
   firstDealer?: boolean;
   // 作者钦定最高（松实玄的宝牌）：不被封印，她定的规矩连 immune 的人也要守
