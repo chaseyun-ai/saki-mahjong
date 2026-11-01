@@ -1,4 +1,4 @@
-import { awaiAbility } from './awai';
+import { AWAI_SKILLS, awaiAbility } from './awai';
 import { hiroeAbility } from './hiroe';
 import { kasumiAbility } from './kasumi';
 import { koromoAbility } from './koromo';
@@ -29,6 +29,7 @@ import { suzuAbility } from './suzu';
 import { riiAbility } from './rii';
 import { himekoAbility } from './himeko';
 import { kirameAbility } from './kirame';
+import { shizunoAbility } from './shizuno';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -133,6 +134,7 @@ export const CHARACTERS: Character[] = [
     school: '白糸台高中',
     color: '#e3b23c',
     ability: awaiAbility,
+    skillArts: AWAI_SKILLS.map(({ id, name }) => ({ id, name })),
     ai: { ...baseAi, cornerKan: true },
   },
   {
@@ -369,6 +371,19 @@ export const CHARACTERS: Character[] = [
     color: '#d9809a',
     ability: himekoAbility,
     ai: { ...baseAi, mistakeRate: 0.05, twin: true },
+  },
+  {
+    id: 'shizuno',
+    cost: 4,
+    name: '高鸭稳乃',
+    school: '阿知贺女子学院',
+    color: '#4f8a5b',
+    ability: shizunoAbility,
+    skillArts: [
+      { id: 'mountain', name: '深山' },
+      { id: 'mist', name: '雾更浓了', label: '深山·雾更浓', hint: '深山标记每多两个、牌山上的雾厚一级时放' },
+    ],
+    ai: { ...baseAi, mistakeRate: 0.05 },
   },
   {
     id: 'kirame',

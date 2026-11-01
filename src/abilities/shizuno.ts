@@ -1,0 +1,221 @@
+import type { Game } from '../engine/game';
+import { shanten } from '../engine/shanten';
+import { KIND_COUNT, Kind, TileId, doraFromIndicator, kindOf, toCounts } from '../engine/tiles';
+import type { Ability } from './types';
+
+// 高鸭稳乃（阿知贺）：深山。
+// 牌局每进行一场（本场也算，从第一局起就有一个），她累计一个“深山”标记，一个半庄里只增不减。
+// - 每个标记：别人的能力每次发动有 5% 的概率不起作用（配牌的规矩、调整配牌、摸牌前的规矩、自己摸牌的能力都算），
+//   absolute 的（玄的宝牌、姬子拿到钥匙的那一局）和 immune 的（照）不受影响（Ability.dampens、Game.damped）
+// - 每个标记：她自己配牌、进张顺利 5%（配牌换进让向听前进的牌，摸牌换成有效进张）
+// - 满 6 个：宝牌、杠宝牌、里宝牌往对她有利的方向变（宝牌变成她手里最多的牌，别人手里的宝牌换走），
+//   牌山上起一层白雾；之后每多 2 个，雾厚一级
+export const SHIZUNO = {
+  per: 0.05, // 每个标记的影响
+  cap: 0.6, // 削弱别人最多到这么多（12 个标记）
+  // 自己顺利：原定每个标记 5%，模拟下来一位率 82%（比照还强），压到 1.5%、最多 15%，听牌后摸和了牌再打三折
+  selfPer: 0.015, // 每个标记自己顺利多少
+  selfCap: 0.15, // 自己顺利最多到这么多
+  tenpai: 0.3, // 听牌以后，换成和了牌的概率再乘这个（不然后半场几乎巡巡自摸）
+  doraAt: 6, // 几个标记起控制宝牌、起雾
+  mistStep: 2, // 之后每多几个标记雾厚一级
+  mistMax: 4, // 雾最厚几级
+  dealTries: 4, // 配牌最多换几张（每张按影响的概率换）
+};
+
+interface ShizunoGameState {
+  reset?: number; // 被淡的平行宇宙清空时是第几局：那一局和之前的都不算
+}
+
+// 现在有几个深山标记：这一个半庄开过几局（发牌前算马上要开的那一局），减去被平行宇宙清掉的
+export function shizunoMarks(g: Game, seat: number): number {
+  const round = g.phase === 'predeal' ? g.round + 1 : g.round;
+  return Math.max(0, round - ((g.abilityGameState[seat] as ShizunoGameState).reset ?? 0));
+}
+
+// 标记带来的影响（别人能力不起作用的概率，也是她自己顺利的概率）
+export function shizunoPower(g: Game, seat: number): number {
+  return Math.min(SHIZUNO.cap, shizunoMarks(g, seat) * SHIZUNO.per);
+}
+
+// 她自己配牌、进张顺利的概率
+export function shizunoLuck(g: Game, seat: number): number {
+  return Math.min(SHIZUNO.selfCap, shizunoMarks(g, seat) * SHIZUNO.selfPer);
+}
+
+// 能不能控制宝牌
+export function shizunoDora(g: Game, seat: number): boolean {
+  return shizunoMarks(g, seat) >= SHIZUNO.doraAt;
+}
+
+// 雾有几级（0 是没有雾）
+export function shizunoMist(g: Game, seat: number): number {
+  const m = shizunoMarks(g, seat);
+  if (m < SHIZUNO.doraAt) return 0;
+  return Math.min(SHIZUNO.mistMax, 1 + Math.floor((m - SHIZUNO.doraAt) / SHIZUNO.mistStep));
+}
+
+// 指示牌是 indicator 时宝牌是哪种
+const isIndicatorOf = (want: Kind) => (t: TileId) => doraFromIndicator(kindOf(t)) === want;
+
+// 宝牌变成哪种最好：她手里越多越好，别人手里越多越不好。从好到坏排
+function bestDoraKinds(g: Game, mine: TileId[], others: TileId[]): Kind[] {
+  const m = toCounts(mine);
+  const o = toCounts(others);
+  const score = (k: Kind) => m[k] * 4 - o[k];
+  const kinds = Array.from({ length: KIND_COUNT }, (_, k) => k);
+  const jitter = kinds.map(() => g.rng.next());
+  return kinds.sort((a, b) => score(b) - score(a) || jitter[a] - jitter[b]);
+}
+
+// 她现在的牌（手牌和副露）、别人现在的手牌
+function handsNow(g: Game, seat: number): { mine: TileId[]; others: TileId[] } {
+  const p = g.players[seat];
+  const mine = [...p.hand, ...p.melds.flatMap((m) => m.tiles)];
+  const others = [0, 1, 2, 3].filter((s) => s !== seat).flatMap((s) => g.players[s].hand);
+  return { mine, others };
+}
+
+// 把第 i 张指示牌（宝牌或里宝牌）换成指向 kinds 里最靠前、换得到的那种。已经指向前面的就不换
+function steer(kinds: Kind[], current: TileId, bring: (pred: (t: TileId) => boolean) => boolean): void {
+  const at = kinds.indexOf(doraFromIndicator(kindOf(current)));
+  for (const k of kinds.slice(0, Math.min(at, 3))) if (bring(isIndicatorOf(k))) return;
+}
+
+// 玄的能力还在：宝牌和杠宝牌是她的，稳乃不动（里宝牌照样动）
+const kuroHoldsDora = (g: Game, seat: number): boolean =>
+  [0, 1, 2, 3].some((s) => s !== seat && g.abilities[s]?.id === 'kuro' && !!g.active(s) && !(g.abilityGameState[s] as { lost?: boolean }).lost);
+
+interface ShizunoState {
+  uraSet?: boolean; // 立直时已经把里宝牌换好了
+}
+
+const stateOf = (g: Game, seat: number) => g.abilityState[seat] as ShizunoState;
+
+// resetMarks 是淡的平行宇宙用的钩子（淡那边加进 Ability）；这里先自己声明，合并以后也不冲突
+export const shizunoAbility: Ability & { resetMarks(g: Game, seat: number): void } = {
+  id: 'shizuno',
+  name: '深山',
+  description: `被动。牌局每进行一场（本场也算）累计一个深山标记。每个标记让别人的能力每次发动有 ${SHIZUNO.per * 100}% 的概率不起作用，自己的配牌、进张顺利 ${Math.round(SHIZUNO.selfPer * 1000) / 10}%（别人最多受 ${SHIZUNO.cap * 100}% 影响，自己最多顺 ${SHIZUNO.selfCap * 100}%）。满 ${SHIZUNO.doraAt} 个起控制宝牌、杠宝牌、里宝牌：宝牌变成她手里最多的牌，别人该有的宝牌换走；牌山起雾，之后每多 ${SHIZUNO.mistStep} 个雾厚一级。`,
+
+  // 平行宇宙：深山标记清零，这一局也不算（下一局从 1 个重新数）；雾跟着散掉
+  resetMarks(g, seat) {
+    (g.abilityGameState[seat] as ShizunoGameState).reset = g.round;
+  },
+
+  dampens(g, seat) {
+    return shizunoPower(g, seat);
+  },
+
+  // 配牌：按影响的概率，把没用的牌换成让向听前进的牌（从发完牌以后的牌山里拿）；满 6 个以后定宝牌
+  beforeDeal(g, seat) {
+    const w = g.wall;
+    const mine = g.dealIndices(seat);
+    const p = shizunoLuck(g, seat);
+    for (let n = 0; n < SHIZUNO.dealTries; n++) {
+      if (!g.rng.chance(p)) continue;
+      const counts = toCounts(mine.map((j) => w.live[j]));
+      const cur = shanten(counts, 0);
+      if (cur <= 0) break;
+      // 拿掉以后向听不变差的牌里挑一张，换成让向听前进的
+      const spare = g.rng.shuffle([...mine]).filter((i) => {
+        const k = kindOf(w.live[i]);
+        counts[k]--;
+        const ok = shanten(counts, 0) === cur;
+        counts[k]++;
+        return ok;
+      });
+      for (const i of spare) {
+        const k = kindOf(w.live[i]);
+        counts[k]--;
+        const better = (t: TileId) => {
+          counts[kindOf(t)]++;
+          const sh = shanten(counts, 0);
+          counts[kindOf(t)]--;
+          return sh < cur;
+        };
+        const done = w.bringToLive(i, better, g.rng, (j) => j >= 52);
+        counts[k]++;
+        if (done) break;
+      }
+    }
+    if (shizunoDora(g, seat) && !kuroHoldsDora(g, seat)) {
+      // 宝牌指示牌还没翻开：换成指向她最多的牌。别人对配牌的规矩（比如姬子的“不碰宝牌”）不能因此变差
+      const others = [0, 1, 2, 3].filter((s) => s !== seat).flatMap((s) => g.dealHand(s));
+      const kinds = bestDoraKinds(g, g.dealHand(seat), others);
+      const rules = g.dealRules.filter((r) => r.seat !== seat);
+      const before = rules.map((r) => r.bad(g.dealHand(r.target)));
+      const snapshot = { live: [...w.live], rinshan: [...w.rinshan], dora: [...w.doraIndicators], ura: [...w.uraIndicators] };
+      steer(kinds, w.doraIndicators[0], (pred) => w.bringToDora(0, pred, g.rng, (j) => j >= 52));
+      if (rules.some((r, i) => r.bad(g.dealHand(r.target)) > before[i])) {
+        w.live = snapshot.live;
+        w.rinshan = snapshot.rinshan;
+        w.doraIndicators = snapshot.dora;
+        w.uraIndicators = snapshot.ura;
+      }
+    }
+  },
+
+  onRoundStart(g, seat) {
+    const m = shizunoMarks(g, seat);
+    if (m === SHIZUNO.doraAt) g.emit({ type: 'ability', seat, ability: 'shizuno', text: '深山' });
+    else if (m > SHIZUNO.doraAt && (m - SHIZUNO.doraAt) % SHIZUNO.mistStep === 0 && m - SHIZUNO.doraAt <= SHIZUNO.mistStep * (SHIZUNO.mistMax - 1)) {
+      g.emit({ type: 'ability', seat, ability: 'shizuno', text: '雾更浓了' });
+    }
+  },
+
+  // 摸牌：按影响的概率，下一张不是有效进张就换成有效进张（听牌时就是和了牌）
+  beforeDraw(g, seat, rinshan) {
+    const pl = g.players[seat];
+    const counts = toCounts(pl.hand);
+    const sh = shanten(counts, pl.melds.length);
+    if (!g.rng.chance(shizunoLuck(g, seat) * (sh === 0 ? SHIZUNO.tenpai : 1))) return;
+    const useful = (t: TileId) => {
+      counts[kindOf(t)]++;
+      const after = shanten(counts, pl.melds.length);
+      counts[kindOf(t)]--;
+      return after < sh;
+    };
+    if (rinshan) g.wall.bringToRinshan(useful, g.rng);
+    else g.wall.bringToLive(0, useful, g.rng);
+  },
+
+  // 自己打完牌：没翻开的杠宝牌指示牌换成指向她最多的牌；立直时把里宝牌也换好
+  afterDiscard(g, seat) {
+    if (!shizunoDora(g, seat)) return;
+    const w = g.wall;
+    const { mine, others } = handsNow(g, seat);
+    const kinds = bestDoraKinds(g, mine, others);
+    if (!kuroHoldsDora(g, seat)) {
+      for (let i = w.doraRevealed; i < w.doraIndicators.length; i++) steer(kinds, w.doraIndicators[i], (pred) => w.bringToDora(i, pred, g.rng));
+    }
+    const p = g.players[seat];
+    const st = stateOf(g, seat);
+    if (!p.riichiPending || st.uraSet) return;
+    st.uraSet = true;
+    // 已经被杠翻开过的那几张里宝牌不动（别人的能力可能早就定好了，比如淡的杠里）
+    for (let i = 0; i < w.uraIndicators.length; i++) {
+      if (i > 0 && i < w.doraRevealed) continue;
+      steer(kinds, w.uraIndicators[i], (pred) => w.bringToUra(i, pred, g.rng));
+    }
+  },
+
+  skill(g, seat) {
+    const m = shizunoMarks(g, seat);
+    const pct = Math.round(shizunoPower(g, seat) * 100);
+    const luck = Math.round(shizunoLuck(g, seat) * 100);
+    const extra = shizunoDora(g, seat) ? '，控制宝牌' : `，再 ${SHIZUNO.doraAt - m} 个控制宝牌`;
+    return { label: '', note: `深山 ×${m}：别人能力 -${pct}%，自己 +${luck}%${extra}`, enabled: false, active: shizunoDora(g, seat), meter: { value: Math.min(m, 12), max: 12 } };
+  },
+
+  badge(g, seat) {
+    return `深山×${shizunoMarks(g, seat)}`;
+  },
+
+  insight(g, seat) {
+    const m = shizunoMarks(g, seat);
+    const pct = Math.round(shizunoPower(g, seat) * 100);
+    const luck = Math.round(shizunoLuck(g, seat) * 100);
+    return [`深山 ${m} 个：别人的能力 ${pct}% 不起作用，自己配牌、进张顺利 ${luck}%`, shizunoDora(g, seat) ? `宝牌、杠宝牌、里宝牌往她有利的方向变（雾 ${shizunoMist(g, seat)} 级）` : `满 ${SHIZUNO.doraAt} 个起控制宝牌`];
+  },
+};

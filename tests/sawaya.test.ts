@@ -146,19 +146,21 @@ describe('狮子原爽', () => {
             const red = sawayaRedTarget(g, me);
             if (red === null) return;
             if (e.type === 'dealt') {
-              for (let s = 0; s < 4; s++) if (s !== red && g.binds(me, s)) expect(g.players[s].hand.some((t) => isHonor(kindOf(t)))).toBe(false);
+              for (let s = 0; s < 4; s++) if (s !== red && g.rulesBind(me, s)) expect(g.players[s].hand.some((t) => isHonor(kindOf(t)))).toBe(false);
             }
             if (e.type !== 'draw' || g.rinshanDraw || g.wall.remaining < 20) return;
             const honor = isHonor(kindOf(g.players[e.seat].drawn!));
+            // 字牌只流给一家，别的牌被摸光以后牌山里只剩字牌：挡也挡不住，不算
+            if (honor && !g.wall.live.some((t) => !isHonor(kindOf(t)))) return;
             if (red === me) {
-              if (e.seat !== me && g.binds(me, e.seat)) {
+              if (e.seat !== me && g.rulesBind(me, e.seat)) {
                 selfDraws++;
                 expect(honor).toBe(false);
               }
               return;
             }
             // 照管不到
-            if (!g.binds(me, e.seat)) return;
+            if (!g.rulesBind(me, e.seat)) return;
             const bucket = e.seat === red ? pushed : others;
             bucket.draws++;
             if (honor) bucket.honors++;
@@ -209,7 +211,8 @@ describe('狮子原爽', () => {
         LINEUPS[seed % 4],
         (g, me) => {
           g.onEvent((e) => {
-            if (e.type !== 'draw' || e.seat === me || !sawayaOn(g, me, 'akkoro')) return;
+            // 淡的高维领域、巨引力源压住了她控牌山的能力
+            if (e.type !== 'draw' || e.seat === me || !sawayaOn(g, me, 'akkoro') || g.quelled(me)) return;
             const counts = toCounts(g.players[me].hand);
             const most = Math.max(...counts.slice(0, 9));
             if (most === 0) return;
@@ -238,6 +241,8 @@ describe('狮子原爽', () => {
           g.onEvent((e) => {
             const t = sawayaPlagueTarget(g, me);
             if (e.type !== 'draw' || t === null || e.seat !== t || g.rinshanDraw) return;
+            // 淡的高维领域、巨引力源压住了她控牌山的能力
+            if (!g.rulesBind(me, t)) return;
             const waits = g.waits(me);
             const hit = waits.includes(kindOf(g.players[t].drawn!));
             // 牌山里已经没有她的和了牌时挡不了

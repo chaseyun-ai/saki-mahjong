@@ -15,62 +15,19 @@ afterEach(() => Object.assign(AWAI, saved));
 function newGame(ids: string[], manual: number | null, seed = 7) {
   return new Game({ seed, players: ids.map((id, i) => ({ name: id, ability: byId(id).ability, manual: i === manual })) });
 }
-const st = (g: Game, seat: number) => g.abilityState[seat] as { circle?: boolean; tenpai?: boolean };
 const restart = (g: Game) => (g as unknown as { startRound(): void }).startRound();
-// 玩家发牌前选好技能再发牌
-const pick = (g: Game, seat: number, ids: string[]) => {
-  expect(g.phase).toBe('predeal');
-  g.abilities[seat]!.setPreDeal!(g, seat, ids);
-  g.deal();
-};
 
-describe('大星淡：发牌前选技能', () => {
-  it('玩家操作时：发牌前停下来等选；安全圈 -10、天听 -15，不选不扣', () => {
+describe('大星淡：技能栏', () => {
+  it('玩家操作时不停在发牌前；技能栏是能量条加七个主动技能', () => {
     const g = newGame(['awai', 'saki', 'nodoka', 'kuro'], 0);
-    const opts = g.abilities[0]!.preDeal!(g, 0);
-    expect(opts).toHaveLength(10);
-    expect(opts.filter((o) => o.enabled).map((o) => o.id)).toEqual(['circle', 'tenpai']);
-    pick(g, 0, []);
-    expect(st(g, 0).circle).toBeFalsy();
+    expect(g.phase).not.toBe('predeal');
     expect(awaiEnergy(g, 0)).toBe(100);
-    restart(g);
-    // startRound 直接发牌（测试里绕过 predeal），用上一次选的
-    g.abilities[0]!.setPreDeal!(g, 0, ['circle']);
-    restart(g);
-    expect(st(g, 0).circle).toBe(true);
-    expect(st(g, 0).tenpai).toBeFalsy();
-    expect(awaiEnergy(g, 0)).toBe(90);
-    g.abilities[0]!.setPreDeal!(g, 0, ['circle', 'tenpai']);
-    restart(g);
-    expect(st(g, 0).tenpai).toBe(true);
-    expect(awaiEnergy(g, 0)).toBe(65);
-    // 天听：配牌就听牌（庄家第一张已经摸了，不算它）
+    const b = g.abilities[0]!.skill!(g, 0)!;
+    expect(b.meter).toEqual({ value: 100, max: AWAI.energyMax });
+    expect(b.choices!.map((c) => c.id)).toEqual(['stars', 'domain', 'decohere', 'wave', 'parallel', 'accel', 'source']);
+    // 天听配牌（庄家第一张已经摸了，不算它）
     const p = g.players[0];
     expect(shanten(toCounts(p.hand.filter((t) => t !== p.drawn)))).toBe(0);
-  });
-
-  it('能量不够就发动不了', () => {
-    const g = newGame(['awai', 'saki', 'nodoka', 'kuro'], 0);
-    (g.abilityGameState[0] as { energy?: number }).energy = 12;
-    expect(g.abilities[0]!.preDeal!(g, 0).filter((o) => o.enabled).map((o) => o.id)).toEqual(['circle']);
-    g.abilities[0]!.setPreDeal!(g, 0, ['circle', 'tenpai']);
-    restart(g);
-    expect(st(g, 0).circle).toBe(true);
-    expect(st(g, 0).tenpai).toBeFalsy();
-    expect(awaiEnergy(g, 0)).toBe(2);
-  });
-
-  it('电脑：领先时不发动，落后时两个都发动，不会停在发牌前', () => {
-    Object.assign(AWAI, { aiLeadChance: 0 });
-    const g = newGame(['awai', 'saki', 'nodoka', 'kuro'], null);
-    expect(g.phase).not.toBe('predeal');
-    expect(st(g, 0).circle && st(g, 0).tenpai).toBe(true);
-    g.players[0].score = 40000;
-    restart(g);
-    expect(st(g, 0).circle).toBeFalsy();
-    g.players[0].score = 10000;
-    restart(g);
-    expect(st(g, 0).circle && st(g, 0).tenpai).toBe(true);
   });
 });
 

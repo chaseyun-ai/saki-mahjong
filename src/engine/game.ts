@@ -292,6 +292,12 @@ export class Game {
     return this.abilities.some((a, s) => !!a?.nullifies?.(this, s));
   }
 
+  // 这家控牌山的能力这一局被别人压住了（淡的高维领域、巨引力源）。absolute、immune 的人不受影响
+  quelled(seat: number): boolean {
+    if (this.isAbsolute(seat) || this.isImmune(seat)) return false;
+    return this.abilities.some((a, s) => s !== seat && !!a?.quells?.(this, s) && !this.isSealed(s, this.round));
+  }
+
   // 这一局起作用的能力：被封印的算没有
   active(seat: number): Ability | null {
     const a = this.abilities[seat];
@@ -356,7 +362,7 @@ export class Game {
 
   // 配牌调整期间补一条规矩（比如淡定好了自己的配牌以后）
   addDealRule(r: DealRule): boolean {
-    if (!this.binds(r.seat, r.target) || this.shrugs(r.seat, r.target)) return false;
+    if (!this.rulesBind(r.seat, r.target) || this.shrugs(r.seat, r.target)) return false;
     this.dealRules.push(r);
     return true;
   }
@@ -377,6 +383,24 @@ export class Game {
   binds(from: number, target: number): boolean {
     if (from === target || this.isAbsolute(from)) return true;
     return !this.isImmune(target) && !this.fieldVoid();
+  }
+
+  // 别人削弱了这家这一次发动的能力（稳乃的深山：每个标记 5%）。absolute、immune 的不受影响，佛灭时也不起作用；
+  // 没有人削弱时不掷随机数
+  damped(seat: number): boolean {
+    if (this.isAbsolute(seat) || this.isImmune(seat) || this.fieldVoid()) return false;
+    for (let o = 0; o < 4; o++) {
+      if (o === seat) continue;
+      const p = this.active(o)?.dampens?.(this, o) ?? 0;
+      if (p > 0 && this.rng.chance(p)) return true;
+    }
+    return false;
+  }
+
+  // from 给 target 的配牌、摸牌定的规矩算不算：管得到，而且 from 控牌山的能力没被压住（淡的高维领域、巨引力源）。
+  // 只管牌山：不许和牌（涅莉的七姐妹）、封印这些不走这里
+  rulesBind(from: number, target: number): boolean {
+    return this.binds(from, target) && (from === target || !this.quelled(from));
   }
 
   // target 这一下挡住了 from 的影响（天使和：一半的概率）。absolute 的挡不住；没有 resist 的人不掷随机数
@@ -410,7 +434,7 @@ export class Game {
     }
     for (const [seat, ch] of bySeat) {
       // 别人换不到 immune 的人的配牌
-      if (this.dealActor !== null && !this.binds(this.dealActor, seat)) return false;
+      if (this.dealActor !== null && !this.rulesBind(this.dealActor, seat)) return false;
       if (this.dealShrugged.has(`${this.dealActor}-${seat}`)) return false;
       const idx = this.dealIndices(seat);
       const before = idx.map((i) => this.wall.live[i]);
@@ -577,15 +601,28 @@ export class Game {
     // 配牌：先由所有人定规矩，再依次调整（换牌不能让任何一条规矩变差），最后统一锁定、发牌
     const order = this.abilityOrder();
     this.dealRules = [];
+    // 稳乃的深山：这一局配牌时能力不起作用的人（定规矩、调整配牌都不做）
+    const damped = new Set(order.filter((s) => (this.active(s)?.dealRules || this.active(s)?.beforeDeal) && this.damped(s)));
     // 爽最先动：上一局叫的蛇神威封住的人这里就不再出手
-    for (const s of order) this.dealRules.push(...(this.active(s)?.dealRules?.(this, s) ?? []).filter((r) => this.binds(r.seat, r.target) && !this.shrugs(r.seat, r.target)));
+    // 被深山削弱的人照样调用（能力自己的状态要走下去，比如衣定月相、涅莉分运势），只是定的规矩不算
+    for (const s of order) {
+      const rules = this.active(s)?.dealRules?.(this, s) ?? [];
+      if (!damped.has(s)) this.dealRules.push(...rules.filter((r) => this.rulesBind(r.seat, r.target) && !this.shrugs(r.seat, r.target)));
+    }
     this.dealShrugged.clear();
     for (const s of order) for (let t = 0; t < 4; t++) if (this.shrugs(s, t)) this.dealShrugged.add(`${s}-${t}`);
     this.wall.guard = (changes) => this.dealChangeOk(changes);
     try {
       for (const s of order) {
         this.dealActor = s;
+        // 被深山削弱的人：能力照样调用，调整完把牌山（和这期间补的规矩）恢复原样
+        const snap = damped.has(s) ? this.wall.snapshot() : null;
+        const ruleCount = this.dealRules.length;
         this.active(s)?.beforeDeal?.(this, s);
+        if (snap) {
+          this.wall.restore(snap);
+          this.dealRules.length = ruleCount;
+        }
       }
     } finally {
       this.wall.guard = null;
@@ -650,7 +687,8 @@ export class Game {
     const calm = this.fieldVoid();
     for (const s of this.abilityOrder()) {
       const a = this.active(s)!;
-      if (!a.beforeAnyDraw || (calm && !this.isAbsolute(s))) continue;
+      // 高维领域、巨引力源：被压住的人不出手
+      if (!a.beforeAnyDraw || (calm && !this.isAbsolute(s)) || this.quelled(s) || this.damped(s)) continue;
       w.deny = union(rules.length);
       const r = a.beforeAnyDraw(this, s, seat, rinshan);
       // 管不到 immune 的人：定的规矩不算（能力自己整理牌山的部分照做，比如衣安排海底）
@@ -658,7 +696,7 @@ export class Game {
       if (r && this.binds(s, seat) && !this.shrugs(s, seat)) rules.push(r);
     }
     w.deny = union(rules.length);
-    this.active(seat)?.beforeDraw?.(this, seat, rinshan);
+    if (this.active(seat)?.beforeDraw && !this.quelled(seat) && !this.damped(seat)) this.active(seat)!.beforeDraw!(this, seat, rinshan);
     w.deny = null;
     if (rules.length === 0) return;
     const next = () => (rinshan ? w.rinshan[0] : w.live[0]);

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AWAI } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
 import { NELLY, nellyAiBet, nellyBlocked, nellyPool, nellySenses, nellySensesTenpai, nellySisters, nellyTier } from '../src/abilities/nelly';
 import { teruWinValue } from '../src/abilities/teru';
@@ -8,6 +9,10 @@ import { shanten } from '../src/engine/shanten';
 import { toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
+
+// 电脑的淡不放主动技能，免得测出来的是淡的效果
+beforeAll(() => Object.assign(AWAI, { aiSkills: false }));
+afterAll(() => Object.assign(AWAI, { aiSkills: true }));
 
 const LINEUPS = [
   ['nelly', 'saki', 'nodoka', 'kuro'],
