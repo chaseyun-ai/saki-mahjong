@@ -1,6 +1,6 @@
 import type { Game } from '../engine/game';
 import { shanten, waitingKinds } from '../engine/shanten';
-import { TileId, doraFromIndicator, kindOf, suitOf, toCounts } from '../engine/tiles';
+import { EAST, HAKU, TileId, doraFromIndicator, kindOf, suitOf, toCounts } from '../engine/tiles';
 import { kuroSeat } from './doraControl';
 import { isDoraTile, kuroLost } from './kuro';
 import { teruWinValue } from './teru';
@@ -38,8 +38,9 @@ export const NELLY = {
   late: 8, // 牌山剩这么多以下就有什么和什么
   // 押 3 点做染手（配牌里最多的那门花色）
   flush: [false, false, false, true],
-  // 三倍满：11 番
+  // 三倍满：11 番，押 3 点最多做到 12 番（不冲累计役满）
   bigHan: 11,
+  maxHan: 12,
 };
 
 const TIER_NAMES = ['', '3番–满贯', '跳满', '三倍满'];
@@ -288,6 +289,34 @@ function setUra(g: Game, seat: number): void {
   }
 }
 
+// 押 3 点和牌：翻开的里宝牌一张一张定，加起来让总番数落在 11–12 番（里宝牌之外已经超过 12 番就一张都不中）
+function fitUra(g: Game, seat: number, winTile?: TileId): void {
+  const p = g.players[seat];
+  const tile = winTile ?? p.drawn;
+  if (tile === null || tile === undefined) return;
+  const r = g.winResult(seat, tile, winTile === undefined);
+  if (!r || r.yakuman > 0) return;
+  const counts = toCounts([...p.hand, ...p.melds.flatMap((m) => m.tiles), ...(winTile !== undefined ? [winTile] : [])]);
+  const lo = Math.max(0, NELLY.bigHan - (r.han - r.ura));
+  const hi = NELLY.maxHan - (r.han - r.ura);
+  const w = g.wall;
+  let sum = 0;
+  for (let i = 0; i < w.doraRevealed; i++) {
+    // 还差多少：先挑正好补够的，补不够挑最多的，已经够了挑一张都不中的
+    const room = Math.max(0, hi - sum);
+    const want = Math.max(0, lo - sum);
+    const kinds = Array.from({ length: 34 }, (_, k) => k)
+      .filter((k) => counts[k] <= room)
+      .sort((a, b) => Math.abs(Math.min(counts[a], room) - want) - Math.abs(Math.min(counts[b], room) - want) || counts[b] - counts[a]);
+    for (const k of kinds) {
+      if (w.bringToUra(i, (t) => doraFromIndicator(kindOf(t)) === k, g.rng)) {
+        sum += counts[k];
+        break;
+      }
+    }
+  }
+}
+
 // 能拿来开暗杠做大的宝牌暗刻（立直了要杠了听的牌不变）
 function kanKind(g: Game, seat: number): number | null {
   const p = g.players[seat];
@@ -304,22 +333,26 @@ function kanKind(g: Game, seat: number): number | null {
   return null;
 }
 
-// 手牌换成 hand（13 张）摸 t 自摸的话有几番：还没立直的算上立直、一发和里宝牌（里宝牌指示牌会换成指向手里最多的那种牌）。
+// 手牌换成 hand（13 张）摸 t 自摸的话有几番：lo 是不算里宝牌的（还没立直的算上立直、一发），hi 是里宝牌最多能加到的。
+// 里宝牌在和牌时才定（claimUra），押 3 点会把它定到 11–12 番之间，所以只要 lo ≤ 12 ≤ … hi ≥ 11 就做得成三倍满。
 // 役满算 13 番；和不了是 0
-function projHan(g: Game, seat: number, hand: TileId[], t: TileId): number {
+function projHan(g: Game, seat: number, hand: TileId[], t: TileId): { lo: number; hi: number } {
   const p = g.players[seat];
   const keep = p.hand;
   p.hand = [...hand, t];
   try {
     const r = g.winResult(seat, t, true);
-    if (!r) return 0;
-    if (r.yakuman > 0) return 13;
-    if (p.riichi) return r.han;
-    return r.han + 2 + uraGain(g, seat, hand);
+    if (!r) return { lo: 0, hi: 0 };
+    if (r.yakuman > 0) return { lo: 13, hi: 13 };
+    const lo = r.han - r.ura + (p.riichi ? 0 : 2);
+    return { lo, hi: lo + Math.max(r.ura, uraGain(g, seat, hand)) };
   } finally {
     p.hand = keep;
   }
 }
+
+// 做得成三倍满（11–12 番，里宝牌在中间调）
+const fitsBig = (r: { lo: number; hi: number }) => r.lo <= NELLY.maxHan && r.hi >= NELLY.bigHan;
 
 // 玄的能力还在（不是她自己）：和牌中不了里宝牌
 const kuroBlocks = (g: Game, seat: number) => {
@@ -352,8 +385,9 @@ function bigScore(g: Game, seat: number, hand: TileId[]): { big: number; han: nu
     const tiles = live.filter((t) => kindOf(t) === k);
     if (!tiles.length) continue;
     const h = projHan(g, seat, hand, tiles[0]);
-    han = Math.max(han, h);
-    if (h >= NELLY.bigHan) big += tiles.length;
+    // 超过 12 番的不要（不冲累计役满）
+    if (h.lo <= NELLY.maxHan) han = Math.max(han, Math.min(h.hi, NELLY.maxHan));
+    if (fitsBig(h)) big += tiles.length;
   }
   return { big, han };
 }
@@ -368,8 +402,9 @@ function reachable(g: Game, seat: number, t: TileId): boolean {
 }
 
 // 押 3 点：定一手三倍满（立直、一发、自摸再加里宝牌）的目标牌，和手里的牌重合得越多越好，缺的牌牌山里要有：
-// - 清一色（6 番）：有对子、里宝牌能指向它就够 11 番；七对子也行。玄在场中不了里宝牌：七对子、一气通贯、断幺九加一盃口
-// - 混一色（3 番）：宝牌能动的时候，要有宝牌刻子（宝牌、里宝牌各 3 番）；七对子要有宝牌对子
+// - 清一色（6 番）加立直一发自摸（3 番），再靠七对子、一气通贯、三暗刻、断幺九、一盃口、宝牌、里宝牌凑到 11–12 番
+// - 混一色（3 番）：宝牌能动的时候，要有宝牌刻子（宝牌、里宝牌各 3 番）
+// 玄的能力还在时中不了里宝牌，只能靠役。超过 12 番的不要（不冲累计役满）
 function planBig(g: Game, seat: number): number[] | null {
   const st = stateOf(g, seat);
   const flush = nellyFlush(g, seat);
@@ -393,26 +428,25 @@ function planBig(g: Game, seat: number): number[] | null {
   const prev = st.plan?.join();
   let best: number[] | null = null;
   let bestScore = -1;
-  // 玄的能力还在：中不了里宝牌，清一色要靠七对子、一气通贯、断幺九加一盃口凑够 11 番
+  // 估这手牌立直一发自摸能有几番（lo，不算里宝牌）、里宝牌最多再加几番（ura），lo ≤ 12 且 lo + ura ≥ 11 才要。
+  // 玄的能力还在时中不了里宝牌，只能靠役：清一色加七对子、一气通贯、三暗刻、断幺九、一盃口这些凑够 11 番
   const noUra = kuroBlocks(g, seat);
   const chosen: number[] = []; // 4 组面子挑了 sets 里的哪几组
   const valid = (pairs: boolean) => {
     const mixed = t.some((n, k) => n > 0 && k >= 27);
-    if (noUra) {
-      if (mixed) return false;
-      if (pairs) return true;
-      // 一气通贯（123、456、789 都在）；或者断幺九加一盃口（同一组顺子两次）
-      const ittsu = [0, 3, 6].every((i) => chosen.includes(i));
-      const tanyao = t[base] === 0 && t[base + 8] === 0;
-      const peikou = chosen.some((i, j) => i < 7 && chosen.indexOf(i) !== j);
-      return ittsu || (tanyao && peikou);
+    let lo = (mixed ? 3 : 6) + 3; // 染手、立直一发自摸
+    if (pairs) lo += 2;
+    else {
+      if ([0, 3, 6].every((i) => chosen.includes(i))) lo += 2; // 一气通贯
+      if (chosen.some((i, j) => i < 7 && chosen.indexOf(i) !== j)) lo += 1; // 一盃口
+      if (chosen.filter((i) => i >= 7).length >= 3) lo += 2; // 三暗刻（门清自摸）
+      for (let k = 27; k < 34; k++) if (t[k] >= 3) lo += (k >= HAKU ? 1 : 0) + (k === g.seatWind(seat) ? 1 : 0) + (k === EAST + g.roundWind ? 1 : 0); // 役牌
     }
-    for (const k of F) {
-      if (!uraOk.has(k)) continue;
-      if (!mixed && t[k] >= 2) return true;
-      if (mixed && dora.has(k) && t[k] >= (pairs ? 2 : 3)) return true;
-    }
-    return false;
+    if (!mixed && t[base] === 0 && t[base + 8] === 0) lo += 1; // 断幺九
+    for (const k of dora) lo += t[k];
+    let ura = 0;
+    if (!noUra) for (const k of F) if (uraOk.has(k)) ura = Math.max(ura, t[k]);
+    return lo <= NELLY.maxHan && lo + ura >= NELLY.bigHan;
   };
   const consider = (pairs: boolean) => {
     if (!valid(pairs)) return;
@@ -502,7 +536,7 @@ function drawBig(g: Game, seat: number): void {
   };
   if (p.riichi) {
     setUra(g, seat);
-    if (w.bringToLive(0, (t) => projHan(g, seat, p.hand, t) >= NELLY.bigHan, g.rng)) return;
+    if (w.bringToLive(0, (t) => fitsBig(projHan(g, seat, p.hand, t)), g.rng)) return;
     if (turn >= due + NELLY.grace && bestWin()) return;
     if (wins(w.live[0])) w.bringToLive(0, (t) => !wins(t), g.rng);
     return;
@@ -768,8 +802,11 @@ export const nellyAbility: Ability = {
 
   // 照魔镜看得到
   // 押 2、3 点立直和牌：里宝牌变成她手里最多的那种牌（摸牌时也先换好，算番用；和牌这一刻再定一次，见 doraControl）
-  claimUra(g, seat) {
-    if (NELLY.dora[tierOf(g, seat)]) setUra(g, seat);
+  // 押 3 点：里宝牌定到正好三倍满（11–12 番），不多不少
+  claimUra(g, seat, winTile) {
+    const v = tierOf(g, seat);
+    if (v >= 3) fitUra(g, seat, winTile);
+    else if (NELLY.dora[v]) setUra(g, seat);
   },
 
   insight(g, seat) {

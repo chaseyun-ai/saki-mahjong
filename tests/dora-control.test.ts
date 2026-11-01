@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { kuroSeat, settleUra, tilesOf } from '../src/abilities/doraControl';
-import { nellyTier } from '../src/abilities/nelly';
+import { kuroSeat, settleUra, shizunoMountain, tilesOf } from '../src/abilities/doraControl';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { doraFromIndicator, kindOf, toCounts } from '../src/engine/tiles';
@@ -118,8 +117,10 @@ describe('宝牌控制：宫永咲', () => {
       const ids = seed % 2 ? ['saki', 'shizuno', 'nodoka', 'yuuki'] : ['shizuno', 'saki', 'mako', 'hisa'];
       const saki = ids.indexOf('saki');
       play(seed, ids, (g) => {
+        // 稳乃一开场就有 6 个以上标记（当作被平行宇宙清掉的那一局是第 -6 局）
+        (g.abilityGameState[ids.indexOf('shizuno')] as { reset?: number }).reset = -6;
         watchFlips(g, (i, kanner) => {
-          if (kanner !== saki || g.round < 6) return;
+          if (kanner !== saki || !shizunoMountain(g)) return;
           flips++;
           if (toCounts(tilesOf(g, saki))[pointsAt(g, i)] > 0) hit++;
         });
@@ -132,7 +133,7 @@ describe('宝牌控制：宫永咲', () => {
 });
 
 describe('宝牌控制：里宝牌按和牌的人定', () => {
-  it('涅莉押 2、3 点和爽的海神威同桌：谁和牌里宝牌就听谁的', () => {
+  it('涅莉押 2 点和爽的海神威同桌：谁和牌里宝牌就听谁的（押 3 点另有 11–12 番的定法）', () => {
     let checks = 0;
     let hits = 0;
     for (let seed = 1; seed <= 16; seed++) {
@@ -140,22 +141,31 @@ describe('宝牌控制：里宝牌按和牌的人定', () => {
       const nelly = ids.indexOf('nelly');
       play(seed, ids, (g) => {
         g.onEvent((e) => {
-          // 爽刚打完牌（以前她在这里把里宝牌改回万子），假装涅莉这时立直荣和
-          if (e.type !== 'discard' || e.seat === nelly || nellyTier(g, nelly) < 2 || g.isSealed(nelly) || g.quelled(nelly)) return;
+          // 爽刚打完牌（以前她在这里把里宝牌改回万子），假装涅莉这时押了 2 点、立直荣和
+          if (e.type !== 'discard' || e.seat === nelly || g.isSealed(nelly) || g.quelled(nelly)) return;
           const p = g.players[nelly];
           const counts = toCounts([...p.hand, ...p.melds.filter((m) => m.type === 'ankan').flatMap((m) => m.tiles)]);
           const most = Math.max(...counts);
-          const was = p.riichi;
+          // 指示牌全都在明处时换不到，不算
+          const w = g.wall;
+          const pool = [...w.uraIndicators, ...w.live, ...w.rinshan].filter((t) => !w.locked.has(t)).map((t) => doraFromIndicator(kindOf(t)));
+          if (!counts.some((n, k) => n === most && pool.includes(k))) return;
+          const st = g.abilityState[nelly] as { bet?: number };
+          const was = [p.riichi, st.bet] as const;
           p.riichi = true;
-          settleUra(g, [nelly]);
-          p.riichi = was;
+          st.bet = 2;
+          // 押 2 点的局爽的蛇神威封得住她（押 3 点才挡得住）
+          const sealed = g.isSealed(nelly);
+          if (!sealed) settleUra(g, [nelly]);
+          [p.riichi, st.bet] = was;
+          if (sealed) return;
           checks++;
           if (counts[doraFromIndicator(kindOf(g.wall.uraIndicators[0]))] === most) hits++;
         });
       });
     }
     console.log(`涅莉荣和时里宝牌：${checks} 次，指向她最多的牌 ${hits} 次`);
-    expect(checks).toBeGreaterThan(30);
+    expect(checks).toBeGreaterThan(20);
     expect(hits / checks).toBeGreaterThan(0.85);
   }, 180000);
 });

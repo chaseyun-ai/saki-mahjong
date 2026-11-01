@@ -217,6 +217,10 @@ describe('狮子原爽', () => {
             const counts = toCounts(g.players[me].hand);
             const most = Math.max(...counts.slice(0, 9));
             if (most === 0) return;
+            // 指示牌全都在明处（手里、牌河、宝牌指示牌）时换不到，不算
+            const w = g.wall;
+            const pool = [...w.uraIndicators, ...w.live, ...w.rinshan].filter((t) => !w.locked.has(t)).map(kindOf);
+            if (!counts.slice(0, 9).some((n, k) => n === most && pool.includes(k === 0 ? 8 : k - 1))) return;
             // 里宝牌只在和牌时定：假装她这时立直和牌，看定出来的里宝牌
             const p = g.players[me];
             const was = p.riichi;
