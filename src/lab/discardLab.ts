@@ -2,6 +2,7 @@ import './lab.css';
 import { CHARACTERS } from '../abilities/characters';
 import { playClick } from '../ui/sound';
 import { tileHtml } from '../ui/tile';
+import { vary } from '../ui/vary';
 import { DiscardParams, DiscardPath, markers, phaseAt, totalTime } from '../ui3d/discardMotion';
 import { SyncView, Table3D } from '../ui3d/table3d';
 import { TILE_W, TableLayout, tableDims } from '../ui3d/tableLayout';
@@ -67,6 +68,8 @@ export class DiscardLab {
     root: HTMLElement,
     private onExit: () => void,
   ) {
+    // 调参数要每次都一样：随机微变化在这里关掉（牌河不歪，出牌不浮动）
+    vary.reset(0, false);
     root.innerHTML = `
       <div class="lab">
         <div class="lab-stage">
