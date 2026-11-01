@@ -15,6 +15,7 @@ import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TIL
 import { TableMaterials, buildTableModel } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 import { TableColors, tableColors } from '../ui/theme';
+import { pondJitter, varyDiscard, vary } from '../ui/vary';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -249,6 +250,8 @@ export class Table3D {
   private dice = new Dice(0.5);
   private deal: DealState | null = null;
   private handAnims: HandAnim[] = [];
+  // 这一局牌河摆放的随机微变化用哪一套（vary.ts 的 pondJitter）
+  private pondSalt = 0;
   private flights: Flight[] = [];
   // 别人打出的牌还在半空时摸到的牌：先留在牌山原处，落桌后再飞进手里
   private heldDraw: { seat: number; tile: TileId; at: number; from: Placement } | null = null;
@@ -689,6 +692,8 @@ export class Table3D {
     if (e.type === 'roundStart') {
       this.startDeal(g);
       this.reveal = null;
+      // 牌河里每张牌歪多少换一套：同一张牌这一局一直歪成一样，下一局换个样子
+      this.pondSalt = Math.floor(vary.next() * 2 ** 31);
     }
     if (e.type === 'draw') {
       // 发牌动画里庄家的第一张不用另外飞。上家打的牌还在半空就先等它落桌
@@ -709,7 +714,9 @@ export class Table3D {
       const pond = this.seatPoint(e.seat, 0, 0, this.dim.pondZ + 1.5);
       // 立直宣言：牌拍下去的那一刻放特效（落桌标记），接着从抽屉里拿立直棒放到桌上（2.5D 是落桌后立直棒直接掉下来）
       const flat = this.style === '25d';
-      const motion = e.riichi ? (flat ? SLIDE_RIICHI : RIICHI_DISCARD) : flat ? SLIDE_DISCARD : DEFAULT_DISCARD;
+      // 随机微变化：每次出牌快慢、抬多高都差一点；2.5D 照雀魂调的节奏和立直宣言牌只变一半
+      const base = e.riichi ? (flat ? SLIDE_RIICHI : RIICHI_DISCARD) : flat ? SLIDE_DISCARD : DEFAULT_DISCARD;
+      const motion = varyDiscard(base, flat || e.riichi ? 0.5 : 1);
       this.playDiscard(e.seat, e.tile, motion, !!e.riichi);
       if (e.riichi) this.startStickAnim(e.seat, -(motion.reach + motion.carry + (flat ? STICK_DROP_DELAY : motion.settle)));
       for (const ch of all) {
@@ -1221,7 +1228,9 @@ export class Table3D {
       }
       const w = d.riichi ? TILE_H : TILE_W;
       const z = this.dim.pondZ + row * (TILE_H + GAP) + TILE_H / 2;
-      out.set(d.tile, this.toWorld(s, me, px + w / 2, lyingY, z, FACE_UP, (d.riichi ? Math.PI / 2 : 0) + flip));
+      // 随机微变化：像真人随手放的，每张牌稍微转一点、偏一点（按牌算好的固定值，重画时不会抖）
+      const j = pondJitter(this.pondSalt, d.tile);
+      out.set(d.tile, this.toWorld(s, me, px + w / 2 + j.dx, lyingY, z + j.dz, FACE_UP, (d.riichi ? Math.PI / 2 : 0) + flip + j.yaw));
       px += w + GAP;
       col++;
     }

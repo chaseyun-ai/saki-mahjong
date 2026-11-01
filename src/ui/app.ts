@@ -19,6 +19,7 @@ import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
+import { paceOf, vary } from './vary';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
@@ -390,6 +391,8 @@ export class App {
   private beginGame(chars: Character[], game: Game): void {
     this.chars = chars;
     this.game = game;
+    // 随机微变化（落桌声、电脑想多久、出牌动作、牌河）：种子跟着牌局走，设置里能关
+    vary.reset(game.seed, this.settings.vary);
     this.trace = new AbilityTrace(this.game);
     this.game.onEvent((e) => this.onGameEvent(e));
     this.toasts = [];
@@ -443,8 +446,8 @@ export class App {
         this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel')].map((el) => el.getBoundingClientRect());
       }
       // 3D 牌桌上牌真正落到牌河时才响
-      this.table3d.onMarker = (_seat, _tile, name) => {
-        if (name === 'land') playClick();
+      this.table3d.onMarker = (seat, _tile, name) => {
+        if (name === 'land') playClick({ pan: this.clickPan(seat), varied: true });
       };
       // 第一局在牌桌建好之前就开始了，补一次开局动画
       this.table3d.onEvent({ type: 'roundStart', label: this.game!.roundLabel() }, this.game!);
@@ -514,7 +517,7 @@ export class App {
       this.timer = window.setTimeout(() => {
         for (const s of ai) g.act(s, chooseAction(g, s, this.chars[s].ai));
         this.step();
-      }, (ron ? 0 : AI_CALL_DELAY) + this.busyMs());
+      }, (ron ? 0 : vary.jitter(AI_CALL_DELAY, 0.15)) + this.busyMs());
       return;
     }
     this.render();
@@ -537,7 +540,7 @@ export class App {
       this.timer = window.setTimeout(() => {
         g.act(g.turn, chooseAction(g, g.turn, this.chars[g.turn].ai));
         this.step();
-      }, (this.mode === '25d' ? AI_TURN_DELAY_25D : this.mode === '3d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
+      }, this.thinkMs(g, g.turn, this.mode === '25d' ? AI_TURN_DELAY_25D : this.mode === '3d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
       return;
     }
     if (!this.auto && !v && this.runAssist(g)) return;
@@ -669,7 +672,7 @@ export class App {
       // 隐身的桃子打的牌：看不见也听不见
       if (this.game!.stealthed(e.seat, this.me)) return;
       this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
-      if (!this.table3d) playClick();
+      if (!this.table3d) playClick({ pan: this.clickPan(e.seat), varied: true });
       if (e.riichi) {
         playRiichi();
         this.bigFx(e.seat, '立直', 'riichi');
@@ -898,6 +901,17 @@ export class App {
       const a = legal[Number(el.dataset.act)];
       if (a) this.playerAct(a);
     }
+  }
+
+  // 电脑这一手想多久：原来的固定值当中位数，按角色的快慢和随机微变化浮动。
+  // 只看随机数和角色，不看手牌好坏，免得玩家能从停顿读出谁快听牌了。立直后摸切不会长考
+  private thinkMs(g: Game, seat: number, median: number): number {
+    return vary.think(median, paceOf(this.chars[seat]?.id ?? ''), g.players[seat].riichi);
+  }
+
+  // 落桌声的左右声道：下家在右，上家在左，自己和对家在中间
+  private clickPan(seat: number): number {
+    return [0, 0.35, 0, -0.35][(seat - this.me + 4) % 4];
   }
 
   // 3D 牌桌在掷骰子、发牌时，先等动画放完
