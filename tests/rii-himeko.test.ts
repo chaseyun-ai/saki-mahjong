@@ -248,3 +248,28 @@ describe('鹤田姬子', () => {
     }
   });
 });
+
+describe('哩和姬子同桌', () => {
+  it('电脑的哩烂牌不缚，姬子不会一直是破碎的钥匙', () => {
+    let rounds = 0;
+    let broken = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const { g, seats } = setup(seed, ['rii', 'himeko', 'mako', 'hiroe']);
+      while (g.phase !== 'gameEnd') {
+        rounds++;
+        if (himekoBroken(g, 1)) broken++;
+        let checked = false;
+        playRound(g, seats, (g, s) => {
+          // 哩第一次出牌前（摸牌时已经决定缚不缚）：差于 aiBindShanten 向听不缚
+          if (checked || s !== 0 || g.phase !== 'turn' || g.players[0].drawn === null || g.players[0].discards.length) return;
+          checked = true;
+          const sh = shanten(toCounts(g.players[0].hand), g.players[0].melds.length);
+          expect(riiBind(g, 0) !== null).toBe(sh <= RII.aiBindShanten);
+        });
+        g.nextRound();
+      }
+    }
+    expect(rounds).toBeGreaterThan(30);
+    expect(broken / rounds).toBeLessThan(0.25);
+  }, 120000);
+});
