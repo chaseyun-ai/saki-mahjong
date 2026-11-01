@@ -549,7 +549,7 @@
 }
 
 /* 手机竖屏：画面在上，面板在下 */
-@media (max-width: 760px) {
+@container (max-width: 760px) {
   .lab {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
@@ -572,7 +572,7 @@
   }
 
   .lab-panel {
-    max-height: 46vh;
+    max-height: 46cqh;
     border-left: 0;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }

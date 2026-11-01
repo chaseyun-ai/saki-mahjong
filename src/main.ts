@@ -3,8 +3,10 @@ import './ui/themes.css';
 import { App } from './ui/app';
 import { DiscardLab } from './lab/discardLab';
 import { applyTheme } from './ui/theme';
+import { setupLandscape } from './ui/landscape';
 
 applyTheme();
+setupLandscape();
 
 let root = document.getElementById('app')!;
 

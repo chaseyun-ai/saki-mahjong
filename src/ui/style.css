@@ -36,6 +36,48 @@ button {
 
 #app {
   height: 100%;
+  /* 画面里的尺寸都按 #app 算（cqw/cqh、@container），这样 #app 转成横屏时布局跟着变（src/ui/landscape.ts） */
+  container-type: size;
+}
+
+/* 竖着的手机点了「横屏」：#app 顺时针转 90° 铺满屏幕，宽高对调 */
+html.turned #app {
+  position: fixed;
+  top: 0;
+  left: var(--turn-w);
+  width: var(--turn-h);
+  height: var(--turn-w);
+  transform-origin: 0 0;
+  transform: rotate(90deg);
+}
+
+.turn-btn {
+  position: fixed;
+  z-index: 9999;
+  /* 屏幕顶上正中：选人页那里是背景，牌桌上四个角是头像框，中间空着 */
+  left: 50%;
+  top: max(6px, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(10, 20, 24, 0.72);
+  color: #fff;
+  font: 600 13px/1 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.turn-btn[hidden] {
+  display: none;
+}
+
+/* 转着时按钮跟着画面转，放在横过来以后左边正中（左边两个头像框中间） */
+html.turned .turn-btn {
+  top: 6px;
+  transform-origin: 0 0;
+  transform: rotate(90deg) translateY(-50%);
 }
 
 /* ---------- 选角色 ---------- */
@@ -179,7 +221,7 @@ button {
   position: fixed;
   z-index: 20;
   width: 280px;
-  max-width: calc(100vw - 16px);
+  max-width: calc(100cqw - 16px);
   padding: 14px 16px;
   border-radius: 12px;
   border: 2px solid var(--c);
@@ -258,7 +300,7 @@ button {
   display: none;
 }
 
-@media (orientation: portrait) and (max-width: 700px) {
+@container (orientation: portrait) and (max-width: 700px) {
   .rotate-tip {
     display: block;
     position: fixed;
@@ -1358,7 +1400,7 @@ button {
 }
 
 /* 窄屏（手机竖着拿）：立绘缩成一条，只露上半身 */
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   .with-art .win {
     grid-template-columns: 92px 1fr;
     gap: 10px;
@@ -1375,7 +1417,7 @@ button {
 }
 
 /* 矮屏（手机横着拿）：立绘窄一点，结算内容多露一些 */
-@media (max-height: 480px) {
+@container (max-height: 480px) {
   .with-art .win {
     grid-template-columns: 140px 1fr;
   }
@@ -1771,7 +1813,7 @@ button {
 }
 
 /* 竖着的手机上右上角也挤，放到画面最下面 */
-@media (max-width: 600px) {
+@container (max-width: 600px) {
   .model-loading {
     top: auto;
     bottom: 16px;
@@ -1812,7 +1854,7 @@ button {
 }
 
 /* 横过来的手机：待和提示框缩小一点，别挡住牌河 */
-@media (max-height: 500px) {
+@container (max-height: 500px) {
   .hud .waits {
     transform: scale(0.72);
     transform-origin: left bottom;
@@ -1958,7 +2000,7 @@ button {
 }
 
 /* 横过来的手机、竖着的手机：头像框缩小 */
-@media (max-height: 500px), (max-width: 600px) {
+@container (max-height: 500px) or (max-width: 600px) {
   .seat-frame .portrait {
     width: 62px;
     height: 75px;
@@ -2022,10 +2064,10 @@ button {
 }
 
 /* 竖着的手机：桌子在画面中间，上下都空着，头像照样放四个角 */
-@media (orientation: portrait) and (max-width: 600px) {
+@container (orientation: portrait) and (max-width: 600px) {
   .stage3d.flat .hud .hint {
     bottom: auto;
-    top: calc(50% + 54vw);
+    top: calc(50% + 54cqw);
   }
 }
 
@@ -2048,12 +2090,12 @@ button {
 }
 
 .hud .result {
-  max-height: 90vh;
-  width: min(640px, calc(100vw - 32px));
+  max-height: 90cqh;
+  width: min(640px, calc(100cqw - 32px));
 }
 
 .hud .result.with-art {
-  width: min(860px, calc(100vw - 32px));
+  width: min(860px, calc(100cqw - 32px));
 }
 
 /* ---------- 立直、鸣牌、和牌的大字特效 ---------- */
@@ -2208,8 +2250,8 @@ button {
 /* ---------- 2.5D 的切入演出：立绘和大字从座位那一侧滑进来（src/ui/cutin.ts） ---------- */
 
 .cutin {
-  --y: 52vh; /* 色带的上沿 */
-  --art: min(58vh, 70vw);
+  --y: 52cqh; /* 色带的上沿 */
+  --art: min(58cqh, 70cqw);
   --fx: #ffa53a;
   position: absolute;
   inset: 0;
@@ -2220,11 +2262,11 @@ button {
 
 .cutin.right,
 .cutin.left {
-  --y: 32vh;
+  --y: 32cqh;
 }
 
 .cutin.top {
-  --y: 27vh;
+  --y: 27cqh;
 }
 
 .cutin.kan {
@@ -2253,11 +2295,11 @@ button {
 
 /* 素材页换上的技能动画画大一点 */
 .cutin.skill {
-  --art: min(66vh, 78vw);
+  --art: min(66cqh, 78cqw);
 }
 
 .cutin.skill.wide {
-  --art: min(56vh, 52vw);
+  --art: min(56cqh, 52cqw);
 }
 
 /* 斜着的色带，角色颜色，两头透明 */
@@ -2266,7 +2308,7 @@ button {
   left: -10%;
   width: 120%;
   top: var(--y);
-  height: 30vh;
+  height: 30cqh;
   transform: skewY(-5deg);
   background: linear-gradient(
     90deg,
@@ -2287,8 +2329,8 @@ button {
 .cutin .art {
   position: absolute;
   height: var(--art);
-  top: calc(var(--y) + 30vh - var(--art));
-  right: 3vw;
+  top: calc(var(--y) + 30cqh - var(--art));
+  right: 3cqw;
   filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.5));
   animation:
     cutin-from-right var(--in) cubic-bezier(0.2, 0.9, 0.3, 1) both,
@@ -2297,7 +2339,7 @@ button {
 
 .cutin.left .art {
   right: auto;
-  left: 3vw;
+  left: 3cqw;
   animation:
     cutin-from-left var(--in) cubic-bezier(0.2, 0.9, 0.3, 1) both,
     cutin-leave-right var(--out) ease-in calc(var(--in) + var(--hold)) forwards;
@@ -2306,8 +2348,8 @@ button {
 /* 大字：在立绘靠画面中间的一侧 */
 .cutin .word {
   position: absolute;
-  top: calc(var(--y) + 15vh);
-  right: calc(3vw + var(--art) * 0.62);
+  top: calc(var(--y) + 15cqh);
+  right: calc(3cqw + var(--art) * 0.62);
   transform: translateY(-50%);
   font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
   letter-spacing: 0.06em;
@@ -2316,26 +2358,26 @@ button {
 
 .cutin.left .word {
   right: auto;
-  left: calc(3vw + var(--art) * 0.62);
+  left: calc(3cqw + var(--art) * 0.62);
 }
 
 /* 手绘的横图（宽是高的 1.35 倍）：画小一点，大字放在图靠画面中间的那一侧 */
 .cutin.wide {
-  --art: min(50vh, 46vw);
+  --art: min(50cqh, 46cqw);
 }
 
 .cutin.wide .word {
-  right: calc(3vw + var(--art) * 1.2);
+  right: calc(3cqw + var(--art) * 1.2);
 }
 
 .cutin.wide.left .word {
   right: auto;
-  left: calc(3vw + var(--art) * 1.2);
+  left: calc(3cqw + var(--art) * 1.2);
 }
 
 .cutin .word span {
   display: inline-block;
-  font-size: min(15vh, 17vw);
+  font-size: min(15cqh, 17cqw);
   line-height: 1;
   color: #fff;
   -webkit-text-stroke: 2px color-mix(in srgb, var(--fx) 55%, #000);
@@ -2349,11 +2391,11 @@ button {
 }
 
 .cutin.ability .word span {
-  font-size: min(10vh, 11vw);
+  font-size: min(10cqh, 11cqw);
 }
 
 .cutin.win .word span {
-  font-size: min(19vh, 21vw);
+  font-size: min(19cqh, 21cqw);
   background: linear-gradient(180deg, #fffbe8 10%, #ffd36b 55%, #e08a1e 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -2385,28 +2427,28 @@ button {
 @keyframes cutin-from-right {
   from {
     opacity: 0;
-    translate: 40vw 0;
+    translate: 40cqw 0;
   }
 }
 
 @keyframes cutin-from-left {
   from {
     opacity: 0;
-    translate: -40vw 0;
+    translate: -40cqw 0;
   }
 }
 
 @keyframes cutin-leave-left {
   to {
     opacity: 0;
-    translate: -8vw 0;
+    translate: -8cqw 0;
   }
 }
 
 @keyframes cutin-leave-right {
   to {
     opacity: 0;
-    translate: 8vw 0;
+    translate: 8cqw 0;
   }
 }
 
@@ -2441,7 +2483,7 @@ button {
   font-weight: 400;
   color: #f3e6c4;
 }
-@media (max-height: 500px), (max-width: 600px) {
+@container (max-height: 500px) or (max-width: 600px) {
   .seat-frame .badge {
     font-size: 10px;
     padding: 0 5px;
@@ -2556,8 +2598,8 @@ button {
 }
 
 .result.predeal {
-  width: min(640px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
+  width: min(640px, calc(100cqw - 32px));
+  max-height: calc(100cqh - 32px);
   text-align: left;
   border-color: color-mix(in srgb, var(--c) 60%, transparent);
 }
@@ -3064,7 +3106,7 @@ button {
   white-space: nowrap;
 }
 
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   .tm-row {
     grid-template-columns: 1.5em 3.5em 5em 4.5em;
   }
@@ -3486,7 +3528,7 @@ html:root .select-screen.team-screen.tm-draft {
 }
 
 /* 竖着的手机：从上往下是立绘、候选、阵容，整页滚 */
-@media (max-width: 760px) {
+@container (max-width: 760px) {
   html:root .select-screen.team-screen.tm-draft {
     display: flex;
     flex-direction: column;
@@ -3610,7 +3652,7 @@ html:root .select-screen.team-screen.tm-draft {
 }
 
 /* 横着的手机：矮，名字和说明缩小 */
-@media (max-height: 500px) and (min-width: 761px) {
+@container (max-height: 500px) and (min-width: 761px) {
   html:root .select-screen.team-screen.tm-draft {
     grid-template-columns: minmax(0, 1fr) 260px;
     gap: 8px 12px;
@@ -3763,7 +3805,7 @@ html:root .select-screen.team-screen.tm-draft {
 
 .setup {
   width: min(560px, 100%);
-  max-height: calc(100dvh - 32px);
+  max-height: calc(100cqh - 32px);
   overflow-y: auto;
   background: #10292e;
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -3884,7 +3926,7 @@ html:root .select-screen.team-screen.tm-draft {
   font-weight: 700;
 }
 
-@media (max-width: 480px) {
+@container (max-width: 480px) {
   .setup {
     padding: 12px 14px 14px;
   }
@@ -4058,7 +4100,7 @@ html:root .select-screen.team-screen.tm-draft {
   height: 3px;
 }
 
-@media (max-height: 500px), (max-width: 600px) {
+@container (max-height: 500px) or (max-width: 600px) {
   .seat-frame .teru-tower .tt-tier {
     width: calc(34px - var(--i) * 2px);
     height: 6px;
@@ -4085,7 +4127,7 @@ html:root .select-screen.team-screen.tm-draft {
 
 .cutin .art.glyph {
   height: auto;
-  top: calc(var(--y) + 30vh - var(--art) * 0.62);
+  top: calc(var(--y) + 30cqh - var(--art) * 0.62);
   font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
   font-size: calc(var(--art) * 0.5);
   line-height: 1;
@@ -4179,7 +4221,7 @@ html:root .select-screen.team-screen.tm-draft {
 }
 
 /* 矮的屏幕（横着的手机）：面板更矮，手牌那一行省掉（桌上看得到） */
-@media (max-height: 500px) {
+@container (max-height: 500px) {
   .pd-dock {
     top: 4px;
     max-height: calc(100% - 120px);
@@ -4287,7 +4329,7 @@ html:root .select-screen.team-screen.tm-draft {
   font-weight: 700;
 }
 
-@media (max-height: 500px) {
+@container (max-height: 500px) {
   .seat-map {
     margin: 2px auto 6px;
   }
