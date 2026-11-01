@@ -30,9 +30,9 @@ describe('石户霞', () => {
           if (suit === null) return;
           summoned = true;
           summonedRounds++;
-          for (const p of g.players) if (p.seat !== me && g.binds(me, p.seat)) expect(p.hand.some(inSuit(suit))).toBe(false);
+          for (const p of g.players) if (p.seat !== me && g.rulesBind(me, p.seat)) expect(p.hand.some(inSuit(suit))).toBe(false);
         }
-        if (e.type === 'draw' && e.seat !== me && g.binds(me, e.seat) && !g.rinshanDraw) {
+        if (e.type === 'draw' && e.seat !== me && g.rulesBind(me, e.seat) && !g.rinshanDraw) {
           const suit = kasumiSuit(g, me);
           if (suit === null) return;
           const p = g.players[e.seat];
@@ -60,10 +60,9 @@ describe('石户霞', () => {
     expect(checkedDraws).toBeGreaterThan(100);
   }, 120000);
 
-  it('和大星淡同场：两边的配牌规矩一起满足，淡的配牌照样听牌、别人照样 5 向听以上、别人手里没有霞的花色', async () => {
+  it('和大星淡同场：两边的配牌规矩一起满足，淡的配牌照样听牌、别人照样压到时间迟滞的向听、别人手里没有霞的花色', async () => {
     const { AWAI } = await import('../src/abilities/awai');
     const saved = { ...AWAI };
-    Object.assign(AWAI, { circleCost: 0, tenpaiCost: 0, aiLeadChance: 1 });
     try {
       const both = ['kasumi', 'awai', 'nodoka', 'saki'].map((id) => CHARACTERS.find((c) => c.id === id)!);
       let checked = 0;
@@ -86,8 +85,10 @@ describe('石户霞', () => {
           expect(shanten(toCounts(g.players[1].hand))).toBe(0);
           for (const p of g.players) {
             if (p.seat === 0) continue;
-            expect(p.hand.some(inSuit(suit))).toBe(false);
-            if (p.seat !== 1) expect(shanten(toCounts(p.hand.filter((t) => t !== p.drawn)))).toBeGreaterThanOrEqual(AWAI.safeShanten);
+            // 天使和挡掉的规矩不算
+            const ruled = (id: string) => g.dealRules.some((r) => r.ability === id && r.target === p.seat);
+            if (ruled('kasumi')) expect(p.hand.some(inSuit(suit))).toBe(false);
+            if (p.seat !== 1 && ruled('awai')) expect(shanten(toCounts(p.hand.filter((t) => t !== p.drawn)))).toBeGreaterThanOrEqual((g.abilityState[1] as { goals: Record<number, number> }).goals[p.seat]);
           }
         });
         let steps = 0;
@@ -102,8 +103,9 @@ describe('石户霞', () => {
       }
       console.log({ checked, unmet });
       expect(checked).toBeGreaterThan(5);
-      // 两边能兼容时应该都满足，降级只是少数
-      expect(unmet).toBeLessThan(checked * 0.2);
+      // 两边能兼容时应该都满足，降级只是少数。时间迟滞有一半是 6 向听：只剩两门花色和字牌时 6 向听的手很少，
+      // 霞换不掉最后一张那门花色的牌（换了向听就变好），这时先动的淡说了算
+      expect(unmet).toBeLessThan(checked * 0.3);
     } finally {
       Object.assign(AWAI, saved);
     }

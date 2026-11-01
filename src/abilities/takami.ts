@@ -44,6 +44,10 @@ const seedText = (seeds: Kind[]) =>
 export const takamiAbility: Ability = {
   id: 'takami',
   name: '收获时期',
+  // 平行宇宙：种下的牌全没了
+  resetMarks(g, seat) {
+    gameStateOf(g, seat).seeds = [];
+  },
   description: `每局第一巡打出的牌被种下，到最后一局（南 4 局，东风战是东 4 局）种下的牌全部回到她的配牌里（每种下一张就带回一张，最多 ${HARVEST.max} 张）。种得越多收获越大，常常做成字牌役满。`,
 
   // 最后一局：配牌里换进种下的牌（从牌山里换，别人配牌里的也换得过来，别人的配牌规矩照守）

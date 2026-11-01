@@ -1,4 +1,4 @@
-import { awaiAbility } from './awai';
+import { AWAI_SKILLS, awaiAbility } from './awai';
 import { hiroeAbility } from './hiroe';
 import { kasumiAbility } from './kasumi';
 import { koromoAbility } from './koromo';
@@ -133,6 +133,7 @@ export const CHARACTERS: Character[] = [
     school: '白糸台高中',
     color: '#e3b23c',
     ability: awaiAbility,
+    skillArts: AWAI_SKILLS.map(({ id, name }) => ({ id, name })),
     ai: { ...baseAi, cornerKan: true },
   },
   {
