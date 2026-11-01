@@ -2,7 +2,7 @@ import type { Game } from '../engine/game';
 import { Rng } from '../engine/rng';
 import { shanten, waitingKinds } from '../engine/shanten';
 import { KIND_COUNT, Kind, TileId, doraFromIndicator, kindLabel, kindOf, toCounts } from '../engine/tiles';
-import { isCornerDraw } from '../engine/wall';
+import { isCornerDraw, stackAt } from '../engine/wall';
 import { seatCost } from './costs';
 import { suzuBurst } from './suzu';
 import { teruLadder } from './teru';
@@ -27,7 +27,8 @@ import { PRIORITY, type Ability } from './types';
 // - 平行宇宙（30）：把牌桌换成平行世界的：牌山里没锁住的牌重新洗过，别人锁的牌解开；
 //   别人累计的标记全部清空（照的连续和了、漫的计数器、和的计数、小莳的神乐、尧深种下的牌……见 Ability.resetMarks），这一局也不算数
 // - 加速驱动（10）：听牌后才能按。这一局另外三家摸的都是她的和了牌（铳牌）；她能摸到的最后一张先留一张和了牌，别人都守住了就海底前自摸
-// - 巨引力源（10）：黑色的引力圆罩住整个牌山（直径比牌山的对角线还大一点）：这一局别人控牌山的能力失效，她没听牌时摸的牌必定是进张
+// - 巨引力源（10）：黑色的引力圆和四边牌山的外沿相切，罩住每边中间的几墩（墩的中心在圆里：离正中 AWAI.sourceSpan 墩以内，每边 7 墩）。
+//   这一局摸到圆里的牌时：别人控牌山的能力失效，她没听牌时必定摸进有效牌。圆外的牌照常
 //
 // 电脑的淡：被动照常，听牌就立直（第一张就是双立直）；退相干在有人立直、牌山快见底时用；
 // 桌上有强的控场能力、自己没领先时开高维领域或巨引力源；照的连续和了爬到 3 层以上、漫爆发时开平行宇宙；落后很多的最后两局开星符汇聚
@@ -42,6 +43,8 @@ export const AWAI = {
   domainSlow: 0.5,
   // 电脑：落后第一这么多就开星符汇聚（最后两局）
   aiStarsBehind: 24000,
+  // 巨引力源罩住每边正中那墩左右各几墩（圆和牌山外沿相切，墩的中心在圆里的：17 墩里的第 6–12 墩）
+  sourceSpan: 3,
   // 电脑按不按主动技能（测试别的角色时关掉，免得平行宇宙把他们的标记清掉）
   aiSkills: true,
 };
@@ -55,7 +58,7 @@ export const AWAI_SKILLS: { id: AwaiSkillId; name: string; cost: number; desc: s
   { id: 'wave', name: '引力波', cost: 10, desc: '听牌后：牌山里所有和了牌亮出来，挑立直的时机' },
   { id: 'parallel', name: '平行宇宙', cost: 30, desc: '换成平行世界的牌桌：牌山重洗，别人累计的标记全部清空（照的连续和了也是），这一局也不算数' },
   { id: 'accel', name: '加速驱动', cost: 10, desc: '听牌后：另外三家不断摸进你的铳牌；都守住了，最后一张留给你自摸' },
-  { id: 'source', name: '巨引力源', cost: 10, desc: '黑色引力圆罩住牌山：别人控制不了牌山，你没听牌时摸的都是进张' },
+  { id: 'source', name: '巨引力源', cost: 10, desc: '黑色引力圆罩住每边牌山中间的几墩：摸到圆里的牌时别人控制不了，你没听牌时必定摸进有效牌' },
 ];
 
 const skillOf = (id: string) => AWAI_SKILLS.find((k) => k.id === id);
@@ -163,6 +166,17 @@ export function awaiStarsExtra(g: Game, seat: number): TileId[] {
 // 桌上有没有淡开着高维领域（所有人都看得到黑暗）
 export function awaiDomainOn(g: Game): boolean {
   return [0, 1, 2, 3].some((s) => g.abilities[s]?.id === 'awai' && !!g.active(s) && on(g, s, 'domain'));
+}
+
+// 巨引力源的引力圆罩不罩得到这一张：正在摸的那一张（岭上牌也算）在每边中间的几墩里。不在摸牌时不算
+export function sourceCovers(g: Game): boolean {
+  const d = g.drawing;
+  if (!d) return false;
+  const w = g.wall;
+  const sum = g.dice[0] + g.dice[1];
+  // 第几墩：牌山从摸牌起点顺时针数；岭上牌从分开处往回数（和 ui3d/wallLayout 的 deadSlot 一样）
+  const p = d.rinshan ? 67 - Math.floor((4 - w.rinshan.length) / 2) : Math.floor(w.frontDrawn / 2);
+  return Math.abs(stackAt(g.dealer, sum, p).stack - 9) <= AWAI.sourceSpan;
 }
 
 // 桌上有没有淡开着巨引力源（所有人都看得到引力圆）
@@ -473,7 +487,7 @@ function aiPress(g: Game, seat: number): void {
 export const awaiAbility: Ability = {
   id: 'awai',
   name: '星空',
-  description: `星空能量开局 ${AWAI.energyMax} 点，每局回复 ${AWAI.regen} 点。被动：时间迟滞（别人配牌 5–6 向听，挡得住或会支配牌山的人减弱）、命运支配（天听但永远不天和；双立直的话在第 2 个转角前暗杠，杠里四张都是里宝牌，下一张自摸）。主动：星符汇聚 30、高维领域 20、退相干 10、引力波 10、平行宇宙 30、加速驱动 10、巨引力源 10。`,
+  description: `星空能量开局 ${AWAI.energyMax} 点，每局回复 ${AWAI.regen} 点。被动：时间迟滞（别人配牌 5–6 向听，挡得住或会支配牌山的人减弱）、命运支配（天听但永远不天和；双立直的话在第 2 个转角前暗杠，杠里四张都是里宝牌，下一张自摸）。主动：星符汇聚 30、高维领域 20、退相干 10、引力波 10、平行宇宙 30、加速驱动 10、巨引力源 10（罩住每边牌山中间 7 墩）。`,
   priority: PRIORITY.awai,
 
   // 时间迟滞定规矩：另外三家的配牌至少 5–6 向听（减弱的人 3 向听）
@@ -502,7 +516,7 @@ export const awaiAbility: Ability = {
       lines.push(need.length ? `大七星还差：${need.map(kindLabel).join(' ')}` : '大七星凑齐了');
     }
     if (on(g, seat, 'domain')) lines.push('高维领域展开中');
-    if (on(g, seat, 'source')) lines.push('巨引力源罩住了牌山');
+    if (on(g, seat, 'source')) lines.push('巨引力源罩住了每边牌山中间的几墩');
     if (s.decohere) lines.push('退相干：下一次摸牌');
     if (on(g, seat, 'accel')) lines.push('加速驱动中');
     if (on(g, seat, 'wave')) {
@@ -522,8 +536,9 @@ export const awaiAbility: Ability = {
     use(g, seat, id);
   },
 
+  // 高维领域：整局；巨引力源：只管摸到引力圆里的那几张
   quells(g, seat) {
-    return on(g, seat, 'domain') || on(g, seat, 'source');
+    return on(g, seat, 'domain') || (on(g, seat, 'source') && sourceCovers(g));
   },
 
   badge(g, seat) {
@@ -629,8 +644,8 @@ export const awaiAbility: Ability = {
         return;
       }
     }
-    // 巨引力源：没听牌时摸的都是进张
-    if (on(g, seat, 'source') && waits.length === 0) {
+    // 巨引力源：摸到引力圆里的牌、没听牌时必定是进张
+    if (on(g, seat, 'source') && waits.length === 0 && sourceCovers(g)) {
       bring(g, rinshan, useful(g, seat));
       return;
     }

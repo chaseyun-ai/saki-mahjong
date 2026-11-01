@@ -1100,14 +1100,16 @@ export class Table3D {
     this.mist.setStacks(this.mistTops.map((row, w) => row.map((pos, i) => ({ pos, filled: filled[w][i] }))));
   }
 
-  // 巨引力源：黑色的引力圆，直径比牌山的对角线还大一点，整个牌山都在圆里。贴在桌面上，牌压在它上面
+  // 巨引力源：黑色的引力圆，和四边牌山的外沿相切，罩住每边中间的几墩（墩的中心在圆里的：引擎里是 awai.ts 的 sourceCovers，离正中 3 墩以内）。
+  // 贴在桌面上，牌压在它上面
   private showGravity(on: boolean): void {
     if (!on) {
       if (this.gravityDisc) this.gravityDisc.visible = false;
       return;
     }
     if (!this.gravityDisc) {
-      const r = Math.hypot(WALL_Z + TILE_T, (STACKS_HALF - 1) * WALL_PITCH + TILE_W) * 1.04;
+      // 牌山的牌是平躺的，外沿离中心 WALL_Z + 牌高的一半
+      const r = WALL_Z + TILE_H / 2;
       const mat = new THREE.MeshBasicMaterial({ map: gravityTexture(), transparent: true, depthWrite: false });
       const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 96), mat);
       disc.rotation.x = -Math.PI / 2;

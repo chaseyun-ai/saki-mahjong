@@ -1,4 +1,4 @@
-import { nellyTier } from '../src/abilities/nelly';
+import { kuroSeat, settleUra } from '../src/abilities/doraControl';
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
 import { sawayaOn, sawayaPlagueTarget, sawayaRedTarget } from '../src/abilities/sawaya';
@@ -203,7 +203,7 @@ describe('狮子原爽', () => {
     expect(hands).toBeGreaterThanOrEqual(30);
   }, 120000);
 
-  it('海神威：里宝牌是她手里最多的那种万子', () => {
+  it('海神威：她立直和牌时，里宝牌是她手里最多的那种万子', () => {
     let checks = 0;
     let hits = 0;
     for (let seed = 1; seed <= 10; seed++) {
@@ -212,13 +212,21 @@ describe('狮子原爽', () => {
         LINEUPS[seed % 4],
         (g, me) => {
           g.onEvent((e) => {
-            // 淡的高维领域、巨引力源压住了她控牌山的能力
-            if (e.type !== 'draw' || e.seat === me || !sawayaOn(g, me, 'akkoro') || g.quelled(me)) return;
-            // 涅莉押了 2、3 点立直以后，里宝牌往她手里变（两个人都在换第一张里宝牌指示牌）
-            if ([0, 1, 2, 3].some((s) => g.abilities[s]?.id === 'nelly' && g.players[s].riichi && nellyTier(g, s) >= 2)) return;
+            // 淡的高维领域、巨引力源压住了她控牌山的能力；玄的能力还在时谁都中不了里宝牌
+            if (e.type !== 'draw' || e.seat === me || !sawayaOn(g, me, 'akkoro') || g.quelled(me) || kuroSeat(g) !== null) return;
             const counts = toCounts(g.players[me].hand);
             const most = Math.max(...counts.slice(0, 9));
             if (most === 0) return;
+            // 指示牌全都在明处（手里、牌河、宝牌指示牌）时换不到，不算
+            const w = g.wall;
+            const pool = [...w.uraIndicators, ...w.live, ...w.rinshan].filter((t) => !w.locked.has(t)).map(kindOf);
+            if (!counts.slice(0, 9).some((n, k) => n === most && pool.includes(k === 0 ? 8 : k - 1))) return;
+            // 里宝牌只在和牌时定：假装她这时立直和牌，看定出来的里宝牌
+            const p = g.players[me];
+            const was = p.riichi;
+            p.riichi = true;
+            settleUra(g, [me]);
+            p.riichi = was;
             checks++;
             const ind = kindOf(g.wall.uraIndicators[0]);
             const ura = ind === 8 ? 0 : ind + 1;

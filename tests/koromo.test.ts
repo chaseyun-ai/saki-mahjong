@@ -75,7 +75,8 @@ describe('天江衣', () => {
     let kept = 0;
     let broken = 0;
     let shifts = 0;
-    for (let seed = 1; seed <= 24; seed++) {
+    // 没人鸣牌开杠一直打到海底的局很少（一百多场里只有几局），挑一段里面有的种子
+    for (let seed = 56; seed <= 79; seed++) {
       play(seed, (g, me) => {
         (g.abilityGameState[me] as { moon?: number }).moon = 4;
         let shifted = false;

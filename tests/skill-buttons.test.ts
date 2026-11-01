@@ -69,6 +69,8 @@ describe('松实玄：打出宝牌以后整场失效', () => {
       g.onEvent((e) => {
         if (e.type === 'ability' && e.seat === 0 && e.text.startsWith('打出了宝牌')) lostAt = g.roundNumber + 4 * g.roundWind;
         if (e.type !== 'draw' || e.seat !== 0 || g.rinshanDraw || !kuroLost(g, 0)) return;
+        // 牌山里只剩宝牌（比如海底那一张）时挡不住
+        if (!g.wall.live.some((t) => !isDoraTile(g, t) && !g.wall.locked.has(t)) && isDoraTile(g, g.players[0].drawn!)) return;
         checked++;
         expect(isDoraTile(g, g.players[0].drawn!)).toBe(false);
       });

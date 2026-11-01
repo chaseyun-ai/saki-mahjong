@@ -397,7 +397,6 @@ export const sawayaAbility: Ability = {
       const to = id === 'red' && gs.redTarget !== seat ? `→${g.players[gs.redTarget!].name}` : '';
       g.emit({ type: 'ability', seat, ability: 'sawaya', text: nameOf(id) + to });
     }
-    if (sawayaOn(g, seat, 'akkoro')) seaUra(g, seat);
   },
 
   seals(g, seat, round) {
@@ -436,7 +435,6 @@ export const sawayaAbility: Ability = {
     // 红云给了别人：她自己也摸不到字牌
     const red = sawayaRedTarget(g, seat);
     if (red !== null && red !== seat) g.wall.bringToLive(0, (t) => !isHonor(kindOf(t)), g.rng);
-    if (sawayaOn(g, seat, 'akkoro')) seaUra(g, seat);
     const honorOk = (t: TileId) => red === null || red === seat || !isHonor(kindOf(t));
     const good = helps(g, seat);
     const useful = reduces(g, seat);
@@ -448,7 +446,8 @@ export const sawayaAbility: Ability = {
     for (const want of list) if (bring((t) => want(t) && good(t))) return;
   },
 
-  afterDiscard(g, seat) {
+  // 海神威的局她立直和牌：里宝牌换成她手里最多的那种万子（只有和牌的人定里宝牌，见 doraControl）
+  claimUra(g, seat) {
     if (sawayaOn(g, seat, 'akkoro')) seaUra(g, seat);
   },
 

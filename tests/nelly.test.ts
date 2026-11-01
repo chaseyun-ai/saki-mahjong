@@ -136,7 +136,7 @@ describe('涅莉·薇萨拉兹', () => {
   }, 120000);
 
   it('押了运势：配牌照常发，到那一巡左右才和（3 点 8 巡、2 点 12 巡、1 点 15 巡），档越高和得越大，3 点大多和出三倍满', () => {
-    const stat = [0, 1, 2, 3].map(() => ({ rounds: 0, wins: 0, value: 0, big: 0, early: 0, turns: 0, sh: 0 }));
+    const stat = [0, 1, 2, 3].map(() => ({ rounds: 0, wins: 0, value: 0, big: 0, early: 0, turns: 0, sh: 0, over: 0 }));
     for (let seed = 1; seed <= 24; seed++) {
       for (const pick of [1, 2, 3]) {
         play(
@@ -164,6 +164,8 @@ describe('涅莉·薇萨拉兹', () => {
                 // 牌山快摸完了（有什么和什么）不算提早
                 if (v && turn < NELLY.turn[v] - 1 && g.wall.remaining > NELLY.late) s.early++;
                 if (v && value >= target) s.big++;
+                // 押 3 点：不冲累计役满（超过 12 番）
+                if (v === 3 && (win.result.yakuman > 0 || win.result.han > NELLY.maxHan)) s.over++;
               }
             });
           },
@@ -172,7 +174,7 @@ describe('涅莉·薇萨拉兹', () => {
       }
     }
     const avg = (a: number, b: number) => a / Math.max(1, b);
-    console.log(stat.map((s, i) => `${i}: ${s.rounds} 局 和${s.wins} 平均${Math.round(avg(s.value, s.wins))} 够大${s.big} 平均第${avg(s.turns, s.wins).toFixed(1)}巡 提早${s.early} 配牌向听${avg(s.sh, s.rounds).toFixed(2)}`));
+    console.log(stat.map((s, i) => `${i}: ${s.rounds} 局 和${s.wins} 平均${Math.round(avg(s.value, s.wins))} 够大${s.big} 平均第${avg(s.turns, s.wins).toFixed(1)}巡 提早${s.early} 配牌向听${avg(s.sh, s.rounds).toFixed(2)} 超过12番${s.over}`));
     for (const v of [1, 2, 3]) {
       expect(stat[v].rounds).toBeGreaterThan(20);
       // 配牌照常发：向听数和没押的局差不多
@@ -182,13 +184,14 @@ describe('涅莉·薇萨拉兹', () => {
     }
     expect(stat[3].wins / stat[3].rounds).toBeGreaterThan(0.6);
     expect(stat[3].big / stat[3].rounds).toBeGreaterThan(0.7);
+    expect(stat[3].over / Math.max(1, stat[3].big)).toBeLessThan(0.1);
     expect(avg(stat[3].turns, stat[3].wins)).toBeLessThan(avg(stat[2].turns, stat[2].wins));
     expect(avg(stat[2].turns, stat[2].wins)).toBeLessThan(avg(stat[1].turns, stat[1].wins));
     expect(avg(stat[3].value, stat[3].wins)).toBeGreaterThan(avg(stat[2].value, stat[2].wins));
     expect(avg(stat[2].value, stat[2].wins)).toBeGreaterThan(avg(stat[1].value, stat[1].wins));
   }, 600000);
 
-  it('玄在场（宝牌动不了）押 3 点也大多和出三倍满（做清一色）', () => {
+  it('玄在场（宝牌、里宝牌都动不了）押 3 点也有一半左右和出三倍满（做清一色）', () => {
     const KURO = [
       ['nelly', 'kuro', 'nodoka', 'saki'],
       ['kuro', 'nelly', 'hiroe', 'awai'],
@@ -197,6 +200,7 @@ describe('涅莉·薇萨拉兹', () => {
     ];
     let rounds = 0;
     let big = 0;
+    let over = 0;
     for (let seed = 1; seed <= 16; seed++) {
       play(
         seed,
@@ -211,13 +215,15 @@ describe('涅莉·薇萨拉兹', () => {
             if (e.type !== 'roundEnd' || v !== 3) return;
             const win = e.result.wins.find((w) => w.seat === me);
             if (win && teruWinValue(win.result, win.from === null, me === g.dealer) >= NELLY.target[3] * (me === g.dealer ? 1.5 : 1)) big++;
+            if (win && (win.result.yakuman > 0 || win.result.han > NELLY.maxHan)) over++;
           });
         },
         { pick: 3, format: 'team' },
       );
     }
-    console.log(`玄在场：押 3 点 ${rounds} 局，三倍满 ${big} 局`);
+    console.log(`玄在场：押 3 点 ${rounds} 局，三倍满 ${big} 局，超过 12 番 ${over} 局`);
     expect(rounds).toBeGreaterThan(20);
-    expect(big / rounds).toBeGreaterThan(0.55);
+    // 玄的能力还在时连里宝牌也中不了，清一色只能靠七对子、一气通贯、断幺九加一盃口凑番，五成左右
+    expect(big / rounds).toBeGreaterThan(0.4);
   }, 600000);
 });
