@@ -6,6 +6,7 @@ import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored } from
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
 import { mihokoEyeOpen } from '../abilities/mihoko';
+import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
 import { aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
 import { playRebuild, playShatter } from './sketchFx';
@@ -1070,6 +1071,7 @@ export class App {
       ids: this.chars.map((c) => c.id),
       marked: new Set(this.showResult ? [] : this.preview.keys()),
       deadly: this.showResult ? undefined : this.deadlyTiles(),
+      ripple: this.showResult ? null : this.rippleTile(),
       airDraw: this.airDraw(),
       tintBacks: this.eyeOpen() && !this.vision ? new Set([1, 2, 3].flatMap((d) => g.players[(this.me + d) % 4].hand)) : undefined,
       akaBacks: this.vision ? undefined : this.akaSpots(),
@@ -1096,6 +1098,13 @@ export class App {
     const g = this.game!;
     if (this.chars[this.me]?.id !== 'toyone' || (g.phase !== 'turn' && g.phase !== 'calls')) return new Set();
     return toyoneRedHidden(g, this.me);
+  }
+
+  // 白望的迷途之家：这一次发动了，应该打的那张牌底下泛白色水波纹
+  private rippleTile(): TileId | null {
+    const g = this.game!;
+    if (this.vision || this.chars[this.me]?.id !== 'shiromi') return null;
+    return shiromiRipple(g, this.me);
   }
 
   // 龙华的无极天、小莳的天照、照的照魔镜：手里打出去会放铳的牌标红
@@ -1501,7 +1510,8 @@ export class App {
     const sorted = this.myHand();
     // 能打的牌亮着，打出去能听牌的上面加个小三角
     const deadly = this.deadlyTiles();
-    const classes = (t: TileId) => [discardable.has(t) ? 'can' : 'dim', ...(this.preview.has(t) ? ['tenpai'] : []), ...(deadly.has(t) ? ['deadly'] : [])];
+    const ripple = this.rippleTile();
+    const classes = (t: TileId) => [discardable.has(t) ? 'can' : 'dim', ...(this.preview.has(t) ? ['tenpai'] : []), ...(deadly.has(t) ? ['deadly'] : []), ...(t === ripple ? ['ripple'] : [])];
     const hand = sorted.map((t) => tileHtml(t, { classes: classes(t), data: { tile: t } })).join('');
     const drawn =
       p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn, { classes: classes(p.drawn), data: { tile: p.drawn } })}</div>` : '';

@@ -206,6 +206,7 @@ export interface SyncView {
   airDraw?: TileId | null; // 自己立直后摸到、和不了的那张：不进手牌，停在手牌上方的空中，接着直接打进牌河（摸牌路径关掉时没有）
   tintBacks?: Set<TileId>; // 美穗子睁眼：这些牌的牌背按花色上色（万红、筒蓝、索绿、字牌白）
   deadly?: Set<TileId>; // 龙华的无极天：自己手里打出去会放铳的牌，牌身染红
+  ripple?: TileId | null; // 白望的迷途之家：应该打的那张牌，底下一圈圈白色水波纹
   akaBacks?: Set<TileId>; // 丰音的赤口：没公开的赤宝牌（别人手里、牌山里），牌背发金红光
   waveBacks?: Set<TileId>; // 淡的引力波：牌山里她的和了牌，牌背发紫光
   gravity?: boolean; // 淡的巨引力源：黑色的引力圆罩住整个牌山
@@ -301,6 +302,8 @@ export class Table3D {
   onHover: ((id: TileId | null) => void) | null = null;
   // 标记用的小三角，按需要的个数建，多出来的藏起来
   private marks: THREE.Mesh[] = [];
+  // 迷途之家的水波纹：几圈白环贴着桌面往外扩（用到时才建）
+  private ripples: THREE.Mesh[] = [];
   private overlayGroup: THREE.Group | null = null;
   private zoom = { t: -1, target: new THREE.Vector3() };
   private held = new Set<TileId>();
@@ -2027,6 +2030,7 @@ export class Table3D {
       t.group.scale.setScalar(sc);
     }
     this.updateMarks();
+    this.updateRipple();
     for (const c of this.characters) c.avatar?.update(dt);
     this.updateLoading();
   }
@@ -2047,6 +2051,36 @@ export class Table3D {
   }
 
   // 标记的牌上方各放一个朝下的小三角，跟着牌走（鼠标移上去牌抬起来，三角也跟着抬），总是正对镜头
+  private updateRipple(): void {
+    const id = this.lastSync?.view.ripple ?? null;
+    const on = id !== null && this.tiles[id].group.visible;
+    if (on && this.ripples.length === 0) {
+      // 用到时才建（建材质会用掉随机数，提前建会让桌布的花纹和以前不一样）
+      const geo = new THREE.RingGeometry(0.82, 1, 48);
+      for (let i = 0; i < RIPPLE_RINGS; i++) {
+        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+        m.rotation.x = -Math.PI / 2;
+        m.renderOrder = 2;
+        this.scene.add(m);
+        this.ripples.push(m);
+      }
+    }
+    if (!on) {
+      for (const m of this.ripples) m.visible = false;
+      return;
+    }
+    const g = this.tiles[id].group;
+    // 牌立着：中心往下半个牌高就是桌面
+    const y = Math.max(0.006, g.position.y - (TILE_H / 2) * g.scale.x + 0.006);
+    this.ripples.forEach((m, i) => {
+      const k = (this.now / RIPPLE_PERIOD + i / RIPPLE_RINGS) % 1;
+      m.visible = true;
+      m.position.set(g.position.x, y, g.position.z);
+      m.scale.setScalar(TILE_W * g.scale.x * (0.3 + 0.85 * k));
+      (m.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - k) * Math.min(1, k * 6);
+    });
+  }
+
   private updateMarks(): void {
     const ids = [...(this.lastSync?.view.marked ?? [])].filter((id) => this.tiles[id].group.visible);
     while (this.marks.length < ids.length) {
@@ -2068,6 +2102,10 @@ export class Table3D {
   }
 
 }
+
+// 迷途之家的水波纹：几圈、多久扩一次（秒）
+const RIPPLE_RINGS = 3;
+const RIPPLE_PERIOD = 1.8;
 
 // 朝下的小三角，尖在原点
 function markGeometry(): THREE.ShapeGeometry {
