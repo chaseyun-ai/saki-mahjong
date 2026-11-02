@@ -780,16 +780,24 @@ export class App {
   }
 
   // 手绘板画在手牌上面：画上的整副牌（自摸的那张隔开放在最右边），写着再摸几张自摸、几番
+  private sketchPlanKey = '';
   private sketchPlanHtml(): string {
     const g = this.game!;
-    if (!this.sketchShown()) return '';
+    if (!this.sketchShown()) {
+      this.sketchPlanKey = '';
+      return '';
+    }
     const plan = aislinnPlan(g, this.me)!;
     const tiles = [...plan.final.slice(0, -1)].sort((a, b) => a - b).map((t) => tileHtml(t, { size: 'pond', sketch: true })).join('');
     const left = aislinnDrawsLeft(plan);
     const han = plan.yakuman ? '役满' : `${plan.han} 番`;
     const when = left > 0 ? `再摸 ${left} 张自摸` : '自摸！';
     const melds = g.players[this.me].melds.length ? '<span class="sp-melds">＋副露</span>' : '';
-    return `<div class="sketch-plan" title="${plan.yaku.join('、')}"><div class="sp-head"><b>手绘板</b><span>${when} · ${han}</span></div><div class="sp-tiles">${tiles}${melds}<span class="sp-win">${tileHtml(plan.win, { size: 'pond', sketch: true })}</span></div></div>`;
+    // 画面一有变化这块就重画：入场动画只在新画出来的那一下放，不然别家每打一张它都要跳一下
+    const key = `${plan.final.join(',')}|${plan.win}`;
+    const fresh = key !== this.sketchPlanKey;
+    this.sketchPlanKey = key;
+    return `<div class="sketch-plan${fresh ? ' fresh' : ''}" title="${plan.yaku.join('、')}"><div class="sp-head"><b>手绘板</b><span>${when} · ${han}</span></div><div class="sp-tiles">${tiles}${melds}<span class="sp-win">${tileHtml(plan.win, { size: 'pond', sketch: true })}</span></div></div>`;
   }
 
   // 立直、鸣牌、和牌的大字：2.5D 放带立绘的切入，3D、2D 还是原来的大字特效
