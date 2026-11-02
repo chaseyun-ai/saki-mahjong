@@ -23,7 +23,7 @@ function styleOf(g: Game, seat: number): AiStyle {
 }
 
 // 演算里别人轮到自己时只打牌：不自摸、不杠、不流局（打掉刚摸的那张）
-function onlyDiscard(g: Game, seat: number, a: Action): Action {
+function onlyDiscard(g: Game, seat: number, a: Action): Action | undefined {
   if (a.type === 'discard') return a;
   const p = g.players[seat];
   const legal = g.legalActions(seat).filter((x) => x.type === 'discard' && !x.riichi);
@@ -58,7 +58,10 @@ export function forecastNextDraw(g: Game, seat: number, opts: ForecastOpts = {})
         return drew ? c.players[seat].drawn : null;
       }
       const s = c.turn;
-      c.act(s, onlyDiscard(c, s, chooseAction(c, s, styleOf(c, s))));
+      // 一张牌都打不了（立直的花田煌摸到的牌打出去会放铳被击飞，只能自摸）：算不出来
+      const act = onlyDiscard(c, s, chooseAction(c, s, styleOf(c, s)));
+      if (!act) return null;
+      c.act(s, act);
     }
     return null;
   } finally {

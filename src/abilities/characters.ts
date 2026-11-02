@@ -33,6 +33,7 @@ import { kirameAbility } from './kirame';
 import { kurumiAbility } from './kurumi';
 import { shizunoAbility } from './shizuno';
 import { aislinnAbility } from './aislinn';
+import { saeAbility } from './sae';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -430,6 +431,16 @@ export const CHARACTERS: Character[] = [
     color: '#e0a23a',
     ability: kirameAbility,
     ai: { ...baseAi },
+  },
+  {
+    id: 'sae',
+    cost: 3,
+    name: '臼泽塞',
+    school: '宫守女子',
+    color: '#7a6a9a',
+    ability: saeAbility,
+    skillArts: [{ id: 'lens', name: '镜片', hint: '用镜片盯住一个人时放这一段' }],
+    ai: { ...baseAi, mistakeRate: 0.05 },
   },
 ];
 

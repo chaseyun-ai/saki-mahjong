@@ -93,6 +93,8 @@ export const LOOKS: Record<string, Look> = {
   // 鹿仓胡桃：先占位，借怜的短发模型换成深棕色头发、棕色眼睛
   kurumi: { model: 'models/vroid-f.v2.glb', hair: '#3a2620', eyes: '#6a4a36', hairContrast: 0.6, reveal: 'wave', pose: 'lap', borrowed: true },
   kirame: { model: 'models/vroid-e.v2.glb', hair: '#8a5a2e', eyes: '#4a7a4a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
+  // 臼泽塞：先占位，借咲的短发模型换成深棕色头发、棕色眼睛
+  sae: { model: 'models/vroid-e.v2.glb', hair: '#4a3226', eyes: '#6a4a36', hairContrast: 0.6, reveal: 'wave', pose: 'crossed', borrowed: true },
 };
 
 // 牌桌上要用到的全部模型文件

@@ -174,4 +174,6 @@ export interface SkillButton {
   choices?: { id: string; label: string; enabled: boolean }[];
   // 一场比赛里几支画笔（爱丽丝）：技能栏画成一支支可以点的画笔，按下去调 pressSkill。ready 是现在能不能用
   brushes?: { left: number; max: number; ready: boolean };
+  // 拖到头像上用的镜片（臼泽塞）：max 枚里还剩 left 枚，这一局盯上了 target，现在能拖到 targets 这几家头像上（拖上去调 pressSkill(g, seat, String(座位))）
+  lenses?: { max: number; left: number; target: number | null; targets: number[] };
 }
