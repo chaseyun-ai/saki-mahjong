@@ -19,7 +19,7 @@ export const TEAMS = [
 ];
 
 // 电脑选人时同一档里的偏好（前面的先挑）；没写的排在后面，替补最后
-const AI_PREF = ['teru', 'koromo', 'komaki', 'awai', 'shizuno', 'takami', 'saki', 'toyone', 'shiromi', 'sawaya', 'nelly', 'hisa', 'toki', 'ryuuka', 'momo', 'yuuki', 'sera', 'suzu', 'rii', 'kasumi', 'mihoko', 'sumire', 'hiroe', 'seiko', 'kuro', 'yu', 'nodoka', 'ako', 'kyouko', 'mako', 'himeko', 'kurumi', 'kirame', 'izumi'];
+const AI_PREF = ['teru', 'koromo', 'komaki', 'awai', 'shizuno', 'takami', 'saki', 'toyone', 'shiromi', 'sawaya', 'nelly', 'hisa', 'toki', 'ryuuka', 'momo', 'yuuki', 'sera', 'sae', 'suzu', 'rii', 'kasumi', 'mihoko', 'sumire', 'hiroe', 'seiko', 'kuro', 'yu', 'nodoka', 'ako', 'kyouko', 'mako', 'himeko', 'kurumi', 'kirame', 'izumi'];
 // 电脑按偏好挑的概率，不然从这一档剩下的人里随便挑一个
 const AI_BEST = 0.6;
 
