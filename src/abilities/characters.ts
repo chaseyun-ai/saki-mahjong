@@ -30,6 +30,7 @@ import { suzuAbility } from './suzu';
 import { riiAbility } from './rii';
 import { himekoAbility } from './himeko';
 import { kirameAbility } from './kirame';
+import { kurumiAbility } from './kurumi';
 import { shizunoAbility } from './shizuno';
 import type { Ability } from './types';
 
@@ -65,6 +66,7 @@ export interface AiStyle {
   mugoku: boolean; // 清水谷龙华：无极天的局读得出别人听什么，不打放铳的牌；看得出谁听牌了
   gods: boolean; // 神代小莳：按附身的神打（木花咲耶姬能杠就杠、须佐之男能碰就碰、天照读得出铳牌）
   rokuyou: boolean; // 姊带丰音：先负还能发动时默听，先负发动后听牌就追立、不弃和；副露两次以上、有役时能鸣就鸣（奔友引）
+  dama: boolean; // 鹿仓胡桃：听牌从不立直（默听才有能力），被封印的局照常立直
   stealth: boolean; // 东横桃子：隐身之前听牌先默听，隐身以后再立直（别人不知道她立直了）
   mayoiga?: boolean; // 小濑川白望：迷途之家发动的那一次出牌照算出来的打（不立直），能自摸就自摸
   twin: boolean; // 鹤田姬子：钥匙的那一局只照着那副牌打，先打不要的牌，不立直、不鸣牌、不荣和，等自摸
@@ -84,7 +86,7 @@ export interface Character {
   skillArts?: { id: string; name: string; label?: string; hint?: string }[];
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false, gods: false, rokuyou: false, stealth: false, twin: false };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false, gods: false, rokuyou: false, dama: false, stealth: false, twin: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -345,6 +347,15 @@ export const CHARACTERS: Character[] = [
     color: '#9aa6b8',
     ability: shiromiAbility,
     ai: { ...baseAi, mistakeRate: 0.04, mayoiga: true },
+  },
+  {
+    id: 'kurumi',
+    cost: 1,
+    name: '鹿仓胡桃',
+    school: '宫守女子',
+    color: '#8a5a48',
+    ability: kurumiAbility,
+    ai: { ...baseAi, mistakeRate: 0.05, dama: true },
   },
   {
     id: 'suzu',
