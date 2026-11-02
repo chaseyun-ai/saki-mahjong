@@ -1307,7 +1307,13 @@ export class Table3D {
       if (t !== null && p.hand.includes(t)) out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
       x += step;
     };
-    hand.forEach(place);
+    // 对家公开手牌转过来朝我：从我这边看也是从左往右按顺序排，摸到的牌在我的右手边（她的左手边）
+    if (facing) {
+      place(drawn);
+      x += 0.5;
+      [...hand].reverse().forEach(place);
+      drawn = null;
+    } else hand.forEach(place);
     if (drawn !== null) {
       x += 0.5;
       if (mine && drawn === this.lastSync?.view.airDraw && p.hand.includes(drawn)) {
@@ -1351,18 +1357,23 @@ export class Table3D {
       const row = this.handRows[s] ?? { x0: 0, step: TILE_W + GAP, hs: 1, z: this.dim.handZ };
       let x = row.x0;
       const z = row.z + 0.3 * row.hs;
+      // 对家倒牌转过来朝我：牌面冲我、从我这边看从左往右排，和的那张在我的右手边（往她那边倒）
+      const facing = (s - me + 4) % 4 === 2;
+      const yaw = facing ? Math.PI : 0;
       const topple = (t: TileId, i: number) => {
         if (!rv.topple.has(t)) rv.topple.set(t, { at: rv.at + (wave ? i * rv.stagger : 0), from: null });
       };
+      const n = tiles.length;
       tiles.forEach((t, i) => {
-        out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * row.hs, z, FACE_UP, 0, row.hs));
+        const tx = facing ? x + 0.5 + (n - i) * row.step : x;
+        out.set(t, this.toWorld(s, me, tx, (TILE_T / 2) * row.hs, z, FACE_UP, yaw, row.hs));
         topple(t, i);
         x += row.step;
       });
       if (win === null) continue;
       const tsumo = g.players[s].hand.includes(win);
       // 自摸的那张跟着一起倒；荣和的那张等倒完再从牌河移过来
-      if (tsumo || this.now >= rv.fxAt) out.set(win, this.toWorld(s, me, x + 0.5, (TILE_T / 2) * row.hs, z, FACE_UP, 0, row.hs));
+      if (tsumo || this.now >= rv.fxAt) out.set(win, this.toWorld(s, me, facing ? row.x0 : x + 0.5, (TILE_T / 2) * row.hs, z, FACE_UP, yaw, row.hs));
       if (tsumo) topple(win, tiles.length);
     }
   }
