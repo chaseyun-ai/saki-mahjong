@@ -90,6 +90,8 @@ export const LOOKS: Record<string, Look> = {
   // 高鸭稳乃：先占位，借玄的长发模型换成黑色头发、棕色眼睛
   shizuno: { model: 'models/vroid-shino.v2.glb', hair: '#221e1c', eyes: '#6a4a30', hairContrast: 0.5, reveal: 'slam', pose: 'edge', borrowed: true },
   // 花田煌：先占位，借咲的短发模型换成栗色头发、绿色眼睛
+  // 鹿仓胡桃：先占位，借怜的短发模型换成深棕色头发、棕色眼睛
+  kurumi: { model: 'models/vroid-f.v2.glb', hair: '#3a2620', eyes: '#6a4a36', hairContrast: 0.6, reveal: 'wave', pose: 'lap', borrowed: true },
   kirame: { model: 'models/vroid-e.v2.glb', hair: '#8a5a2e', eyes: '#4a7a4a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
 };
 

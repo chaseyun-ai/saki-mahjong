@@ -103,8 +103,11 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
   };
   const lockPos = new Map<TileId, { pos: number; who: string }>();
 
+  // 不会被击飞的人（花田煌）的规矩排在所有规矩前面：这一次摸牌她出手换过牌（换不出来时从王牌里换），别人的规矩让给她，不对账
+  let bustSwap = false;
   g.onEvent((e) => {
     if (e.type === 'roundStart') lockPos.clear();
+    if (e.type === 'ability' && g.abilities[e.seat]?.unbustable && e.target !== undefined) bustSwap = true;
     if (e.type === 'ability') stats.abilityEvents.set(e.ability, (stats.abilityEvents.get(e.ability) ?? 0) + 1);
     if (e.type === 'roundEnd') {
       stats.rounds++;
@@ -117,6 +120,9 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
     const rs = rules;
     rules = [];
     lockedBefore = null;
+    const bust = bustSwap;
+    bustSwap = false;
+    if (bust) return;
     // 天使和挡得住一半的规矩（挡掉哪条是随机的），不对账
     if (rs.length === 0 || was?.has(got) || (g.active(e.seat)?.resist?.(g, e.seat) ?? 0) > 0) return;
     // 还能换的牌：没锁住、还在牌山（岭上摸牌时也算岭上牌）里

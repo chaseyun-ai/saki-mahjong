@@ -548,6 +548,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       if (mode === 'senbu') return riichi;
       if (mode === null) return best.a;
     }
+    // 胡桃：从不立直，默听才有能力
+    if (style.dama && !sealed) return best.a;
     // 夕从不默听
     if (style.firepower) return ukeire(c, p.melds.length, visible) > 0 ? riichi : best.a;
     // 堇：有役就默听，只等目标打
