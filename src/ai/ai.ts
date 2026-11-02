@@ -1,6 +1,7 @@
 import type { AiStyle } from '../abilities/characters';
 import { awaiStarPlan, awaiStarsExtra, awaiWaitingForCorner } from '../abilities/awai';
 import { dangerKinds, readOthers } from '../abilities/hiroe';
+import { shiromiRipple } from '../abilities/shiromi';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import { momoStealthNext } from '../abilities/momo';
 import { ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
@@ -267,6 +268,13 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 
   const tsumo = find('tsumo');
   if (tsumo && !(style.streak && teruWaits(g, seat, true)) && !(style.waves && nellyHolds(g, seat, true)) && !growHolds(g, seat, style, true) && !seraHolds(g, seat, style, true) && !allLastHold(g, seat, true)) return tsumo;
+
+  // 白望的迷途之家：这一次发动了就照算出来的打（不立直，反正会自摸）
+  if (style.mayoiga) {
+    const t = shiromiRipple(g, seat);
+    const out = t === null ? undefined : legal.find((a) => a.type === 'discard' && !a.riichi && a.tile === t);
+    if (out) return out;
+  }
 
   const kyuushu = find('kyuushu');
   if (kyuushu && kokushiShanten(toCounts(p.hand)) > 2) return kyuushu;

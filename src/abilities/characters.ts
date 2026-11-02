@@ -25,6 +25,7 @@ import { sumireAbility } from './sumire';
 import { seraAbility } from './sera';
 import { KOMAKI_GODS, komakiAbility } from './komaki';
 import { ROKUYOU, toyoneAbility } from './toyone';
+import { shiromiAbility } from './shiromi';
 import { suzuAbility } from './suzu';
 import { riiAbility } from './rii';
 import { himekoAbility } from './himeko';
@@ -67,6 +68,7 @@ export interface AiStyle {
   rokuyou: boolean; // 姊带丰音：先负还能发动时默听，先负发动后听牌就追立、不弃和；副露两次以上、有役时能鸣就鸣（奔友引）
   dama: boolean; // 鹿仓胡桃：听牌从不立直（默听才有能力），被封印的局照常立直
   stealth: boolean; // 东横桃子：隐身之前听牌先默听，隐身以后再立直（别人不知道她立直了）
+  mayoiga?: boolean; // 小濑川白望：迷途之家发动的那一次出牌照算出来的打（不立直），能自摸就自摸
   twin: boolean; // 鹤田姬子：钥匙的那一局只照着那副牌打，先打不要的牌，不立直、不鸣牌、不荣和，等自摸
 }
 
@@ -336,6 +338,15 @@ export const CHARACTERS: Character[] = [
     ability: toyoneAbility,
     skillArts: ROKUYOU.map(({ id, name }) => ({ id, name })),
     ai: { ...baseAi, mistakeRate: 0.04, rokuyou: true },
+  },
+  {
+    id: 'shiromi',
+    cost: 3,
+    name: '小濑川白望',
+    school: '宫守女子',
+    color: '#9aa6b8',
+    ability: shiromiAbility,
+    ai: { ...baseAi, mistakeRate: 0.04, mayoiga: true },
   },
   {
     id: 'kurumi',
