@@ -32,6 +32,8 @@ import { himekoAbility } from './himeko';
 import { kirameAbility } from './kirame';
 import { kurumiAbility } from './kurumi';
 import { shizunoAbility } from './shizuno';
+import { aislinnAbility } from './aislinn';
+import { saeAbility } from './sae';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -358,6 +360,20 @@ export const CHARACTERS: Character[] = [
     ai: { ...baseAi, mistakeRate: 0.05, dama: true },
   },
   {
+    id: 'aislinn',
+    cost: 4,
+    name: '爱丽丝',
+    school: '宫守女子',
+    color: '#d8b04c',
+    ability: aislinnAbility,
+    skillArts: [
+      { id: 'sketch', name: '手绘板', hint: '配完牌、牌桌变成手绘板时放' },
+      { id: 'shatter', name: '画板破碎', label: '手绘板·破碎', hint: '有人鸣牌、手绘板碎掉时放' },
+      { id: 'redraw', name: '重绘', label: '画笔·重绘', hint: '用一支画笔再画一次时放' },
+    ],
+    ai: { ...baseAi, mistakeRate: 0.04 },
+  },
+  {
     id: 'suzu',
     cost: 3,
     name: '上重漫',
@@ -415,6 +431,16 @@ export const CHARACTERS: Character[] = [
     color: '#e0a23a',
     ability: kirameAbility,
     ai: { ...baseAi },
+  },
+  {
+    id: 'sae',
+    cost: 3,
+    name: '臼泽塞',
+    school: '宫守女子',
+    color: '#7a6a9a',
+    ability: saeAbility,
+    skillArts: [{ id: 'lens', name: '镜片', hint: '用镜片盯住一个人时放这一段' }],
+    ai: { ...baseAi, mistakeRate: 0.05 },
   },
 ];
 

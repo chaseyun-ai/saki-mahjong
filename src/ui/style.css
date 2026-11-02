@@ -4333,3 +4333,487 @@ html:root .select-screen.team-screen.tm-draft {
     display: none;
   }
 }
+
+/* ---------- 爱丽丝的手绘板 ---------- */
+
+/* 手绘风格的牌：白板一样的白底，铅笔描边、错开一点的影子 */
+.tile.sketch {
+  background: #fffffd;
+  border-radius: 6px 4px 7px 3px / 4px 7px 3px 6px;
+  box-shadow:
+    0 0 0 1.5px #2b2b33,
+    2px 3px 0 rgba(43, 43, 51, 0.22);
+}
+.tile.sketch.t-pond,
+.tile.sketch.t-mini {
+  border-radius: 4px 3px 5px 2px / 3px 5px 2px 4px;
+  box-shadow:
+    0 0 0 1.2px #2b2b33,
+    1.5px 2px 0 rgba(43, 43, 51, 0.22);
+}
+.tile.sketch.red {
+  background: #fffaf6;
+}
+.tile.back.sketch {
+  background:
+    repeating-linear-gradient(135deg, rgba(60, 60, 80, 0.32) 0 1.4px, transparent 1.4px 5px),
+    #fdfdf8;
+  box-shadow:
+    0 0 0 1.2px #2b2b33,
+    1.5px 2px 0 rgba(43, 43, 51, 0.22);
+}
+
+/* 2D 牌桌变成手绘板：白纸方格、铅笔框 */
+.table.sketch {
+  background:
+    linear-gradient(rgba(120, 150, 200, 0.2) 1px, transparent 1px) 0 0 / 26px 26px,
+    linear-gradient(90deg, rgba(120, 150, 200, 0.2) 1px, transparent 1px) 0 0 / 26px 26px,
+    #fbfaf5;
+  box-shadow:
+    inset 0 0 0 14px #fbfaf5,
+    inset 0 0 0 17px rgba(43, 43, 51, 0.7),
+    inset 0 0 0 21px #fbfaf5,
+    inset 0 0 0 22.5px rgba(43, 43, 51, 0.45);
+}
+.table.sketch .center {
+  background: rgba(255, 255, 253, 0.9);
+  color: #2b2b33;
+  border: 2px solid #2b2b33;
+  border-radius: 14px 10px 16px 9px / 10px 16px 9px 14px;
+}
+
+/* 3D、2.5D：桌外面的背景也换成纸色（画面上的 HUD 不动） */
+.stage3d.sketch {
+  background: #e4e1d8;
+}
+
+/* 手牌上面的手绘板：画上的整副牌，自摸的那张隔开。摆在待和提示的位置，待和提示往上让 */
+.sketch-plan {
+  position: absolute;
+  left: 220px;
+  bottom: 104px;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  background:
+    linear-gradient(rgba(120, 150, 200, 0.18) 1px, transparent 1px) 0 0 / 14px 14px,
+    linear-gradient(90deg, rgba(120, 150, 200, 0.18) 1px, transparent 1px) 0 0 / 14px 14px,
+    #fbfaf5;
+  color: #2b2b33;
+  border: 2px solid #2b2b33;
+  border-radius: 12px 7px 14px 6px / 7px 14px 6px 12px;
+  box-shadow: 3px 4px 0 rgba(43, 43, 51, 0.25);
+  transform: rotate(-0.6deg);
+  pointer-events: auto;
+  animation: sketch-plan-in 0.5s ease-out;
+}
+.sketch-plan ~ [data-r='waits'] .waits {
+  bottom: 196px;
+}
+.hud .sketch-plan {
+  bottom: 21%;
+}
+.hud .sketch-plan ~ [data-r='waits'] .waits {
+  bottom: calc(21% + 92px);
+}
+.sketch-plan .sp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+.sketch-plan .sp-head b {
+  font-size: 14px;
+  color: #d8463c;
+}
+.sketch-plan .sp-tiles {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+}
+.sketch-plan .sp-win {
+  margin-left: 10px;
+  position: relative;
+}
+.sketch-plan .sp-win::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 2px solid #d8463c;
+  border-radius: 50% 46% 52% 44% / 48% 52% 46% 50%;
+  transform: rotate(-6deg);
+}
+.sketch-plan .sp-melds {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #6a6a74;
+}
+@keyframes sketch-plan-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) rotate(-2deg);
+  }
+}
+
+/* 技能栏里的三支画笔 */
+.brush-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.brush-row .brush {
+  width: 30px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: default;
+  transition: transform 0.15s, background 0.15s, filter 0.15s;
+}
+.brush-row .brush.ready {
+  cursor: pointer;
+  background: color-mix(in srgb, var(--c) 30%, transparent);
+  animation: brush-ready 1.4s ease-in-out infinite;
+}
+.brush-row .brush.ready:hover {
+  transform: translateY(-4px) rotate(-8deg);
+  filter: drop-shadow(0 0 6px var(--c));
+}
+.brush-row .brush.used {
+  opacity: 0.5;
+}
+@keyframes brush-ready {
+  50% {
+    transform: translateY(-2px) rotate(-4deg);
+  }
+}
+
+/* 破碎、重组特效：盖在牌桌上的一层，不挡鼠标 */
+.sketch-fx {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  overflow: hidden;
+}
+.sketch-fx .shard {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-color: #fbfaf5;
+  will-change: transform, opacity;
+}
+.sketch-fx .shard-copy {
+  position: absolute !important;
+  margin: 0;
+}
+.sketch-fx .cracks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.sketch-fx .cracks path {
+  fill: none;
+  stroke: #26262c;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+.sketch-fx.rebuild svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.sketch-fx.rebuild path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+}
+.sketch-fx.rebuild path.edge {
+  stroke: rgba(43, 43, 51, 0.35);
+  stroke-width: 18.5;
+}
+.sketch-fx.rebuild path.paint {
+  stroke: #fbfaf5;
+  stroke-width: 17;
+}
+/* 2D：手绘板占了提示字的位置，提示字先不显示 */
+.table .sketch-plan ~ .hint {
+  display: none;
+}
+/* ---------- 臼泽塞：镜片（src/ui/lensDrag.ts） ---------- */
+
+.lens-row {
+  display: flex;
+  gap: 10px;
+  margin: 6px 0 4px;
+}
+
+/* 一枚镜片：银边、带一点蓝的玻璃、左上角一道高光 */
+.lens,
+.ld-glass {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 3px solid #d4d7e0;
+  background: radial-gradient(circle at 50% 55%, rgba(170, 205, 255, 0.35) 0%, rgba(90, 130, 200, 0.45) 60%, rgba(30, 50, 100, 0.7) 100%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 0 8px rgba(255, 255, 255, 0.35), 0 3px 8px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.lens-glint {
+  position: absolute;
+  left: 18%;
+  top: 14%;
+  width: 42%;
+  height: 26%;
+  border-radius: 50%;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0));
+  transform: rotate(-28deg);
+}
+
+.lens.ready {
+  cursor: grab;
+  touch-action: none;
+  animation: lens-breathe 2.4s ease-in-out infinite;
+}
+
+.lens.ready:hover {
+  border-color: #fff;
+  transform: scale(1.08);
+}
+
+.lens.idle {
+  opacity: 0.7;
+}
+
+/* 拖走的那一枚：框里只留个虚线的位子 */
+.lens.lifted {
+  animation: none;
+  opacity: 0.25;
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lens.lifted .lens-glint {
+  display: none;
+}
+
+/* 用过的：碎了 */
+.lens.spent {
+  opacity: 0.35;
+  filter: grayscale(1);
+  border-color: #777;
+}
+
+.lens-crack {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(62deg, transparent 47%, rgba(255, 255, 255, 0.85) 48%, transparent 51%),
+    linear-gradient(-35deg, transparent 46%, rgba(255, 255, 255, 0.7) 47%, transparent 50%),
+    linear-gradient(15deg, transparent 60%, rgba(255, 255, 255, 0.6) 61%, transparent 63%);
+}
+
+@keyframes lens-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 0 8px rgba(255, 255, 255, 0.35), 0 0 4px rgba(150, 190, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(255, 255, 255, 0.5), 0 0 14px rgba(150, 190, 255, 0.9);
+  }
+}
+
+/* 拖着的镜片：跟着手指走；出了技能框变成狙击镜 */
+.lens-drag {
+  position: fixed;
+  z-index: 9999;
+  left: 0;
+  top: 0;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  transition: width 0.18s ease-out, height 0.18s ease-out, box-shadow 0.25s;
+}
+
+.lens-drag .ld-glass {
+  width: 100%;
+  height: 100%;
+  transition: opacity 0.15s;
+}
+
+.lens-drag.return {
+  transition: left 0.25s ease-in, top 0.25s ease-in, width 0.18s, height 0.18s;
+}
+
+.ld-reticle {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: #111;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.ld-label {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 3px #000;
+}
+
+.lens-drag.scope {
+  width: 168px;
+  height: 168px;
+  border: 7px solid #0d0d10;
+  background: radial-gradient(circle, rgba(160, 200, 255, 0.06) 0%, rgba(160, 200, 255, 0.12) 70%, rgba(0, 0, 0, 0.35) 100%);
+  /* 镜筒外面一圈全黑一点：像从瞄准镜里看 */
+  box-shadow: 0 0 0 2px rgba(180, 190, 210, 0.6), 0 0 0 200vmax rgba(0, 0, 0, 0.45), inset 0 0 18px rgba(0, 0, 0, 0.6);
+}
+
+.lens-drag.scope .ld-glass {
+  opacity: 0;
+}
+
+.lens-drag.scope .ld-reticle {
+  opacity: 0.85;
+  color: #e8ecf4;
+}
+
+.lens-drag.locked .ld-reticle {
+  color: #ff3b3b;
+  opacity: 1;
+  animation: lens-lock 0.5s ease-out infinite alternate;
+}
+
+.lens-drag.locked {
+  border-color: #3a0808;
+  box-shadow: 0 0 0 2px rgba(255, 60, 60, 0.8), 0 0 0 200vmax rgba(0, 0, 0, 0.5), inset 0 0 24px rgba(255, 0, 0, 0.25);
+}
+
+@keyframes lens-lock {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(0.92);
+  }
+}
+
+/* 松手盯住：镜子一下收拢到头像上，四周的暗也收掉 */
+.lens-drag.fire {
+  transition: width 0.4s ease-in, height 0.4s ease-in, box-shadow 0.4s, opacity 0.4s;
+  width: 30px;
+  height: 30px;
+  opacity: 0;
+  box-shadow: 0 0 0 2px rgba(255, 60, 60, 0.8), 0 0 0 200vmax rgba(0, 0, 0, 0);
+}
+
+/* 拖到头像上：能盯的发红光，盯不住的（照这样别人管不到的）发灰 */
+.lens-hover .portrait,
+.lens-hover .avatar {
+  box-shadow: 0 0 0 3px #ff3b3b, 0 0 22px rgba(255, 50, 50, 0.85) !important;
+}
+
+.lens-no .portrait,
+.lens-no .avatar {
+  filter: grayscale(0.8) brightness(0.7);
+}
+
+/* 头像上的准星：这一局被镜片盯上了 */
+.lens-mark {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 50%;
+  width: 130%;
+  height: 130%;
+  transform: translate(-50%, -50%);
+  color: #ff3b3b;
+  pointer-events: none;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
+  animation: lens-mark-pulse 1.6s ease-in-out infinite;
+}
+
+.lm-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* 2.5D 的头像框是竖的：准星按宽算 */
+.seat-frame .lens-mark {
+  width: 86px;
+  height: 86px;
+}
+
+@keyframes lens-mark-pulse {
+  0%,
+  100% {
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translate(-50%, -50%) scale(0.92);
+  }
+}
+
+/* 盯住的那一下：大准星从外面缩到头像上，闪一下白光 */
+.lens-shot {
+  position: fixed;
+  z-index: 9998;
+  width: 260px;
+  height: 260px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  color: #ff3b3b;
+  border-radius: 50%;
+  animation: lens-shot 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+.ls-reticle {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+@keyframes lens-shot {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.2) rotate(-40deg);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+  35% {
+    opacity: 1;
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(0.42) rotate(0deg);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+  78% {
+    box-shadow: 0 0 40px 20px rgba(255, 255, 255, 0.85);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.36);
+    box-shadow: 0 0 60px 30px rgba(255, 255, 255, 0);
+  }
+}

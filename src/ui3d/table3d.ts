@@ -5,6 +5,7 @@ import type { Game, GameEvent } from '../engine/game';
 import { TILE_COUNT, TileId, WIND_CN, kindOf } from '../engine/tiles';
 import { meldLayout } from '../ui/meldLayout';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
+import { sketchFaceSvg } from '../ui/sketchArt';
 import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
@@ -213,6 +214,7 @@ export interface SyncView {
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
   mist?: number; // 高鸭稳乃的深山：牌山上的雾有几级（0 没有）
+  sketch?: boolean; // 爱丽丝的手绘板：牌、桌布换成手绘风格
 }
 
 export class Table3D {
@@ -230,6 +232,17 @@ export class Table3D {
   private bodyMat: THREE.Material | null = null;
   private deadlyMat: THREE.Material | null = null;
   private faceGeoms: THREE.PlaneGeometry[] = [];
+  private faceMat: THREE.MeshStandardMaterial | null = null;
+  // 爱丽丝的手绘板：手绘的牌面、白色牌身、铅笔排线的牌背、白纸桌布、每张牌描一圈黑边（用到时才建）
+  private sketch: {
+    on: boolean;
+    atlas: FaceAtlas;
+    body: THREE.Material;
+    back: THREE.Material;
+    paper: THREE.Texture;
+    edges: THREE.LineSegments[];
+    normal: { body: THREE.Material; back: THREE.Material; felt: THREE.Texture | null; frame: THREE.Color; trim: THREE.Color; room: THREE.Color };
+  } | null = null;
   private consoleCanvas = document.createElement('canvas');
   private consoleTex: THREE.CanvasTexture;
   private raycaster = new THREE.Raycaster();
@@ -473,6 +486,7 @@ export class Table3D {
     this.akaMat = new THREE.MeshStandardMaterial({ color: '#ff5a2e', emissive: '#ff7a1e', emissiveIntensity: 0.7, roughness: matte || 0.4 });
     this.waveMat = new THREE.MeshStandardMaterial({ color: '#9b6bff', emissive: '#7c4dff', emissiveIntensity: 0.85, roughness: matte || 0.4 });
     const faceMat = new THREE.MeshStandardMaterial({ map: this.atlas.texture, transparent: true, roughness: matte || 0.35 });
+    this.faceMat = faceMat;
     for (let id = 0; id < TILE_COUNT; id++) {
       const group = new THREE.Group();
       const body = new THREE.Mesh(bodyGeom, bodyMat);
@@ -1052,6 +1066,7 @@ export class Table3D {
 
   sync(g: Game, view: SyncView): void {
     if (this.characters.length === 0 && this.style === '3d') this.buildCharacters(view);
+    this.setSketch(!!view.sketch);
     this.lastSync = { g, view };
     this.clickable = view.clickable;
     const targets = new Map<TileId, Placement>();
@@ -1086,6 +1101,64 @@ export class Table3D {
     this.showGravity(!!view.gravity);
     this.drawConsole(g, view);
     this.syncMist(g, view);
+  }
+
+  // 爱丽丝的手绘板：换成手绘的牌面、白色牌身、铅笔排线的牌背、白纸桌布，桌框变浅，每张牌描黑边
+  private setSketch(on: boolean): void {
+    if ((this.sketch?.on ?? false) === on) return;
+    if (!this.sketch) {
+      const atlas = new FaceAtlas(sketchFaceSvg);
+      void atlas.draw();
+      const matte = this.style === '25d' ? 0.62 : 0;
+      const edgeGeom = new THREE.EdgesGeometry(new THREE.BoxGeometry(TILE_W * 1.002, TILE_H * 1.002, TILE_T * 0.9));
+      const edgeMat = new THREE.LineBasicMaterial({ color: '#26262c' });
+      const edges = this.tiles.map((t) => {
+        const e = new THREE.LineSegments(edgeGeom, edgeMat);
+        e.position.z = TILE_T * 0.02;
+        e.visible = false;
+        t.group.add(e);
+        return e;
+      });
+      const frame = this.tableMats!.frame as THREE.MeshStandardMaterial;
+      const trim = this.tableMats!.trim as THREE.MeshStandardMaterial;
+      this.sketch = {
+        on: false,
+        atlas,
+        body: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: matte || 0.6 }),
+        back: new THREE.MeshStandardMaterial({ color: '#ffffff', map: hatchTexture(), roughness: 0.8 }),
+        paper: paperTexture(),
+        edges,
+        normal: {
+          body: this.bodyMat!,
+          back: this.backMat!,
+          felt: (this.feltMat as THREE.MeshStandardMaterial).map,
+          frame: frame.color.clone(),
+          trim: trim.color.clone(),
+          room: new THREE.Color(this.colors.room),
+        },
+      };
+    }
+    const sk = this.sketch;
+    sk.on = on;
+    this.faceMat!.map = on ? sk.atlas.texture : this.atlas.texture;
+    this.faceMat!.needsUpdate = true;
+    this.bodyMat = on ? sk.body : sk.normal.body;
+    this.backMat = on ? sk.back : sk.normal.back;
+    const felt = this.feltMat as THREE.MeshStandardMaterial;
+    felt.map = on ? sk.paper : sk.normal.felt;
+    felt.needsUpdate = true;
+    (this.tableMats!.frame as THREE.MeshStandardMaterial).color.copy(on ? new THREE.Color('#e9e6dc') : sk.normal.frame);
+    (this.tableMats!.trim as THREE.MeshStandardMaterial).color.copy(on ? new THREE.Color('#2a2a30') : sk.normal.trim);
+    const room = on ? new THREE.Color('#e4e1d8') : sk.normal.room;
+    this.scene.background = room;
+    if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(room);
+    for (const e of sk.edges) e.visible = on;
+  }
+
+  // 现在这一帧的画面（手绘板碎掉时拿来切成碎片）
+  snapshot(): string {
+    this.renderer.render(this.scene, this.camera);
+    return this.renderer.domElement.toDataURL('image/jpeg', 0.85);
   }
 
   // 深山的雾：每一墩牌山顶上一团，只罩在还有牌的墩上
@@ -2158,6 +2231,84 @@ function gravityTexture(): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+// 手绘板的桌布：白纸上淡淡的方格，一圈铅笔框，角上几笔涂鸦
+function paperTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = 1024;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#fbfaf5';
+  ctx.fillRect(0, 0, 1024, 1024);
+  ctx.strokeStyle = 'rgba(120,150,200,0.22)';
+  ctx.lineWidth = 1.5;
+  for (let x = 0; x <= 1024; x += 32) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 1024);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, x);
+    ctx.lineTo(1024, x);
+    ctx.stroke();
+  }
+  // 铅笔描的框：两圈，抖一点
+  ctx.strokeStyle = 'rgba(40,40,48,0.75)';
+  ctx.lineCap = 'round';
+  for (const [inset, w] of [[150, 4], [162, 2]] as const) {
+    ctx.lineWidth = w;
+    const pts = [[inset, inset], [1024 - inset, inset], [1024 - inset, 1024 - inset], [inset, 1024 - inset]];
+    for (let i = 0; i < 4; i++) {
+      const [x1, y1] = pts[i];
+      const [x2, y2] = pts[(i + 1) % 4];
+      ctx.beginPath();
+      ctx.moveTo(x1 - (x2 - x1) * 0.02, y1 - (y2 - y1) * 0.02);
+      ctx.quadraticCurveTo((x1 + x2) / 2 + (Math.random() - 0.5) * 8, (y1 + y2) / 2 + (Math.random() - 0.5) * 8, x2 + (x2 - x1) * 0.02, y2 + (y2 - y1) * 0.02);
+      ctx.stroke();
+    }
+  }
+  // 角上的小涂鸦：星星、螺旋
+  ctx.strokeStyle = 'rgba(216,70,60,0.55)';
+  ctx.lineWidth = 3;
+  const star = (cx: number, cy: number, r: number) => {
+    ctx.beginPath();
+    for (let i = 0; i <= 5; i++) {
+      const a = -Math.PI / 2 + (i * 4 * Math.PI) / 5;
+      ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    ctx.stroke();
+  };
+  star(84, 84, 30);
+  star(940, 940, 26);
+  ctx.strokeStyle = 'rgba(47,111,204,0.5)';
+  ctx.beginPath();
+  for (let a = 0; a < Math.PI * 6; a += 0.2) ctx.lineTo(940 + Math.cos(a) * a * 3.2, 84 + Math.sin(a) * a * 3.2);
+  ctx.stroke();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// 手绘板的牌背：白底上铅笔斜线排线
+function hatchTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 128;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#fdfdf8';
+  ctx.fillRect(0, 0, 128, 128);
+  ctx.strokeStyle = 'rgba(60,60,80,0.45)';
+  ctx.lineWidth = 3;
+  for (let i = -128; i < 256; i += 18) {
+    ctx.beginPath();
+    ctx.moveTo(i, 128);
+    ctx.lineTo(i + 128, 0);
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 function feltTexture(colors: TableColors): THREE.CanvasTexture {

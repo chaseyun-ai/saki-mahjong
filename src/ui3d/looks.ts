@@ -77,6 +77,8 @@ export const LOOKS: Record<string, Look> = {
   toyone: { model: 'models/vroid-shino.v2.glb', hair: '#1e1c24', eyes: '#5a4a7a', hairContrast: 0.5, reveal: 'slam', pose: 'lap', borrowed: true },
   // 小濑川白望：先占位，借和的长发模型换成银白色头发、灰蓝色眼睛
   shiromi: { model: 'models/vroid-g.v2.glb', hair: '#d6d8de', eyes: '#6a7a96', hairContrast: 0.4, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 爱丽丝：先占位，借和的长发模型换成金色头发、蓝色眼睛
+  aislinn: { model: 'models/vroid-g.v2.glb', hair: '#e2c47a', eyes: '#4a78b8', hairContrast: 0.7, reveal: 'wave', pose: 'lap', borrowed: true },
   // 上重漫：先占位，借怜的短发模型换成深棕色头发、棕色眼睛
   suzu: { model: 'models/vroid-f.v2.glb', hair: '#4a2e22', eyes: '#8a5a32', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 东横桃子：先占位，借和的长发模型换成蓝黑色头发、灰蓝色眼睛
@@ -91,6 +93,8 @@ export const LOOKS: Record<string, Look> = {
   // 鹿仓胡桃：先占位，借怜的短发模型换成深棕色头发、棕色眼睛
   kurumi: { model: 'models/vroid-f.v2.glb', hair: '#3a2620', eyes: '#6a4a36', hairContrast: 0.6, reveal: 'wave', pose: 'lap', borrowed: true },
   kirame: { model: 'models/vroid-e.v2.glb', hair: '#8a5a2e', eyes: '#4a7a4a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
+  // 臼泽塞：先占位，借咲的短发模型换成深棕色头发、棕色眼睛
+  sae: { model: 'models/vroid-e.v2.glb', hair: '#4a3226', eyes: '#6a4a36', hairContrast: 0.6, reveal: 'wave', pose: 'crossed', borrowed: true },
 };
 
 // 牌桌上要用到的全部模型文件

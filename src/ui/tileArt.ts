@@ -20,7 +20,7 @@ const NUM_CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
 const HONOR_CN = ['東', '南', '西', '北', '', '發', '中'];
 
 // 把一个字形缩放到指定高度，中心放在 (cx, cy)
-function glyph(ch: string, cx: number, cy: number, h: number, color: string, maxW = 34): string {
+export function glyph(ch: string, cx: number, cy: number, h: number, color: string, maxW = 34): string {
   const g = GLYPHS[ch];
   const [x1, y1, x2, y2] = g.box;
   const s = Math.min(h / (y2 - y1), maxW / (x2 - x1));
