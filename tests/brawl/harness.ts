@@ -76,7 +76,16 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
       ...a,
       beforeAnyDraw(g, seat, drawer, rinshan) {
         const mine = g === real;
-        if (mine && !lockedBefore) lockedBefore = new Set(g.wall.locked);
+        if (mine && !lockedBefore) {
+          lockedBefore = new Set(g.wall.locked);
+          // 不会被击飞（花田煌）的规矩排在所有控场规矩前面，规则引擎先守它：两边冲突时控场的规矩让步。
+          // 这里也算进去（摸牌以后手牌变了，规矩要现在就按每张牌算好）
+          const bust = (g as unknown as { bustRules(d: number, r: boolean): DrawRule[] }).bustRules(drawer, rinshan);
+          for (const b of bust) {
+            const banned = new Set([...g.wall.live, ...g.wall.rinshan, ...g.wall.uraIndicators].filter((t) => b.deny(t)));
+            rules.push({ ...b, deny: (t) => banned.has(t) });
+          }
+        }
         const r = inner(g, seat, drawer, rinshan);
         if (r && mine && g.binds(seat, drawer)) rules.push(r);
         return r;

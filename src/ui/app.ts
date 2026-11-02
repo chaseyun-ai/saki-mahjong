@@ -8,6 +8,8 @@ import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
+import { aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
+import { playRebuild, playShatter } from './sketchFx';
 import { kuroLost } from '../abilities/kuro';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
@@ -27,7 +29,7 @@ import { paceOf, vary } from './vary';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
-import { backHtml, tileHtml, tintOf } from './tile';
+import { backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
@@ -121,6 +123,9 @@ export class App {
   // 2.5D 的切入演出；能力的切入每局每种只放第一次（宝牌聚集这种一局会发动好多次），之后只出小字
   private cutins: Cutins | null = null;
   private cutinSeen = new Set<string>();
+  // 爱丽丝的手绘板：牌桌现在是不是画成手绘板（重组特效刷满时才换过去，破碎时马上换回）
+  private sketchView = false;
+  private sketchTimer: number | null = null;
   // 怜“看下一巡”（演算）：玩家操作怜时的体力。
   // 演算中 vision 不是 null：this.game 换成牌局的复制品放到牌桌上演，真的牌局和演算前的表情先存在 vision 里，退出时换回来。
   // start：复制品从第几个事件开始是演算的；rons：演算里她能荣和却没和的那几次
@@ -464,6 +469,8 @@ export class App {
       this.cutinSeen.clear();
       this.fit();
     }
+    // 第一局在牌桌建好之前就画好了手绘板：补放一次重组特效
+    if (this.chars[this.me]?.id === 'aislinn' && aislinnSketch(this.game!, this.me) && !this.sketchView) this.sketchFx('手绘板');
     this.step();
   }
 
@@ -672,6 +679,7 @@ export class App {
       this.stamina = Math.min(STAMINA_MAX, this.stamina + STAMINA_REGEN);
       this.blocked = this.penaltyNext;
       this.penaltyNext = false;
+      this.sketchView = false;
     }
     if (e.type === 'discard') {
       // 隐身的桃子打的牌：看不见也听不见
@@ -692,6 +700,8 @@ export class App {
       if (e.target !== undefined && e.target !== e.seat) return;
       // 姬子破碎的钥匙那一局换走自己摸到的宝牌：悄悄换
       if (e.ability === 'himeko' && e.text === '没有宝牌') return;
+      // 爱丽丝自己的手绘板：画好、重画时放重组特效，碎了放破碎特效
+      if (e.ability === 'aislinn' && e.seat === this.me && !this.vision) this.sketchFx(e.text);
       if (e.ability === 'kuro') {
         if (e.text !== '宝牌聚集') this.toast(e.seat, e.text, false);
         return;
@@ -722,6 +732,64 @@ export class App {
         this.bigFx(w.seat, word, 'win');
       }
     }
+  }
+
+  // ---------- 爱丽丝的手绘板 ----------
+
+  // 牌桌现在画成手绘板（自己是爱丽丝、这一局画着、重组特效已经刷满）
+  private sketchShown(): boolean {
+    const g = this.game;
+    return !!g && !this.vision && this.sketchView && this.chars[this.me]?.id === 'aislinn' && aislinnSketch(g, this.me);
+  }
+
+  // 牌桌在页面上的位置（特效盖在这上面）
+  private stageRect(): DOMRect | null {
+    const el = this.root.querySelector<HTMLElement>(this.table3d ? '.stage3d' : '.stage .table');
+    return el?.getBoundingClientRect() ?? null;
+  }
+
+  private sketchFx(text: string): void {
+    if (this.sketchTimer !== null) clearTimeout(this.sketchTimer);
+    this.sketchTimer = null;
+    if (text === '画板破碎') {
+      const rect = this.stageRect();
+      if (rect && this.sketchView) {
+        // 碎掉那一刻的手绘板：3D 截一帧，2D 复制一份牌桌
+        const table = this.root.querySelector<HTMLElement>('.stage .table');
+        const source = this.table3d ? { image: this.table3d.snapshot() } : table ? { dom: table } : null;
+        if (source) playShatter(rect, source);
+      }
+      this.sketchView = false;
+      return;
+    }
+    if (text !== '手绘板' && text !== '重绘') return;
+    // 发牌动画放完再画
+    const start = () => {
+      this.sketchTimer = null;
+      const rect = this.stageRect();
+      const cover = () => {
+        this.sketchView = true;
+        this.render();
+      };
+      if (rect) playRebuild(rect, cover);
+      else cover();
+    };
+    const wait = text === '手绘板' ? Math.max(300, this.busyMs()) : 0;
+    if (wait) this.sketchTimer = window.setTimeout(start, wait);
+    else start();
+  }
+
+  // 手绘板画在手牌上面：画上的整副牌（自摸的那张隔开放在最右边），写着再摸几张自摸、几番
+  private sketchPlanHtml(): string {
+    const g = this.game!;
+    if (!this.sketchShown()) return '';
+    const plan = aislinnPlan(g, this.me)!;
+    const tiles = [...plan.final.slice(0, -1)].sort((a, b) => a - b).map((t) => tileHtml(t, { size: 'pond', sketch: true })).join('');
+    const left = aislinnDrawsLeft(plan);
+    const han = plan.yakuman ? '役满' : `${plan.han} 番`;
+    const when = left > 0 ? `再摸 ${left} 张自摸` : '自摸！';
+    const melds = g.players[this.me].melds.length ? '<span class="sp-melds">＋副露</span>' : '';
+    return `<div class="sketch-plan" title="${plan.yaku.join('、')}"><div class="sp-head"><b>手绘板</b><span>${when} · ${han}</span></div><div class="sp-tiles">${tiles}${melds}<span class="sp-win">${tileHtml(plan.win, { size: 'pond', sketch: true })}</span></div></div>`;
   }
 
   // 立直、鸣牌、和牌的大字：2.5D 放带立绘的切入，3D、2D 还是原来的大字特效
@@ -963,6 +1031,8 @@ export class App {
     const table = document.getElementById('table');
     if (!g || !table) return;
     this.updatePreview();
+    const sketch = this.sketchShown();
+    setSketchTiles(sketch);
     table.innerHTML = `
       ${[1, 2, 3].map((s) => this.opponentHtml(s)).join('')}
       <div class="center">${this.centerHtml()}</div>
@@ -973,6 +1043,8 @@ export class App {
       ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     table.dataset.mist = String(this.mistLevel());
+    setSketchTiles(false);
+    table.parentElement?.classList.toggle('sketch', sketch);
     this.freshDiscard = null;
     this.renderToasts();
   }
@@ -1017,7 +1089,9 @@ export class App {
       openHands: this.openHands(),
       drawPath: this.settings.drawPath,
       mist: this.mistLevel(),
+      sketch: this.sketchShown(),
     });
+    hud.parentElement?.classList.toggle('sketch', this.sketchShown());
   }
 
   // 高鸭稳乃的深山：牌山上的雾有几级（谁都看得见；被封印的那一局没有雾）
@@ -1530,7 +1604,7 @@ export class App {
       <div class="me" style="--c:${c.color}">
         <div class="actions">${buttons.join('')}</div>
         ${this.autoBtnHtml()}${this.assistHtml()}
-        ${waitHtml}${hint}
+        ${this.sketchPlanHtml()}${waitHtml}${hint}
         ${
           withHand
             ? `<div class="hand-row">
@@ -1585,7 +1659,14 @@ export class App {
       : '';
     // 有按钮的技能（pressSkill）画按钮；发牌前选的技能（淡、霞）只显示状态
     // 要选对象的（爽的瘟神威）一个对象一个按钮
-    const body = b.lenses
+    // 爱丽丝的画笔：一支支画出来，没用的亮着、能用时可以点，用掉的变成断掉的灰笔
+    const body = b.brushes
+      ? `<div class="fs-note skill-state">${b.note}</div><div class="brush-row">${Array.from({ length: b.brushes.max }, (_, i) => {
+          const live = i < b.brushes!.left;
+          const can = live && b.brushes!.ready;
+          return `<button class="brush${live ? '' : ' used'}${can ? ' ready' : ''}" data-ui="skill" title="${live ? (can ? '用这支画笔再画一次手绘板' : '画笔') : '用掉了'}" ${can ? '' : 'disabled'}>${brushSvg(!live)}</button>`;
+        }).join('')}</div>`
+      : b.lenses
       ? lensSlotsHtml(b.lenses, b.note, this.lensDragging)
       : b.choices
       ? `<div class="fs-note skill-state">${b.note}</div><div class="skill-choices${b.choices.length > 4 ? ' many' : ''}">${b.choices
@@ -1974,4 +2055,12 @@ function actionLabel(a: Action): string {
     default:
       return '';
   }
+}
+
+// 技能栏里的一支画笔（爱丽丝）：木杆、金属箍、笔头蘸着颜料；用掉的笔断成两截、颜色变灰
+function brushSvg(broken: boolean): string {
+  const body = broken
+    ? '<g transform="rotate(-8 20 34)"><rect x="17.5" y="30" width="5" height="17" rx="2" fill="#7a7a80"/></g><g transform="rotate(14 20 20)"><rect x="17.5" y="11" width="5" height="16" rx="1.5" fill="#8a8a90"/><rect x="16.8" y="8" width="6.4" height="4" fill="#a0a0a6"/><path d="M17 8 Q20 -1 23 8 Z" fill="#9a9aa0"/></g>'
+    : '<rect x="17.5" y="20" width="5" height="27" rx="2" fill="#c98a4a" stroke="#7a4e22" stroke-width="0.8"/><rect x="16.8" y="14" width="6.4" height="7" rx="1" fill="#d8dbe2" stroke="#7d828c" stroke-width="0.7"/><path d="M17 14 Q20 1 23 14 Z" fill="#2b2b33"/><path d="M18.6 13 Q20 5 21.4 13 Z" fill="var(--paint, #d8463c)"/>';
+  return `<svg viewBox="0 0 40 50" width="100%" height="100%" aria-hidden="true">${body}</svg>`;
 }

@@ -260,6 +260,8 @@ export class Game {
   emit(e: GameEvent): void {
     this.events.push(e);
     for (const fn of this.eventListeners) fn(e);
+    // 有人鸣牌、开杠：通知各家能力（爱丽丝的手绘板）
+    if (e.type === 'call') for (let s = 0; s < 4; s++) this.active(s)?.onCall?.(this, s, e.seat, e.call);
   }
 
   // 现在需要做决定的座位

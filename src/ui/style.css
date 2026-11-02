@@ -4334,6 +4334,215 @@ html:root .select-screen.team-screen.tm-draft {
   }
 }
 
+/* ---------- 爱丽丝的手绘板 ---------- */
+
+/* 手绘风格的牌：白板一样的白底，铅笔描边、错开一点的影子 */
+.tile.sketch {
+  background: #fffffd;
+  border-radius: 6px 4px 7px 3px / 4px 7px 3px 6px;
+  box-shadow:
+    0 0 0 1.5px #2b2b33,
+    2px 3px 0 rgba(43, 43, 51, 0.22);
+}
+.tile.sketch.t-pond,
+.tile.sketch.t-mini {
+  border-radius: 4px 3px 5px 2px / 3px 5px 2px 4px;
+  box-shadow:
+    0 0 0 1.2px #2b2b33,
+    1.5px 2px 0 rgba(43, 43, 51, 0.22);
+}
+.tile.sketch.red {
+  background: #fffaf6;
+}
+.tile.back.sketch {
+  background:
+    repeating-linear-gradient(135deg, rgba(60, 60, 80, 0.32) 0 1.4px, transparent 1.4px 5px),
+    #fdfdf8;
+  box-shadow:
+    0 0 0 1.2px #2b2b33,
+    1.5px 2px 0 rgba(43, 43, 51, 0.22);
+}
+
+/* 2D 牌桌变成手绘板：白纸方格、铅笔框 */
+.table.sketch {
+  background:
+    linear-gradient(rgba(120, 150, 200, 0.2) 1px, transparent 1px) 0 0 / 26px 26px,
+    linear-gradient(90deg, rgba(120, 150, 200, 0.2) 1px, transparent 1px) 0 0 / 26px 26px,
+    #fbfaf5;
+  box-shadow:
+    inset 0 0 0 14px #fbfaf5,
+    inset 0 0 0 17px rgba(43, 43, 51, 0.7),
+    inset 0 0 0 21px #fbfaf5,
+    inset 0 0 0 22.5px rgba(43, 43, 51, 0.45);
+}
+.table.sketch .center {
+  background: rgba(255, 255, 253, 0.9);
+  color: #2b2b33;
+  border: 2px solid #2b2b33;
+  border-radius: 14px 10px 16px 9px / 10px 16px 9px 14px;
+}
+
+/* 3D、2.5D：桌外面的背景也换成纸色（画面上的 HUD 不动） */
+.stage3d.sketch {
+  background: #e4e1d8;
+}
+
+/* 手牌上面的手绘板：画上的整副牌，自摸的那张隔开。摆在待和提示的位置，待和提示往上让 */
+.sketch-plan {
+  position: absolute;
+  left: 220px;
+  bottom: 104px;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  background:
+    linear-gradient(rgba(120, 150, 200, 0.18) 1px, transparent 1px) 0 0 / 14px 14px,
+    linear-gradient(90deg, rgba(120, 150, 200, 0.18) 1px, transparent 1px) 0 0 / 14px 14px,
+    #fbfaf5;
+  color: #2b2b33;
+  border: 2px solid #2b2b33;
+  border-radius: 12px 7px 14px 6px / 7px 14px 6px 12px;
+  box-shadow: 3px 4px 0 rgba(43, 43, 51, 0.25);
+  transform: rotate(-0.6deg);
+  pointer-events: auto;
+  animation: sketch-plan-in 0.5s ease-out;
+}
+.sketch-plan ~ [data-r='waits'] .waits {
+  bottom: 196px;
+}
+.hud .sketch-plan {
+  bottom: 21%;
+}
+.hud .sketch-plan ~ [data-r='waits'] .waits {
+  bottom: calc(21% + 92px);
+}
+.sketch-plan .sp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+.sketch-plan .sp-head b {
+  font-size: 14px;
+  color: #d8463c;
+}
+.sketch-plan .sp-tiles {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+}
+.sketch-plan .sp-win {
+  margin-left: 10px;
+  position: relative;
+}
+.sketch-plan .sp-win::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 2px solid #d8463c;
+  border-radius: 50% 46% 52% 44% / 48% 52% 46% 50%;
+  transform: rotate(-6deg);
+}
+.sketch-plan .sp-melds {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #6a6a74;
+}
+@keyframes sketch-plan-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) rotate(-2deg);
+  }
+}
+
+/* 技能栏里的三支画笔 */
+.brush-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.brush-row .brush {
+  width: 30px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: default;
+  transition: transform 0.15s, background 0.15s, filter 0.15s;
+}
+.brush-row .brush.ready {
+  cursor: pointer;
+  background: color-mix(in srgb, var(--c) 30%, transparent);
+  animation: brush-ready 1.4s ease-in-out infinite;
+}
+.brush-row .brush.ready:hover {
+  transform: translateY(-4px) rotate(-8deg);
+  filter: drop-shadow(0 0 6px var(--c));
+}
+.brush-row .brush.used {
+  opacity: 0.5;
+}
+@keyframes brush-ready {
+  50% {
+    transform: translateY(-2px) rotate(-4deg);
+  }
+}
+
+/* 破碎、重组特效：盖在牌桌上的一层，不挡鼠标 */
+.sketch-fx {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  overflow: hidden;
+}
+.sketch-fx .shard {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-color: #fbfaf5;
+  will-change: transform, opacity;
+}
+.sketch-fx .shard-copy {
+  position: absolute !important;
+  margin: 0;
+}
+.sketch-fx .cracks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.sketch-fx .cracks path {
+  fill: none;
+  stroke: #26262c;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+.sketch-fx.rebuild svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.sketch-fx.rebuild path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+}
+.sketch-fx.rebuild path.edge {
+  stroke: rgba(43, 43, 51, 0.35);
+  stroke-width: 18.5;
+}
+.sketch-fx.rebuild path.paint {
+  stroke: #fbfaf5;
+  stroke-width: 17;
+}
+/* 2D：手绘板占了提示字的位置，提示字先不显示 */
+.table .sketch-plan ~ .hint {
+  display: none;
+}
 /* ---------- 臼泽塞：镜片（src/ui/lensDrag.ts） ---------- */
 
 .lens-row {

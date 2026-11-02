@@ -24,7 +24,8 @@ export class FaceAtlas {
   readonly texture: THREE.CanvasTexture;
   private canvas: HTMLCanvasElement;
 
-  constructor() {
+  // make：画一张牌面的 SVG（默认是普通牌面，爱丽丝的手绘板用 sketchFaceSvg）
+  constructor(private make: (kind: number, red: boolean) => string = faceSvg) {
     this.canvas = document.createElement('canvas');
     this.canvas.width = COLS * CELL_W;
     this.canvas.height = ROWS * CELL_H;
@@ -39,12 +40,13 @@ export class FaceAtlas {
     await Promise.all(
       Array.from({ length: FACE_COUNT }, async (_, i) => {
         const { kind, red } = faceKind(i);
-        const svg = faceSvg(kind, red).replace('width="100%" height="100%"', `width="${CELL_W}" height="${CELL_H}"`);
+        const svg = this.make(kind, red).replace('width="100%" height="100%"', `width="${CELL_W}" height="${CELL_H}"`);
         const img = new Image();
         img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
         await img.decode();
         const x = (i % COLS) * CELL_W;
         const y = Math.floor(i / COLS) * CELL_H;
+        // 手绘板的牌面底子是白的（贴图透明的地方露出牌身的颜色，牌身换成白色就行）
         ctx.drawImage(img, x + CELL_W * 0.06, y + CELL_H * 0.06, CELL_W * 0.88, CELL_H * 0.88);
       }),
     );
