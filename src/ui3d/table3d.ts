@@ -1365,7 +1365,7 @@ export class Table3D {
       };
       const n = tiles.length;
       tiles.forEach((t, i) => {
-        const tx = facing ? x + 0.5 + (n - i) * row.step : x;
+        const tx = facing ? row.x0 + 0.5 + (n - i) * row.step : x;
         out.set(t, this.toWorld(s, me, tx, (TILE_T / 2) * row.hs, z, FACE_UP, yaw, row.hs));
         topple(t, i);
         x += row.step;
