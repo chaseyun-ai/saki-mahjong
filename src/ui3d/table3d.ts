@@ -1290,8 +1290,10 @@ export class Table3D {
     // 公开手牌：上家、下家的手牌像倒牌那样摊开；对家的摊开会被牌山挡住，改成转过来牌面朝桌子中间、往后仰
     const open = !mine && !tilting && !!this.lastSync?.view.openHands;
     const facing = open && (s - me + 4) % 4 === 2;
-    const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : facing ? OPEN_HAND : open ? FACE_UP : STANDING;
-    const y = tilting || (open && !facing) ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
+    // 2.5D 镜头高，对家立着的牌下半截被牌山挡住：改成平躺、牌面朝上、字冲我（3D 镜头低，躺下反而全被挡，还是立着往后仰）
+    const lie = facing && this.style === '25d';
+    const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : lie ? FACE_UP : facing ? OPEN_HAND : open ? FACE_UP : STANDING;
+    const y = tilting || (open && !facing) || lie ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
     // 2.5D 时上家、下家的手牌斜着看过去离牌山很近，往桌边推一点
     const top = this.style === '25d' && (s - me + 4) % 4 === 2;
     const side = this.style === '25d' && (s - me + 4) % 2 === 1 ? SIDE_HAND_PUSH_25D : top ? TOP_HAND_PUSH_25D : 0;
