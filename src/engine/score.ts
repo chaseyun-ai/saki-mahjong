@@ -165,7 +165,7 @@ function situationalYaku(ctx: WinContext, menzen: boolean): YakuEntry[] {
   else if (ctx.riichi) y.push({ name: '立直', han: 1 });
   if (ctx.ippatsu) y.push({ name: '一发', han: 1 });
   if (ctx.tsumo && menzen) y.push({ name: '门前清自摸和', han: 1 });
-  if (ctx.haitei) y.push({ name: '海底摸月', han: 1 });
+  if (ctx.haitei) y.push({ name: '海底捞月', han: 1 });
   if (ctx.houtei) y.push({ name: '河底捞鱼', han: 1 });
   if (ctx.rinshan) y.push({ name: '岭上开花', han: 1 });
   if (ctx.chankan) y.push({ name: '抢杠', han: 1 });

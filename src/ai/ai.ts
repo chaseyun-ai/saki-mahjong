@@ -915,7 +915,7 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const honitsuOk =
     dye !== null && inDye(tile) && p.melds.every((m) => m.tiles.every(inDye)) && p.hand.filter((t) => !inDye(t)).length <= 2;
 
-  // 衣：听牌了、海底不是自己的，找一手吃碰把海底挪到自己（海底摸月本身就是役）；
+  // 衣：听牌了、海底不是自己的，找一手吃碰把海底挪到自己（海底捞月本身就是役）；
   // 海底已经是自己的，就不吃不碰，免得把它挪走
   // 还差一步听牌时，能一手吃碰同时听牌、拿到海底的也鸣
   if (style.haitei && !p.riichi && cur <= 1) {
