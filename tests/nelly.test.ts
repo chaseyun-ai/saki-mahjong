@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AWAI } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
-import { NELLY, nellyAiBet, nellyBlocked, nellyLastBet, nellyPool, nellySenses, nellySensesTenpai, nellySisters, nellyTier } from '../src/abilities/nelly';
+import { NELLY, nellyAiBet, nellyBlocked, nellyPool, nellySenses, nellySensesTenpai, nellySisters, nellyTier } from '../src/abilities/nelly';
 import { teruWinValue } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
@@ -48,29 +48,22 @@ function play(seed: number, ids: string[], setup: (g: Game, me: number) => void,
 }
 
 describe('涅莉·薇萨拉兹', () => {
-  it('电脑押运势：坐庄押 3 点，后面坐庄的局留着，多出来的 3 点落后或快结束时押，零头最后押光；不连着押一样的', () => {
-    const spot = { pool: 10, left: 8, dealer: false, dealersLeft: 2, contested: false, behind: false, last: 0 };
+  it('电脑押运势：坐庄押 3 点，后面坐庄的局留着，多出来的 3 点落后或快结束时押，零头最后押光', () => {
+    const spot = { pool: 10, plan: 11, left: 8, dealer: false, dealersLeft: 2, contested: false, behind: false };
     expect(nellyAiBet({ ...spot, dealer: true })).toBe(3);
-    // 上一局押过 3 点（连庄）就不押
-    expect(nellyAiBet({ ...spot, dealer: true, last: 3 })).toBe(0);
     // 平时不押 1 点：留给坐庄的局
     expect(nellyAiBet(spot)).toBe(0);
     expect(nellyAiBet({ ...spot, behind: true })).toBe(3);
     expect(nellyAiBet({ ...spot, behind: true, contested: true })).toBe(0);
     // 快结束了，多出来的 3 点押掉
-    expect(nellyAiBet({ ...spot, pool: 4, left: 2, dealersLeft: 0 })).toBe(3);
-    // 最后一局押光（不能和上一局一样）
-    expect(nellyAiBet({ ...spot, pool: 1, left: 1, dealersLeft: 0 })).toBe(1);
-    expect(nellyAiBet({ ...spot, pool: 5, left: 1, dealersLeft: 0, last: 3 })).toBe(2);
-    expect(nellyAiBet({ ...spot, pool: 0, dealer: true })).toBe(0);
-    for (let pool = 0; pool <= 10; pool++)
+    expect(nellyAiBet({ ...spot, pool: 4, plan: 4, left: 2, dealersLeft: 0 })).toBe(3);
+    // 最后一局押光
+    expect(nellyAiBet({ ...spot, pool: 1, plan: 1, left: 1, dealersLeft: 0 })).toBe(1);
+    expect(nellyAiBet({ ...spot, pool: 5, plan: 5, left: 1, dealersLeft: 0 })).toBe(3);
+    expect(nellyAiBet({ ...spot, pool: 0, plan: 0, dealer: true })).toBe(0);
+    for (let pool = 0; pool <= 12; pool++)
       for (let left = 1; left <= 8; left++)
-        for (const last of [0, 1, 2, 3])
-          for (const dealer of [false, true]) {
-            const bet = nellyAiBet({ ...spot, pool, left, last, dealer, dealersLeft: Math.min(2, left - 1) });
-            expect(bet).toBeLessThanOrEqual(Math.min(3, pool));
-            if (bet > 0) expect(bet).not.toBe(last);
-          }
+        for (const dealer of [false, true]) expect(nellyAiBet({ ...spot, pool, plan: pool + 1, left, dealer, dealersLeft: Math.min(2, left - 1) })).toBeLessThanOrEqual(Math.min(3, pool));
   });
 
   it('电脑一场下来押的多半是 3 点，不会每局押 1 点', () => {
@@ -87,7 +80,7 @@ describe('涅莉·薇萨拉兹', () => {
     expect(count[1]).toBeLessThan(count[3] / 2);
   }, 120000);
 
-  it('运势开场 10 点、不恢复，押了就扣；上一局押过的点数不能再押；玩家押的照用、不够就押不了；有运势才看得出谁听牌', () => {
+  it('运势开场 10 点、每 4 局恢复 1 点，押了就扣；玩家押的照用、不够就押不了；有运势才看得出谁听牌', () => {
     for (const pick of [undefined, 2, 3]) {
       for (let seed = 1; seed <= 6; seed++) {
         play(
@@ -96,17 +89,13 @@ describe('涅莉·薇萨拉兹', () => {
           (g, me) => {
             // 第一局在 setup 之前就开始了
             let spent = NELLY.start - nellyPool(g, me);
-            let last = spent;
             g.onEvent((e) => {
               if (e.type !== 'roundStart') return;
-              const before = NELLY.start - spent;
+              const before = NELLY.start + Math.floor((g.round - 1) / NELLY.every) - spent;
               const bet = nellyTier(g, me);
               spent += bet;
               expect(bet).toBeLessThanOrEqual(Math.min(NELLY.maxBet, before));
-              if (bet > 0) expect(bet).not.toBe(last);
-              if (pick !== undefined) expect(bet).toBe(pick <= before && pick !== last ? pick : 0);
-              expect(nellyLastBet(g, me)).toBe(last);
-              last = bet;
+              if (pick !== undefined) expect(bet).toBe(pick <= before ? pick : 0);
               expect(nellyPool(g, me)).toBe(before - bet);
               expect(nellyPool(g, me)).toBeGreaterThanOrEqual(0);
               expect(nellySenses(g, me)).toBe(before - bet > 0);

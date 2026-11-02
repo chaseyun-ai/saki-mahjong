@@ -7,8 +7,8 @@ import { teruWinValue } from './teru';
 import { PRIORITY, type Ability, type PreDealOption } from './types';
 
 // 涅莉·薇萨拉兹（临海女子）：分配运势的人。家里穷，打得亮眼才拉得到赞助，所以她要和就和大牌。
-// - 运势：开场 10 点，一场用完就没了（不恢复）。
-// - 分配运势（每一局发牌前）：这一局押几点，押了就扣掉，和没和都不退；上一局押过的点数这一局不能再押（不押不算）：
+// - 运势：开场 10 点，每打满 4 局恢复 1 点（第 5、9、13……局开始时，连庄、流局重打的局也算一局）。
+// - 分配运势（每一局发牌前）：这一局押几点，押了就扣掉，和没和都不退：
 //   · 1 点：进张朝 3 番到满贯发展，第 15 巡左右（快流局时）和
 //   · 2 点：朝跳满发展，第 12 巡左右和
 //   · 3 点：朝三倍满发展，第 8 巡左右立直、一发自摸三倍满（立直、一发、自摸加里宝牌，里宝牌往她手里最多的牌上变）。照配牌定好一手三倍满：
@@ -18,11 +18,12 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 // - 感知听牌：手里还有运势（押完这一局还剩 1 点以上）就看得出别人听没听牌（不知道听什么）。
 // - 七姐妹：一场 7 次，不恢复。押了运势的局自动开着：每有一家听牌，用掉一次封住他，这一局他和不了（自摸、荣和都不行）。
 //   押几点这一局最多封几家（3 点封三家）。照这样别人能力管不到的人封不住；次数用完了就不封了
-// 电脑的涅莉：3 点最划算（八成多和出三倍满），所以集中押 3 点：自己坐庄的局押 3 点，后面坐庄的局先留 3 点；
+// 电脑的涅莉：3 点最划算（八成多和出三倍满），所以集中押 3 点：自己坐庄的局押 3 点，后面坐庄的局先留 3 点（算上之后会恢复的）；
 // 多出来的 3 点在落后（第三、四名）或剩下的局不多时押；别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不押；
-// 凑不满 3 点的零头留到最后一局押光。上一局押过 3 点就隔一局。押了运势的局门清做大，到那一巡之前不和，牌不够大先不和
+// 凑不满 3 点的零头留到最后押光。押了运势的局门清做大，到那一巡之前不和，牌不够大先不和
 export const NELLY = {
-  start: 10, // 开场的运势（不恢复）
+  start: 10, // 开场的运势
+  every: 4, // 每打满几局恢复 1 点
   maxBet: 3, // 一局最多押几点
   sisters: 7,
   // 押 1/2/3 点时这一局要做到多大（子家的点数，庄家按 1.5 倍）：3 番（30 符）、跳满、三倍满
@@ -72,21 +73,17 @@ const stateOf = (g: Game, seat: number) => {
   return st;
 };
 
+// 第 round 局（从 1 数）开始时一共恢复了几点
+const regen = (round: number) => Math.floor(Math.max(0, round - 1) / NELLY.every);
+
 // 一局打完到下一局发牌之间（还没押）。电脑的局发牌时 phase 还是 roundEnd，要看这一局结算了没有
 const between = (g: Game) => g.round === 0 || g.phase === 'predeal' || (g.phase === 'roundEnd' && g.roundResult !== null);
 
-// 还剩几点运势
+// 还剩几点运势。一局打完以后、发牌前（还没押）算的是马上要开的那一局能押的（算上这一局恢复的）
 export function nellyPool(g: Game, seat: number): number {
+  const round = between(g) ? g.round + 1 : g.round;
   if (!between(g)) tierOf(g, seat);
-  return NELLY.start - gameStateOf(g, seat).spent!;
-}
-
-// 上一局押了几点（这一局不能再押同样的点数；0 是没押）。一局打完以后、发牌前说的是刚打完的那一局
-export function nellyLastBet(g: Game, seat: number): number {
-  const log = gameStateOf(g, seat).log!;
-  const st = stateOf(g, seat);
-  // 这一局已经押了（记进 log 了），上一局是倒数第二个
-  return (st.bet !== undefined && !between(g) ? log.at(-2) : log.at(-1)) ?? 0;
+  return NELLY.start + regen(round) - gameStateOf(g, seat).spent!;
 }
 
 // 别人能力最强的局（第几局，东 1 是 0；8 局或 4 局）：这几局别人也要和，涅莉不去抢
@@ -96,40 +93,35 @@ const HOT: Record<string, (slots: number) => number[]> = {
   sawaya: (n) => [n - 2, n - 1], // 最后两局把云和神威用掉
 };
 
-// 电脑押几点。pool：剩下的运势；left：包括这一局还剩几局；dealer：这一局她坐庄（连庄的不算）；dealersLeft：这一局以后她还要坐几次庄；
-// contested：这一局是别人能力最强的局；behind：她是第三、四名；last：上一局押了几点（不能再押一样的）
+// 电脑押几点。pool：现在能押的运势；plan：算上剩下的局还会恢复的；left：包括这一局还剩几局；dealer：这一局她坐庄（连庄的不算）；
+// dealersLeft：这一局以后她还要坐几次庄；contested：这一局是别人能力最强的局；behind：她是第三、四名
 export interface NellyBetSpot {
   pool: number;
+  plan: number;
   left: number;
   dealer: boolean;
   dealersLeft: number;
   contested: boolean;
   behind: boolean;
-  last: number;
 }
 export function nellyAiBet(o: NellyBetSpot): number {
-  const can = (n: number) => n > 0 && n <= o.pool && n !== o.last;
-  // 押不了 n 就往下找能押的
-  const atMost = (n: number) => {
-    for (let v = Math.min(n, NELLY.maxBet); v > 0; v--) if (can(v)) return v;
-    return 0;
-  };
-  if (o.pool <= 0) return 0;
+  const cap = Math.min(NELLY.maxBet, o.pool);
+  if (cap <= 0) return 0;
   // 最后一局押光
-  if (o.left <= 1) return atMost(o.pool);
-  if (o.dealer) return can(3) ? 3 : 0;
+  if (o.left <= 1) return cap;
+  if (o.dealer) return cap >= 3 ? 3 : 0;
   if (o.contested) return 0;
   // 后面坐庄的局各留 3 点，多出来的才在这一局用
-  const spare = o.pool - 3 * o.dealersLeft;
+  const spare = Math.min(o.pool, o.plan - 3 * o.dealersLeft);
   const others = o.left - 1 - o.dealersLeft; // 这一局以后不坐庄的局
   if (spare >= 3) {
-    // 落后就押；不然等到剩下的局刚好够把多出来的 3 点隔一局押完
-    const threes = Math.floor(spare / 3);
-    if (can(3) && (o.behind || others < 2 * threes)) return 3;
+    // 落后就押；不然等到剩下的局刚好够把多出来的 3 点押完
+    // （零头也要留一局押）
+    if (o.behind || others < Math.ceil((o.plan - 3 * o.dealersLeft) / 3)) return 3;
     return 0;
   }
   // 零头（1、2 点）：后面没有不坐庄的局了就押掉
-  if (spare > 0 && others <= 0) return atMost(spare);
+  if (spare > 0 && others <= 0) return Math.min(cap, spare);
   return 0;
 }
 
@@ -144,19 +136,21 @@ const aiBet = (g: Game, seat: number) => {
   for (let x = slot + 1; x < slots; x++) if (mine(x)) dealersLeft++;
   const score = g.players[seat].score;
   const behind = [0, 1, 2, 3].filter((s) => s !== seat && g.players[s].score > score).length >= 2;
+  const pool = nellyPoolBefore(g, seat);
   return nellyAiBet({
-    pool: nellyPoolBefore(g, seat),
+    pool,
+    // 后面还会恢复的（连庄、流局多出来的局不算）
+    plan: pool + regen(g.round + left - 1) - regen(g.round),
     left,
     dealer: seat === g.dealer && g.honba === 0,
     dealersLeft,
     contested,
     behind,
-    last: gameStateOf(g, seat).log!.at(-1) ?? 0,
   });
 };
 
 // 这一局押之前有几点
-const nellyPoolBefore = (g: Game, seat: number) => NELLY.start - gameStateOf(g, seat).spent!;
+const nellyPoolBefore = (g: Game, seat: number) => NELLY.start + regen(g.round) - gameStateOf(g, seat).spent!;
 
 // 这一局押了几点：一局开始以后第一次问到时定下来、扣掉（谁先问都一样：别人定配牌规矩时就要知道她是不是三倍满的局）
 function tierOf(g: Game, seat: number): number {
@@ -165,10 +159,9 @@ function tierOf(g: Game, seat: number): number {
   if (between(g)) return 0;
   const gs = gameStateOf(g, seat);
   const pool = nellyPoolBefore(g, seat);
-  const last = gs.log!.at(-1) ?? 0;
   const want = g.manual[seat] ? gs.pick ?? 0 : aiBet(g, seat);
-  // 不够、或者和上一局押的一样就不押（发牌前界面上押不了）
-  const bet = want > pool || want === last ? 0 : Math.max(0, Math.min(NELLY.maxBet, want));
+  // 玩家押的不够就不押（发牌前界面上押不了）
+  const bet = want > pool ? (g.manual[seat] ? 0 : pool) : Math.max(0, Math.min(NELLY.maxBet, want));
   st.bet = bet;
   gs.spent! += bet;
   gs.log!.push(bet);
@@ -663,7 +656,7 @@ const inSuit = (suit: number) => (t: TileId) => kindOf(t) < 27 && suitOf(kindOf(
 export const nellyAbility: Ability = {
   id: 'nelly',
   name: '运势·七姐妹',
-  description: `开场 ${NELLY.start} 点运势，用完就没了。每一局发牌前可以押运势（配牌照常发，上一局押过的点数这一局不能再押）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次封住他这一局和不了，押几点最多封几家。`,
+  description: `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点。每一局发牌前可以押运势（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次封住他这一局和不了，押几点最多封几家。`,
   priority: PRIORITY.nelly,
 
   // 三倍满的局别人挡不住她（别人的能力管不到她）
@@ -805,8 +798,6 @@ export const nellyAbility: Ability = {
   preDeal(g, seat): PreDealOption[] {
     const pool = nellyPool(g, seat);
     const gs = gameStateOf(g, seat);
-    const last = nellyLastBet(g, seat);
-    const ok = (n: number) => n <= pool && n !== last;
     return [1, 2, 3].map((n) => ({
       id: `luck${n}`,
       name: `押 ${n} 点 · ${TIER_NAMES[n]}`,
@@ -815,9 +806,9 @@ export const nellyAbility: Ability = {
           ? `进张朝三倍满发展（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸；和牌别人挡不住；七姐妹封三家`
           : `进张朝${TIER_NAMES[n]}发展，第 ${NELLY.turn[n]} 巡左右和；七姐妹封${n === 2 ? '两' : '一'}家`,
       cost: n,
-      enabled: ok(n),
-      picked: gs.pick === n && ok(n),
-      note: n > pool ? '运势不够' : n === last ? '上一局押过' : undefined,
+      enabled: n <= pool,
+      picked: gs.pick === n && n <= pool,
+      note: n <= pool ? undefined : '运势不够',
       group: 'luck',
     }));
   },
