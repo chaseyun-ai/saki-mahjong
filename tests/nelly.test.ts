@@ -48,16 +48,37 @@ function play(seed: number, ids: string[], setup: (g: Game, me: number) => void,
 }
 
 describe('涅莉·薇萨拉兹', () => {
-  it('电脑押运势：坐庄押满，抢手的局不押，最后一局押光，平时把运势平摊', () => {
-    expect(nellyAiBet(10, 4, true, false)).toBe(3);
-    expect(nellyAiBet(10, 4, false, true)).toBe(0);
-    expect(nellyAiBet(12, 4, false, true)).toBe(3);
-    expect(nellyAiBet(2, 1, false, true)).toBe(2);
-    expect(nellyAiBet(10, 8, false, false)).toBe(1);
-    expect(nellyAiBet(10, 4, false, false)).toBe(3);
-    expect(nellyAiBet(0, 4, true, false)).toBe(0);
-    for (let pool = 0; pool <= 12; pool++) for (let left = 1; left <= 8; left++) expect(nellyAiBet(pool, left, false, false)).toBeLessThanOrEqual(Math.min(3, pool));
+  it('电脑押运势：坐庄押 3 点，后面坐庄的局留着，多出来的 3 点落后或快结束时押，零头最后押光', () => {
+    const spot = { pool: 10, plan: 11, left: 8, dealer: false, dealersLeft: 2, contested: false, behind: false };
+    expect(nellyAiBet({ ...spot, dealer: true })).toBe(3);
+    // 平时不押 1 点：留给坐庄的局
+    expect(nellyAiBet(spot)).toBe(0);
+    expect(nellyAiBet({ ...spot, behind: true })).toBe(3);
+    expect(nellyAiBet({ ...spot, behind: true, contested: true })).toBe(0);
+    // 快结束了，多出来的 3 点押掉
+    expect(nellyAiBet({ ...spot, pool: 4, plan: 4, left: 2, dealersLeft: 0 })).toBe(3);
+    // 最后一局押光
+    expect(nellyAiBet({ ...spot, pool: 1, plan: 1, left: 1, dealersLeft: 0 })).toBe(1);
+    expect(nellyAiBet({ ...spot, pool: 5, plan: 5, left: 1, dealersLeft: 0 })).toBe(3);
+    expect(nellyAiBet({ ...spot, pool: 0, plan: 0, dealer: true })).toBe(0);
+    for (let pool = 0; pool <= 12; pool++)
+      for (let left = 1; left <= 8; left++)
+        for (const dealer of [false, true]) expect(nellyAiBet({ ...spot, pool, plan: pool + 1, left, dealer, dealersLeft: Math.min(2, left - 1) })).toBeLessThanOrEqual(Math.min(3, pool));
   });
+
+  it('电脑一场下来押的多半是 3 点，不会每局押 1 点', () => {
+    const count = [0, 0, 0, 0];
+    for (let seed = 1; seed <= 8; seed++) {
+      play(seed, LINEUPS[seed % 4], (g, me) => {
+        g.onEvent((e) => {
+          if (e.type === 'roundStart') count[nellyTier(g, me)]++;
+        });
+      });
+    }
+    console.log(`电脑押运势：不押 ${count[0]} 局，1 点 ${count[1]}，2 点 ${count[2]}，3 点 ${count[3]}`);
+    expect(count[3]).toBeGreaterThan(count[1] + count[2]);
+    expect(count[1]).toBeLessThan(count[3] / 2);
+  }, 120000);
 
   it('运势开场 10 点、每 4 局恢复 1 点，押了就扣；玩家押的照用、不够就押不了；有运势才看得出谁听牌', () => {
     for (const pick of [undefined, 2, 3]) {

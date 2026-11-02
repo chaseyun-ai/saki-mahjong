@@ -18,8 +18,9 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 // - 感知听牌：手里还有运势（押完这一局还剩 1 点以上）就看得出别人听没听牌（不知道听什么）。
 // - 七姐妹：一场 7 次，不恢复。押了运势的局自动开着：每有一家听牌，用掉一次封住他，这一局他和不了（自摸、荣和都不行）。
 //   押几点这一局最多封几家（3 点封三家）。照这样别人能力管不到的人封不住；次数用完了就不封了
-// 电脑的涅莉：自己坐庄的局（连庄的不算）押 3 点；别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不押；
-// 其余的局把运势平摊到剩下的局里（最后一局押光）。押了运势的局门清做大，到那一巡之前不和，牌不够大先不和
+// 电脑的涅莉：3 点最划算（八成多和出三倍满），所以集中押 3 点：自己坐庄的局押 3 点，后面坐庄的局先留 3 点（算上之后会恢复的）；
+// 多出来的 3 点在落后（第三、四名）或剩下的局不多时押；别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不押；
+// 凑不满 3 点的零头留到最后押光。押了运势的局门清做大，到那一巡之前不和，牌不够大先不和
 export const NELLY = {
   start: 10, // 开场的运势
   every: 4, // 每打满几局恢复 1 点
@@ -92,15 +93,36 @@ const HOT: Record<string, (slots: number) => number[]> = {
   sawaya: (n) => [n - 2, n - 1], // 最后两局把云和神威用掉
 };
 
-// 电脑押几点。pool：能押的运势（算上剩下的局还会恢复的）；left：包括这一局还剩几局；dealer：这一局她坐庄（连庄的不算）；
-// contested：这一局是别人能力最强的局
-export function nellyAiBet(pool: number, left: number, dealer: boolean, contested: boolean): number {
-  const cap = Math.min(NELLY.maxBet, pool);
+// 电脑押几点。pool：现在能押的运势；plan：算上剩下的局还会恢复的；left：包括这一局还剩几局；dealer：这一局她坐庄（连庄的不算）；
+// dealersLeft：这一局以后她还要坐几次庄；contested：这一局是别人能力最强的局；behind：她是第三、四名
+export interface NellyBetSpot {
+  pool: number;
+  plan: number;
+  left: number;
+  dealer: boolean;
+  dealersLeft: number;
+  contested: boolean;
+  behind: boolean;
+}
+export function nellyAiBet(o: NellyBetSpot): number {
+  const cap = Math.min(NELLY.maxBet, o.pool);
   if (cap <= 0) return 0;
-  if (left <= 1 || dealer) return cap;
-  // 运势多到每一局都能押满，抢手的局也押
-  if (contested && pool < NELLY.maxBet * left) return 0;
-  return Math.min(cap, Math.max(1, Math.round(pool / left)));
+  // 最后一局押光
+  if (o.left <= 1) return cap;
+  if (o.dealer) return cap >= 3 ? 3 : 0;
+  if (o.contested) return 0;
+  // 后面坐庄的局各留 3 点，多出来的才在这一局用
+  const spare = Math.min(o.pool, o.plan - 3 * o.dealersLeft);
+  const others = o.left - 1 - o.dealersLeft; // 这一局以后不坐庄的局
+  if (spare >= 3) {
+    // 落后就押；不然等到剩下的局刚好够把多出来的 3 点押完
+    // （零头也要留一局押）
+    if (o.behind || others < Math.ceil((o.plan - 3 * o.dealersLeft) / 3)) return 3;
+    return 0;
+  }
+  // 零头（1、2 点）：后面没有不坐庄的局了就押掉
+  if (spare > 0 && others <= 0) return Math.min(cap, spare);
+  return 0;
 }
 
 const aiBet = (g: Game, seat: number) => {
@@ -108,10 +130,23 @@ const aiBet = (g: Game, seat: number) => {
   const slot = g.roundWind * 4 + g.roundNumber;
   const left = Math.max(1, slots - slot);
   const contested = [0, 1, 2, 3].some((s) => s !== seat && (HOT[g.abilities[s]?.id ?? '']?.(slots) ?? []).includes(slot));
+  // 第 x 局（东 1 是 0）谁坐庄：起家往下数
+  const mine = (x: number) => (g.firstDealer + (x % 4)) % 4 === seat;
+  let dealersLeft = 0;
+  for (let x = slot + 1; x < slots; x++) if (mine(x)) dealersLeft++;
+  const score = g.players[seat].score;
+  const behind = [0, 1, 2, 3].filter((s) => s !== seat && g.players[s].score > score).length >= 2;
   const pool = nellyPoolBefore(g, seat);
-  // 平摊时把后面还会恢复的算进去（东风战 4 局恢复不了；连庄会多出几局，按 1 局算）
-  const plan = pool + Math.floor((left - 1) / NELLY.every);
-  return Math.min(pool, nellyAiBet(plan, left + (g.honba > 0 ? 1 : 0), seat === g.dealer && g.honba === 0, contested));
+  return nellyAiBet({
+    pool,
+    // 后面还会恢复的（连庄、流局多出来的局不算）
+    plan: pool + regen(g.round + left - 1) - regen(g.round),
+    left,
+    dealer: seat === g.dealer && g.honba === 0,
+    dealersLeft,
+    contested,
+    behind,
+  });
 };
 
 // 这一局押之前有几点
