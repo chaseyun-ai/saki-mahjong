@@ -22,7 +22,6 @@ const KNOWN: School[] = [
   { name: '有珠山高中', short: '有珠山', region: '北海道', color: '#9fc4e8' },
   { name: '宫守女子', short: '宫守', region: '岩手', color: '#8a8fc8' },
   { name: '新道寺女子', short: '新道寺', region: '福冈', color: '#c8a2d8' },
-  { name: '宫守女子', short: '宫守', region: '岩手', color: '#7a7aa8' },
 ];
 
 // 有角色的学校；新角色的学校还没登记时排在最后，简称用全名
