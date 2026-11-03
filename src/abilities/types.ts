@@ -131,7 +131,7 @@ export interface Ability {
   quells?(g: Game, seat: number): boolean;
   // 平行宇宙（淡）：把这家累计的标记清空（照的连续和了、漫的计数器、和的计数……），这一局也不算数。没写就是没有要清的
   resetMarks?(g: Game, seat: number): void;
-  // 能力正在发动（臼泽塞这一局用镜片盯上了人）：头像框换成能力发动头像、发光。不改和牌动画（那是 form）
+  // 能力正在发动（臼泽塞这一局用镜片盯上了人）：2.5D 头像框换成能力发动头像（框不发光）。不改和牌动画（那是 form）
   powered?(g: Game, seat: number): boolean;
   // 现在是第二形态（天使和）：返回素材页里这个形态的动画 id。头像框换成能力发动头像，和牌放 `${id}-win` 的动画
   form?(g: Game, seat: number): string | null;
