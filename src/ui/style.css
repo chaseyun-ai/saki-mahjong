@@ -4841,3 +4841,418 @@ html:root .select-screen.team-screen.tm-draft {
     box-shadow: 0 0 60px 30px rgba(255, 255, 255, 0);
   }
 }
+
+/* ---------- 原村和的网络麻将（天使和）：照动画里のどっち打的网麻客户端 ---------- */
+
+.stage.net {
+  --tile-face: #ffffff;
+  --tile-edge: #eaa82a;
+  --tile-back: #efb032;
+  --ink: #2b2e33;
+  --ink-quiet: #59606a;
+  --gold: #f4c84a;
+  background: linear-gradient(180deg, #6ad6e2, #9fe3ea 60%, #c9f0f3);
+  padding-top: 26px;
+  color: var(--ink);
+}
+
+.net-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: linear-gradient(#f6fcfd, #cfe7ea);
+  border-bottom: 1px solid #8fb6bb;
+  font: 700 13px 'Noto Sans SC', 'PingFang SC', sans-serif;
+  color: #2f4a50;
+  z-index: 6;
+}
+
+.net-bar .nb-dots {
+  display: flex;
+  gap: 5px;
+}
+
+.net-bar .nb-dots i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #e25b5b;
+}
+
+.net-bar .nb-dots i:nth-child(2) {
+  background: #e2b55b;
+}
+
+.net-bar .nb-dots i:nth-child(3) {
+  background: #5bc46b;
+}
+
+.net-bar .nb-room {
+  font-weight: 400;
+  color: #55707a;
+}
+
+.net-bar .nb-user {
+  margin-left: auto;
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.stage.net .table {
+  background: linear-gradient(180deg, #c6c9ce, #b4b7bd);
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 8px #e6eaee,
+    0 0 0 9px #9aa3ad,
+    0 8px 24px rgba(0, 40, 50, 0.3);
+}
+
+/* 牌：白色牌面、黄色的牌身边，牌背是黄色 */
+.stage.net .tile {
+  border-radius: 3px;
+  box-shadow:
+    0 3px 0 var(--tile-edge),
+    0 4px 5px rgba(0, 0, 0, 0.18);
+}
+
+.stage.net .tile.back:not(.tint) {
+  background: linear-gradient(180deg, #f7c75c, var(--tile-back));
+  box-shadow:
+    0 2px 0 #fff4d8,
+    0 3px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* 中央：深灰面板，東一局、残り几张，四边黄色的点数牌 */
+.stage.net .center {
+  background: linear-gradient(180deg, #62666d, #34373c 38%, #1d1f23);
+  border: 2px solid #8d929a;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  gap: 2px;
+}
+
+.net-round {
+  font: 700 26px 'Noto Serif SC', 'Noto Serif JP', serif;
+  letter-spacing: 0.08em;
+  color: #e9ecef;
+}
+
+.net-remain {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font: 700 30px 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  color: #f4c84a;
+  line-height: 1;
+}
+
+.net-remain small {
+  font: 500 12px 'Noto Sans SC', sans-serif;
+  color: #b9bdc3;
+}
+
+.net-sub {
+  font-size: 11px;
+  color: #b9bdc3;
+}
+
+.stage.net .score {
+  padding: 2px 12px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #ffe58a, #efb22e);
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.35);
+  color: #3a2a00;
+  font: 700 15px 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  min-width: 110px;
+  justify-content: space-between;
+}
+
+.stage.net .score .wind {
+  color: #3a2a00;
+  filter: none;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.stage.net .score.active {
+  background: linear-gradient(180deg, #fff6c4, #ffd34d);
+}
+
+.stage.net .score.active .pts {
+  color: #3a2a00;
+}
+
+.stage.net .score.active::after {
+  border-color: #fff;
+  box-shadow: 0 0 8px #fff6b0;
+}
+
+.stage.net .score .stick {
+  background: #fff;
+  box-shadow: 0 0 0 1px #c88a10;
+}
+
+.stage.net .score.bottom {
+  bottom: -14px;
+}
+
+.stage.net .score.top {
+  top: -14px;
+}
+
+.stage.net .score.left {
+  left: -58px;
+}
+
+.stage.net .score.right {
+  right: -58px;
+}
+
+/* 网麻里只有头像卡，没有名牌和能力说明 */
+.stage.net .ability-panel {
+  display: none;
+}
+
+/* 四角的头像卡 */
+.net-card {
+  position: absolute;
+  width: 92px;
+  z-index: 3;
+}
+
+.net-card.bottom {
+  left: 40px;
+  top: 500px;
+}
+
+/* 别家的卡挨着自己的手牌：上家、下家在手牌上面，对家在手牌右边（右下角留给按钮） */
+.net-card.left {
+  left: 40px;
+  top: 182px;
+}
+
+.net-card.right {
+  right: 40px;
+  top: 182px;
+}
+
+.net-card.top {
+  left: 728px;
+  top: 6px;
+}
+
+.net-card .portrait {
+  position: relative;
+  height: 116px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #d9dde2;
+  border: 2px solid #fff;
+  box-shadow:
+    0 0 0 1px #8b94a0,
+    0 3px 6px rgba(0, 0, 0, 0.25);
+}
+
+.net-card.active .portrait {
+  box-shadow:
+    0 0 0 2px #ffd34d,
+    0 0 12px #ffe58a;
+}
+
+.net-card .sil {
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  width: 40px;
+  height: 40px;
+  margin-left: -20px;
+  border-radius: 50%;
+  background: #555b63;
+}
+
+.net-card .sil::after {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 46px;
+  width: 72px;
+  height: 60px;
+  border-radius: 38px 38px 0 0;
+  background: #555b63;
+}
+
+.net-card .noimg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 7px;
+  text-align: center;
+  font: 700 10px 'Arial', sans-serif;
+  letter-spacing: 0.05em;
+  color: #eef1f5;
+}
+
+.net-card.mine .portrait {
+  background: linear-gradient(180deg, #3b3f9a, #7b6fd0);
+}
+
+.net-card.mine img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+/* 天使的光环 */
+.net-card .halo {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: 36px;
+  height: 9px;
+  margin-left: -18px;
+  border: 2px solid #ffe58a;
+  border-radius: 50%;
+  box-shadow:
+    0 0 6px #fff6b0,
+    inset 0 0 4px #fff6b0;
+}
+
+.net-card .badge {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(20, 22, 26, 0.75);
+  color: #ffe58a;
+  font-size: 11px;
+}
+
+.net-name {
+  margin-bottom: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #2b2e33;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 登录 / 登出的过场：浅青色面板从上往下刷满屏幕，换好牌桌再淡出 */
+.net-wipe {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg, #6ad6e2, #bdeef2);
+  animation: net-wipe-in 0.52s cubic-bezier(0.6, 0, 0.3, 1) both;
+}
+
+.net-wipe.logout {
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.12) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg, #4b5560, #23282e);
+}
+
+.net-wipe.out {
+  animation: net-wipe-out 0.52s ease-in both;
+}
+
+.nw-panel {
+  min-width: 280px;
+  padding: 18px 26px 16px;
+  border-radius: 8px;
+  background: linear-gradient(#f6fcfd, #dcecef);
+  border: 1px solid #8fb6bb;
+  box-shadow: 0 8px 24px rgba(0, 40, 50, 0.3);
+  color: #2f4a50;
+  text-align: center;
+}
+
+.nw-title {
+  font: 700 22px 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  letter-spacing: 0.2em;
+}
+
+.nw-sub {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.nw-bar {
+  margin-top: 12px;
+  height: 6px;
+  border-radius: 3px;
+  background: #b9d4d8;
+  overflow: hidden;
+}
+
+.nw-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #39b6d0, #6ad6e2);
+  animation: net-bar 0.9s ease-out both;
+}
+
+@keyframes net-wipe-in {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes net-wipe-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes net-bar {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+/* 自己的卡头上有光环，天使的标签放到下面 */
+.net-card.mine .badge {
+  top: auto;
+  bottom: 4px;
+}
+
+/* 照的宝塔挂在卡旁边，不压别家的手牌 */
+.net-card .teru-tower {
+  position: absolute;
+  top: 26px;
+  right: calc(100% + 6px);
+}
+
+.net-card.left .teru-tower,
+.net-card.top .teru-tower {
+  right: auto;
+  left: calc(100% + 6px);
+}

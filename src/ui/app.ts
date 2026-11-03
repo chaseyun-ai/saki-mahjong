@@ -10,6 +10,7 @@ import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
 import { aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
 import { playRebuild, playShatter } from './sketchFx';
+import { playNetWipe } from './netFx';
 import { kuroLost } from '../abilities/kuro';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
 import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
@@ -47,6 +48,11 @@ import { ForecastCache } from '../ai/forecast';
 const POS = ['bottom', 'right', 'top', 'left'];
 
 const AI_TURN_DELAY = 550;
+// 天使和的网络麻将：变身那一局开局后多久换牌桌（先让天使形态动画放完），平时补换等多久，顶上标题栏多高
+const NET_DELAY = 1800;
+const NET_CATCHUP = 400;
+const NET_BAR = 26;
+const NET_WIND = '東南西北';
 // 3D、2.5D 牌桌：上一张牌落桌、这家摸完牌以后再想这么久才出（毫秒）。
 // 算上出牌动作，电脑一回合（落桌到落桌）约 1.1 秒，和雀魂差不多。3D 的角色伸手要 0.3 秒，所以想得短一点
 const AI_TURN_DELAY_3D = 360;
@@ -131,6 +137,11 @@ export class App {
   // 爱丽丝的手绘板：牌桌现在是不是画成手绘板（重组特效刷满时才换过去，破碎时马上换回）
   private sketchView = false;
   private sketchTimer: number | null = null;
+  // 原村和变成天使和：牌桌换成她脑子里的网络麻将（2D 网麻牌桌，三种视角都一样）。
+  // netFrom 是换过去之前的视角（2.5D、3D 时临时把 mode 改成 2d，变回来或离开牌桌时还原）
+  private netView = false;
+  private netFrom: '25d' | '3d' | '2d' | null = null;
+  private netTimer: number | null = null;
   // 怜“看下一巡”（演算）：玩家操作怜时的体力。
   // 演算中 vision 不是 null：this.game 换成牌局的复制品放到牌桌上演，真的牌局和演算前的表情先存在 vision 里，退出时换回来。
   // start：复制品从第几个事件开始是演算的；rons：演算里她能荣和却没和的那几次
@@ -218,6 +229,7 @@ export class App {
     this.cutins?.clear();
     this.table3d?.dispose();
     this.table3d = null;
+    this.resetNet();
     this.root.classList.remove('mihoko-eye', 'awai-dark', 'awai-source');
   }
 
@@ -424,6 +436,7 @@ export class App {
     this.pdValues = null;
     this.handOrder = null;
     this.tableBuilt = false;
+    this.resetNet();
     // 第一局发牌前就要选技能：先在选角色的画面上弹出来，选好再建牌桌
     if (this.game.phase === 'predeal') {
       this.root.innerHTML = '<div class="select predeal-screen" id="predeal"></div>';
@@ -445,7 +458,8 @@ export class App {
     this.render();
   }
 
-  private buildTable(): void {
+  // resume：牌局打到一半换视角（天使和的网络麻将），不再补开局动画
+  private buildTable(resume = false): void {
     this.tableBuilt = true;
     if (this.mode !== '2d') {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
@@ -465,11 +479,14 @@ export class App {
         if (name === 'land') playClick({ pan: this.clickPan(seat), varied: true });
       };
       // 第一局在牌桌建好之前就开始了，补一次开局动画
-      this.table3d.onEvent({ type: 'roundStart', label: this.game!.roundLabel() }, this.game!);
-      this.roundBanner();
+      if (!resume) {
+        this.table3d.onEvent({ type: 'roundStart', label: this.game!.roundLabel() }, this.game!);
+        this.roundBanner();
+      }
     } else {
-      this.root.innerHTML =
-        '<div class="stage"><div class="table"><div id="table" style="display: contents"></div><div id="toasts"></div></div></div><div class="cutin-layer" id="cutins"></div><div class="rotate-tip">手机横过来玩，牌会更大</div>';
+      // 天使和的网络麻将：顶上加一条网麻客户端的标题栏
+      const bar = this.netView ? `<div class="net-bar"><span class="nb-dots"><i></i><i></i><i></i></span><b>オンライン麻雀</b><span class="nb-room">${this.team ? '団体戦' : '段位戦'}</span><span class="nb-user">のどっち · オンライン</span></div>` : '';
+      this.root.innerHTML = `<div class="stage${this.netView ? ' net' : ''}">${bar}<div class="table"><div id="table" style="display: contents"></div><div id="toasts"></div></div></div><div class="cutin-layer" id="cutins"></div><div class="rotate-tip">手机横过来玩，牌会更大</div>`;
       this.cutins = new Cutins(document.getElementById('cutins')!);
       this.cutinSeen.clear();
       this.fit();
@@ -482,7 +499,9 @@ export class App {
   private fit(): void {
     const table = document.querySelector<HTMLElement>('.stage .table');
     if (!table) return;
-    const scale = Math.min(window.innerWidth / 1040, window.innerHeight / 800, 1.4);
+    // 网络麻将顶上有一条标题栏，牌桌放在它下面
+    const top = this.netView ? NET_BAR : 0;
+    const scale = Math.min(window.innerWidth / 1040, (window.innerHeight - top) / 800, 1.4);
     table.style.transform = `scale(${scale})`;
   }
 
@@ -716,6 +735,8 @@ export class App {
       if (e.ability === 'himeko' && e.text === '没有宝牌') return;
       // 爱丽丝自己的手绘板：画好、重画时放重组特效，碎了放破碎特效
       if (e.ability === 'aislinn' && e.seat === this.me && !this.vision) this.sketchFx(e.text);
+      // 自己是原村和、变成天使和：天使形态动画放完，牌桌换成网络麻将
+      if (e.ability === 'nodoka' && e.seat === this.me) this.syncNet(Math.max(NET_DELAY, this.busyMs() + 400));
       if (e.ability === 'kuro') {
         if (e.text !== '宝牌聚集') this.toast(e.seat, e.text, false);
         return;
@@ -791,6 +812,91 @@ export class App {
     const wait = text === '手绘板' ? Math.max(300, this.busyMs()) : 0;
     if (wait) this.sketchTimer = window.setTimeout(start, wait);
     else start();
+  }
+
+  // ---------- 原村和的网络麻将 ----------
+
+  // 现在该不该是网络麻将：自己是原村和、这一场已经变成天使和（原作里是她脑子里的景象，别人看到的还是平常的牌桌）
+  private netWanted(): boolean {
+    const g = this.game;
+    return !!g && this.chars[this.me]?.id === 'nodoka' && nodokaAngel(g, this.me);
+  }
+
+  // 该换牌桌时排上计时器（已经排上了就不重排）：到点放一段登录/登出的过场，过场盖满屏幕时换牌桌
+  private syncNet(delay: number): void {
+    if (this.netTimer !== null || !this.game || this.netWanted() === this.netView) return;
+    this.netTimer = window.setTimeout(() => {
+      this.netTimer = null;
+      if (!this.game || this.netWanted() === this.netView) return;
+      playNetWipe(this.netWanted(), () => this.switchNet());
+    }, delay);
+  }
+
+  // 换牌桌：2.5D、3D 拆掉立体牌桌，换成 2D 的网麻牌桌；被平行宇宙打回原形时照原来的视角重建
+  private switchNet(): void {
+    if (!this.game) return;
+    const on = this.netWanted();
+    if (on === this.netView) return;
+    if (on) {
+      this.netFrom = this.mode;
+      this.mode = '2d';
+    } else {
+      this.mode = this.netFrom ?? this.mode;
+      this.netFrom = null;
+    }
+    this.netView = on;
+    this.cutins?.clear();
+    this.table3d?.dispose();
+    this.table3d = null;
+    this.buildTable(true);
+  }
+
+  // 离开牌桌、开新的一场：视角还原成换成网络麻将之前的
+  private resetNet(): void {
+    if (this.netTimer !== null) clearTimeout(this.netTimer);
+    this.netTimer = null;
+    if (this.netFrom) this.mode = this.netFrom;
+    this.netFrom = null;
+    this.netView = false;
+  }
+
+  // 网麻的头像卡：摆在牌桌四角。自己是天使和（能力发动头像、头上光环，网名のどっち），别人是 NO IMAGE 的剪影
+  private netCardHtml(s: number): string {
+    const g = this.game!;
+    const c = this.chars[s];
+    const mine = s === this.me;
+    const active = g.phase === 'turn' && g.turn === s && !this.showResult ? ' active' : '';
+    const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·封住' : c.ability?.badge?.(g, s);
+    const face = mine
+      ? `<img src="${powerPortraitUrl(c.id)}" alt="" onerror="this.remove()" /><span class="halo"></span>`
+      : '<span class="sil"></span><span class="noimg">NO IMAGE</span>';
+    return `
+      <div class="net-card ${POS[s]}${active}${mine ? ' mine' : ''}" data-seat="${s}">
+        <div class="net-name">${mine ? 'のどっち' : c.name}</div>
+        <div class="portrait">${face}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}</div>
+        ${this.towerHtml(s)}
+      </div>`;
+  }
+
+  // 网麻的中央：深灰的面板，写東一局、残り几张，四边黄色的点数牌
+  private netCenterHtml(): string {
+    const g = this.game!;
+    const dora = [0, 1, 2, 3, 4]
+      .map((i) => (i < g.wall.doraRevealed ? tileHtml(g.wall.doraIndicators[i], { size: 'mini' }) : backHtml('mini')))
+      .join('');
+    const scores = [0, 1, 2, 3]
+      .map((s) => {
+        const active = g.phase === 'turn' && g.turn === s ? ' active' : '';
+        const riichi = g.players[s].riichi && g.seesRiichi(s, this.me) ? '<span class="stick"></span>' : '';
+        return `<div class="score ${POS[s]}${active}"><span class="wind">${NET_WIND[g.seatWind(s) - 27]}</span>${riichi}<span class="pts">${g.shownScore(s, this.me)}</span></div>`;
+      })
+      .join('');
+    return `
+      <div class="net-round">${NET_WIND[g.roundWind]}${'一二三四'[g.roundNumber]}局</div>
+      <div class="net-remain"><small>残り</small>${g.wall.remaining}</div>
+      <div class="net-sub">${g.honba} 本場 · 供託 ${g.shownSticks(this.me)}</div>
+      <div class="dora">${dora}</div>
+      ${scores}`;
   }
 
   // 手绘板画在手牌上面：画上的整副牌（自摸的那张隔开放在最右边），写着再摸几张自摸、几番
@@ -1039,6 +1145,8 @@ export class App {
   // ---------- 画面 ----------
 
   private render(): void {
+    // 天使和：该换成网络麻将（或者被平行宇宙打回原形、该换回来）时排上换牌桌
+    this.syncNet(NET_CATCHUP);
     // 美穗子睁开右眼：画面罩一层蓝色
     this.root.classList.toggle('mihoko-eye', !!this.game && this.eyeOpen() && !this.vision);
     // 淡的高维领域：黑暗笼罩牌桌（所有人都看得到）；巨引力源：2D 牌桌中间一个黑色引力圆（3D 画在桌面上）
@@ -1055,9 +1163,11 @@ export class App {
     this.updatePreview();
     const sketch = this.sketchShown();
     setSketchTiles(sketch);
+    const net = this.netView;
     table.innerHTML = `
       ${[1, 2, 3].map((s) => this.opponentHtml(s)).join('')}
-      <div class="center">${this.centerHtml()}</div>
+      <div class="center">${net ? this.netCenterHtml() : this.centerHtml()}</div>
+      ${net ? [0, 1, 2, 3].map((s) => this.netCardHtml(s)).join('') : ''}
       ${[0, 1, 2, 3].map((s) => this.pondHtml(s)).join('')}
       ${this.myAreaHtml()}
       ${this.abilityPanelHtml()}
@@ -1538,11 +1648,15 @@ export class App {
         : order.map((t) => backHtml('pond', aka.has(t) ? 'aka' : tint ? tintOf(t) : undefined)).join('');
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
-        <div class="nameplate" data-seat="${s}">
+        ${
+          this.netView
+            ? ''
+            : `<div class="nameplate" data-seat="${s}">
           <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}</div>
           <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>
           ${this.towerHtml(s)}
-        </div>
+        </div>`
+        }
         <div class="ohand${vanish ? ' vanish' : ''}"${vanish}>${backs}</div>
         <div class="melds">${this.meldsHtml(p.melds, s)}</div>
       </div>`;
@@ -1651,7 +1765,7 @@ export class App {
         </div>`
             : ''
         }
-        ${withPlate ? `<div class="nameplate mine"><div class="avatar">${c.name.slice(-1)}</div><div class="pname">${this.seatLabel(this.me)}</div></div>` : ''}
+        ${withPlate && !this.netView ? `<div class="nameplate mine"><div class="avatar">${c.name.slice(-1)}</div><div class="pname">${this.seatLabel(this.me)}</div></div>` : ''}
       </div>`;
   }
 
