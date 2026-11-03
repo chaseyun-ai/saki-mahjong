@@ -35,6 +35,8 @@ import { arataAbility } from './arata';
 import { shizunoAbility } from './shizuno';
 import { aislinnAbility } from './aislinn';
 import { saeAbility } from './sae';
+import { haruAbility } from './haru';
+import { hatsumiAbility } from './hatsumi';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -73,6 +75,8 @@ export interface AiStyle {
   stealth: boolean; // 东横桃子：隐身之前听牌先默听，隐身以后再立直（别人不知道她立直了）
   bowling?: boolean; // 鹭森灼：留筒子，听牌时挑保龄球型的听法（四、六、七、八、九饼）
   mayoiga?: boolean; // 小濑川白望：迷途之家发动的那一次出牌照算出来的打（不立直），能自摸就自摸
+  winds?: boolean; // 薄墨初美：风牌能碰就碰、能杠就杠，留着风牌；东北鸣出来以后奔小四喜，能鸣就鸣
+  kuromame?: boolean; // 泷见春：别人立直以后不立直，能吃就吃（小牌快和）
   twin: boolean; // 鹤田姬子：钥匙的那一局只照着那副牌打，先打不要的牌，不立直、不鸣牌、不荣和，等自摸
 }
 
@@ -452,6 +456,37 @@ export const CHARACTERS: Character[] = [
     ability: saeAbility,
     skillArts: [{ id: 'lens', name: '镜片', hint: '用镜片盯住一个人时放这一段' }],
     ai: { ...baseAi, mistakeRate: 0.05 },
+  },
+  {
+    id: 'tomoe',
+    cost: 1,
+    name: '狩宿巴',
+    school: '永水女子',
+    color: '#c45a6a',
+    ability: null,
+    ai: { ...baseAi, mistakeRate: 0.04 },
+  },
+  {
+    id: 'haru',
+    cost: 2,
+    name: '泷见春',
+    school: '永水女子',
+    color: '#6a5a8c',
+    ability: haruAbility,
+    ai: { ...baseAi, mistakeRate: 0.05, kuromame: true },
+  },
+  {
+    id: 'hatsumi',
+    cost: 3,
+    name: '薄墨初美',
+    school: '永水女子',
+    color: '#8a4fc8',
+    ability: hatsumiAbility,
+    skillArts: [
+      { id: 'kimon', name: '里鬼门', hint: '东风、北风都鸣出来、紫色的风开始聚集时放' },
+      { id: 'kimon-win', name: '里鬼门和牌', label: '里鬼门·和牌', hint: '东北鸣出来以后和牌时放' },
+    ],
+    ai: { ...baseAi, mistakeRate: 0.05, winds: true },
   },
 ];
 

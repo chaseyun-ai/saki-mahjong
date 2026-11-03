@@ -202,6 +202,12 @@ const NOTE_TEXT: Record<string, (who: string) => string> = {
   ...Object.fromEntries(
     MOON_PHASES.map((m) => [`koromo-${m.name}`, (who: string) => `今晚是${m.name}${m.icon}，${who}的能力${m.power >= 1 ? '全开' : `只有满月时的 ${Math.round(m.power * 100)}%`}。`]),
   ),
+  'hatsumi-鬼门': (who) => `${who}坐北家：鬼门打开，配牌里东风、北风各两张。`,
+  'hatsumi-里鬼门': (who) => `${who}把东风、北风都鸣了出来：里鬼门，西风、南风会接着来。`,
+  'hatsumi-西风': (who) => `${who}的里鬼门：摸到西风。`,
+  'hatsumi-南风': (who) => `${who}的里鬼门：摸到南风。`,
+  'hatsumi-鬼门·杠': (who) => `${who}配牌的风牌暗刻，摸到了第四张。`,
+  'haru-快和': (who) => `有人立直了，${who}只想快点结束：摸到一张小和了牌。`,
   'kasumi-请神': (who) => `${who}落后了，请神上身。之后整场都不会退。`,
   ...Object.fromEntries(
     ['万', '筒', '索'].map((s) => [`kasumi-绝一门·${s}子`, (who: string) => `${who}这一局绝了${s}子：别人的配牌里没有，摸也摸不到。`]),
