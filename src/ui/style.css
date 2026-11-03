@@ -710,6 +710,28 @@ button {
   filter: brightness(0.92);
 }
 
+/* 桃子隐身的那一刻：牌河和手牌胀开、糊开、淡掉（不动 transform：牌河靠它转向），像一阵烟散了（时长和 app.ts 的 VANISH_MS 一样） */
+.pond.vanish,
+.ohand.vanish {
+  animation: momo-vanish 1.6s ease-in forwards;
+}
+
+@keyframes momo-vanish {
+  0% {
+    opacity: 1;
+    filter: blur(0);
+    scale: 1;
+  }
+  30% {
+    filter: blur(1px) brightness(1.15);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(6px) brightness(1.4);
+    scale: 1.08;
+  }
+}
+
 /* 隐身的桃子打的牌：别人看不见，她自己看着是半透明的 */
 .pond .tile.stealth {
   opacity: 0.5;
