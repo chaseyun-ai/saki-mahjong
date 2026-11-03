@@ -194,10 +194,10 @@ interface Placement {
 // 桃子隐身淡掉时透明度分几档
 const FADE_STEPS = 20;
 // 桃子隐身：那张牌落桌以后停多久（秒），再花多久让牌河和手牌在原地淡掉（影子一起淡）
-const VANISH_DELAY = 0.4;
+const VANISH_DELAY = 0.15;
 // 淡掉的时候牌往这个颜色靠（苍白、带一点冷色）
 const GHOST = new THREE.Color('#e6edf5');
-const VANISH_TIME = 2.5;
+const VANISH_TIME = 1;
 
 interface TileObj {
   group: THREE.Group;
@@ -782,6 +782,8 @@ export class Table3D {
         if (ch.seat === e.seat && e.riichi) ch.avatar?.setMood('angry', 1.6);
       }
     } else if (e.type === 'call') {
+      // 隐身的桃子鸣牌：看不见也没动静
+      if (g.stealthed(e.seat, this.lastSync?.view.me ?? 0)) return;
       const who = this.seatPoint(e.seat, 0, 8, this.dim.seatZ);
       this.callFx(e.seat, e.call.includes('杠') ? 'kan' : 'call');
       for (const ch of all) {
@@ -1274,7 +1276,7 @@ export class Table3D {
         continue;
       }
       const p = g.players[s];
-      const tiles = [...p.hand, ...p.discards.filter((d) => !d.called).map((d) => d.tile)];
+      const tiles = [...p.hand, ...p.discards.filter((d) => !d.called).map((d) => d.tile), ...p.melds.flatMap((m) => m.tiles)];
       // 起头和收尾都慢，看不出从哪一刻开始、哪一刻没的
       const a = 1 - k * k * (3 - 2 * k);
       // 影子比牌淡得快一点：不然牌淡到一半，底下还压着一块深色，看着像牌变暗了而不是变淡了
@@ -1462,6 +1464,10 @@ export class Table3D {
     // 松实姐妹的习惯：牌河和副露倒过来摆，让对手看到的是正的
     const flip = LOOKS[this.lastSync?.view.ids[s] ?? '']?.upsideDown ? Math.PI : 0;
 
+    // 隐身的桃子：手牌、牌河、副露都看不见；淡掉的那一会儿还摆着
+    const vanishing = this.vanish.has(s);
+    if (g.stealthed(s, me) && !vanishing) return;
+
     // 副露：一组一组从右边往左摆，每组里的顺序见 meldLayout（横着的那张按来源放左、中、右）
     let mx = this.meldStart(s, me);
     for (const m of p.melds) {
@@ -1481,10 +1487,6 @@ export class Table3D {
       }
       mx -= this.meldSpacing.group;
     }
-
-    // 隐身的桃子：手牌和牌河都看不见（副露照旧摆着）；淡掉的那一会儿还摆着
-    const vanishing = this.vanish.has(s);
-    if (g.stealthed(s, me) && !vanishing) return;
 
     // 手牌：自己的稍微后仰朝向镜头，别人的立着背对我们
     let drawn = p.drawn;

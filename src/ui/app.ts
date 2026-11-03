@@ -62,7 +62,7 @@ const AI_TURN_DELAY_3D = 360;
 const AI_TURN_DELAY_25D = 620;
 const AI_CALL_DELAY = 250;
 // 桃子隐身那一下要多久（毫秒，先停半拍再淡掉），和 style.css 里 .vanish 的动画一样长
-const VANISH_MS = 2900;
+const VANISH_MS = 1150;
 // 自己立直后摸切：摸到的牌飞到空中要多久（和牌桌的摸牌飞行一样），在空中停多久（毫秒）
 const AIR_FLIGHT = 250;
 const AIR_PAUSE = 250;
@@ -727,6 +727,8 @@ export class App {
         this.bigFx(e.seat, '立直', 'riichi');
       }
     } else if (e.type === 'call') {
+      // 隐身的桃子鸣牌：看不见也听不见
+      if (this.game!.stealthed(e.seat, this.me)) return;
       playCall();
       this.bigFx(e.seat, e.call, e.call.includes('杠') ? 'kan' : 'call');
     } else if (e.type === 'ability') {
@@ -1727,7 +1729,7 @@ export class App {
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="ohand${vanish ? ' vanish' : ''}"${vanish}>${backs}</div>
-        <div class="melds">${this.meldsHtml(p.melds, s)}</div>
+        <div class="melds${vanish ? ' vanish' : ''}"${vanish}>${g.stealthed(s, this.me) && !vanish ? '' : this.meldsHtml(p.melds, s)}</div>
       </div>`;
   }
 
@@ -1830,7 +1832,7 @@ export class App {
           withHand
             ? `<div class="hand-row">
           <div class="hand">${hand}${drawn}</div>
-          <div class="melds">${this.meldsHtml(p.melds, this.me)}</div>
+          <div class="melds${[0, 1, 2, 3].some((o) => o !== this.me && g.stealthed(this.me, o)) ? ' stealth' : ''}">${this.meldsHtml(p.melds, this.me)}</div>
         </div>`
             : ''
         }
