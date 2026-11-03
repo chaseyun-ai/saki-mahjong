@@ -1167,9 +1167,9 @@ export class App {
     table.innerHTML = `
       ${[1, 2, 3].map((s) => this.opponentHtml(s)).join('')}
       <div class="center">${net ? this.netCenterHtml() : this.centerHtml()}</div>
-      ${net ? [0, 1, 2, 3].map((s) => this.netCardHtml(s)).join('') : ''}
+      ${[0, 1, 2, 3].map((s) => (net ? this.netCardHtml(s) : this.seatFrameHtml(s))).join('')}
       ${[0, 1, 2, 3].map((s) => this.pondHtml(s)).join('')}
-      ${this.myAreaHtml()}
+      ${this.myAreaHtml(true, false)}
       ${this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
       ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
@@ -1645,18 +1645,9 @@ export class App {
       ? ''
       : open
         ? open.map((t) => tileHtml(t, { size: 'pond' })).join('')
-        : order.map((t) => backHtml('pond', aka.has(t) ? 'aka' : tint ? tintOf(t) : undefined)).join('');
+        : order.map((t) => backHtml('top', aka.has(t) ? 'aka' : tint ? tintOf(t) : undefined)).join('');
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
-        ${
-          this.netView
-            ? ''
-            : `<div class="nameplate" data-seat="${s}">
-          <div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}</div>
-          <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>
-          ${this.towerHtml(s)}
-        </div>`
-        }
         <div class="ohand${vanish ? ' vanish' : ''}"${vanish}>${backs}</div>
         <div class="melds">${this.meldsHtml(p.melds, s)}</div>
       </div>`;

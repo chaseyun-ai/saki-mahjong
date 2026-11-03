@@ -369,6 +369,27 @@ button {
   --tint: #ff5a2e;
 }
 
+/* 别家立着的手牌，从上往下看：只看得到牌的顶边，靠桌子中间的一半是牌背，靠主人的一半是牌面 */
+.tile.back.t-top {
+  width: 26px;
+  height: 15px;
+  border-radius: 3px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--tile-back) 70%, #fff) 0,
+    var(--tile-back) 50%,
+    var(--tile-edge) 50%,
+    var(--tile-face) 62%,
+    var(--tile-face) 100%
+  );
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.tile.back.t-top.tint {
+  background: linear-gradient(180deg, var(--tint) 0, var(--tint) 50%, var(--tile-edge) 50%, var(--tile-face) 62%, var(--tile-face) 100%);
+  box-shadow: 0 0 6px var(--tint);
+}
+
 /* 美穗子睁开右眼：整个画面罩一层蓝色（四周深、中间浅） */
 .mihoko-eye::after {
   content: '';
@@ -436,28 +457,27 @@ button {
   position: absolute;
   display: flex;
   gap: 10px;
-  align-items: center;
+  align-items: flex-end;
 }
 
+/* 别家绕着牌桌转：一排手牌（加上右手边的副露）整个转过去朝着自己的主人。
+   对家倒过来贴在顶上，上家、下家竖着贴在左右两边 */
 .opponent.top {
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.opponent.left,
-.opponent.right {
-  top: 330px;
-  flex-direction: column;
-  width: 200px;
+  left: 520px;
+  top: 42px;
+  transform: translate(-50%, -50%) rotate(180deg);
 }
 
 .opponent.left {
-  left: 14px;
+  left: 172px;
+  top: 375px;
+  transform: translate(-50%, -50%) rotate(90deg);
 }
 
 .opponent.right {
-  right: 14px;
+  left: 868px;
+  top: 375px;
+  transform: translate(-50%, -50%) rotate(-90deg);
 }
 
 .nameplate {
@@ -490,14 +510,8 @@ button {
 
 .ohand {
   display: flex;
-  gap: 2px;
-}
-
-.opponent.left .ohand,
-.opponent.right .ohand {
-  flex-wrap: wrap;
-  justify-content: center;
-  width: 190px;
+  gap: 1px;
+  align-items: flex-end;
 }
 
 .melds {
@@ -772,12 +786,13 @@ button {
 
 .hand-row {
   position: absolute;
-  left: 40px;
-  right: 20px;
-  bottom: 22px;
+  left: 140px;
+  right: 140px;
+  bottom: 18px;
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 24px;
 }
 
 .hand {
@@ -5026,24 +5041,24 @@ html:root .select-screen.team-screen.tm-draft {
 }
 
 .net-card.bottom {
-  left: 40px;
-  top: 500px;
+  left: 24px;
+  bottom: 16px;
 }
 
-/* 别家的卡挨着自己的手牌：上家、下家在手牌上面，对家在手牌右边（右下角留给按钮） */
+/* 四角和平时的头像框一样：上家左上、对家右上、下家右下 */
 .net-card.left {
-  left: 40px;
-  top: 182px;
-}
-
-.net-card.right {
-  right: 40px;
-  top: 182px;
+  left: 24px;
+  top: 16px;
 }
 
 .net-card.top {
-  left: 728px;
-  top: 6px;
+  right: 24px;
+  top: 16px;
+}
+
+.net-card.right {
+  right: 24px;
+  bottom: 16px;
 }
 
 .net-card .portrait {
@@ -5252,7 +5267,74 @@ html:root .select-screen.team-screen.tm-draft {
 }
 
 .net-card.left .teru-tower,
-.net-card.top .teru-tower {
+.net-card.bottom .teru-tower {
   right: auto;
   left: calc(100% + 6px);
+}
+
+/* ---------- 2D 牌桌：四角头像、按钮和能力说明的位置 ---------- */
+
+/* 四角放和 2.5D 一样的竖头像框（自己左下、下家右下、对家右上、上家左上） */
+.stage .seat-frame {
+  display: flex;
+  flex-direction: column;
+  width: 100px;
+  z-index: 3;
+}
+
+.stage .seat-frame .portrait {
+  width: 100px;
+  height: 120px;
+  font-size: 46px;
+}
+
+.stage .seat-frame .seat-info {
+  font-size: 14px;
+}
+
+/* 鸣牌、和牌的按钮在手牌上面靠右，不压右下角的头像 */
+.stage .actions {
+  right: 140px;
+}
+
+/* 理、和、鸣、切和挂机排成一排，放在自家牌河右边、下家牌河下面 */
+.stage .me .assist-bar {
+  left: 630px;
+  right: auto;
+  top: -60px;
+  grid-template-columns: repeat(4, 36px);
+  gap: 5px;
+}
+
+.stage .me .auto-btn {
+  left: 795px;
+  right: auto;
+  top: -60px;
+  height: 36px;
+  padding: 0 12px;
+  flex-direction: row;
+  gap: 4px;
+  font-size: 14px;
+}
+
+/* 能力说明放在对家牌河左边、上家牌河上面 */
+.stage .ability-panel {
+  left: 202px;
+  top: 74px;
+  width: 218px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 2;
+}
+
+.stage .me .assist-bar button {
+  width: 36px;
+  height: 36px;
+  font-size: 20px;
+}
+
+/* 网麻里牌背只露顶边：黄色牌背、白色牌面 */
+.stage.net .tile.back.t-top:not(.tint) {
+  background: linear-gradient(180deg, #f7c75c 0, #efb032 50%, #e9a92c 50%, #fff 62%, #fff 100%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }

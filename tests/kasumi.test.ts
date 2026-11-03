@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
 import { kasumiSuit } from '../src/abilities/kasumi';
 import { isDoraTile, kuroLost } from '../src/abilities/kuro';
+import { nodokaAngel } from '../src/abilities/nodoka';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
@@ -22,6 +23,8 @@ describe('石户霞', () => {
       // 第一局大家同分，不算落后
       expect(kasumiSuit(g, me)).toBeNull();
       let summoned = false;
+      // 天使和有一半的概率挡掉霞的规矩，不查她
+      const angel = (seat: number) => g.players[seat].name === 'nodoka' && nodokaAngel(g, seat);
       g.onEvent((e) => {
         if (e.type === 'roundStart') {
           rounds++;
@@ -30,9 +33,9 @@ describe('石户霞', () => {
           if (suit === null) return;
           summoned = true;
           summonedRounds++;
-          for (const p of g.players) if (p.seat !== me && g.rulesBind(me, p.seat)) expect(p.hand.some(inSuit(suit))).toBe(false);
+          for (const p of g.players) if (p.seat !== me && g.rulesBind(me, p.seat) && !angel(p.seat)) expect(p.hand.some(inSuit(suit))).toBe(false);
         }
-        if (e.type === 'draw' && e.seat !== me && g.rulesBind(me, e.seat) && !g.rinshanDraw) {
+        if (e.type === 'draw' && e.seat !== me && g.rulesBind(me, e.seat) && !angel(e.seat) && !g.rinshanDraw) {
           const suit = kasumiSuit(g, me);
           if (suit === null) return;
           const p = g.players[e.seat];

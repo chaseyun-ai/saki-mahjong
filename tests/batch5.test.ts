@@ -3,6 +3,7 @@ import { CHARACTERS } from '../src/abilities/characters';
 import { hisaBadWait } from '../src/abilities/hisa';
 import { kyoukoBreaking } from '../src/abilities/kyouko';
 import { makoDanger, makoKnows, makoSuit } from '../src/abilities/mako';
+import { nodokaAngel } from '../src/abilities/nodoka';
 import { takamiSeeds } from '../src/abilities/takami';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
@@ -125,7 +126,9 @@ describe('涉谷尧深', () => {
                 for (const k of seeds) want.set(k, Math.min(4, (want.get(k) ?? 0) + 1));
                 // 种下的超过 13 张时收不完
                 const total = [...want.values()].reduce((x, y) => x + y, 0);
-                if (total <= 13) for (const [k, n] of want) expect(hand.filter((t) => kindOf(t) === k).length).toBeGreaterThanOrEqual(Math.min(n, 2));
+                // 天使和有一半的概率挡掉别人调整她的配牌：她手里留着的那几张收不回来
+                const kept = (k: number) => (nodokaAngel(g, 1) ? g.players[1].hand.filter((t) => kindOf(t) === k).length : 0);
+                if (total <= 13) for (const [k, n] of want) expect(hand.filter((t) => kindOf(t) === k).length + kept(k)).toBeGreaterThanOrEqual(Math.min(n, 2));
               }
             }
             // 种下发生在打出以后（afterDiscard），下一个事件时检查
