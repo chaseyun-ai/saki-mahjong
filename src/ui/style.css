@@ -4928,15 +4928,15 @@ html:root .select-screen.team-screen.tm-draft {
   position: absolute;
   left: var(--x);
   bottom: 0;
-  width: 4px;
+  width: 5px;
   height: var(--len);
-  margin-left: -2px;
+  margin-left: -2.5px;
   border-radius: 2px;
   background: linear-gradient(to top, transparent, var(--c) 35%, #fff);
   box-shadow: 0 0 8px var(--c);
   transform-origin: 50% 100%;
   opacity: 0;
-  animation: gale-ray 1.6s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  animation: gale-ray 2s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
 }
 @keyframes gale-ray {
   0% { transform: rotate(var(--a)) translateY(0) scaleY(0.2); opacity: 0; }

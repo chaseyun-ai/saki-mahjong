@@ -1179,8 +1179,9 @@ export class Table3D {
           ctx.globalAlpha = alpha;
           ctx.drawImage(img, 160 * 0.06, 224 * 0.06, 160 * 0.88, 224 * 0.88);
         };
-        draw(14, 0.9);
-        draw(6, 1);
+        draw(10, 0.7);
+        draw(4, 0.9);
+        draw(0, 1);
         draw(0, 1);
         tex.needsUpdate = true;
       });

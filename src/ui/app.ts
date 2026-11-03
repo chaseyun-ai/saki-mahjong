@@ -1576,7 +1576,7 @@ export class App {
         const d = 2.6 + Math.random() * 3.4;
         return `<i style="--k:${k}"><b style="--s:${s.toFixed(0)}px;--e:${(0.7 + Math.random() * 0.3).toFixed(2)};--d:${d.toFixed(2)}s;--w:${(1.5 + Math.random() * 2.5).toFixed(1)}px;--c:${colors[k % colors.length]};animation-delay:${(-Math.random() * d).toFixed(2)}s"></b></i>`;
       }).join('');
-      const rays = Array.from({ length: 48 }, () => {
+      const rays = Array.from({ length: 72 }, () => {
         const a = (Math.random() - 0.5) * 70;
         return `<u style="--a:${a.toFixed(1)}deg;--len:${(120 + Math.random() * 260).toFixed(0)}px;--x:${((Math.random() - 0.5) * 50).toFixed(0)}px;--c:${colors[Math.floor(Math.random() * colors.length)]};animation-delay:${(Math.random() * 0.35).toFixed(2)}s"></u>`;
       }).join('');
