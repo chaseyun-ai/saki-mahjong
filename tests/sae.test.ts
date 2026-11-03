@@ -76,11 +76,14 @@ describe('臼泽塞', () => {
     const { g } = setup(7, ['sae', 'teru', 'izumi', 'kuro']);
     g.manual[0] = true;
     const b = byId('sae').ability!.skill!(g, 0)!;
+    expect(byId('sae').ability!.powered!(g, 0)).toBe(false);
     expect(b.lenses).toEqual({ max: 3, left: 3, target: null, targets: [2, 3] });
     byId('sae').ability!.pressSkill!(g, 0, '3');
     const after = byId('sae').ability!.skill!(g, 0)!;
     expect(after.lenses).toEqual({ max: 3, left: 2, target: 3, targets: [] });
     expect(after.active).toBe(true);
+    // 盯上人以后头像换成能力发动头像
+    expect(byId('sae').ability!.powered!(g, 0)).toBe(true);
   });
 
   it('电脑：有人立直时用，一场最多三枚，盯上的人那一局不和牌', () => {
