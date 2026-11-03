@@ -37,6 +37,9 @@ describe('东横桃子', () => {
           if (e.type !== 'discard' || e.seat !== 0) return;
           const late = g.players[0].discards.length >= MOMO.from;
           for (const o of [1, 2, 3]) expect(g.stealthed(0, o)).toBe(late);
+          // 隐身之前一巡比一巡淡
+          for (const o of [1, 2, 3]) expect(g.presence(0, o)).toBeCloseTo(Math.max(0, 1 - g.players[0].discards.length / MOMO.from));
+          expect(g.presence(0, 0)).toBe(1);
           expect(g.stealthed(0, 0)).toBe(false);
           if (late) n.hidden++;
           else n.shown++;

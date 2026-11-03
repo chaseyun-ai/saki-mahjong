@@ -1520,6 +1520,8 @@ export class App {
       : open
         ? open.map((t) => tileHtml(t, { size: 'pond' })).join('')
         : order.map((t) => backHtml('pond', aka.has(t) ? 'aka' : tint ? tintOf(t) : undefined)).join('');
+    // 桃子隐身之前一巡比一巡淡
+    const fade = g.presence(s, this.me);
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="nameplate" data-seat="${s}">
@@ -1527,7 +1529,7 @@ export class App {
           <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>
           ${this.towerHtml(s)}
         </div>
-        <div class="ohand">${backs}</div>
+        <div class="ohand"${fade < 1 ? ` style="opacity:${fade.toFixed(2)}"` : ''}>${backs}</div>
         <div class="melds">${this.meldsHtml(p.melds, s)}</div>
       </div>`;
   }
@@ -1550,7 +1552,8 @@ export class App {
         return tileHtml(d.tile, { size: 'pond', sideways: d.riichi, classes });
       })
       .join('');
-    return `<div class="pond ${POS[s]}">${tiles}</div>`;
+    const fade = g.presence(s, this.me);
+    return `<div class="pond ${POS[s]}"${fade < 1 ? ` style="opacity:${fade.toFixed(2)}"` : ''}>${tiles}</div>`;
   }
 
   private myAreaHtml(withHand = true, withPlate = true): string {

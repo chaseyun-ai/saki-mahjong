@@ -189,10 +189,14 @@ interface Placement {
   scale: number;
 }
 
+// 桃子变淡时透明度分几档
+const FADE_STEPS = 20;
+
 interface TileObj {
   group: THREE.Group;
   body: THREE.Mesh;
   back: THREE.Mesh;
+  face: THREE.Mesh;
   shown: boolean;
   target: Placement | null;
 }
@@ -233,6 +237,7 @@ export class Table3D {
   private deadlyMat: THREE.Material | null = null;
   private faceGeoms: THREE.PlaneGeometry[] = [];
   private faceMat: THREE.MeshStandardMaterial | null = null;
+  private fadeMats = new Map<THREE.Material, THREE.Material[]>();
   // 爱丽丝的手绘板：手绘的牌面、白色牌身、铅笔排线的牌背、白纸桌布、每张牌描一圈黑边（用到时才建）
   private sketch: {
     on: boolean;
@@ -503,7 +508,7 @@ export class Table3D {
       group.userData.tileId = id;
       group.visible = false;
       this.scene.add(group);
-      this.tiles.push({ group, body, back, shown: false, target: null });
+      this.tiles.push({ group, body, back, face, shown: false, target: null });
     }
   }
 
@@ -1075,15 +1080,28 @@ export class Table3D {
     for (const [t, slot] of wallSlots(g)) targets.set(t, this.wallPlacement(slot, view.me));
     this.applyDeal(g, view.me, targets);
     this.placeRiichiSticks(g);
+    // 桃子隐身之前一巡比一巡淡：她的手牌和牌河半透明（副露不变）
+    const fade = new Map<TileId, number>();
+    for (let s = 0; s < 4; s++) {
+      const a = g.presence(s, view.me);
+      if (a <= 0 || a >= 1) continue;
+      for (const t of g.players[s].hand) fade.set(t, a);
+      for (const d of g.players[s].discards) if (!d.called) fade.set(d.tile, a);
+    }
 
     for (let id = 0; id < TILE_COUNT; id++) {
       const t = this.tiles[id];
       const target = targets.get(id) ?? null;
       t.target = target;
+      const a = fade.get(id) ?? 1;
       const mat = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
-      if (mat && t.back.material !== mat) t.back.material = mat;
-      const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
+      const back = mat && this.faded(mat, a);
+      if (back && t.back.material !== back) t.back.material = back;
+      const bodyMat = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
+      const body = bodyMat && this.faded(bodyMat, a);
       if (body && t.body.material !== body) t.body.material = body;
+      const face = this.faceMat && this.faded(this.faceMat, a);
+      if (face && t.face.material !== face) t.face.material = face;
       if (!target) {
         t.group.visible = false;
         t.shown = false;
@@ -1101,6 +1119,30 @@ export class Table3D {
     this.showGravity(!!view.gravity);
     this.drawConsole(g, view);
     this.syncMist(g, view);
+  }
+
+  // 半透明的同一种材质（桃子一巡比一巡淡）：透明度分 FADE_STEPS 档，每档复制一份缓存起来
+  private faded(m: THREE.Material, alpha: number): THREE.Material {
+    if (alpha >= 1) return m;
+    const k = Math.max(1, Math.round(alpha * FADE_STEPS));
+    let levels = this.fadeMats.get(m);
+    if (!levels) this.fadeMats.set(m, (levels = []));
+    let f = levels[k];
+    if (!f) {
+      f = m.clone();
+      f.transparent = true;
+      f.opacity = k / FADE_STEPS;
+      f.depthWrite = false;
+      levels[k] = f;
+    }
+    // 手绘板换的是牌面材质的贴图，复制品跟着换
+    const src = m as THREE.MeshStandardMaterial;
+    const dst = f as THREE.MeshStandardMaterial;
+    if (dst.map !== src.map) {
+      dst.map = src.map;
+      dst.needsUpdate = true;
+    }
+    return f;
   }
 
   // 爱丽丝的手绘板：换成手绘的牌面、白色牌身、铅笔排线的牌背、白纸桌布，桌框变浅，每张牌描黑边
