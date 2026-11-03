@@ -309,13 +309,19 @@ export class Game {
     return a && !this.isSealed(seat, this.round) ? a : null;
   }
 
-  // 东横桃子的隐身：viewer 眼里 seat 隐身了没有（她打满 stealth 给的张数起）。
-  // 隐身了，viewer 看不见她的整条牌河和手牌，荣和不了、鸣不了她打的牌，不知道她立没立直，也读不出她听什么。
+  // 东横桃子的隐身：viewer 眼里 seat 还看得清几分（1 是看得清，0 是隐身了）。
+  // 她每打一张淡一点，打满 stealth 给的张数正好看不见。只是看着淡，规矩上到 0 才算隐身。
   // 自己永远看得见，一局结束全部亮出来
-  stealthed(seat: number, viewer: number): boolean {
-    if (seat === viewer || this.phase === 'roundEnd' || this.phase === 'gameEnd') return false;
+  presence(seat: number, viewer: number): number {
+    if (seat === viewer || this.phase === 'roundEnd' || this.phase === 'gameEnd') return 1;
     const from = this.active(seat)?.stealth?.(this, seat, viewer) ?? null;
-    return from !== null && this.players[seat].discards.length >= from;
+    return from === null ? 1 : Math.max(0, 1 - this.players[seat].discards.length / from);
+  }
+
+  // viewer 眼里 seat 隐身了没有。隐身了，viewer 看不见她的整条牌河和手牌，荣和不了、鸣不了她打的牌，
+  // 不知道她立没立直，也读不出她听什么
+  stealthed(seat: number, viewer: number): boolean {
+    return this.presence(seat, viewer) === 0;
   }
 
   // viewer 知不知道 seat 立直了（隐身了就不知道）

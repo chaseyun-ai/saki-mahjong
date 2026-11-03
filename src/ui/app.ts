@@ -1153,8 +1153,9 @@ export class App {
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? 'active' : '';
     // 怜演算时换成“能力发动头像”（眼睛发光），头像框发绿光
     // 第二形态（天使和）也一直用能力发动头像
+    // 臼泽塞用镜片盯上人的那一局也换头像（powered），但框不发光
     const power = (s === this.me && !!this.vision) || !!g.active(s)?.form?.(g, s);
-    const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
+    const src = power || g.active(s)?.powered?.(g, s) ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
     const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·封住' : c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
@@ -1520,6 +1521,8 @@ export class App {
       : open
         ? open.map((t) => tileHtml(t, { size: 'pond' })).join('')
         : order.map((t) => backHtml('pond', aka.has(t) ? 'aka' : tint ? tintOf(t) : undefined)).join('');
+    // 桃子隐身之前一巡比一巡淡
+    const fade = g.presence(s, this.me);
     return `
       <div class="opponent ${POS[s]}" style="--c:${c.color}">
         <div class="nameplate" data-seat="${s}">
@@ -1527,7 +1530,7 @@ export class App {
           <div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>
           ${this.towerHtml(s)}
         </div>
-        <div class="ohand">${backs}</div>
+        <div class="ohand"${fade < 1 ? ` style="opacity:${fade.toFixed(2)}"` : ''}>${backs}</div>
         <div class="melds">${this.meldsHtml(p.melds, s)}</div>
       </div>`;
   }
@@ -1550,7 +1553,8 @@ export class App {
         return tileHtml(d.tile, { size: 'pond', sideways: d.riichi, classes });
       })
       .join('');
-    return `<div class="pond ${POS[s]}">${tiles}</div>`;
+    const fade = g.presence(s, this.me);
+    return `<div class="pond ${POS[s]}"${fade < 1 ? ` style="opacity:${fade.toFixed(2)}"` : ''}>${tiles}</div>`;
   }
 
   private myAreaHtml(withHand = true, withPlate = true): string {
