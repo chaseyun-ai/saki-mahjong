@@ -87,6 +87,11 @@ export const saeAbility: Ability = {
     return stateOf(g, seat).target === target;
   },
 
+  // 这一局用镜片盯上了人：头像换成能力发动头像
+  powered(g, seat) {
+    return stateOf(g, seat).target !== undefined;
+  },
+
   skill(g, seat) {
     const left = saeLensesLeft(g, seat);
     const target = stateOf(g, seat).target ?? null;

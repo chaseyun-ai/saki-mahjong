@@ -1153,8 +1153,9 @@ export class App {
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? 'active' : '';
     // 怜演算时换成“能力发动头像”（眼睛发光），头像框发绿光
     // 第二形态（天使和）也一直用能力发动头像
+    // 臼泽塞用镜片盯上人的那一局也换头像（powered），但框不发光
     const power = (s === this.me && !!this.vision) || !!g.active(s)?.form?.(g, s);
-    const src = power ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
+    const src = power || g.active(s)?.powered?.(g, s) ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
     const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·封住' : c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
