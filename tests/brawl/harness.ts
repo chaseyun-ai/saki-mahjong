@@ -67,6 +67,8 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
   // 记下控场能力给这一次摸牌定的规矩，摸牌时对账
   let rules: DrawRule[] = [];
   let lockedBefore: Set<TileId> | null = null;
+  // 对账开始时的里宝牌指示牌：不击飞的规矩按点数算，点数里有里宝牌
+  let uraBefore: string | null = null;
   // 只记正式牌局的：怜的演算在复制品上也会走一遍摸牌流程
   let real: Game | null = null;
   const wrap = (a: Ability | null): Ability | null => {
@@ -78,6 +80,7 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
         const mine = g === real;
         if (mine && !lockedBefore) {
           lockedBefore = new Set(g.wall.locked);
+          uraBefore = g.wall.uraIndicators.join();
           // 不会被击飞（花田煌）的规矩排在所有控场规矩前面，规则引擎先守它：两边冲突时控场的规矩让步。
           // 这里也算进去（摸牌以后手牌变了，规矩要现在就按每张牌算好）
           const bust = (g as unknown as { bustRules(d: number, r: boolean): DrawRule[] }).bustRules(drawer, rinshan);
@@ -97,6 +100,7 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
   // 第一局庄家的第一张在建牌局时就摸了，那时还没开始对账
   rules = [];
   lockedBefore = null;
+  uraBefore = null;
   const tag = `[${seats.map((c) => c.id).join(',')} 种子 ${seed}]`;
   const problem = (msg: string) => {
     if (stats.problems.length < 50) stats.problems.push(`${tag} ${g.roundLabel()} ${msg}`);
@@ -117,9 +121,13 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
     stats.draws++;
     const got = g.players[e.seat].drawn!;
     const was = lockedBefore;
-    const rs = rules;
+    // 摸牌的人自己的能力从王牌里换牌时会换到还没翻的里宝牌指示牌（淡的退相干、灼的保龄球），
+    // 立直的人自摸多少点跟着变，先前按旧的里宝牌算好的不击飞规矩就不准了：这一次只对账别的规矩
+    const uraMoved = uraBefore !== null && uraBefore !== g.wall.uraIndicators.join();
+    const rs = uraMoved ? rules.filter((r) => !g.abilities[r.seat]?.unbustable) : rules;
     rules = [];
     lockedBefore = null;
+    uraBefore = null;
     const bust = bustSwap;
     bustSwap = false;
     if (bust) return;

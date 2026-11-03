@@ -25,6 +25,7 @@ import { toyoneLurks, toyoneMode } from '../abilities/toyone';
 import { TERU, teruDanger, teruFits, teruLadder, teruMirrored, teruTier, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import { himekoExtra, himekoPlan } from '../abilities/himeko';
+import { bowlingOf, isPin } from '../abilities/arata';
 import { aislinnAiBrush, aislinnExtra, aislinnPlan } from '../abilities/aislinn';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
@@ -334,6 +335,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     fit: number; // 照：打这张以后听的牌和了正好接得上天梯
     trap: number; // 洋榎：听牌时听的是自己打过的牌的筋（引っ掛け）
     bad: number; // 久：打这张听的是烂听牌（只等一种牌，还有剩的）
+    bowl: number; // 灼：打这张以后听成保龄球型（2 是希腊教堂）
   };
   // 被爽的蛇神威封印时读不了牌
   const sealed = g.isSealed(seat);
@@ -402,13 +404,16 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       const w = waitingKinds(c, p.melds.length);
       bad = w.length === 1 && 4 - visible[w[0]] - c[w[0]] + (kindOf(a.tile) === w[0] ? 1 : 0) > 0 && !myDiscards.has(w[0]) && kindOf(a.tile) !== w[0] ? 1 : 0;
     }
-    cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad });
+    const shape = style.bowling && !sealed && sh === 0 ? bowlingOf(c, p.melds.length) : null;
+    const bowl = shape === 'church' ? 2 : shape ? 1 : 0;
+    cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl });
   }
 
   // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌；涅莉的宣言局也一样，留下做的那门花色
   // 真子：留下染手的那门花色和字牌
   const suit = style.suitFocus ? kasumiSuit(g, seat) : style.waves ? nellySuit(g, seat) : style.memory && !sealed ? makoSuit(g, seat) : null;
   // 宥：同样向听时留暖色牌
+  // 灼：同样向听时留筒子
   // 尧深：收获的局留着种下的牌
   const seeds = style.harvest && !sealed && takamiHarvest(g, seat) ? new Set(takamiSeeds(g, seat)) : null;
   // 爽：留住云、神威送来的牌
@@ -419,6 +424,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const keep = (c: Cand) =>
     (flush ? inFlush(kindOf(c.a.tile)) : suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) ||
     (style.warm && warmKind(kindOf(c.a.tile))) ||
+    (style.bowling && !sealed && isPin(kindOf(c.a.tile))) ||
     seeds?.has(kindOf(c.a.tile)) ||
     focus?.keep(kindOf(c.a.tile))
       ? 1
@@ -427,8 +433,10 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const trapOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.trap - x.trap : 0);
   // 堇听牌时：两种听法都有牌可和，挑听目标多余牌的
   const aimOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.aim - x.aim || y.fit - x.fit : 0);
+  // 灼听牌时：两种听法都有牌可和，挑保龄球型（希腊教堂最好），比留筒子还要紧
+  const bowlOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.bowl - x.bowl : 0);
   const attackOrder = (x: Cand, y: Cand) =>
-    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
+    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
   cands.sort(attackOrder);
   // 怜：假设打掉现在最想打的那张，演算自己下一次摸到什么，按它重排。
   // 失误先掷（随机数用掉的时刻和别人一样），再演算：演算拿到的随机数和之后真的牌局一致
