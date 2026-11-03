@@ -90,6 +90,7 @@ const PACES: Record<string, Partial<Pace>> = {
   mako: { speed: 1.05 },
   toyone: { speed: 1.05 },
   kurumi: { speed: 0.95, spread: 0.8 }, // 不立直，摸了就打
+  arata: { speed: 1.05, spread: 0.9 }, // 古风，稳稳地打
   kasumi: { speed: 1.1 },
   kyouko: { speed: 1.1, spread: 1.2 }, // 凡人拼命算
   yu: { speed: 1.1 }, // 怕冷，慢吞吞的

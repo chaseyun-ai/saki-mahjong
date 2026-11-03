@@ -31,6 +31,7 @@ import { riiAbility } from './rii';
 import { himekoAbility } from './himeko';
 import { kirameAbility } from './kirame';
 import { kurumiAbility } from './kurumi';
+import { arataAbility } from './arata';
 import { shizunoAbility } from './shizuno';
 import { aislinnAbility } from './aislinn';
 import { saeAbility } from './sae';
@@ -70,6 +71,7 @@ export interface AiStyle {
   rokuyou: boolean; // 姊带丰音：先负还能发动时默听，先负发动后听牌就追立、不弃和；副露两次以上、有役时能鸣就鸣（奔友引）
   dama: boolean; // 鹿仓胡桃：听牌从不立直（默听才有能力），被封印的局照常立直
   stealth: boolean; // 东横桃子：隐身之前听牌先默听，隐身以后再立直（别人不知道她立直了）
+  bowling?: boolean; // 鹭森灼：留筒子，听牌时挑保龄球型的听法（四、六、七、八、九饼）
   mayoiga?: boolean; // 小濑川白望：迷途之家发动的那一次出牌照算出来的打（不立直），能自摸就自摸
   twin: boolean; // 鹤田姬子：钥匙的那一局只照着那副牌打，先打不要的牌，不立直、不鸣牌、不荣和，等自摸
 }
@@ -422,6 +424,15 @@ export const CHARACTERS: Character[] = [
       { id: 'mist', name: '雾更浓了', label: '深山·雾更浓', hint: '深山标记每多两个、牌山上的雾厚一级时放' },
     ],
     ai: { ...baseAi, mistakeRate: 0.05 },
+  },
+  {
+    id: 'arata',
+    cost: 2,
+    name: '鹭森灼',
+    school: '阿知贺女子学院',
+    color: '#5a7fb8',
+    ability: arataAbility,
+    ai: { ...baseAi, mistakeRate: 0.06, bowling: true },
   },
   {
     id: 'kirame',
