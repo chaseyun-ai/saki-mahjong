@@ -177,36 +177,6 @@ export class Effects {
     });
   }
 
-  // 一阵慢慢升起、越散越大越淡的烟（普通混合，不发光）
-  smoke(at: THREE.Vector3, color: THREE.ColorRepresentation, count = 40, spread = 3, duration = 2): void {
-    const geo = new THREE.BufferGeometry();
-    const pos = new Float32Array(count * 3);
-    const from: THREE.Vector3[] = [];
-    const vel: THREE.Vector3[] = [];
-    for (let i = 0; i < count; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const r = Math.sqrt(Math.random()) * spread;
-      from.push(new THREE.Vector3(Math.cos(a) * r, Math.random() * 0.4, Math.sin(a) * r * 0.5));
-      vel.push(new THREE.Vector3((Math.random() - 0.5) * 1.2, 1.5 + Math.random() * 2.5, (Math.random() - 0.5) * 1.2));
-    }
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const mat = new THREE.PointsMaterial({ color, map: this.glow, size: 1.4, transparent: true, depthWrite: false });
-    const pts = new THREE.Points(geo, mat);
-    pts.position.copy(at);
-    this.add(pts, duration, (k) => {
-      const e = 1 - (1 - k) * (1 - k);
-      for (let i = 0; i < count; i++) {
-        pos[i * 3] = from[i].x + vel[i].x * e;
-        pos[i * 3 + 1] = from[i].y + vel[i].y * e;
-        pos[i * 3 + 2] = from[i].z + vel[i].z * e;
-      }
-      geo.attributes.position.needsUpdate = true;
-      // 先浓起来再慢慢散
-      mat.opacity = 0.75 * Math.min(1, k * 6) * (1 - k);
-      mat.size = 1.4 + 2.6 * k;
-    });
-  }
-
   // 一闪而过的光晕
   flash(at: THREE.Vector3, color: THREE.ColorRepresentation, size = 8, duration = 0.45): void {
     const mat = new THREE.SpriteMaterial({ map: this.glow, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });

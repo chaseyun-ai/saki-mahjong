@@ -3,7 +3,7 @@ import { nodokaAngel } from './nodoka';
 import type { Ability } from './types';
 
 // 东横桃子（鹤贺）：隐身（ステルスモモ）。不动牌山，一张牌都不换。
-// 前 MOMO.from - 1 巡和平常一样；第 MOMO.from 巡那张牌落进牌河的那一刻起，她的牌河和手牌在别人眼里烟消云散，看不见她：
+// 前 MOMO.from - 1 巡和平常一样；第 MOMO.from 巡那张牌落进牌河的那一刻起，她的牌河和手牌在别人眼里慢慢淡掉，看不见她（像视线从她身上滑开）：
 // - 她整条牌河（之前打的也算）和手牌在别人眼里直接消失，副露照旧摆着
 // - 她打的牌谁也荣和不了、吃碰杠不了，也不因为没看见这张而振听
 // - 她立没立直别人也不知道（之前立的也一样）：没有立直棒，点数、场上立直棒不显示那 1000 点，电脑当她没立直
@@ -23,7 +23,7 @@ export const momoStealthNext = (g: Game, seat: number) => g.active(seat)?.id ===
 export const momoAbility: Ability = {
   id: 'momo',
   name: '隐身',
-  description: `从第 ${MOMO.from} 巡起别人看不见她：那张牌落进牌河，她的牌河和手牌就烟消云散，她打的牌没人荣和得了、吃碰不了；她立直别人也不知道，读牌的人也读不出她的铳牌。只有天使和的原村和看得见她`,
+  description: `从第 ${MOMO.from} 巡起别人看不见她：那张牌落进牌河，她的牌河和手牌就慢慢淡掉，她打的牌没人荣和得了、吃碰不了；她立直别人也不知道，读牌的人也读不出她的铳牌。只有天使和的原村和看得见她`,
   stealth(g, _seat, viewer) {
     return nodokaAngel(g, viewer) ? null : MOMO.from;
   },

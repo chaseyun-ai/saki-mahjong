@@ -52,8 +52,8 @@ const AI_TURN_DELAY = 550;
 const AI_TURN_DELAY_3D = 360;
 const AI_TURN_DELAY_25D = 620;
 const AI_CALL_DELAY = 250;
-// 桃子烟消云散要多久（毫秒），和 style.css 里 .vanish 的动画一样长
-const VANISH_MS = 1600;
+// 桃子隐身那一下要多久（毫秒，先停半拍再淡掉），和 style.css 里 .vanish 的动画一样长
+const VANISH_MS = 2900;
 // 自己立直后摸切：摸到的牌飞到空中要多久（和牌桌的摸牌飞行一样），在空中停多久（毫秒）
 const AIR_FLIGHT = 250;
 const AIR_PAUSE = 250;
@@ -104,7 +104,7 @@ export class App {
   private showResult = false;
   // 刚打出的牌只在第一次画出来时播放落桌动画，之后重绘不再重播
   private freshDiscard: string | null = null;
-  // 桃子：这一局已经隐身的座位；正在烟消云散的座位（开始的时刻）
+  // 桃子：这一局已经隐身的座位；正在淡掉的座位（开始的时刻）
   private gone = new Set<number>();
   private vanishAt = new Map<number, number>();
   // 25d：3D 牌桌、不坐人物，从上往下看（默认）；3d：坐着人物的实验版；2d：网页画的平面牌桌
@@ -689,7 +689,7 @@ export class App {
       this.sketchView = false;
     }
     if (e.type === 'discard') {
-      // 隐身的桃子打的牌：看不见也听不见。刚隐身的那一张照常打出去，牌河和手牌烟消云散（不放立直特效）
+      // 隐身的桃子打的牌：看不见也听不见。刚隐身的那一张照常打出去，牌河和手牌慢慢淡掉（不放立直特效）
       if (this.game!.stealthed(e.seat, this.me)) {
         if (this.gone.has(e.seat)) return;
         this.gone.add(e.seat);
@@ -1552,7 +1552,7 @@ export class App {
     const g = this.game!;
     const p = g.players[s];
     const last = g.lastDiscard;
-    // 隐身的桃子的牌河别人看不见（刚隐身的那一会儿烟消云散）；她自己看得见，淡淡地显示
+    // 隐身的桃子的牌河别人看不见（刚隐身的那一会儿慢慢淡掉）；她自己看得见，淡淡地显示
     const vanish = this.vanishStyle(s);
     if (g.stealthed(s, this.me) && !vanish) return `<div class="pond ${POS[s]}"></div>`;
     const ghost = [0, 1, 2, 3].some((o) => o !== s && g.stealthed(s, o));
@@ -1564,14 +1564,14 @@ export class App {
         if (d.tsumogiri) classes.push('tsumogiri');
         if (last && last.seat === s && i === p.discards.length - 1) classes.push('last');
         if (this.freshDiscard === `${s}-${i}`) classes.push('fresh');
-        // 烟消云散的时候立直宣言牌也竖着：别人不该知道她立直了
+        // 淡掉的时候立直宣言牌也竖着：别人不该知道她立直了
         return tileHtml(d.tile, { size: 'pond', sideways: d.riichi && !vanish, classes });
       })
       .join('');
     return `<div class="pond ${POS[s]}${vanish ? ' vanish' : ''}"${vanish}>${tiles}</div>`;
   }
 
-  // 桃子正在烟消云散：返回接着播动画的 style（重画时从播到的地方接着播），没在散就是空串
+  // 桃子正在淡掉：返回接着播动画的 style（重画时从播到的地方接着播），没在淡就是空串
   private vanishStyle(s: number): string {
     const at = this.vanishAt.get(s);
     if (at === undefined) return '';
