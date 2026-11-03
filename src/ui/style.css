@@ -4841,3 +4841,111 @@ html:root .select-screen.team-screen.tm-draft {
     box-shadow: 0 0 60px 30px rgba(255, 255, 255, 0);
   }
 }
+
+/* ---------- 薄墨初美的里鬼门 ---------- */
+
+/* 鸣出来的东、北中间那张：字发紫光 */
+.tile.kimon-glow .face path {
+  fill: #b267ff;
+  stroke: #c58aff;
+}
+.tile.kimon-glow .face svg {
+  filter: drop-shadow(0 0 1px #c070ff) drop-shadow(0 0 4px #8a3cff);
+  animation: kimon-pulse 2.4s ease-in-out infinite;
+}
+.tile.kimon-glow {
+  box-shadow: 0 0 10px rgba(150, 70, 255, 0.55);
+}
+@keyframes kimon-pulse {
+  50% { filter: drop-shadow(0 0 3px #d090ff) drop-shadow(0 0 9px #9a4cff); }
+}
+
+/* 2D 牌桌：紫色的风绕着牌桌打转、往中间卷（--lv 0–1 决定亮出来几道） */
+.gale {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+.gale > i {
+  position: absolute;
+  inset: 0;
+  opacity: clamp(0, calc(var(--lv, 0) * var(--n, 40) - var(--k)), 1);
+  transition: opacity 1.4s ease;
+}
+.gale > i > b {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--s);
+  height: calc(var(--s) * var(--e, 1));
+  margin: calc(var(--s) * var(--e, 1) / -2) 0 0 calc(var(--s) / -2);
+  border-radius: 50%;
+  border: var(--w) solid transparent;
+  border-top-color: var(--c);
+  filter: drop-shadow(0 0 4px var(--c)) drop-shadow(0 0 1px #fff);
+  animation: gale-spin var(--d) linear infinite;
+}
+@keyframes gale-spin {
+  0% { transform: rotate(0deg) scale(1.45); opacity: 0; }
+  15% { opacity: 0.95; }
+  80% { opacity: 0.85; }
+  100% { transform: rotate(560deg) scale(0.2); opacity: 0; }
+}
+
+/* 和牌：一阵紫光从牌桌中间往上冲，盖在结算上面 */
+.gale-burst {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  width: 0;
+  height: 0;
+  display: none;
+}
+.gale.burst {
+  z-index: 60;
+}
+.gale.burst > i {
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.gale.burst .gale-burst {
+  display: block;
+}
+.gale-burst::before {
+  content: '';
+  position: absolute;
+  left: -260px;
+  top: -260px;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, rgba(240, 190, 255, 0.85) 18%, rgba(190, 70, 255, 0.45) 45%, transparent 70%);
+  animation: gale-flash 1.4s ease-out forwards;
+}
+.gale-burst > u {
+  position: absolute;
+  left: var(--x);
+  bottom: 0;
+  width: 4px;
+  height: var(--len);
+  margin-left: -2px;
+  border-radius: 2px;
+  background: linear-gradient(to top, transparent, var(--c) 35%, #fff);
+  box-shadow: 0 0 8px var(--c);
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: gale-ray 1.6s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+@keyframes gale-ray {
+  0% { transform: rotate(var(--a)) translateY(0) scaleY(0.2); opacity: 0; }
+  10% { opacity: 1; }
+  70% { opacity: 0.9; }
+  100% { transform: rotate(var(--a)) translateY(-900px) scaleY(1.4); opacity: 0; }
+}
+@keyframes gale-flash {
+  0% { transform: scale(0.2); opacity: 0; }
+  15% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}

@@ -95,6 +95,13 @@ export const LOOKS: Record<string, Look> = {
   kirame: { model: 'models/vroid-e.v2.glb', hair: '#8a5a2e', eyes: '#4a7a4a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 鹭森灼：先占位，借咲的短发模型换成深棕色头发、棕色眼睛
   arata: { model: 'models/vroid-e.v2.glb', hair: '#3a2a24', eyes: '#6a4a3a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
+  // 永水的三人：先占位
+  // 狩宿巴：借霞的长发模型换成黑发、红褐色眼睛
+  tomoe: { model: 'models/vroid-shino.v2.glb', hair: '#1e1a22', eyes: '#8a4a4a', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 泷见春：借和的长发模型换成黑发、深紫色眼睛
+  haru: { model: 'models/vroid-g.v2.glb', hair: '#221c26', eyes: '#5a4a7a', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 薄墨初美：借咲的短发模型换成浅棕色头发、紫色眼睛
+  hatsumi: { model: 'models/vroid-e.v2.glb', hair: '#b8875a', eyes: '#7a4ab0', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 臼泽塞：先占位，借咲的短发模型换成深棕色头发、棕色眼睛
   sae: { model: 'models/vroid-e.v2.glb', hair: '#4a3226', eyes: '#6a4a36', hairContrast: 0.6, reveal: 'wave', pose: 'crossed', borrowed: true },
 };

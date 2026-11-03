@@ -249,3 +249,8 @@ export function faceSvg(k: Kind, red: boolean): string {
   else body = souFace(numOf(k), red);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${FACE_W} ${FACE_H}" width="100%" height="100%">${body}</svg>`;
 }
+
+// 发紫光的字（薄墨初美鸣出来的东、北）：只有字，紫色，背景透明。3D 牌桌把它叠在牌面上、再糊开一层当光晕
+export function glowGlyph(k: Kind, color = '#b267ff'): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${FACE_W} ${FACE_H}" width="100%" height="100%">${glyph(HONOR_CN[k - 27], 20, 28, 34, color, 34)}</svg>`;
+}

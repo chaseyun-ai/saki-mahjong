@@ -26,6 +26,8 @@ import { TERU, teruDanger, teruFits, teruLadder, teruMirrored, teruTier, teruWin
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import { himekoExtra, himekoPlan } from '../abilities/himeko';
 import { bowlingOf, isPin } from '../abilities/arata';
+import { hatsumiOpen } from '../abilities/hatsumi';
+import { haruRush } from '../abilities/haru';
 import { aislinnAiBrush, aislinnExtra, aislinnPlan } from '../abilities/aislinn';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
@@ -39,6 +41,7 @@ import {
   isDragon,
   isHonor,
   isSimple,
+  isWind,
   isYaochu,
   kindOf,
   toCounts,
@@ -303,7 +306,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const cur = shanten(counts, p.melds.length);
   for (const a of legal) {
     if (a.type === 'ankan') {
-      if (p.riichi || style.kanEager) return a;
+      // 初美：风牌能杠就杠（配牌的暗刻摸到第四张、鸣出东北以后）
+      if (p.riichi || style.kanEager || (style.winds && isWind(a.kind))) return a;
       const after = counts.slice();
       after[a.kind] = 0;
       if (shanten(after, p.melds.length + 1) <= cur && threats(g, seat).length === 0) return a;
@@ -425,6 +429,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     (flush ? inFlush(kindOf(c.a.tile)) : suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) ||
     (style.warm && warmKind(kindOf(c.a.tile))) ||
     (style.bowling && !sealed && isPin(kindOf(c.a.tile))) ||
+    (style.winds && !sealed && isWind(kindOf(c.a.tile))) ||
     seeds?.has(kindOf(c.a.tile)) ||
     focus?.keep(kindOf(c.a.tile))
       ? 1
@@ -558,6 +563,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     }
     // 胡桃：从不立直，默听才有能力
     if (style.dama && !sealed) return best.a;
+    // 春：别人立直以后不立直，小牌快和
+    if (style.kuromame && !sealed && haruRush(g, seat)) return best.a;
     // 夕从不默听
     if (style.firepower) return ukeire(c, p.melds.length, visible) > 0 ? riichi : best.a;
     // 堇：有役就默听，只等目标打
@@ -889,6 +896,9 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 
   const kan = legal.find((a) => a.type === 'daiminkan');
   if (kan && style.kanEager) return kan;
+  // 初美：风牌能碰就碰、能杠就杠
+  const windy = style.winds && !g.isSealed(seat);
+  if (windy && isWind(k)) return kan ?? legal.find((a) => a.type === 'pon') ?? pass;
 
   // 怜：先见到自己下一张有用的话，就不鸣牌打乱顺序
   if (style.useForesight && !g.isSealed(seat) && foresees(g, seat)) {
@@ -905,7 +915,9 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     isSimple(k) &&
     p.melds.every((m) => m.tiles.every((t) => isSimple(kindOf(t)))) &&
     p.hand.filter((t) => isYaochu(kindOf(t))).length <= 1;
-  const yakuSecured = hasYakuhaiMeld(g, seat);
+  // 初美东北都鸣出来以后奔小四喜（役满），什么都能鸣
+  const kimon = !!style.winds && !g.isSealed(seat) && hatsumiOpen(g, seat);
+  const yakuSecured = hasYakuhaiMeld(g, seat) || kimon;
   // 真子：手里别的花色只剩两张以内，染手那门和字牌能鸣（混一色）；爽开了红云、白云、黑云、海神威，霞请神后，宥也一样
   // 霞请神后做绝掉的那门，宥做万子
   const sealedMe = g.isSealed(seat);
@@ -946,6 +958,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 优希不坐庄的东场以和牌为先；照要和 1 番、2 番的时候小牌快和：向听多也吃
   const speedy =
     style.speed ||
+    kimon ||
+    (style.kuromame && !g.isSealed(seat) && haruRush(g, seat)) ||
     (style.eastWind && seat !== g.dealer && yuukiActive(g, seat)) ||
     (style.streak && teruMirrored(g, seat) && teruLadder(g, seat).next <= 2);
 

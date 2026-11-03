@@ -11,6 +11,8 @@ import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
 import { Effects } from './effects';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
+import { Gale } from './gale';
+import { glowGlyph } from '../ui/tileArt';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
@@ -222,6 +224,8 @@ export interface SyncView {
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
   mist?: number; // 高鸭稳乃的深山：牌山上的雾有几级（0 没有）
   sketch?: boolean; // 爱丽丝的手绘板：牌、桌布换成手绘风格
+  gale?: { seat: number; level: number } | null; // 薄墨初美的里鬼门：紫色的风聚得多浓（0–1），和牌时那张牌上紫光往上冲
+  glowTiles?: Set<TileId>; // 初美鸣出来的东、北中间那张：字发紫光，牌上一道淡淡的紫色光柱
 }
 
 export class Table3D {
@@ -315,6 +319,11 @@ export class Table3D {
   private marks: THREE.Mesh[] = [];
   // 迷途之家的水波纹：几圈白环贴着桌面往外扩（用到时才建）
   private ripples: THREE.Mesh[] = [];
+  // 初美的里鬼门：绕着牌桌打转的紫色的风（用到时才建）
+  private gale: Gale | null = null;
+  // 初美鸣出来的东、北中间那张牌上的紫光（牌 id → 贴在牌面上的发光字和光柱）
+  private glows = new Map<TileId, THREE.Group>();
+  private glowMats = new Map<number, THREE.MeshBasicMaterial>();
   private overlayGroup: THREE.Group | null = null;
   private zoom = { t: -1, target: new THREE.Vector3() };
   private held = new Set<TileId>();
@@ -897,12 +906,12 @@ export class Table3D {
   }
 
   // 和牌：金色光柱、闪光粒子，镜头往和牌的人那边推一点
-  private winFx(seat: number, tsumo: boolean): void {
+  private winFx(seat: number, tsumo: boolean, color: string = FX_GOLD): void {
     const at = this.seatPoint(seat, 0, 0.1, this.dim.handZ - 2.5);
-    this.effects.beam(at, FX_GOLD, 14, 2.2);
-    this.effects.ring(at, FX_GOLD, 14, 1.2);
+    this.effects.beam(at, color, 14, 2.2);
+    this.effects.ring(at, color, 14, 1.2);
     this.effects.ring(at, '#ffffff', 8, 0.8);
-    this.effects.sparkles(at, FX_GOLD, 70, 5, 2.2);
+    this.effects.sparkles(at, color, 70, 5, 2.2);
     this.effects.flash(at.clone().setY(3), '#fff2c4', 18, 0.6);
     this.shake = 0.6;
     if (seat !== this.lastSync?.view.me) this.zoom = { t: 0, target: this.seatPoint(seat, 0, 4, this.dim.seatZ - 2) };
@@ -1123,6 +1132,125 @@ export class Table3D {
     this.showGravity(!!view.gravity);
     this.drawConsole(g, view);
     this.syncMist(g, view);
+    this.syncGale(view);
+  }
+
+  // 初美的里鬼门：风的浓淡，和东北中间那张牌的紫光
+  private syncGale(view: SyncView): void {
+    const level = view.gale?.level ?? 0;
+    if (level > 0 && !this.gale) {
+      this.gale = new Gale(this.dim.tableHalf * 1.3, 2.6);
+      this.scene.add(this.gale.group);
+    }
+    this.gale?.setLevel(level);
+    const want = view.glowTiles ?? new Set<TileId>();
+    for (const [id, obj] of this.glows) {
+      if (want.has(id)) continue;
+      obj.removeFromParent();
+      this.glows.delete(id);
+    }
+    for (const id of want) {
+      if (this.glows.has(id)) continue;
+      const obj = this.makeGlow(id);
+      this.tiles[id].group.add(obj);
+      this.glows.set(id, obj);
+    }
+  }
+
+  // 贴在牌面上的紫色发光字（和牌面同样大小、同样的位置），加一道从牌面往上的淡紫光柱（牌躺着时就是朝天）
+  private makeGlow(id: TileId): THREE.Group {
+    const kind = kindOf(id);
+    let mat = this.glowMats.get(kind);
+    if (!mat) {
+      const c = document.createElement('canvas');
+      c.width = 160;
+      c.height = 224;
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false });
+      this.glowMats.set(kind, mat);
+      const ctx = c.getContext('2d')!;
+      const img = new Image();
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(glowGlyph(kind).replace('width="100%" height="100%"', 'width="160" height="224"'))}`;
+      // 牌面贴图也缩进 6% 画，对齐
+      void img.decode().then(() => {
+        const draw = (blur: number, alpha: number) => {
+          ctx.filter = blur ? `blur(${blur}px)` : 'none';
+          ctx.globalAlpha = alpha;
+          ctx.drawImage(img, 160 * 0.06, 224 * 0.06, 160 * 0.88, 224 * 0.88);
+        };
+        draw(14, 0.9);
+        draw(6, 1);
+        draw(0, 1);
+        tex.needsUpdate = true;
+      });
+    }
+    const group = new THREE.Group();
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W * 0.9, TILE_H * 0.9), mat);
+    face.position.z = TILE_T / 2 + 0.006;
+    face.renderOrder = 3;
+    const beamMat = new THREE.SpriteMaterial({ map: this.beamTexture(), color: '#a060ff', transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const beam = new THREE.Sprite(beamMat);
+    beam.center.set(0.5, 0);
+    beam.scale.set(TILE_W * 1.1, 4.5, 1);
+    beam.position.z = TILE_T / 2;
+    beam.renderOrder = 4;
+    group.add(face, beam);
+    group.userData.beamMat = beamMat;
+    group.userData.faceMat = mat;
+    return group;
+  }
+
+  // 光柱：底下亮、往上淡，两边柔和
+  private beamTex: THREE.CanvasTexture | null = null;
+  private beamTexture(): THREE.CanvasTexture {
+    if (this.beamTex) return this.beamTex;
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 256;
+    const ctx = c.getContext('2d')!;
+    const v = ctx.createLinearGradient(0, 256, 0, 0);
+    v.addColorStop(0, 'rgba(255,255,255,0.95)');
+    v.addColorStop(0.25, 'rgba(255,255,255,0.45)');
+    v.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, 64, 256);
+    ctx.globalCompositeOperation = 'destination-in';
+    const h = ctx.createLinearGradient(0, 0, 64, 0);
+    h.addColorStop(0, 'rgba(0,0,0,0)');
+    h.addColorStop(0.5, 'rgba(0,0,0,1)');
+    h.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = h;
+    ctx.fillRect(0, 0, 64, 256);
+    this.beamTex = new THREE.CanvasTexture(c);
+    this.beamTex.colorSpace = THREE.SRGBColorSpace;
+    return this.beamTex;
+  }
+
+  // 紫光一明一暗；光柱只在牌躺着（牌面朝天）时有
+  private updateGlows(): void {
+    for (const [id, g] of this.glows) {
+      const up = new THREE.Vector3(0, 0, 1).applyQuaternion(this.tiles[id].group.quaternion).y;
+      const pulse = 0.75 + 0.25 * Math.sin(this.now * 2.6 + id);
+      (g.userData.beamMat as THREE.SpriteMaterial).opacity = up > 0.8 ? 0.45 * pulse : 0;
+      g.children[1].visible = up > 0.8;
+      g.children[0].scale.setScalar(1);
+      ((g.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.8 + 0.2 * pulse;
+    }
+  }
+
+  // 这一家和牌时紫光往上冲（初美的里鬼门聚着风的局）
+  private galeWin(seat: number): boolean {
+    const gale = this.lastSync?.view.gale;
+    return !!gale && gale.seat === seat && gale.level > 0;
+  }
+
+  private galeBurst(tile: TileId): void {
+    const at = this.tiles[tile].group.position.clone();
+    at.y = 0.1;
+    this.effects.galeBurst(at, this.camera.position);
+    this.gale?.release();
+    this.shake = Math.max(this.shake, 0.7);
   }
 
   // 桃子烟消云散：那张牌落桌起，她的牌河和手牌一边往上飘一边淡掉，牌河和手牌上冒一阵烟；散完重新摆一次（就看不见了）
@@ -2031,6 +2159,10 @@ export class Table3D {
     if (rv.boltAt !== null && this.now >= rv.boltAt) {
       rv.boltAt = null;
       for (const w of rv.wins) {
+        if (this.galeWin(w.seat)) {
+          this.galeBurst(w.tile);
+          continue;
+        }
         const at = this.tiles[w.tile].group.position.clone();
         // 从画面上沿（靠中间一点）斜着劈下来：起点和那张牌一样远，牌在画面上方时闪电也不会大半截出了画面
         const p = at.clone().project(this.camera);
@@ -2042,7 +2174,11 @@ export class Table3D {
     if (!rv.fxDone && this.now >= rv.fxAt) {
       rv.fxDone = true;
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
-      for (const w of rv.wins) this.winFx(w.seat, w.tsumo);
+      for (const w of rv.wins) {
+        // 3D 不放闪电：初美的紫光在倒完牌时冲
+        if (this.galeWin(w.seat) && this.style !== '25d') this.galeBurst(w.tile);
+        this.winFx(w.seat, w.tsumo, this.galeWin(w.seat) ? '#c870ff' : FX_GOLD);
+      }
     }
     const pivot = (p: Placement) => new THREE.Vector3(0, -TILE_H / 2, -TILE_T / 2).multiplyScalar(p.scale).applyQuaternion(p.quat);
     for (const [id, e] of rv.topple) {
@@ -2108,6 +2244,8 @@ export class Table3D {
     this.animateReveal();
     this.effects.update(dt);
     this.mist.update(dt);
+    this.gale?.update(dt);
+    this.updateGlows();
     // 引力圆慢慢转、一胀一缩
     if (this.gravityDisc?.visible) {
       this.gravityDisc.rotation.z += dt * 0.25;

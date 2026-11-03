@@ -8,6 +8,7 @@ import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
+import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
 import { aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
 import { playRebuild, playShatter } from './sketchFx';
 import { kuroLost } from '../abilities/kuro';
@@ -47,6 +48,8 @@ import { ForecastCache } from '../ai/forecast';
 const POS = ['bottom', 'right', 'top', 'left'];
 
 const AI_TURN_DELAY = 550;
+// 2D 牌桌上里鬼门的风最多几道弧线
+const GALE_ARCS = 40;
 // 3D、2.5D 牌桌：上一张牌落桌、这家摸完牌以后再想这么久才出（毫秒）。
 // 算上出牌动作，电脑一回合（落桌到落桌）约 1.1 秒，和雀魂差不多。3D 的角色伸手要 0.3 秒，所以想得短一点
 const AI_TURN_DELAY_3D = 360;
@@ -736,11 +739,15 @@ export class App {
       this.cutinSeen.add(key);
     } else if (e.type === 'roundEnd') {
       if (e.result.wins.length) playWin();
+      // 2D：初美聚着风和牌，紫光往上冲（3D、2.5D 在牌桌上放）
+      const gale = this.galeView();
+      if (!this.table3d && gale && e.result.wins.some((w) => w.seat === gale.seat)) requestAnimationFrame(() => this.galeBurst2d());
       for (const w of e.result.wins) {
         // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
         const c = this.chars[w.seat];
         const word = w.from === null ? '自摸' : '荣和';
-        const form = this.game!.active(w.seat)?.form?.(this.game!, w.seat);
+        // 初美东北都鸣出来以后和牌：放里鬼门的和牌动画
+        const form = this.game!.active(w.seat)?.form?.(this.game!, w.seat) ?? (c.id === 'hatsumi' && this.game!.active(w.seat) && hatsumiOpen(this.game!, w.seat) ? 'kimon' : null);
         const art = form ? skillArt(c.id, `${form}-win`) : undefined;
         if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art, glyph: c.name.slice(-1) })) continue;
         this.bigFx(w.seat, word, 'win');
@@ -1065,6 +1072,7 @@ export class App {
       ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     table.dataset.mist = String(this.mistLevel());
+    this.gale2d(this.galeView()?.level ?? 0);
     setSketchTiles(false);
     table.parentElement?.classList.toggle('sketch', sketch);
     this.freshDiscard = null;
@@ -1112,6 +1120,8 @@ export class App {
       drawPath: this.settings.drawPath,
       mist: this.mistLevel(),
       sketch: this.sketchShown(),
+      gale: this.galeView(),
+      glowTiles: this.glowTiles(),
     });
     hud.parentElement?.classList.toggle('sketch', this.sketchShown());
   }
@@ -1516,7 +1526,75 @@ export class App {
   }
 
   private meldsHtml(melds: Meld[], seat: number): string {
-    return melds.map((m) => `<div class="meld" title="${seat}">${meldTilesHtml(m, seat, 'pond')}</div>`).join('');
+    const glow = this.glowTiles();
+    return melds.map((m) => `<div class="meld" title="${seat}">${meldTilesHtml(m, seat, 'pond', glow)}</div>`).join('');
+  }
+
+  // ---------- 薄墨初美的里鬼门 ----------
+
+  // 紫色的风聚得多浓（谁都看得见）：东北都鸣出来以后照小四喜的进度，听牌最浓。
+  // 一局结束时她没和就散掉；和了的话留到紫光往上冲那一下
+  private galeView(): { seat: number; level: number } | null {
+    const g = this.game;
+    if (!g || g.phase === 'predeal' || g.phase === 'postdeal') return null;
+    const seat = [0, 1, 2, 3].find((s) => this.chars[s]?.id === 'hatsumi' && hatsumiGale(g, s) > 0);
+    if (seat === undefined) return null;
+    if (g.phase === 'roundEnd' || g.phase === 'gameEnd') {
+      if (!g.roundResult?.wins.some((w) => w.seat === seat)) return null;
+      return { seat, level: 1 };
+    }
+    return { seat, level: hatsumiGale(g, seat) };
+  }
+
+  // 初美鸣出来的东、北：每一副中间那张的字发紫光
+  private glowTiles(): Set<TileId> {
+    const g = this.game;
+    const out = new Set<TileId>();
+    if (!g) return out;
+    for (let s = 0; s < 4; s++) {
+      if (this.chars[s]?.id !== 'hatsumi') continue;
+      for (const i of hatsumiGlowMelds(g, s)) {
+        const slots = meldLayout(g.players[s].melds[i], s).filter((x) => !x.hidden);
+        const mid = slots[Math.floor((slots.length - 1) / 2)];
+        if (mid) out.add(mid.tile);
+      }
+    }
+    return out;
+  }
+
+  // 2D 牌桌：紫色的风是一层盖在牌桌上的弧线（不跟着牌桌重画，动画不会断）；和牌时一阵紫光往上冲
+  private gale2d(level: number): void {
+    const host = document.querySelector('.stage .table');
+    if (!host) return;
+    let el = host.querySelector<HTMLElement>(':scope > .gale');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'gale';
+      const colors = ['#c23cff', '#e04cff', '#9b3cff', '#ff5ae6', '#b45cff', '#f0a8ff'];
+      const arcs = Array.from({ length: GALE_ARCS }, (_, k) => {
+        const s = 180 + Math.random() * 760;
+        const d = 2.6 + Math.random() * 3.4;
+        return `<i style="--k:${k}"><b style="--s:${s.toFixed(0)}px;--e:${(0.7 + Math.random() * 0.3).toFixed(2)};--d:${d.toFixed(2)}s;--w:${(1.5 + Math.random() * 2.5).toFixed(1)}px;--c:${colors[k % colors.length]};animation-delay:${(-Math.random() * d).toFixed(2)}s"></b></i>`;
+      }).join('');
+      const rays = Array.from({ length: 48 }, () => {
+        const a = (Math.random() - 0.5) * 70;
+        return `<u style="--a:${a.toFixed(1)}deg;--len:${(120 + Math.random() * 260).toFixed(0)}px;--x:${((Math.random() - 0.5) * 50).toFixed(0)}px;--c:${colors[Math.floor(Math.random() * colors.length)]};animation-delay:${(Math.random() * 0.35).toFixed(2)}s"></u>`;
+      }).join('');
+      el.innerHTML = `${arcs}<span class="gale-burst">${rays}</span>`;
+      host.prepend(el);
+    }
+    el.style.setProperty('--lv', level.toFixed(3));
+    el.style.setProperty('--n', String(GALE_ARCS));
+  }
+
+  // 2D：和牌那一下紫光往上冲（盖在结算上面，冲完自己收起来）
+  private galeBurst2d(): void {
+    const el = document.querySelector<HTMLElement>('.stage .table > .gale');
+    if (!el) return;
+    el.classList.remove('burst');
+    void el.offsetWidth;
+    el.classList.add('burst');
+    window.setTimeout(() => el.classList.remove('burst'), 2600);
   }
 
   private opponentHtml(s: number): string {
@@ -2059,11 +2137,12 @@ export class App {
 }
 
 // 一组副露的牌：横着的、扣着的、加杠叠着的都按 meldLayout 摆
-function meldTilesHtml(m: Meld, seat: number, size: 'pond' | 'mini'): string {
+// glow：字发紫光的牌（初美鸣出来的东、北中间那张）
+function meldTilesHtml(m: Meld, seat: number, size: 'pond' | 'mini', glow?: Set<TileId>): string {
   return meldLayout(m, seat)
     .map((sl) => {
       if (sl.hidden) return backHtml(size);
-      const tile = tileHtml(sl.tile, { size, sideways: sl.sideways });
+      const tile = tileHtml(sl.tile, { size, sideways: sl.sideways, classes: glow?.has(sl.tile) ? ['kimon-glow'] : [] });
       if (sl.stacked === undefined) return tile;
       return `<div class="meld-stack">${tileHtml(sl.stacked, { size, sideways: true })}${tile}</div>`;
     })
