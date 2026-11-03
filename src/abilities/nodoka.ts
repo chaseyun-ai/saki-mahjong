@@ -6,7 +6,7 @@ import type { Ability } from './types';
 
 // 原村和（清澄）：平时就是牌效最好的普通人，没有控场。
 // 第二形态“天使和”：心里有个看不见的计数，从 start 开始；桌上每有一名比她强（费用比她高）的对手，
-// 每过完一局（连庄的本场不算，同一局只算一次）就减一。减到 0 以后的下一局起，这一场一直是天使和：
+// 每过完一局（连庄、流局重打的本场也算）就减一。减到 0 以后的下一局起，这一场一直是天使和：
 // - 别人对她配牌、摸牌的影响减半：别人给她配牌、摸牌定的规矩，每一条有 resist 的概率不算；
 //   别人调整配牌时，这一局有 resist 的概率碰不到她的配牌（absolute 的玄照样管得到她）
 // - 专注对局：不再失误（电脑的和，见 src/ai/ai.ts）
@@ -22,14 +22,14 @@ export function nodokaStrong(g: Game, seat: number): number {
   return [0, 1, 2, 3].filter((s) => s !== seat && costOf(g, s) > mine).length;
 }
 
-// 看不见的计数：开局 start，每过完一局减去比她强的人数（本场不算）
-// 平行宇宙清空过的话（since：清空时是第几局），那一局和之前的都不算
+// 看不见的计数：开局 start，每过完一局减去比她强的人数（本场也算一局）。
+// 过完了几局按 Game.round 数（每次发牌加一，发牌前算马上要开的那一局）；
+// 平行宇宙清空过的话（since：清空时的 Game.round），那一局和之前的都不算
 export function nodokaCounter(g: Game, seat: number): number {
-  const now = g.roundWind * 4 + g.roundNumber;
-  const since = (g.abilityGameState[seat] as { since?: number }).since ?? -1;
-  const done = new Set<number>();
-  for (const e of g.events) if (e.type === 'roundStart' && e.slot !== undefined && e.slot < now && e.slot > since) done.add(e.slot);
-  return NODOKA.start - nodokaStrong(g, seat) * done.size;
+  const now = g.phase === 'predeal' ? g.round + 1 : g.round;
+  const since = (g.abilityGameState[seat] as { since?: number }).since ?? 0;
+  const done = Math.max(0, now - 1 - since);
+  return NODOKA.start - nodokaStrong(g, seat) * done;
 }
 
 // 这一局是不是天使和
@@ -52,7 +52,7 @@ export const nodokaAbility: Ability = {
   description: '平时是不受场况影响的数字派。对局里遇到比自己强的人会越来越专注，到了某一局就变成天使和：别人对她配牌、摸牌的影响减半，封印不了，不再失误，看得出 8000 点以上的铳牌',
   // 平行宇宙：计数回到开头，这一局也不算
   resetMarks(g, seat) {
-    (g.abilityGameState[seat] as { since?: number }).since = g.roundWind * 4 + g.roundNumber;
+    (g.abilityGameState[seat] as { since?: number }).since = g.phase === 'predeal' ? g.round + 1 : g.round;
   },
   // 计数到 0 就封印不了（不看 active，不然会绕回 isSealed）
   unsealable(g, seat) {

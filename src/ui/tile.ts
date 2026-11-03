@@ -2,7 +2,8 @@ import { TileId, isRed, kindOf } from '../engine/tiles';
 import { sketchFaceSvg } from './sketchArt';
 import { faceSvg } from './tileArt';
 
-export type TileSize = 'hand' | 'pond' | 'mini';
+// top：2D 牌桌上别家立着的手牌，从上往下看只看得到牌的顶边（牌背一半、牌面一半）
+export type TileSize = 'hand' | 'pond' | 'mini' | 'top';
 
 export interface TileOpts {
   size?: TileSize;

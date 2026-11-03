@@ -109,7 +109,7 @@ describe('东横桃子', () => {
   it('天使和的原村和看得见她：别人看不见的牌她看得见', () => {
     let angelSaw = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      // 桌上三个比和强的人（桃子 3 费），东 4 局起和是天使和
+      // 桌上三个比和强的人（桃子 3 费），过完 3 局（本场也算）起和是天使和
       play(seed, ['momo', 'nodoka', 'teru', 'awai'], 'south', (g) =>
         g.onEvent((e) => {
           if (e.type !== 'discard' || e.seat !== 0) return;
