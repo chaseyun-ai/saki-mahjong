@@ -189,8 +189,11 @@ interface Placement {
   scale: number;
 }
 
-// 桃子变淡时透明度分几档
+// 桃子烟消云散时透明度分几档
 const FADE_STEPS = 20;
+// 桃子烟消云散要多久（秒）：那张牌落桌以后，牌河和手牌一边上浮一边淡掉，冒一阵烟
+const VANISH_TIME = 1.6;
+const VANISH_RISE = 1.2;
 
 interface TileObj {
   group: THREE.Group;
@@ -238,6 +241,9 @@ export class Table3D {
   private faceGeoms: THREE.PlaneGeometry[] = [];
   private faceMat: THREE.MeshStandardMaterial | null = null;
   private fadeMats = new Map<THREE.Material, THREE.Material[]>();
+  // 桃子：这一局已经隐身的座位；正在烟消云散的座位（落桌的时刻、烟放了没有）
+  private gone = new Set<number>();
+  private vanish = new Map<number, { at: number; puffed: boolean; base: Map<TileId, number> }>();
   // 爱丽丝的手绘板：手绘的牌面、白色牌身、铅笔排线的牌背、白纸桌布、每张牌描一圈黑边（用到时才建）
   private sketch: {
     on: boolean;
@@ -643,6 +649,7 @@ export class Table3D {
   // 立刻把所有牌放到位：停掉手上的动作、飞牌、发牌和理牌，人回到记下的静止样子
   snap(): void {
     this.handAnims = [];
+    this.vanish.clear();
     for (const f of this.flights) if (f.fade) this.setTileOpacity(this.tiles[f.tile], 1);
     this.flights = [];
     this.heldDraw = null;
@@ -720,6 +727,8 @@ export class Table3D {
     if (e.type === 'roundStart') {
       this.startDeal(g);
       this.reveal = null;
+      this.gone.clear();
+      this.vanish.clear();
       // 牌河里每张牌歪多少换一套：同一张牌这一局一直歪成一样，下一局换个样子
       this.pondSalt = Math.floor(vary.next() * 2 ** 31);
     }
@@ -737,14 +746,22 @@ export class Table3D {
       const ch = this.characterAt(e.seat);
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
-      // 隐身的桃子打的牌：看不见，手里那张直接消失，没有动画、没有立直特效
-      if (g.stealthed(e.seat, this.lastSync?.view.me ?? 0)) return;
+      // 隐身的桃子打的牌：看不见，手里那张直接消失，没有动画、没有立直特效。
+      // 刚隐身的那一张照常打出去（不放立直特效），落桌那一刻起整条牌河和手牌烟消云散
+      const vanishing = g.stealthed(e.seat, this.lastSync?.view.me ?? 0);
+      if (vanishing && this.gone.has(e.seat)) return;
       const pond = this.seatPoint(e.seat, 0, 0, this.dim.pondZ + 1.5);
       // 立直宣言：牌拍下去的那一刻放特效（落桌标记），接着从抽屉里拿立直棒放到桌上（2.5D 是落桌后立直棒直接掉下来）
       const flat = this.style === '25d';
       // 随机微变化：每次出牌快慢、抬多高都差一点；2.5D 照雀魂调的节奏和立直宣言牌只变一半
       const base = e.riichi ? (flat ? SLIDE_RIICHI : RIICHI_DISCARD) : flat ? SLIDE_DISCARD : DEFAULT_DISCARD;
       const motion = varyDiscard(base, flat || e.riichi ? 0.5 : 1);
+      if (vanishing) {
+        this.gone.add(e.seat);
+        this.vanish.set(e.seat, { at: this.now + motion.reach + motion.carry, puffed: false, base: new Map() });
+        this.playDiscard(e.seat, e.tile, motion, false);
+        return;
+      }
       this.playDiscard(e.seat, e.tile, motion, !!e.riichi);
       if (e.riichi) this.startStickAnim(e.seat, -(motion.reach + motion.carry + (flat ? STICK_DROP_DELAY : motion.settle)));
       for (const ch of all) {
@@ -1080,28 +1097,15 @@ export class Table3D {
     for (const [t, slot] of wallSlots(g)) targets.set(t, this.wallPlacement(slot, view.me));
     this.applyDeal(g, view.me, targets);
     this.placeRiichiSticks(g);
-    // 桃子隐身之前一巡比一巡淡：她的手牌和牌河半透明（副露不变）
-    const fade = new Map<TileId, number>();
-    for (let s = 0; s < 4; s++) {
-      const a = g.presence(s, view.me);
-      if (a <= 0 || a >= 1) continue;
-      for (const t of g.players[s].hand) fade.set(t, a);
-      for (const d of g.players[s].discards) if (!d.called) fade.set(d.tile, a);
-    }
-
     for (let id = 0; id < TILE_COUNT; id++) {
       const t = this.tiles[id];
       const target = targets.get(id) ?? null;
       t.target = target;
-      const a = fade.get(id) ?? 1;
-      const mat = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
-      const back = mat && this.faded(mat, a);
+      const back = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
       if (back && t.back.material !== back) t.back.material = back;
-      const bodyMat = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
-      const body = bodyMat && this.faded(bodyMat, a);
+      const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
-      const face = this.faceMat && this.faded(this.faceMat, a);
-      if (face && t.face.material !== face) t.face.material = face;
+      if (this.faceMat && t.face.material !== this.faceMat) t.face.material = this.faceMat;
       if (!target) {
         t.group.visible = false;
         t.shown = false;
@@ -1121,7 +1125,40 @@ export class Table3D {
     this.syncMist(g, view);
   }
 
-  // 半透明的同一种材质（桃子一巡比一巡淡）：透明度分 FADE_STEPS 档，每档复制一份缓存起来
+  // 桃子烟消云散：那张牌落桌起，她的牌河和手牌一边往上飘一边淡掉，牌河和手牌上冒一阵烟；散完重新摆一次（就看不见了）
+  private animateVanish(): void {
+    if (!this.vanish.size || !this.lastSync) return;
+    const g = this.lastSync.g;
+    for (const [s, v] of this.vanish) {
+      const k = (this.now - v.at) / VANISH_TIME;
+      if (k < 0) continue;
+      const p = g.players[s];
+      const tiles = [...p.hand, ...p.discards.filter((d) => !d.called).map((d) => d.tile)];
+      if (!v.puffed) {
+        v.puffed = true;
+        for (const z of [this.dim.pondZ + TILE_H, this.dim.handZ]) this.effects.smoke(this.seatPoint(s, 0, 0.6, z), '#dfe4ea', 46, 3.4, VANISH_TIME + 0.6);
+      }
+      if (k >= 1) {
+        this.vanish.delete(s);
+        this.sync(g, this.lastSync.view);
+        continue;
+      }
+      // 先慢后快地淡，往上飘
+      const a = 1 - k * k;
+      for (const id of tiles) {
+        const t = this.tiles[id];
+        if (!t.target) continue;
+        t.back.material = this.faded(this.backMat!, a);
+        t.body.material = this.faded(this.bodyMat!, a);
+        if (this.faceMat) t.face.material = this.faded(this.faceMat, a);
+        // 往上飘：改的是这一帧的落点（sync 重摆时会换回原位，下一帧再抬上去）
+        if (!v.base.has(id)) v.base.set(id, t.target.pos.y);
+        t.target.pos.y = v.base.get(id)! + VANISH_RISE * k;
+      }
+    }
+  }
+
+  // 半透明的同一种材质（桃子烟消云散）：透明度分 FADE_STEPS 档，每档复制一份缓存起来
   private faded(m: THREE.Material, alpha: number): THREE.Material {
     if (alpha >= 1) return m;
     const k = Math.max(1, Math.round(alpha * FADE_STEPS));
@@ -1288,8 +1325,9 @@ export class Table3D {
       mx -= this.meldSpacing.group;
     }
 
-    // 隐身的桃子：手牌和牌河都看不见（副露照旧摆着）
-    if (g.stealthed(s, me)) return;
+    // 隐身的桃子：手牌和牌河都看不见（副露照旧摆着）；烟消云散的那一会儿还摆着
+    const vanishing = this.vanish.has(s);
+    if (g.stealthed(s, me) && !vanishing) return;
 
     // 手牌：自己的稍微后仰朝向镜头，别人的立着背对我们
     let drawn = p.drawn;
@@ -1380,11 +1418,13 @@ export class Table3D {
         row++;
         px = -((POND_COLS * pstep) / 2);
       }
-      const w = d.riichi ? TILE_H : TILE_W;
+      // 烟消云散的那一张是立直宣言牌也竖着放：别人不该知道她立直了
+      const side = d.riichi && !(vanishing && d === p.discards[p.discards.length - 1]);
+      const w = side ? TILE_H : TILE_W;
       const z = this.dim.pondZ + row * (TILE_H + GAP) + TILE_H / 2;
       // 随机微变化：像真人随手放的，每张牌稍微转一点、偏一点（按牌算好的固定值，重画时不会抖）
       const j = pondJitter(this.pondSalt, d.tile);
-      out.set(d.tile, this.toWorld(s, me, px + w / 2 + j.dx, lyingY, z + j.dz, FACE_UP, (d.riichi ? Math.PI / 2 : 0) + flip + j.yaw));
+      out.set(d.tile, this.toWorld(s, me, px + w / 2 + j.dx, lyingY, z + j.dz, FACE_UP, (side ? Math.PI / 2 : 0) + flip + j.yaw));
       px += w + GAP;
       col++;
     }
@@ -2060,6 +2100,7 @@ export class Table3D {
     this.dice.update(dt);
     this.animateHands(dt);
     this.animateFlights(dt);
+    this.animateVanish();
     // 到了倒牌的时间重新摆一次
     if (this.reveal && this.lastSync && this.reveal.topple.size === 0 && this.now >= this.reveal.at && !this.reveal.fxDone) {
       this.sync(this.lastSync.g, this.lastSync.view);
