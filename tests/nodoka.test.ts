@@ -15,7 +15,6 @@ afterAll(() => Object.assign(AWAI, { aiSkills: true }));
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 const COSTS = Object.fromEntries(CHARACTERS.map((c) => [c.id, c.cost]));
-const slotOf = (g: Game) => g.roundWind * 4 + g.roundNumber;
 
 function play(seed: number, seats: { id: string; ability: Ability | null }[], format: 'east' | 'south', on: (g: Game, me: number) => void) {
   const g = new Game({ seed, format, players: seats.map((c) => ({ name: c.id, ability: c.ability })) });
@@ -45,33 +44,43 @@ const probe: Ability = {
 };
 
 describe('原村和', () => {
-  it('2 费；计数从 9 开始，每过完一局（本场不算）减去比她强的人数，减到 0 的下一局起一直是天使和', () => {
+  it('2 费；计数从 9 开始，每过完一局（本场也算）减去比她强的人数，减到 0 的下一局起一直是天使和', () => {
     expect(byId('nodoka').cost).toBe(2);
-    const cases: [string[], number | null][] = [
-      [['nodoka', 'awai', 'teru', 'koromo'], 3], // 三个强者：东 4 局起
-      [['nodoka', 'saki', 'awai', 'kuro'], 5], // 两个：南 2 局起
-      [['nodoka', 'kuro', 'mako', 'ako'], null], // 没有比她强的：一直不变
+    const cases: [string[], number][] = [
+      [['nodoka', 'awai', 'teru', 'koromo'], 3], // 三个强者：过完 3 局（本场也算）起
+      [['nodoka', 'saki', 'awai', 'kuro'], 2], // 两个：过完 5 局起
+      [['nodoka', 'kuro', 'mako', 'ako'], 0], // 没有比她强的：一直不变
     ];
-    for (const [ids, from] of cases) {
+    for (const [ids, strong] of cases) {
       for (let seed = 1; seed <= 3; seed++) {
         const seats = ids.map(byId);
-        const seen = new Map<number, boolean>();
         const g = play(seed, seats, 'south', (g, me) =>
           g.onEvent((e) => {
             if (e.type !== 'roundStart') return;
-            const slot = slotOf(g);
-            const angel = nodokaAngel(g, me);
-            // 连庄的本场和这一局开头一样
-            if (seen.has(slot)) expect(angel).toBe(seen.get(slot));
-            seen.set(slot, angel);
-            expect(angel).toBe(from !== null && slot >= from && !g.isSealed(me));
-            if (from === null) expect(nodokaCounter(g, me)).toBe(NODOKA.start);
+            // 这一局之前过完了 g.round - 1 局，连庄、流局重打的本场也算
+            const counter = NODOKA.start - strong * (g.round - 1);
+            expect(nodokaCounter(g, me)).toBe(counter);
+            expect(nodokaAngel(g, me)).toBe(counter <= 0 && !g.isSealed(me));
           }),
         );
         expect(g.phase).toBe('gameEnd');
       }
     }
   }, 120000);
+
+  it('本场也算一局：东 1 局连庄两次以后，三个强者的计数已经减了 3 次', () => {
+    const seats = ['nodoka', 'awai', 'teru', 'koromo'].map((id) => ({ name: id, ability: byId(id).ability }));
+    const g = new Game({ seed: 1, players: seats });
+    // 东 1 局 2 本场：同一局开了第三次
+    g.round = 3;
+    g.roundWind = 0;
+    g.roundNumber = 0;
+    g.honba = 2;
+    expect(nodokaCounter(g, 0)).toBe(NODOKA.start - 3 * 2);
+    g.round = 4;
+    expect(nodokaCounter(g, 0)).toBe(0);
+    expect(nodokaAngel(g, 0)).toBe(true);
+  });
 
   it('变身那一局出一次“天使和”，头像框挂“天使”', () => {
     const seats = ['nodoka', 'awai', 'teru', 'koromo'].map(byId);
@@ -162,9 +171,7 @@ describe('原村和', () => {
     expect(g.isSealed(0)).toBe(true);
     expect(nodokaAngel(g, 0)).toBe(false);
     // 两个强者：过完 5 局计数到 -1
-    g.roundWind = 1;
-    g.roundNumber = 1;
-    for (let slot = 0; slot < 5; slot++) g.events.push({ type: 'roundStart', label: '', slot });
+    g.round = 6;
     expect(nodokaCounter(g, 0)).toBeLessThanOrEqual(0);
     expect(g.isSealed(0)).toBe(false);
     expect(nodokaAngel(g, 0)).toBe(true);
