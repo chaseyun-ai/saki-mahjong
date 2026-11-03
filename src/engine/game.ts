@@ -310,7 +310,7 @@ export class Game {
   }
 
   // 东横桃子的隐身：viewer 眼里 seat 隐身了没有（她打满 stealth 给的张数起）。
-  // 隐身了，viewer 看不见她的整条牌河和手牌，荣和不了、鸣不了她打的牌，不知道她立没立直，也读不出她听什么。
+  // 隐身了，viewer 看不见她的整条牌河、手牌和副露，荣和不了、鸣不了她打的牌，抢不了她的杠，不知道她立没立直，也读不出她听什么。
   // 自己永远看得见，一局结束全部亮出来
   stealthed(seat: number, viewer: number): boolean {
     if (seat === viewer || this.phase === 'roundEnd' || this.phase === 'gameEnd') return false;
@@ -485,7 +485,7 @@ export class Game {
       let n = 0;
       for (const d of [1, 2, 3]) {
         const o = (seat + d) % 4;
-        if (!chankan && this.stealthed(seat, o)) continue;
+        if (this.stealthed(seat, o)) continue;
         if (!this.canWin(o)) continue;
         const r = this.winResult(o, tile, false, last);
         if (!r) continue;
@@ -992,8 +992,8 @@ export class Game {
       if (o === src.seat) continue;
       if (this.responses.get(o)?.type === 'ron') continue;
       if (!this.waits(o).includes(kind)) continue;
-      // 没看见的牌（桃子隐身）不算见逃
-      if (this.callKind === 'discard' && this.stealthed(src.seat, o)) continue;
+      // 没看见的牌（桃子隐身，打的牌、加杠的牌都是）不算见逃
+      if (this.stealthed(src.seat, o)) continue;
       const p = this.players[o];
       p.furitenTemp = true;
       if (p.riichi) p.furitenRiichi = true;
@@ -1092,6 +1092,8 @@ export class Game {
     this.responses.clear();
     for (let o = 0; o < 4; o++) {
       if (o === seat) continue;
+      // 隐身的桃子加杠别人看不见，抢不了
+      if (this.stealthed(seat, o)) continue;
       if (this.canWin(o) && this.winResult(o, tile, false)) this.pending.set(o, [{ type: 'ron' }, { type: 'pass' }]);
     }
     if (this.pending.size > 0) {

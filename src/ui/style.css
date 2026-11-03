@@ -726,13 +726,14 @@ button {
 
 /* 桃子隐身的那一刻：停半拍，牌河和手牌在原地慢慢淡掉，像别人的视线从她身上滑开（时长和 app.ts 的 VANISH_MS 一样） */
 .pond.vanish,
-.ohand.vanish {
-  animation: momo-vanish 2.9s ease-in-out forwards;
+.ohand.vanish,
+.melds.vanish {
+  animation: momo-vanish 1.15s ease-in-out forwards;
 }
 
 @keyframes momo-vanish {
   0%,
-  14% {
+  13% {
     opacity: 1;
   }
   100% {
@@ -740,7 +741,8 @@ button {
   }
 }
 
-/* 隐身的桃子打的牌：别人看不见，她自己看着是半透明的 */
+/* 隐身的桃子打的牌、副露：别人看不见，她自己看着是半透明的 */
+.melds.stealth .tile,
 .pond .tile.stealth {
   opacity: 0.5;
 }
