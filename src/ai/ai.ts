@@ -28,6 +28,7 @@ import { himekoExtra, himekoPlan } from '../abilities/himeko';
 import { bowlingOf, isPin } from '../abilities/arata';
 import { hatsumiOpen } from '../abilities/hatsumi';
 import { JUN } from '../abilities/jun';
+import { tokaChisui } from '../abilities/toka';
 import { haruRush } from '../abilities/haru';
 import { aislinnAiBrush, aislinnExtra, aislinnPlan } from '../abilities/aislinn';
 import type { Action, Game } from '../engine/game';
@@ -307,6 +308,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const counts = toCounts(p.hand);
   const cur = shanten(counts, p.melds.length);
   for (const a of legal) {
+    // 透华治水：自己也不杠
+    if ((a.type === 'ankan' || a.type === 'kakan') && tokaChisui(g, seat)) continue;
     if (a.type === 'ankan') {
       // 初美：风牌能杠就杠（配牌的暗刻摸到第四张、鸣出东北以后）
       if (p.riichi || style.kanEager || (style.winds && isWind(a.kind))) return a;
@@ -878,6 +881,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false)) && !growHolds(g, seat, style, false) && !seraHolds(g, seat, style, false) && !sumireSkips(g, seat, style) && !allLastHold(g, seat, false)) return ron;
   // 涅莉押了运势的局不鸣牌，门清做大
   if (style.waves && nellyTier(g, seat) > 0) return pass;
+  // 透华治水：牌局平静如水，自己也不鸣
+  if (tokaChisui(g, seat)) return pass;
 
   const p = g.players[seat];
   const tile = g.lastDiscard!.tile;

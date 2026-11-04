@@ -323,11 +323,6 @@ export class Game {
     return from !== null && this.players[seat].discards.length >= from;
   }
 
-  // 透华的治水：这一家现在吃、碰、杠不了（牌局平静如水）。管不到的人（照）、佛灭的那一局不受影响
-  callsFrozen(seat: number): boolean {
-    return [0, 1, 2, 3].some((o) => this.binds(o, seat) && !!this.active(o)?.freezesCalls?.(this, o));
-  }
-
   // viewer 知不知道 seat 立直了（隐身了就不知道）
   seesRiichi(seat: number, viewer: number): boolean {
     const p = this.players[seat];
@@ -771,7 +766,7 @@ export class Game {
         const kinds = new Set(p.hand.map(kindOf));
         if (YAOCHU_KINDS.filter((k) => kinds.has(k)).length >= 9) out.push({ type: 'kyuushu' });
       }
-      if (this.wall.remaining > 0 && this.totalKans() < 4 && !this.callsFrozen(seat)) {
+      if (this.wall.remaining > 0 && this.totalKans() < 4) {
         const counts = toCounts(p.hand);
         for (let k = 0; k < 34; k++) {
           if (counts[k] !== 4) continue;
@@ -924,7 +919,7 @@ export class Game {
       const q = this.players[o];
       const opts: Action[] = [];
       if (this.canWin(o) && this.winResult(o, tile, false)) opts.push({ type: 'ron' });
-      if (this.wall.remaining > 0 && !q.riichi && !this.callsFrozen(o)) {
+      if (this.wall.remaining > 0 && !q.riichi) {
         const same = q.hand.filter((t) => kindOf(t) === kind);
         for (const pair of distinctPairs(same)) opts.push({ type: 'pon', tiles: pair });
         if (same.length === 3 && this.totalKans() < 4) opts.push({ type: 'daiminkan' });

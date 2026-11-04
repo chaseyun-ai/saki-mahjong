@@ -1,18 +1,18 @@
 import type { Game, RoundResult } from '../engine/game';
 import { shanten } from '../engine/shanten';
-import { TileId, kindOf, toCounts } from '../engine/tiles';
+import { Kind, TileId, kindOf, toCounts } from '../engine/tiles';
 import type { Ability } from './types';
 
 // 龙门渊透华：常态是比普通人好一点的数字派，配牌、进张比没有能力的人顺 5%。
 // 场上四家的点数加起来变动超过 10 万点（一家加、一家减只算一次）以后，下一局起进入“治水”，一直到终局：
-// - 牌局平静如水：谁也吃、碰、杠不了（明杠、暗杠、加杠都不行；她自己也不鸣）。
-//   别人的能力动不了的人（照）、佛灭的那一局照常能鸣（Game.callsFrozen）
+// - 牌局平静如水：只靠换牌让吃碰杠几乎不出现，鸣牌按钮照常（真有能鸣的牌照样能鸣）
+//   1. 配牌：别人的配牌里对子压到 calmPairs 个以内（碰的机会少）
+//   2. 摸牌：别人只摸得到打出去谁也鸣不了的死牌（别人手里成对的、下家能吃的都不来；自己摸了能暗杠、加杠的也不来；
+//      手里已经有一个对子的，再成对的也不来）。听牌的人的和了牌不算在里面，那一半由下面的自摸减半管
+//   3. 透华自己摸的牌也是死牌（有效进张照样来），电脑的透华治水时自己也不鸣
 // - 别人每次摸牌，听着牌的话有一半的概率摸不到和了牌（自摸概率减半）
 // - 常态的 5% 照样有
-//
-// 怎么让牌桌几乎没有吃碰杠（研究过两种做法，见 PR 说明）：
-// 只靠换牌（别人只摸得到打出去谁也鸣不了的死牌）模拟下来鸣牌只少 35%（每局 1.57 → 1.02 次），
-// 因为能鸣的牌大多来自配牌。所以治水直接把鸣牌这条路封住，和桃子隐身时别人鸣不了她的牌是同一类规矩。
+// 都是控场的规矩：照这样别人动不了的人、佛灭的那一局、天使和挡掉的一半照常不受影响
 export const TOKA = {
   luck: 0.05, // 常态：配牌、进张比没有能力的人顺多少
   dealTries: 4, // 配牌最多换几张（每张按 luck 的概率换）
@@ -21,6 +21,7 @@ export const TOKA = {
   // 想直接玩治水的，对局设置里选“开局就治水”（PlayerConfig.startForm）
   threshold: 100000,
   tsumoCut: 0.5, // 治水：别人摸到和了牌的概率砍掉多少
+  calmPairs: 1, // 治水：别人的配牌最多留几个对子
 };
 
 interface TokaGameState {
@@ -99,10 +100,54 @@ function luckyDeal(g: Game, seat: number, p: number): void {
 
 const CHISUI = '治水';
 
+// 一手牌里有几个对子（刻子也算一个）
+function pairsIn(hand: TileId[]): number {
+  return toCounts(hand).filter((n) => n >= 2).length;
+}
+
+// 把 target 配牌里多出来的对子拆掉：对子里的一张换成发完牌以后牌山里、她手里没有的牌。
+// 换牌由 Wall.guard 把关，别人对这家配牌的规矩不会变差
+function breakPairs(g: Game, target: number): void {
+  const w = g.wall;
+  const idx = g.dealIndices(target);
+  for (let n = 0; n < 8; n++) {
+    const counts = toCounts(idx.map((i) => w.live[i]));
+    if (counts.filter((c) => c >= 2).length <= TOKA.calmPairs) return;
+    const extra = g.rng.shuffle(idx.filter((i) => counts[kindOf(w.live[i])] >= 2));
+    if (!extra.some((i) => w.bringToLive(i, (t) => counts[kindOf(t)] === 0, g.rng, (j) => j >= 52))) return;
+  }
+}
+
+// 摸了会让牌局起波澜的牌种（drawer 摸了以后打出去会被人鸣）：别人手里成对的（碰、明杠），下家手里有搭子的（吃）；
+// drawer 自己摸了能暗杠、加杠的。立直的人不鸣。
+// calm：drawer 手里已经有 calmPairs 个对子时，再成对的牌也不来（对子多了以后打出去的牌容易被碰）
+function liveKinds(g: Game, drawer: number, rinshan: boolean, calm: boolean): Set<Kind> {
+  const out = new Set<Kind>();
+  if (rinshan) return out;
+  for (let o = 0; o < 4; o++) {
+    const p = g.players[o];
+    const c = toCounts(p.hand);
+    if (o === drawer) {
+      c.forEach((n, k) => n >= 3 && out.add(k));
+      for (const m of p.melds) if (m.type === 'pon') out.add(kindOf(m.tiles[0]));
+      if (calm && c.filter((n) => n >= 2).length >= TOKA.calmPairs) c.forEach((n, k) => n === 1 && out.add(k));
+      continue;
+    }
+    if (p.riichi) continue;
+    c.forEach((n, k) => n >= 2 && out.add(k));
+    if (o !== (drawer + 1) % 4) continue;
+    for (let k = 0; k < 27; k++) {
+      const n = k % 9;
+      if ((n >= 2 && c[k - 2] && c[k - 1]) || (n >= 1 && n <= 7 && c[k - 1] && c[k + 1]) || (n <= 6 && c[k + 1] && c[k + 2])) out.add(k);
+    }
+  }
+  return out;
+}
+
 export const tokaAbility: Ability = {
   id: 'toka',
   name: '治水',
-  description: `常态下配牌、进张比没有能力的人顺 ${TOKA.luck * 100}%。场上四家点数加起来变动超过 ${TOKA.threshold / 10000} 万点（一家加一家减只算一次）以后，下一局起进入治水直到终局：牌局平静如水，谁也吃、碰、杠不了；别人自摸的概率减半。`,
+  description: `常态下配牌、进张比没有能力的人顺 ${TOKA.luck * 100}%。场上四家点数加起来变动超过 ${TOKA.threshold / 10000} 万点（一家加一家减只算一次）以后，下一局起进入治水直到终局：牌局平静如水，别人只摸得到谁也鸣不了的牌、配牌里对子很少，吃碰杠几乎不会出现；别人自摸的概率减半。`,
 
   // 平行宇宙：变动从零数起，治水退回常态，这一局也不算
   resetMarks(g, seat) {
@@ -125,12 +170,18 @@ export const tokaAbility: Ability = {
     return tokaChisuiOn(g, seat) ? 'chisui' : null;
   },
 
-  freezesCalls(g, seat) {
-    return tokaChisuiOn(g, seat);
+  // 治水：别人的配牌对子不超过 calmPairs 个
+  dealRules(g, seat) {
+    if (!tokaChisuiOn(g, seat)) return;
+    return [0, 1, 2, 3]
+      .filter((o) => o !== seat)
+      .map((o) => ({ seat, ability: 'toka', text: '静水', target: o, bad: (hand: TileId[]) => Math.max(0, pairsIn(hand) - TOKA.calmPairs) }));
   },
 
   beforeDeal(g, seat) {
     luckyDeal(g, seat, TOKA.luck);
+    if (!tokaChisuiOn(g, seat)) return;
+    for (let o = 0; o < 4; o++) if (o !== seat) breakPairs(g, o);
   },
 
   onRoundStart(g, seat) {
@@ -140,17 +191,21 @@ export const tokaAbility: Ability = {
     g.emit({ type: 'ability', seat, ability: 'toka', text: CHISUI });
   },
 
-  // 治水：别人听着牌，有一半的概率摸不到和了牌
-  beforeAnyDraw(g, seat, drawer) {
+  // 治水：别人只摸得到死牌；听着牌的话有一半的概率摸不到和了牌
+  beforeAnyDraw(g, seat, drawer, rinshan) {
     if (drawer === seat || !tokaChisuiOn(g, seat)) return;
-    const waits = g.waits(drawer);
-    if (!waits.length || !g.rng.chance(TOKA.tsumoCut)) return;
-    return { seat, ability: 'toka', text: '静水', deny: (t) => waits.includes(kindOf(t)) };
+    const waits = new Set(g.waits(drawer));
+    const cut = waits.size > 0 && g.rng.chance(TOKA.tsumoCut);
+    const live = liveKinds(g, drawer, rinshan, true);
+    for (const k of waits) live.delete(k);
+    if (cut) for (const k of waits) live.add(k);
+    if (!live.size) return;
+    return { seat, ability: 'toka', text: '静水', deny: (t) => live.has(kindOf(t)) };
   },
 
-  // 自己摸牌：按概率换成有效进张（听牌时就是和了牌）
+  // 自己摸牌：按概率换成有效进张（听牌时就是和了牌）。
+  // 治水时她自己摸的牌也是死牌：打出去谁也鸣不了（有效进张照样来）
   beforeDraw(g, seat, rinshan) {
-    if (!g.rng.chance(TOKA.luck)) return;
     const pl = g.players[seat];
     const counts = toCounts(pl.hand);
     const sh = shanten(counts, pl.melds.length);
@@ -160,13 +215,18 @@ export const tokaAbility: Ability = {
       counts[kindOf(t)]--;
       return after < sh;
     };
-    if (rinshan) g.wall.bringToRinshan(useful, g.rng);
-    else g.wall.bringToLive(0, useful, g.rng);
+    if (g.rng.chance(TOKA.luck)) {
+      if (rinshan) g.wall.bringToRinshan(useful, g.rng);
+      else g.wall.bringToLive(0, useful, g.rng);
+    }
+    if (rinshan || !tokaChisui(g, seat)) return;
+    const live = liveKinds(g, seat, false, false);
+    if (live.size) g.wall.bringToLive(0, (t) => useful(t) || !live.has(kindOf(t)), g.rng);
   },
 
   skill(g, seat) {
     const moved = tokaMoved(g, seat);
-    if (tokaChisuiOn(g, seat)) return { label: '', note: '治水：谁也鸣不了牌，别人自摸减半', enabled: false, active: true };
+    if (tokaChisuiOn(g, seat)) return { label: '', note: '治水：牌局平静如水，别人自摸减半', enabled: false, active: true };
     const left = Math.max(0, TOKA.threshold - moved);
     const note = stateOf(g, seat).at !== undefined ? '下一局起治水' : `点数变动 ${(moved / 10000).toFixed(1)} 万，再 ${(left / 10000).toFixed(1)} 万进入治水`;
     return { label: '', note, enabled: false, meter: { value: Math.min(moved, TOKA.threshold), max: TOKA.threshold } };
@@ -177,7 +237,7 @@ export const tokaAbility: Ability = {
   },
 
   insight(g, seat) {
-    if (tokaChisuiOn(g, seat)) return ['治水：牌局平静如水，谁也吃、碰、杠不了', '别人自摸的概率减半'];
+    if (tokaChisuiOn(g, seat)) return ['治水：牌局平静如水，别人只摸得到谁也鸣不了的牌，吃碰杠几乎不会出现', '别人自摸的概率减半'];
     return [`常态：配牌、进张顺 ${TOKA.luck * 100}%`, `点数变动 ${(tokaMoved(g, seat) / 10000).toFixed(1)} 万 / ${TOKA.threshold / 10000} 万`];
   },
 };

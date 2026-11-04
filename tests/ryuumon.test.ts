@@ -122,37 +122,40 @@ describe('龙门渊透华', () => {
     expect(g.round).toBe(1);
     expect(tokaChisui(g, 2)).toBe(true);
     expect(g.events.filter((e) => e.type === 'ability' && e.text === '治水').length).toBe(1);
-    expect(g.legalActions(g.turn).some((a) => a.type === 'ankan' || a.type === 'kakan')).toBe(false);
     tokaAbility.resetMarks!(g, 2);
     expect(tokaChisui(g, 2)).toBe(false);
     // 没选的透华开局是常态
     expect(tokaChisui(game(4, 2, tokaAbility), 2)).toBe(false);
   });
 
-  it('治水的局谁也吃、碰、杠不了，进入时发一次治水', () => {
-    let rounds = 0;
-    let chisuiEvents = 0;
-    for (let seed = 1; seed <= 6; seed++) {
-      const g = new Game({ seed, format: 'east', players: ['toka', 'jun', 'saki', 'ako'].map((id) => ({ name: id, ability: byId(id).ability })) });
-      // 一开局就过了门槛
-      (g.abilityGameState[0] as { at?: number }).at = 0;
-      g.onEvent((e) => {
-        if (e.type === 'ability' && e.text === '治水') chisuiEvents++;
-        if (e.type === 'roundEnd') rounds++;
-      });
-      const styles = ['toka', 'jun', 'saki', 'ako'].map((id) => byId(id).ai);
-      play(g, styles, () => {
-        if (!tokaChisui(g, 0)) return;
-        for (const s of [0, 1, 2, 3]) {
-          const calls = g.legalActions(s).filter((a) => ['chi', 'pon', 'daiminkan', 'ankan', 'kakan'].includes(a.type));
-          expect(calls).toEqual([]);
-        }
-      });
+  it('治水：别人摸不到会被鸣的牌，手里有对子以后不再成对；透华自己摸的也是死牌', () => {
+    const g = game(1, 0, tokaAbility);
+    (g.abilityGameState[0] as { at?: number }).at = 0;
+    g.round = 1;
+    const hand = (kinds: number[]) => kinds.map((k) => k * 4);
+    // 0 号位（透华）：一万一对；2 号位：九饼一对，三饼五饼；3 号位：东一对
+    g.players[0].hand = hand([0, 0, 4, 8, 12, 16, 20, 24, 28, 31, 32, 33, 30]);
+    g.players[2].hand = hand([17, 17, 1, 5, 11, 13, 19, 22, 25, 29, 31, 32, 33]);
+    g.players[3].hand = hand([27, 27, 3, 6, 10, 14, 18, 21, 23, 26, 32, 33, 30]);
+    // 1 号位：两万一对，其他是单张（没听牌）
+    g.players[1].hand = hand([1, 1, 3, 7, 11, 15, 19, 21, 23, 25, 28, 30, 32]);
+    for (const p of g.players) {
+      p.melds = [];
+      p.riichi = false;
     }
-    expect(rounds).toBeGreaterThan(20);
-    // 第一局开局时 at 还没设：之后第一局发一次
-    expect(chisuiEvents).toBeLessThanOrEqual(6);
-  }, 60_000);
+    expect(g.waits(1)).toEqual([]);
+    const rule = tokaAbility.beforeAnyDraw!(g, 0, 1, false)!;
+    // 别人手里的对子（碰）
+    for (const k of [0, 17, 27]) expect(rule.deny(k * 4 + 1)).toBe(true);
+    // 下家 2 号位能吃的：她有三饼、五饼，四饼不来
+    expect(rule.deny(12 * 4 + 1)).toBe(true);
+    // 已经有一个对子：手里的单张不再成对
+    expect(rule.deny(3 * 4 + 1)).toBe(true);
+    // 谁也鸣不了的七万照常来
+    expect(rule.deny(6 * 4 + 1)).toBe(false);
+    // 岭上牌不管
+    expect(tokaAbility.beforeAnyDraw!(g, 0, 1, true)).toBeFalsy();
+  });
 
   it('治水：别人听牌时有一半的概率摸不到和了牌', () => {
     const g = game(1, 0, tokaAbility);
@@ -165,15 +168,11 @@ describe('龙门渊透华', () => {
     let denied = 0;
     for (let i = 0; i < 400; i++) {
       const rule = tokaAbility.beforeAnyDraw!(g, 0, 1, false);
-      if (!rule) continue;
-      denied++;
-      expect(rule.deny(13 * 4)).toBe(true);
-      expect(rule.deny(12 * 4)).toBe(false);
+      if (rule?.deny(13 * 4)) denied++;
     }
     expect(denied / 400).toBeGreaterThan(0.4);
     expect(denied / 400).toBeLessThan(0.6);
-    // 自己摸牌、别人没听牌都不管
+    // 自己摸牌不管（她自己的在 beforeDraw 里）
     expect(tokaAbility.beforeAnyDraw!(g, 0, 0, false)).toBeFalsy();
-    expect(tokaAbility.beforeAnyDraw!(g, 0, 2, false)).toBeFalsy();
   });
 });
