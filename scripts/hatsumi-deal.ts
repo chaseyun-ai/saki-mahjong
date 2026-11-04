@@ -1,5 +1,5 @@
 // 薄墨初美配牌里东、北各几张对强度的影响：每场都让她上桌（另外三家随机），比较 HATSUMI.dealEach = 2 和 1
-// 用法：npx vite-node scripts/hatsumi-deal.ts [场数] [east|south]
+// 用法：npx vite-node scripts/hatsumi-deal.ts [场数] [east|south] [2,1,1late]
 import { CHARACTERS } from '../src/abilities/characters';
 import { HATSUMI } from '../src/abilities/hatsumi';
 import { chooseAction } from '../src/ai/ai';
@@ -51,8 +51,11 @@ function run(each: number) {
     rankSum += rank + 1;
     if (rank === 0) first++;
   }
-  console.log(`东北各 ${each} 张：${games} 场 平均顺位 ${(rankSum / games).toFixed(2)}，一位率 ${pct(first, games)}，和了率 ${pct(wins, rounds)}；北家 ${north.rounds} 局：鸣出东北 ${pct(north.opened, north.rounds)}，和了率 ${pct(north.wins, north.rounds)}，役满率 ${pct(north.yakuman, north.rounds)}（其中四喜 ${north.suushii} 次）`);
+  console.log(`东北各 ${each} 张${HATSUMI.lateWithin ? `（头 ${HATSUMI.lateWithin} 次摸牌补齐）` : ''}：${games} 场 平均顺位 ${(rankSum / games).toFixed(2)}，一位率 ${pct(first, games)}，和了率 ${pct(wins, rounds)}；北家 ${north.rounds} 局：鸣出东北 ${pct(north.opened, north.rounds)}，和了率 ${pct(north.wins, north.rounds)}，役满率 ${pct(north.yakuman, north.rounds)}（其中四喜 ${north.suushii} 次）`);
 }
 
-run(2);
-run(1);
+// 用法的第三个参数：比较哪几种，逗号分开（2 是配牌各 2 张；1 是配牌各 1 张；1late 是配牌各 1 张、头两次摸牌补齐）
+for (const v of (process.argv[4] ?? '2,1').split(',')) {
+  HATSUMI.lateWithin = v.endsWith('late') ? 2 : 0;
+  run(parseInt(v));
+}
