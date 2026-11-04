@@ -1,6 +1,7 @@
 import type { Game, RoundResult } from '../engine/game';
 import { shanten } from '../engine/shanten';
 import { Kind, TileId, kindOf, toCounts } from '../engine/tiles';
+import { usefulKinds } from './jun';
 import type { Ability } from './types';
 
 // 龙门渊透华：常态是比普通人好一点的数字派，配牌、进张比没有能力的人顺 5%。
@@ -8,9 +9,10 @@ import type { Ability } from './types';
 // - 牌局平静如水：只靠换牌让吃碰杠几乎不出现，鸣牌按钮照常（真有能鸣的牌照样能鸣）
 //   1. 配牌：别人的配牌里对子压到 calmPairs 个以内（碰的机会少）
 //   2. 摸牌：别人只摸得到打出去谁也鸣不了的死牌（别人手里成对的、下家能吃的都不来；自己摸了能暗杠、加杠的也不来；
-//      手里已经有一个对子的，再成对的也不来）。听牌的人的和了牌不算在里面，那一半由下面的自摸减半管
+//      手里已经有一个对子的，再成对的也不来）。听牌的人的和了牌不算在里面，由下面的自摸减半管
 //   3. 透华自己摸的牌也是死牌（有效进张照样来），电脑的透华治水时自己也不鸣
-// - 别人每次摸牌，听着牌的话有一半的概率摸不到和了牌（自摸概率减半）
+//   换牌时进不进张照原来那张：本来是有效进张就换成别的有效进张，本来是废牌就换成别的废牌，手牌快慢和平常一样
+// - 别人听牌时自摸的概率减半（本来摸得到和了牌的，按 tsumoCut 换成废牌）
 // - 常态的 5% 照样有
 // 都是控场的规矩：照这样别人动不了的人、佛灭的那一局、天使和挡掉的一半照常不受影响
 export const TOKA = {
@@ -20,7 +22,9 @@ export const TOKA = {
   // 300 半庄只有约 2% 进得了治水（5 万的话是 65%）。原作里透华的治水本来就难得一见；
   // 想直接玩治水的，对局设置里选“开局就治水”（PlayerConfig.startForm）
   threshold: 100000,
-  tsumoCut: 0.5, // 治水：别人摸到和了牌的概率砍掉多少
+  // 治水：别人本来摸得到和了牌的，按这个概率换成废牌。治水时别人摸不走有用的牌，牌山里剩的和了牌比平常多，
+  // 砍一半的话自摸率和常态差不多；砍 85% 算下来没有能力的人听牌时自摸率 4.5% → 2.5%，大约减半
+  tsumoCut: 0.85,
   calmPairs: 1, // 治水：别人的配牌最多留几个对子
 };
 
@@ -191,16 +195,23 @@ export const tokaAbility: Ability = {
     g.emit({ type: 'ability', seat, ability: 'toka', text: CHISUI });
   },
 
-  // 治水：别人只摸得到死牌；听着牌的话有一半的概率摸不到和了牌
+  // 治水：别人只摸得到死牌；听着牌的话有一半的概率摸不到和了牌。
+  // 换牌时进不进张照原来那张：原来是有效进张（听牌时是和了牌）就换成别的有效进张，原来不是就换成别的废牌。
+  // 不这样的话，能摸的牌种一少，有效进张反而摸得更多（别人和得更快）
   beforeAnyDraw(g, seat, drawer, rinshan) {
     if (drawer === seat || !tokaChisuiOn(g, seat)) return;
+    const top = rinshan ? g.wall.rinshan[0] : g.wall.live[0];
+    if (top === undefined) return;
     const waits = new Set(g.waits(drawer));
-    const cut = waits.size > 0 && g.rng.chance(TOKA.tsumoCut);
+    const useful = waits.size ? waits : usefulKinds(g, drawer);
+    let want = useful.has(kindOf(top));
+    // 自摸减半：本来摸得到和了牌的，一半换成废牌
+    if (want && waits.size && g.rng.chance(TOKA.tsumoCut)) want = false;
     const live = liveKinds(g, drawer, rinshan, true);
     for (const k of waits) live.delete(k);
-    if (cut) for (const k of waits) live.add(k);
-    if (!live.size) return;
-    return { seat, ability: 'toka', text: '静水', deny: (t) => live.has(kindOf(t)) };
+    const deny = (t: TileId) => useful.has(kindOf(t)) !== want || live.has(kindOf(t));
+    if (!deny(top)) return;
+    return { seat, ability: 'toka', text: '静水', deny };
   },
 
   // 自己摸牌：按概率换成有效进张（听牌时就是和了牌）。
@@ -220,8 +231,11 @@ export const tokaAbility: Ability = {
       else g.wall.bringToLive(0, useful, g.rng);
     }
     if (rinshan || !tokaChisui(g, seat)) return;
+    // 进不进张照原来那张，免得能摸的牌种一少、有效进张反而来得多
+    const top = g.wall.live[0];
+    if (top === undefined || useful(top)) return;
     const live = liveKinds(g, seat, false, false);
-    if (live.size) g.wall.bringToLive(0, (t) => useful(t) || !live.has(kindOf(t)), g.rng);
+    if (live.has(kindOf(top))) g.wall.bringToLive(0, (t) => !useful(t) && !live.has(kindOf(t)), g.rng);
   },
 
   skill(g, seat) {
