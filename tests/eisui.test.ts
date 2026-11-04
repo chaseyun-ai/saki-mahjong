@@ -50,6 +50,29 @@ describe('薄墨初美', () => {
     expect(triplets).toBeLessThan(60);
   });
 
+  it('坐北家的局别人配牌里没有西风、南风，摸也摸不到', () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const g = game(seed, 3, hatsumiAbility);
+      for (const s of [0, 1, 2]) {
+        const h = g.players[s].hand.filter((t) => t !== g.players[s].drawn);
+        expect(count(h, WEST) + count(h, SOUTH)).toBe(0);
+      }
+      const rule = hatsumiAbility.beforeAnyDraw!(g, 3, 1, false);
+      expect(rule && rule.deny(WEST * 4)).toBe(true);
+      expect(rule && rule.deny(SOUTH * 4)).toBe(true);
+      expect(rule && rule.deny(0)).toBe(false);
+    }
+  });
+
+  it('不坐北家时鸣出东北也不算里鬼门、不发光', () => {
+    const g = game(1, 1, hatsumiAbility);
+    const p = g.players[1];
+    p.melds.push({ type: 'pon', tiles: [EAST * 4, EAST * 4 + 1, EAST * 4 + 2] }, { type: 'pon', tiles: [NORTH * 4, NORTH * 4 + 1, NORTH * 4 + 2] });
+    expect(hatsumiOpen(g, 1)).toBe(false);
+    expect(hatsumiGlowMelds(g, 1)).toEqual([]);
+    expect(hatsumiGale(g, 1)).toBe(0);
+  });
+
   it('不坐北家时配牌照常', () => {
     let both = 0;
     for (let seed = 1; seed <= 60; seed++) {

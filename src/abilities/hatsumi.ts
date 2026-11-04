@@ -1,15 +1,18 @@
 import type { Game } from '../engine/game';
 import { shanten, waitingKinds } from '../engine/shanten';
 import { EAST, NORTH, SOUTH, TileId, WEST, kindOf, toCounts } from '../engine/tiles';
-import type { Ability } from './types';
+import { PRIORITY, type Ability } from './types';
 
 // 薄墨初美（永水）：里鬼门。东北（鬼门）方向的东风、北风是她的。
+// 只在坐北家的局起作用（不坐北家时鸣出东北也没有里鬼门、不发光）
+// - 坐北家的局：西风、南风留给她：别人的配牌里没有，她凑齐西南以前别人也摸不到（岭上牌除外）
 // - 坐北家的局：配牌里必定有两张东风、两张北风；有一点概率其中一种是三张（暗刻），之后摸到第四张开杠
 // - 东风、北风都鸣出来（碰、明杠、暗杠都算）以后：接下来摸牌必定摸到剩下的西风、南风，凑成一刻一对，
 //   之后进张也顺，最后一般做成小四喜
 // 特效：东北都鸣出来以后，紫色的风在牌桌上聚集，离听牌越近越多，听牌时最多；和牌时那张牌上无数紫光往上冲；
 // 鸣出来的东、北中间那张牌的字发紫光。电脑的初美碰风牌、留风牌、风牌能杠就杠
 export const HATSUMI = {
+  dealEach: 2, // 坐北家时配牌里东风、北风各至少几张
   triplet: 0.2, // 配牌里东或北是三张的概率
   kanDraw: 0.35, // 有暗刻的局，每次摸牌把第四张换上来的概率
   kanWithin: 10, // 第四张最晚第几次摸牌之前来（之后不再管）
@@ -29,8 +32,11 @@ const stateOf = (g: Game, seat: number) => g.abilityState[seat] as HatsumiState;
 // 鸣出来的风（碰、杠、暗杠）
 const meldedKinds = (g: Game, seat: number) => new Set(g.players[seat].melds.filter((m) => m.type !== 'chi').map((m) => kindOf(m.tiles[0])));
 
-// 东风、北风都鸣出来了
+const isNorthSeat = (g: Game, seat: number) => g.seatWind(seat) === NORTH;
+
+// 坐北家、东风北风都鸣出来了（里鬼门只在北家的局起作用：不坐北家时鸣出东北也不算）
 export function hatsumiOpen(g: Game, seat: number): boolean {
+  if (!isNorthSeat(g, seat)) return false;
   const k = meldedKinds(g, seat);
   return k.has(EAST) && k.has(NORTH);
 }
@@ -93,20 +99,28 @@ export function hatsumiGale(g: Game, seat: number): number {
   return Math.min(0.85, 0.2 + 0.11 * winds + (sh === 1 ? 0.1 : 0));
 }
 
-// 发紫光的牌：初美鸣出来的东、北，每一副中间那张（摆法照 meldLayout，这里给出那一副的牌，界面挑中间的）
-export function hatsumiGlowMelds(g: Game, seat: number): number[] {
-  if (!g.active(seat)) return [];
-  return g.players[seat].melds.map((m, i) => ({ m, i })).filter(({ m }) => m.type !== 'chi' && (kindOf(m.tiles[0]) === EAST || kindOf(m.tiles[0]) === NORTH)).map(({ i }) => i);
+// 坐北家的局里，西风、南风还要留给她（别人的配牌里没有，也摸不到）：东北鸣出来、西南凑齐以前都留着；
+// 凑齐以后放开。返回现在要留的风（空的是不留）
+export function hatsumiHoard(g: Game, seat: number): number[] {
+  if (!isNorthSeat(g, seat)) return [];
+  if (!hatsumiOpen(g, seat)) return [WEST, SOUTH];
+  return windNeed(g, seat) === null ? [] : [WEST, SOUTH].filter((k) => !meldedKinds(g, seat).has(k));
 }
 
-const isNorthSeat = (g: Game, seat: number) => g.seatWind(seat) === NORTH;
+// 发紫光的牌：初美鸣出来的东、北，每一副中间那张（摆法照 meldLayout，这里给出那一副的牌，界面挑中间的）
+export function hatsumiGlowMelds(g: Game, seat: number): number[] {
+  if (!g.active(seat) || !isNorthSeat(g, seat)) return [];
+  return g.players[seat].melds.map((m, i) => ({ m, i })).filter(({ m }) => m.type !== 'chi' && (kindOf(m.tiles[0]) === EAST || kindOf(m.tiles[0]) === NORTH)).map(({ i }) => i);
+}
 
 export const hatsumiAbility: Ability = {
   id: 'hatsumi',
   name: '里鬼门',
-  description: `坐北家的局：配牌必定有两张东风、两张北风，有 ${Math.round(HATSUMI.triplet * 100)}% 的概率其中一种是暗刻，之后摸到第四张开杠。东风、北风都鸣出来以后，接下来必定摸到剩下的西风、南风（凑一刻一对），之后进张也顺，一般做成小四喜。`,
+  description: `只在坐北家的局起作用。西风、南风留给她：别人的配牌里没有，西南凑齐以前别人也摸不到。配牌必定有 ${HATSUMI.dealEach} 张东风、${HATSUMI.dealEach} 张北风，有 ${Math.round(HATSUMI.triplet * 100)}% 的概率其中一种是暗刻，之后摸到第四张开杠。东风、北风都鸣出来以后，接下来必定摸到剩下的西风、南风（凑一刻一对），之后进张也顺，一般做成小四喜。`,
 
-  // 坐北家：配牌里东、北各至少两张（别人调整配牌不许把它弄坏）
+  priority: PRIORITY.hatsumi,
+
+  // 坐北家：配牌里东、北各至少两张（别人调整配牌不许把它弄坏）；别人的配牌里没有西风、南风（留给她）
   dealRules(g, seat) {
     const st = stateOf(g, seat);
     st.north = false;
@@ -115,8 +129,12 @@ export const hatsumiAbility: Ability = {
     st.gale = false;
     if (!isNorthSeat(g, seat)) return;
     st.north = true;
-    const missing = (hand: TileId[]) => [EAST, NORTH].reduce((n, k) => n + Math.max(0, 2 - hand.filter((t) => kindOf(t) === k).length), 0);
-    return [{ seat, ability: 'hatsumi', text: '里鬼门', target: seat, bad: missing }];
+    const missing = (hand: TileId[]) => [EAST, NORTH].reduce((n, k) => n + Math.max(0, HATSUMI.dealEach - hand.filter((t) => kindOf(t) === k).length), 0);
+    const ws = (hand: TileId[]) => hand.filter((t) => kindOf(t) === WEST || kindOf(t) === SOUTH).length;
+    return [
+      { seat, ability: 'hatsumi', text: '里鬼门', target: seat, bad: missing },
+      ...[0, 1, 2, 3].filter((s) => s !== seat).map((s) => ({ seat, ability: 'hatsumi', text: '鬼门·西南', target: s, bad: ws })),
+    ];
   },
 
   beforeDeal(g, seat) {
@@ -124,10 +142,10 @@ export const hatsumiAbility: Ability = {
     if (!st.north) return;
     const w = g.wall;
     const mine = g.dealIndices(seat);
-    const want: Record<number, number> = { [EAST]: 2, [NORTH]: 2 };
+    const want: Record<number, number> = { [EAST]: HATSUMI.dealEach, [NORTH]: HATSUMI.dealEach };
     if (g.rng.chance(HATSUMI.triplet)) {
       const k = g.rng.chance(0.5) ? EAST : NORTH;
-      want[k] = 3;
+      want[k] = HATSUMI.dealEach + 1;
       st.kan = k;
     }
     // 先从没发的牌里换，不够再从别人的配牌里换（Wall.guard 管着别人的规矩）
@@ -146,6 +164,24 @@ export const hatsumiAbility: Ability = {
     }
     // 暗刻没凑成就不等第四张
     if (st.kan !== undefined && mine.filter((i) => kindOf(w.live[i]) === st.kan).length < 3) st.kan = undefined;
+    // 别人配牌里的西风、南风换到发完牌以后的牌山里（换不了的留着，无解降级）
+    const isWS = (t: TileId) => kindOf(t) === WEST || kindOf(t) === SOUTH;
+    for (let s = 0; s < 4; s++) {
+      if (s === seat) continue;
+      for (const i of g.dealIndices(s)) {
+        if (!isWS(w.live[i])) continue;
+        const swap = () => w.bringToLive(i, (t) => !isWS(t), g.rng, later);
+        if (!swap()) g.dealFallback(seat, swap);
+      }
+    }
+  },
+
+  // 坐北家的局：西南凑齐以前，别人摸不到西风、南风（岭上牌除外）
+  beforeAnyDraw(g, seat, drawer, rinshan) {
+    if (drawer === seat || rinshan) return;
+    const keep = hatsumiHoard(g, seat);
+    if (!keep.length) return;
+    return { seat, ability: 'hatsumi', text: '鬼门·西南', deny: (t: TileId) => keep.includes(kindOf(t)) };
   },
 
   onRoundStart(g, seat) {

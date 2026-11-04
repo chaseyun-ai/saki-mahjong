@@ -25,6 +25,8 @@ export const PRIORITY = {
   koromo: 20,
   kasumi: 30,
   nelly: 40,
+  // 薄墨初美坐北家的局：西风、南风留给她
+  hatsumi: 45,
   self: 100,
 };
 
