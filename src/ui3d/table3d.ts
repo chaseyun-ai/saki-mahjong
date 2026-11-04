@@ -1600,8 +1600,9 @@ export class Table3D {
       const row = this.handRows[s] ?? { x0: 0, step: TILE_W + GAP, hs: 1, z: this.dim.handZ };
       let x = row.x0;
       const z = row.z + 0.3 * row.hs;
-      // 对家倒牌转过来朝我：牌面冲我、从我这边看从左往右排，和的那张在我的右手边（往她那边倒）
-      const facing = (s - me + 4) % 4 === 2;
+      // 对家倒牌照常往桌子中间倒（字冲她自己）。只有公开手牌时她的牌本来就转过来朝我，
+      // 这时接着朝我摆：从我这边看从左往右排，和的那张在我的右手边，不在倒牌时掉头
+      const facing = (s - me + 4) % 4 === 2 && !!this.lastSync?.view.openHands;
       const yaw = facing ? Math.PI : 0;
       const topple = (t: TileId, i: number) => {
         if (!rv.topple.has(t)) rv.topple.set(t, { at: rv.at + (wave ? i * rv.stagger : 0), from: null });
