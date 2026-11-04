@@ -91,6 +91,8 @@ export interface PlayerConfig {
   ability?: Ability | null;
   // 玩家操作的座位：能主动开关技能的能力听玩家的，不替玩家做决定
   manual?: boolean;
+  // 开局就是第二形态（对局设置里选了“开局就治水”的透华）
+  startForm?: boolean;
 }
 
 // 对局规则（单人对局开局前的设置弹窗里选）
@@ -146,6 +148,8 @@ export class Game {
   abilityGameState: Record<string, unknown>[] = [{}, {}, {}, {}];
   // 哪些座位是玩家操作的（见 PlayerConfig.manual）
   manual: boolean[] = [false, false, false, false];
+  // 哪些座位开局就是第二形态（见 PlayerConfig.startForm）
+  startForm: boolean[] = [false, false, false, false];
   format: 'one' | 'east' | 'south' | 'team' = 'east';
   rules: Rules = { ...DEFAULT_RULES };
   // 每个座位的队友（见 GameOptions.allies），不是团体赛是空的
@@ -214,6 +218,7 @@ export class Game {
     const yuuki = this.abilities.findIndex((a) => a?.firstDealer);
     this.firstDealer = yuuki >= 0 ? yuuki : (opts.firstDealer ?? 0) % 4;
     this.manual = opts.players.map((p) => !!p.manual);
+    this.startForm = opts.players.map((p) => !!p.startForm);
     this.format = opts.format ?? 'east';
     this.rules = { ...DEFAULT_RULES, ...opts.rules };
     setRedFives(this.rules.red);

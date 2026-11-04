@@ -5442,3 +5442,105 @@ html:root .select-screen.team-screen.tm-draft {
   15% { transform: scale(1); opacity: 1; }
   100% { transform: scale(1.6); opacity: 0; }
 }
+
+/* 透华的治水：2D 牌桌上铺一层平静的水面。冷蓝色、水底光纹慢慢晃，中间每隔几秒荡开一圈很轻的涟漪 */
+.still-water {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.6s ease;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(150, 205, 245, 0.16) 0%, rgba(70, 130, 200, 0.22) 55%, rgba(30, 70, 130, 0.3) 100%),
+    linear-gradient(115deg, transparent 30%, rgba(225, 242, 255, 0.07) 42%, transparent 54%, transparent 64%, rgba(225, 242, 255, 0.05) 72%, transparent 80%);
+  background-size: 100% 100%, 220% 220%;
+  animation: still-water-sheen 18s ease-in-out infinite alternate;
+}
+.still-water.on {
+  opacity: 1;
+}
+.still-water i {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: 760px;
+  height: 760px;
+  margin: -380px 0 0 -380px;
+  border-radius: 50%;
+  border: 2px solid rgba(225, 242, 255, 0.55);
+  box-shadow: 0 0 18px rgba(170, 215, 255, 0.35), inset 0 0 18px rgba(170, 215, 255, 0.25);
+  opacity: 0;
+  transform: scale(0.05);
+  animation: still-water-ring 12s ease-out infinite;
+}
+.still-water i:nth-child(2) { animation-delay: 4s; }
+.still-water i:nth-child(3) { animation-delay: 8s; }
+@keyframes still-water-ring {
+  0% { transform: scale(0.05); opacity: 0; }
+  8% { opacity: 0.8; }
+  70% { opacity: 0.12; }
+  100% { transform: scale(1); opacity: 0; }
+}
+@keyframes still-water-sheen {
+  from { background-position: 0 0, 0% 0%; }
+  to { background-position: 0 0, 100% 60%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .still-water, .still-water i { animation: none; }
+}
+
+/* 龙门渊透华：选人页头像角上的“常态 / 治水”小开关，大立绘面板上的两段切换 */
+.char-portrait .form-switch {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  z-index: 2;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  background: #39424e;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+.char-portrait .form-switch.on {
+  background: linear-gradient(135deg, #5fb4ee, #2f6fb8);
+  box-shadow: 0 0 10px rgba(110, 190, 255, 0.8);
+}
+.char-portrait .form-switch:hover {
+  filter: brightness(1.15);
+}
+.form-toggle {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+.form-toggle button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1.5px solid color-mix(in srgb, var(--c) 60%, transparent);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.form-toggle button small {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+.form-toggle button.on {
+  background: linear-gradient(135deg, #5fb4ee, #2f6fb8);
+  border-color: #9fd4ff;
+  color: #fff;
+}

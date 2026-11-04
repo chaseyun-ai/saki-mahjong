@@ -27,6 +27,8 @@ import { isDoraTile, kuroLost } from '../abilities/kuro';
 import { himekoExtra, himekoPlan } from '../abilities/himeko';
 import { bowlingOf, isPin } from '../abilities/arata';
 import { hatsumiOpen } from '../abilities/hatsumi';
+import { JUN } from '../abilities/jun';
+import { tokaChisui } from '../abilities/toka';
 import { haruRush } from '../abilities/haru';
 import { aislinnAiBrush, aislinnExtra, aislinnPlan } from '../abilities/aislinn';
 import type { Action, Game } from '../engine/game';
@@ -306,6 +308,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const counts = toCounts(p.hand);
   const cur = shanten(counts, p.melds.length);
   for (const a of legal) {
+    // 透华治水：自己也不杠
+    if ((a.type === 'ankan' || a.type === 'kakan') && tokaChisui(g, seat)) continue;
     if (a.type === 'ankan') {
       // 初美：风牌能杠就杠（配牌的暗刻摸到第四张、鸣出东北以后）
       if (p.riichi || style.kanEager || (style.winds && isWind(a.kind))) return a;
@@ -877,6 +881,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false)) && !growHolds(g, seat, style, false) && !seraHolds(g, seat, style, false) && !sumireSkips(g, seat, style) && !allLastHold(g, seat, false)) return ron;
   // 涅莉押了运势的局不鸣牌，门清做大
   if (style.waves && nellyTier(g, seat) > 0) return pass;
+  // 透华治水：牌局平静如水，自己也不鸣
+  if (tokaChisui(g, seat)) return pass;
 
   const p = g.players[seat];
   const tile = g.lastDiscard!.tile;
@@ -955,6 +961,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 恭子：桌上有能力起作用的人，就鸣牌打乱流向（不退向听就鸣；有能力的人立直了，没役也鸣）
   const disrupt = style.disrupt && !g.isSealed(seat) && g.wall.remaining >= KYOUKO.aiMinWall && kyoukoTargets(g, seat).length > 0;
   const disruptAny = disrupt && kyoukoTargets(g, seat).some((s) => g.seesRiichi(s, seat));
+  // 纯：别人立直了、牌山还多时，有役不退向听就鸣，错开流向（别人一巡不进张，立直的人摸不到和了牌）
+  const jam = !!style.jam && !sealedMe && g.wall.remaining >= JUN.aiMinWall && [0, 1, 2, 3].some((s) => s !== seat && g.seesRiichi(s, seat));
 
   // 优希不坐庄的东场以和牌为先；照要和 1 番、2 番的时候小牌快和：向听多也吃
   const speedy =
@@ -979,11 +987,11 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     // 夕：门清做大，不吃，只碰役牌
     if (style.firepower && (a.type === 'chi' || !yakuhai)) continue;
     // 憧：速攻，向听多也吃
-    if (a.type === 'chi' && !yakuSecured && cur > 2 && !speedy && !disrupt) continue;
+    if (a.type === 'chi' && !yakuSecured && cur > 2 && !speedy && !disrupt && !jam) continue;
     const c = counts.slice();
     for (const t of a.tiles) c[kindOf(t)]--;
     const sh = shanten(c, p.melds.length + 1);
-    if (sh < bestSh || ((style.fish && a.type === 'pon') || disrupt || tomobiki) && sh <= cur && best === pass) {
+    if (sh < bestSh || ((style.fish && a.type === 'pon') || disrupt || jam || tomobiki) && sh <= cur && best === pass) {
       best = a;
       bestSh = sh;
     }

@@ -12,6 +12,7 @@ import { Dice } from './dice';
 import { Effects } from './effects';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
+import { StillWater } from './stillWater';
 import { glowGlyph } from '../ui/tileArt';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
@@ -228,6 +229,7 @@ export interface SyncView {
   sketch?: boolean; // 爱丽丝的手绘板：牌、桌布换成手绘风格
   gale?: { seat: number; level: number } | null; // 薄墨初美的里鬼门：紫色的风聚得多浓（0–1），和牌时那张牌上紫光往上冲
   glowTiles?: Set<TileId>; // 初美鸣出来的东、北中间那张：字发紫光，牌上一道淡淡的紫色光柱
+  stillWater?: boolean; // 透华的治水：桌布上铺一层平静的水面
 }
 
 export class Table3D {
@@ -324,6 +326,8 @@ export class Table3D {
   private ripples: THREE.Mesh[] = [];
   // 初美的里鬼门：绕着牌桌打转的紫色的风（用到时才建）
   private gale: Gale | null = null;
+  // 透华的治水：桌布上的水面（用到时才建，换桌子尺寸时重建）
+  private water: StillWater | null = null;
   // 初美鸣出来的东、北中间那张牌上的紫光（牌 id → 贴在牌面上的发光字和光柱）
   private glows = new Map<TileId, THREE.Group>();
   private glowMats = new Map<number, THREE.MeshBasicMaterial>();
@@ -474,6 +478,11 @@ export class Table3D {
       this.tableGroup.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
     }
     const d = this.dim;
+    // 桌子尺寸变了：水面按新尺寸重建（下一次 sync 再建）
+    if (this.water) {
+      this.scene.remove(this.water.group);
+      this.water = null;
+    }
     const group = buildTableModel(d, FRAME_TOP, this.tableMats!);
     const felt = new THREE.Mesh(new THREE.PlaneGeometry(d.tableHalf * 2, d.tableHalf * 2), this.feltMat!);
     felt.rotation.x = -Math.PI / 2;
@@ -1142,6 +1151,16 @@ export class Table3D {
     this.drawConsole(g, view);
     this.syncMist(g, view);
     this.syncGale(view);
+    this.syncWater(view);
+  }
+
+  // 透华的治水：水面渐渐铺开，退出时渐渐散掉
+  private syncWater(view: SyncView): void {
+    if (view.stillWater && !this.water) {
+      this.water = new StillWater(this.dim.tableHalf);
+      this.scene.add(this.water.group);
+    }
+    this.water?.setOn(!!view.stillWater);
   }
 
   // 初美的里鬼门：风的浓淡，和东北中间那张牌的紫光
@@ -2277,6 +2296,7 @@ export class Table3D {
     this.effects.update(dt);
     this.mist.update(dt);
     this.gale?.update(dt);
+    this.water?.update(dt);
     this.updateGlows();
     // 引力圆慢慢转、一胀一缩
     if (this.gravityDisc?.visible) {
