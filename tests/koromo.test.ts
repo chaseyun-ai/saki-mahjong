@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { koromoHaiteiOn, koromoMoon } from '../src/abilities/koromo';
+import { KOROMO_READERS, koromoDisruptor, koromoHaiteiOn, koromoMoon } from '../src/abilities/koromo';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
@@ -72,7 +72,7 @@ describe('天江衣', () => {
     expect(haitei).toBeGreaterThan(0);
   }, 120000);
 
-  it('听牌后海底挪给她：之后没人鸣牌开杠，最后一张一定她摸；有人鸣牌开杠就可能错开；牌数不变', () => {
+  it('听牌后海底挪给她：之后没人鸣牌开杠，最后一张一定她摸；被错开以后还会再挪回来；牌数不变', () => {
     let kept = 0;
     let broken = 0;
     let shifts = 0;
@@ -86,7 +86,8 @@ describe('天江衣', () => {
           if (e.type === 'roundStart') shifted = disturbed = false;
           if (e.type === 'call' && shifted) disturbed = true;
           if (e.type === 'ability' && e.text === '海底挪移') {
-            expect(shifted).toBe(false);
+            // 被错开以后再挪一次，又是没人打乱的状态
+            disturbed = false;
             shifted = true;
             shifts++;
             const all = [...g.wall.allTiles(), ...g.players.flatMap((p) => [...p.hand, ...p.discards.map((d) => d.tile), ...p.melds.flatMap((m) => m.tiles)])];
@@ -106,17 +107,62 @@ describe('天江衣', () => {
     expect(kept).toBeGreaterThan(0);
   }, 120000);
 
-  it('电脑的衣：海底捞月还会发动的局不立直（立直以后没法吃碰把海底挪回来）', () => {
+  it('电脑的衣：海底捞月会发动的局也照常立直（被错开了能力会自己挪回来）', () => {
     let riichi = 0;
     for (let seed = 1; seed <= 16; seed++) {
       play(seed, (g, me) => {
+        (g.abilityGameState[me] as { moon?: number }).moon = 4;
         g.onEvent((e) => {
           if (e.type !== 'discard' || e.seat !== me || !e.riichi) return;
-          riichi++;
-          expect(koromoHaiteiOn(g, me)).toBe(false);
+          if (koromoHaiteiOn(g, me)) riichi++;
         });
       });
     }
-    console.log('衣立直', riichi);
+    console.log('海底会发动时衣立直', riichi);
+    expect(riichi).toBeGreaterThan(0);
   }, 120000);
+
+  it('夜之支配：满月时她自己一向听以上摸到进张的比例明显高于新月', () => {
+    const rate = (moon: number) => {
+      let n = 0;
+      let good = 0;
+      for (let seed = 1; seed <= 8; seed++) {
+        play(seed, (g, me) => {
+          (g.abilityGameState[me] as { moon?: number }).moon = moon;
+          g.onEvent((e) => {
+            if (e.type !== 'draw' || e.seat !== me || g.rinshanDraw) return;
+            const p = g.players[me];
+            const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
+            if (before < 1) return;
+            n++;
+            if (shanten(toCounts(p.hand), p.melds.length) < before) good++;
+          });
+        });
+      }
+      return good / n;
+    };
+    const full = rate(4);
+    const fresh = rate(0);
+    console.log({ full, fresh });
+    // 满月 60%、新月 15% 的概率换成进张，再加上本来就摸得到的
+    expect(full).toBeGreaterThan(0.55);
+    expect(full - fresh).toBeGreaterThan(0.15);
+  }, 120000);
+
+  it('别家电脑：咲、久、真子、美穗子每局都会去错开她的海底，别人大约三成', () => {
+    let readers = 0;
+    let others = 0;
+    const N = 400;
+    for (let i = 0; i < N; i++) {
+      const g = new Game({ seed: i + 1, players: [lineup[0], lineup[1], lineup[2], lineup[3]].map((c) => ({ name: c.id, ability: c.ability })) });
+      if (koromoDisruptor(g, 0, 1, true)) readers++;
+      if (koromoDisruptor(g, 0, 2, false)) others++;
+      // 同一局再问一次答案不变
+      expect(koromoDisruptor(g, 0, 2, false)).toBe(koromoDisruptor(g, 0, 2, false));
+    }
+    expect(readers).toBe(N);
+    expect(others / N).toBeGreaterThan(0.22);
+    expect(others / N).toBeLessThan(0.38);
+    expect(KOROMO_READERS).toContain('saki');
+  });
 });
