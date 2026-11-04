@@ -14,6 +14,7 @@ import { playRebuild, playShatter } from './sketchFx';
 import { playNetWipe } from './netFx';
 import { kuroLost } from '../abilities/kuro';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
+import { tokaChisui } from '../abilities/toka';
 import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
 import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneRedHidden } from '../abilities/toyone';
@@ -293,13 +294,46 @@ export class App {
       .map(
         (c) => `
       <button class="char-card" data-pick="${c.id}" style="--c:${c.color}" aria-label="${c.name}：${c.ability?.name ?? '无能力'}">
-        <div class="char-portrait">${c.name.slice(-1)}<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></div>
+        <div class="char-portrait">${c.name.slice(-1)}<img src="${this.cardPortrait(c.id)}" alt="" onerror="this.remove()" />${this.formSwitchHtml(c.id)}</div>
         <div class="char-name">${c.name}</div>
       </button>`,
       )
       .join('');
     return `<div class="school-head" style="--s:${s.color}"><b>${s.name}</b>${s.region ? `<span>${s.region}代表</span>` : ''}<em>${membersOf(s.name).length} 人</em></div>
       <div class="char-grid">${cards}</div>`;
+  }
+
+  // 龙门渊透华：头像旁边切换“常态 / 治水”，选了治水开局就是治水（MatchSettings.chisui）
+  private cardPortrait(id: string): string {
+    return id === 'toka' && this.settings.chisui ? powerPortraitUrl(id) : portraitUrl(id, 'neutral');
+  }
+
+  // 卡片头像角上的小开关（点它只切换，不选人）
+  private formSwitchHtml(id: string): string {
+    if (id !== 'toka') return '';
+    const on = this.settings.chisui;
+    return `<span class="form-switch${on ? ' on' : ''}" role="switch" aria-checked="${on}" aria-label="开局状态：${on ? '治水' : '常态'}" title="点一下切换常态 / 治水" data-ui="toka-form">${on ? '治水' : '常态'}</span>`;
+  }
+
+  // 大立绘面板上的两段切换
+  private formToggleHtml(id: string): string {
+    if (id !== 'toka') return '';
+    const on = this.settings.chisui;
+    const btn = (v: boolean, label: string, note: string) =>
+      `<button class="${on === v ? 'on' : ''}" aria-pressed="${on === v}" data-ui="toka-form" data-v="${v}">${label}<small>${note}</small></button>`;
+    return `<div class="form-toggle">${btn(false, '常态', '点数变动 10 万后治水')}${btn(true, '治水', '开局就是治水')}</div>`;
+  }
+
+  private toggleTokaForm(v?: string): void {
+    this.settings.chisui = v === undefined ? !this.settings.chisui : v === 'true';
+    saveSettings(this.settings);
+    const page = this.root.querySelector('.school-page');
+    if (page) page.innerHTML = this.schoolPageHtml();
+    // 大立绘面板、介绍浮窗还停在透华身上的话一起重画
+    if (this.tipFor === 'toka' || this.heroTip()) {
+      const card = this.root.querySelector<HTMLElement>(`.char-card[data-pick="${this.tipFor ?? 'toka'}"]`);
+      if (card) this.showCharTip(card);
+    }
   }
 
   // 换一页：只重画标签和这一页，换了皮肤的选人页把左边立绘换成这一页的第一位
@@ -352,7 +386,7 @@ export class App {
     tip.hidden = false;
     if (hero) {
       tip.innerHTML = `<div class="hero-art"><img src="${cutinArt(c.id, 'ability').url}" alt="" onerror="this.remove()" /><span>${c.name.slice(-1)}</span></div>
-        <div class="hero-plate">${tip.innerHTML}<button class="hero-go" data-pick="${c.id}">出场</button></div>`;
+        <div class="hero-plate">${tip.innerHTML}${this.formToggleHtml(c.id)}<button class="hero-go" data-pick="${c.id}">出场</button></div>`;
       tip.style.left = tip.style.top = '';
       return;
     }
@@ -396,7 +430,7 @@ export class App {
     this.team = null;
     this.auto = false;
     const st = this.settings;
-    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer: Math.floor(Math.random() * 4), players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
+    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer: Math.floor(Math.random() * 4), players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me, startForm: i === this.me && c.id === 'toka' && st.chisui })) }));
   }
 
   // 公开手牌：单人对局按设置，团体赛不公开
@@ -496,6 +530,12 @@ export class App {
     }
     // 第一局在牌桌建好之前就画好了手绘板：补放一次重组特效
     if (this.chars[this.me]?.id === 'aislinn' && aislinnSketch(this.game!, this.me) && !this.sketchView) this.sketchFx('手绘板');
+    // 开局就治水的透华：第一局在牌桌建好之前就进了治水，补放一次治水（素材页换了形态动画就放那一段）
+    if (!resume) {
+      const g = this.game!;
+      const chisui = g.events.find((e) => e.type === 'ability' && e.ability === 'toka' && e.text === '治水');
+      if (chisui && g.round === 1) window.setTimeout(() => this.game === g && this.onGameEvent(chisui), Math.max(600, this.busyMs()));
+    }
     this.step();
   }
 
@@ -724,7 +764,8 @@ export class App {
       if (!this.table3d) playClick({ pan: this.clickPan(e.seat), varied: true });
       if (e.riichi) {
         playRiichi();
-        this.bigFx(e.seat, '立直', 'riichi');
+        // 第二形态（透华的治水）在素材页换了立直动画：放这一段
+        if (!this.formCutin(e.seat, 'riichi', '立直')) this.bigFx(e.seat, '立直', 'riichi');
       }
     } else if (e.type === 'call') {
       // 隐身的桃子鸣牌：看不见也听不见
@@ -776,6 +817,38 @@ export class App {
         this.bigFx(w.seat, word, 'win');
       }
     }
+  }
+
+  // 第二形态（天使和、治水）在素材页换了 `${形态}-${kind}` 的动画：放这一段，放了返回 true
+  private formCutin(seat: number, kind: 'riichi' | 'win', word: string): boolean {
+    const g = this.game!;
+    const form = g.active(seat)?.form?.(g, seat);
+    const c = this.chars[seat];
+    const art = form ? skillArt(c.id, `${form}-${kind}`) : undefined;
+    return !!art && !!this.cutins?.show({ pos: POS[seat], id: c.id, color: c.color, word, kind, art, glyph: c.name.slice(-1) });
+  }
+
+  // ---------- 透华的治水 ----------
+
+  // 牌桌平静如水（谁都看得见）：有透华在治水，这一局还在打（网络麻将的画面不铺水）
+  private waterOn(): boolean {
+    const g = this.game;
+    if (!g || this.netView || g.phase === 'predeal' || g.phase === 'postdeal') return false;
+    return [0, 1, 2, 3].some((s) => this.chars[s]?.id === 'toka' && tokaChisui(g, s));
+  }
+
+  // 2D：牌桌上盖一层水面（几圈慢慢荡开的涟漪和水底的光纹）
+  private water2d(on: boolean): void {
+    const host = document.querySelector('.stage .table');
+    if (!host) return;
+    let el = host.querySelector<HTMLElement>(':scope > .still-water');
+    if (!el && on) {
+      el = document.createElement('div');
+      el.className = 'still-water';
+      el.innerHTML = '<i></i><i></i><i></i>';
+      host.prepend(el);
+    }
+    el?.classList.toggle('on', on);
   }
 
   // ---------- 爱丽丝的手绘板 ----------
@@ -989,6 +1062,10 @@ export class App {
       this.renderSetup();
       return;
     }
+    if (el.dataset.ui === 'toka-form') {
+      this.toggleTokaForm(el.dataset.v);
+      return;
+    }
     if (el.dataset.ui === 'setup-opt' && el.dataset.k && el.dataset.v) {
       this.readTarget();
       setOption(this.settings, el.dataset.k, el.dataset.v);
@@ -1185,6 +1262,7 @@ export class App {
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     table.dataset.mist = String(this.mistLevel());
     this.gale2d(this.galeView()?.level ?? 0);
+    this.water2d(this.waterOn());
     setSketchTiles(false);
     table.parentElement?.classList.toggle('sketch', sketch);
     this.freshDiscard = null;
@@ -1234,6 +1312,7 @@ export class App {
       sketch: this.sketchShown(),
       gale: this.galeView(),
       glowTiles: this.glowTiles(),
+      stillWater: this.waterOn(),
     });
     hud.parentElement?.classList.toggle('sketch', this.sketchShown());
   }

@@ -95,6 +95,10 @@ const PACES: Record<string, Partial<Pace>> = {
   hatsumi: { speed: 0.95, spread: 1.1 }, // 小个子，风风火火
   haru: { speed: 0.9, spread: 0.85 }, // 一边吃黑糖一边打，快
   tomoe: { speed: 1.05 },
+  toka: { speed: 0.95, spread: 0.6 }, // 数字派，治水以后更是一样快
+  jun: { speed: 0.9, spread: 1.1 },
+  tomoki: { speed: 0.9, spread: 0.5 }, // 网络麻将出身，手快、每次都差不多
+  hajime: { speed: 1 },
   kyouko: { speed: 1.1, spread: 1.2 }, // 凡人拼命算
   yu: { speed: 1.1 }, // 怕冷，慢吞吞的
   toki: { speed: 1.15 }, // 身体弱，一巡先见要看一眼

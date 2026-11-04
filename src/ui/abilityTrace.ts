@@ -1,5 +1,6 @@
 import { AWAI } from '../abilities/awai';
 import { MOON_PHASES } from '../abilities/koromo';
+import { TOKA } from '../abilities/toka';
 import type { Game, GameEvent } from '../engine/game';
 import { TileId, kindOf } from '../engine/tiles';
 import { waitInfo } from './waitInfo';
@@ -207,6 +208,8 @@ const NOTE_TEXT: Record<string, (who: string) => string> = {
   'hatsumi-西风': (who) => `${who}的里鬼门：摸到西风。`,
   'hatsumi-南风': (who) => `${who}的里鬼门：摸到南风。`,
   'hatsumi-鬼门·杠': (who) => `${who}配牌的风牌暗刻，摸到了第四张。`,
+  'toka-治水': (who) => `场上的点数已经动了 ${TOKA.threshold / 10000} 万点以上，${who}进入治水：牌局平静如水，谁也鸣不了牌。`,
+  'jun-错开流向': (who) => `${who}鸣牌错开了流向：到她下一次摸牌之前，别人摸牌不进张。`,
   'haru-快和': (who) => `有人立直了，${who}只想快点结束：摸到一张小和了牌。`,
   'kasumi-请神': (who) => `${who}落后了，请神上身。之后整场都不会退。`,
   ...Object.fromEntries(

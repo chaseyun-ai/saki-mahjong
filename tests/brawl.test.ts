@@ -30,5 +30,6 @@ describe('能力大乱斗', () => {
     expect(stats.problems).toEqual([]);
     expect(stats.games).toBe(all.length * GAMES);
     expect(stats.ruleChecks).toBeGreaterThan(0);
-  }, 600000);
+    // 角色越来越多，要打的组合也越来越多（龙门渊四人加进来以后单跑也要 10 分钟出头）
+  }, 1500000);
 });

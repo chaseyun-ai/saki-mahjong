@@ -21,6 +21,8 @@ export interface MatchSettings {
   vary: boolean;
   // 对手：下家、对家、上家坐谁（角色 id），空的是随机
   opponents: string[];
+  // 自己用龙门渊透华时开局就是治水（不用等点数变动 10 万）：选人页透华头像旁边的“常态 / 治水”切换
+  chisui: boolean;
 }
 
 export const SEAT_NAMES = ['下家', '对家', '上家'];
@@ -37,6 +39,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   drawPath: 'on',
   vary: true,
   opponents: ['', '', ''],
+  chisui: false,
 };
 
 const KEY = 'saki-match-settings';
@@ -147,6 +150,7 @@ function sanitize(s: MatchSettings): MatchSettings {
   out.target = parseTarget(String(s.target));
   const ids = Array.isArray(s.opponents) ? s.opponents : [];
   out.opponents = [0, 1, 2].map((i) => (CHARACTERS.some((c) => c.id === ids[i]) ? ids[i] : ''));
+  out.chisui = s.chisui === true;
   return out;
 }
 

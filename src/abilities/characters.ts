@@ -37,6 +37,8 @@ import { aislinnAbility } from './aislinn';
 import { saeAbility } from './sae';
 import { haruAbility } from './haru';
 import { hatsumiAbility } from './hatsumi';
+import { junAbility } from './jun';
+import { tokaAbility } from './toka';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -77,6 +79,7 @@ export interface AiStyle {
   mayoiga?: boolean; // 小濑川白望：迷途之家发动的那一次出牌照算出来的打（不立直），能自摸就自摸
   winds?: boolean; // 薄墨初美：风牌能碰就碰、能杠就杠，留着风牌；东北鸣出来以后奔小四喜，能鸣就鸣
   kuromame?: boolean; // 泷见春：别人立直以后不立直，能吃就吃（小牌快和）
+  jam?: boolean; // 井上纯：别人立直了、牌山还多时，有役不退向听就鸣，用鸣牌错开流向
   twin: boolean; // 鹤田姬子：钥匙的那一局只照着那副牌打，先打不要的牌，不立直、不鸣牌、不荣和，等自摸
 }
 
@@ -487,6 +490,52 @@ export const CHARACTERS: Character[] = [
       { id: 'kimon-win', name: '里鬼门和牌', label: '里鬼门·和牌', hint: '东北鸣出来以后和牌时放' },
     ],
     ai: { ...baseAi, mistakeRate: 0.05, winds: true },
+  },
+  {
+    id: 'toka',
+    cost: 3,
+    name: '龙门渊透华',
+    school: '龙门渊高中',
+    color: '#3f86c8',
+    ability: tokaAbility,
+    // 治水一套素材：进入治水的动画、治水立直、治水和牌；治水以后头像框换成“能力发动头像”
+    skillArts: [
+      { id: 'chisui', name: '治水', label: '治水形态动画', hint: '进入治水的那一局开头放这一段。治水以后头像框换成“能力发动头像”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）' },
+      { id: 'chisui-riichi', name: '治水立直', label: '治水形态立直动画', hint: '治水以后立直时放这一段，盖过“立直切入”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）' },
+      { id: 'chisui-win', name: '治水和牌', label: '治水形态和牌动画', hint: '治水以后荣和、自摸时放这一段，盖过“和牌切入”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）' },
+    ],
+    // 常态是数字派，很少失误
+    ai: { ...baseAi, mistakeRate: 0.03 },
+  },
+  {
+    id: 'jun',
+    cost: 2,
+    name: '井上纯',
+    school: '龙门渊高中',
+    color: '#8a6a3a',
+    ability: junAbility,
+    skillArts: [{ id: 'flow', name: '错开流向', hint: '鸣牌、错开流向时放这一段' }],
+    // 原作里是鸣牌派：能鸣就鸣（向听多也吃），别人立直了有役不退向听也鸣
+    ai: { ...baseAi, mistakeRate: 0.05, speed: true, jam: true },
+  },
+  {
+    id: 'tomoki',
+    cost: 1,
+    name: '泽村智纪',
+    school: '龙门渊高中',
+    color: '#6a6a9a',
+    ability: null,
+    // 网络麻将出身的数字派
+    ai: { ...baseAi, mistakeRate: 0.03 },
+  },
+  {
+    id: 'hajime',
+    cost: 1,
+    name: '国广一',
+    school: '龙门渊高中',
+    color: '#4a6aa8',
+    ability: null,
+    ai: { ...baseAi, mistakeRate: 0.05 },
   },
 ];
 

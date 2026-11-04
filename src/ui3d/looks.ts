@@ -95,6 +95,15 @@ export const LOOKS: Record<string, Look> = {
   kirame: { model: 'models/vroid-e.v2.glb', hair: '#8a5a2e', eyes: '#4a7a4a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 鹭森灼：先占位，借咲的短发模型换成深棕色头发、棕色眼睛
   arata: { model: 'models/vroid-e.v2.glb', hair: '#3a2a24', eyes: '#6a4a3a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
+  // 龙门渊的四人：先占位
+  // 龙门渊透华：借和的长发模型换成浅金色头发、蓝色眼睛
+  toka: { model: 'models/vroid-g.v2.glb', hair: '#ecd88a', eyes: '#3f74c8', hairContrast: 0.7, reveal: 'slam', pose: 'crossed', borrowed: true },
+  // 井上纯：借咲的短发模型换成深棕色头发、深棕色眼睛
+  jun: { model: 'models/vroid-e.v2.glb', hair: '#2c2420', eyes: '#5a4232', hairContrast: 0.5, reveal: 'slam', pose: 'edge', borrowed: true },
+  // 泽村智纪：借霞的长发模型换成紫灰色头发、灰紫色眼睛
+  tomoki: { model: 'models/vroid-shino.v2.glb', hair: '#4a4660', eyes: '#5e5a7e', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 国广一：借怜的短发模型换成深蓝色头发、蓝色眼睛
+  hajime: { model: 'models/vroid-f.v2.glb', hair: '#283050', eyes: '#4a6aa8', hairContrast: 0.5, reveal: 'wave', pose: 'edge', borrowed: true },
   // 永水的三人：先占位
   // 狩宿巴：借霞的长发模型换成黑发、红褐色眼睛
   tomoe: { model: 'models/vroid-shino.v2.glb', hair: '#1e1a22', eyes: '#8a4a4a', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
