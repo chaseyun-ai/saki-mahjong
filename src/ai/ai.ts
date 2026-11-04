@@ -77,8 +77,9 @@ function visibleCounts(g: Game, seat: number): number[] {
   const add = (t: TileId) => c[kindOf(t)]++;
   g.players[seat].hand.forEach(add);
   for (const p of g.players) {
-    // 隐身的桃子的牌河看不见
-    if (!g.stealthed(p.seat, seat)) p.discards.forEach((d) => !d.called && add(d.tile));
+    // 隐身的桃子的牌河、副露看不见
+    if (g.stealthed(p.seat, seat)) continue;
+    p.discards.forEach((d) => !d.called && add(d.tile));
     p.melds.forEach((m) => m.tiles.forEach(add));
   }
   g.wall.visibleDoraIndicators().forEach(add);

@@ -6,6 +6,7 @@ import { CHARACTERS } from '../src/abilities/characters';
 import { suzuCounter } from '../src/abilities/suzu';
 import { teruLadder } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
+import { nodokaAngel } from '../src/abilities/nodoka';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
 import { doraFromIndicator, kindOf, toCounts } from '../src/engine/tiles';
@@ -71,8 +72,11 @@ describe('大星淡：被动', () => {
               continue;
             }
             const goal = goals(g, awai)[p.seat];
-            expect(goal).toBe(p.name === 'kuro' ? AWAI.slowShantenWeak : goal >= AWAI.slowShanten ? goal : -1);
-            if (!g.dealUnmet.some((r) => r.ability === 'awai' && r.target === p.seat)) expect(sh).toBeGreaterThanOrEqual(goal);
+            // 玄、天使和（挡得住别人的影响）只压到 slowShantenWeak
+            const weak = p.name === 'kuro' || (p.name === 'nodoka' && nodokaAngel(g, p.seat));
+            expect(goal).toBe(weak ? AWAI.slowShantenWeak : goal >= AWAI.slowShanten ? goal : -1);
+            // 天使和有一半的概率挡掉这条规矩（挡掉的不算没满足），不查她的向听
+            if (!g.dealUnmet.some((r) => r.ability === 'awai' && r.target === p.seat) && !(p.name === 'nodoka' && weak)) expect(sh).toBeGreaterThanOrEqual(goal);
             deals++;
           }
         };

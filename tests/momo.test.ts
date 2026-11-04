@@ -109,18 +109,61 @@ describe('东横桃子', () => {
   it('天使和的原村和看得见她：别人看不见的牌她看得见', () => {
     let angelSaw = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      // 桌上三个比和强的人（桃子 3 费），东 4 局起和是天使和
+      // 桌上三个比和强的人（桃子 3 费），过完 3 局（本场也算）起和是天使和
       play(seed, ['momo', 'nodoka', 'teru', 'awai'], 'south', (g) =>
         g.onEvent((e) => {
           if (e.type !== 'discard' || e.seat !== 0) return;
           if (g.players[0].discards.length < MOMO.from) return;
           const angel = nodokaAngel(g, 1);
-          expect(g.stealthed(0, 1)).toBe(!angel && !g.isSealed(0));
-          expect(g.stealthed(0, 2)).toBe(!g.isSealed(0));
+          expect(g.stealthed(0, 1)).toBe(!angel);
+          expect(g.stealthed(0, 2)).toBe(true);
           if (angel) angelSaw++;
         }),
       );
     }
     expect(angelSaw).toBeGreaterThan(0);
+  }, 120000);
+
+  it('隐身封印不了：恭子打乱流向、爽的蛇神威都没用', () => {
+    const n = { checked: 0, underSeal: 0 };
+    for (let seed = 1; seed <= 10; seed++) {
+      play(seed, ['momo', 'kyouko', 'sawaya', 'mako'], 'east', (g) =>
+        g.onEvent((e) => {
+          if (e.type !== 'discard' && e.type !== 'call' && e.type !== 'draw') return;
+          if (g.phase === 'roundEnd' || g.phase === 'gameEnd') return;
+          expect(g.isSealed(0)).toBe(false);
+          if (g.players[0].discards.length < MOMO.from) return;
+          n.checked++;
+          for (const o of [1, 2, 3]) expect(g.stealthed(0, o)).toBe(true);
+          if ([1, 2, 3].some((o) => g.abilities[o]?.seals?.(g, o, g.round))) n.underSeal++;
+        }),
+      );
+    }
+    expect(n.checked).toBeGreaterThan(50);
+    expect(n.underSeal).toBeGreaterThan(0);
+  }, 120000);
+
+  it('隐身以后的副露别人也看不见：加杠抢不了', () => {
+    let kakan = 0;
+    let hiddenMelds = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      play(
+        seed,
+        ['momo', 'mako', 'kuro', 'hiroe'],
+        'east',
+        (g) =>
+          g.onEvent((e) => {
+            if (e.type === 'call' && e.seat === 0 && momoStealthOn(g, 0)) hiddenMelds++;
+          }),
+        (g) => {
+          if (g.phase !== 'calls' || g.callKind !== 'chankan' || g.kakanInfo?.seat !== 0) return;
+          if (!momoStealthOn(g, 0)) return;
+          kakan++;
+          expect(g.waitingSeats()).toEqual([]);
+        },
+      );
+    }
+    expect(hiddenMelds).toBeGreaterThan(0);
+    expect(kakan).toBe(0);
   }, 120000);
 });
