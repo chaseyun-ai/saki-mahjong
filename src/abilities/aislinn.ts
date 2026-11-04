@@ -21,7 +21,7 @@ export const AISLINN = {
   tries: 40, // 安排时试几次
   spread: 4, // 安排的牌在接下来几张里摊开：最多比要的张数多摸几张才自摸
   leaves: 4000, // 找和牌时最多看多少种拆法
-  aiBrushMin: 24, // 电脑的爱丽丝：牌山还剩这么多张以上才用画笔
+  aiBrushDraws: 4, // 电脑的爱丽丝：重画出来的牌最多再摸这么多张就能自摸才用画笔（摸得越多，越容易又被鸣碎）
 };
 
 export interface SketchPlan {
@@ -449,9 +449,17 @@ function stillReachable(g: Game, seat: number, plan: SketchPlan): boolean {
 }
 
 // 用一支画笔再画一次（玩家按技能栏的画笔，电脑自己决定）
-function useBrush(g: Game, seat: number): boolean {
+// maxDraws：电脑先试着画一下，画出来要摸的牌比这个多就当没画过（牌山、锁都恢复，不扣画笔、不报）
+function useBrush(g: Game, seat: number, maxDraws?: number): boolean {
   if (!aislinnCanBrush(g, seat)) return false;
+  const st = roundOf(g, seat);
+  const before = maxDraws === undefined ? null : { snap: g.wall.snapshot(), plan: st.plan, locks: st.locks };
   const plan = paint(g, seat, g.nextDrawer());
+  if (before && (!plan || aislinnDrawsLeft(plan) > maxDraws!)) {
+    g.wall.restore(before.snap);
+    Object.assign(st, { plan: before.plan, locks: before.locks, broken: true });
+    return false;
+  }
   if (!plan) {
     roundOf(g, seat).broken = true;
     g.emit({ type: 'ability', seat, ability: 'aislinn', text: '画不出来' });
@@ -462,11 +470,11 @@ function useBrush(g: Game, seat: number): boolean {
   return true;
 }
 
-// 电脑的爱丽丝：手绘板碎了、牌山还多，就用一支画笔（自己的回合打牌前）
+// 电脑的爱丽丝：手绘板碎了，重画出来的牌没几张就能自摸才用一支画笔（自己的回合打牌前）。
+// 要摸得多的先不画：摸牌的巡数越多，越容易又被人鸣碎，爱鸣牌的对手面前白白折掉画笔
 export function aislinnAiBrush(g: Game, seat: number): void {
   if (g.manual[seat] || g.abilities[seat]?.id !== 'aislinn') return;
-  if (g.wall.remaining < AISLINN.aiBrushMin) return;
-  useBrush(g, seat);
+  useBrush(g, seat, AISLINN.aiBrushDraws);
 }
 
 // 画上不要的牌（电脑的爱丽丝先打这些）
