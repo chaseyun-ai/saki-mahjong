@@ -497,7 +497,7 @@ export const awaiAbility: Ability = {
     s.goals = {};
     for (let o = 0; o < 4; o++) {
       if (o === seat) continue;
-      s.goals[o] = shielded(g, o) ? AWAI.slowShantenWeak : AWAI.slowShanten + (g.rng.chance(0.5) ? 1 : 0);
+      s.goals[o] = g.active(o)?.lagShanten ?? (shielded(g, o) ? AWAI.slowShantenWeak : AWAI.slowShanten + (g.rng.chance(0.5) ? 1 : 0));
     }
     return [0, 1, 2, 3]
       .filter((o) => o !== seat)

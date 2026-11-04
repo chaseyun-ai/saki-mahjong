@@ -199,12 +199,15 @@ const VANISH_DELAY = 0.15;
 // 淡掉的时候牌往这个颜色靠（苍白、带一点冷色）
 const GHOST = new THREE.Color('#e6edf5');
 const VANISH_TIME = 1;
+// 王牌感知透出来的牌面：平放朝上，上边朝画面里
+const GHOST_UP = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 
 interface TileObj {
   group: THREE.Group;
   body: THREE.Mesh;
   back: THREE.Mesh;
   face: THREE.Mesh;
+  ghost?: THREE.Mesh; // 宫永咲的王牌感知：牌背朝上的牌变透明时，透出来的牌面
   shown: boolean;
   target: Placement | null;
 }
@@ -221,6 +224,7 @@ export interface SyncView {
   ripple?: TileId | null; // 白望的迷途之家：应该打的那张牌，底下一圈圈白色水波纹
   akaBacks?: Set<TileId>; // 丰音的赤口：没公开的赤宝牌（别人手里、牌山里），牌背发金红光
   waveBacks?: Set<TileId>; // 淡的引力波：牌山里她的和了牌，牌背发紫光
+  seeThrough?: Set<TileId>; // 宫永咲的王牌感知：鼠标移到牌山上时这些牌（岭上牌、杠材）变透明
   gravity?: boolean; // 淡的巨引力源：黑色的引力圆罩住整个牌山
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
@@ -242,6 +246,10 @@ export class Table3D {
   private tintMats: THREE.Material[] = [];
   private akaMat: THREE.Material | null = null;
   private waveMat: THREE.Material | null = null;
+  // 宫永咲的王牌感知：鼠标在不在牌山上、牌山上有哪些牌、透出来的牌面材质
+  private wallHover = false;
+  private wallIds = new Set<TileId>();
+  private ghostFaceMat: THREE.MeshBasicMaterial | null = null;
   // 淡的巨引力源：桌面上的黑色引力圆（用到时才建）
   private gravityDisc: THREE.Mesh | null = null;
   private bodyMat: THREE.Material | null = null;
@@ -394,6 +402,8 @@ export class Table3D {
     this.resizer.observe(container);
     const el = this.renderer.domElement;
     el.addEventListener('pointermove', this.onPointerMove);
+    // 手机没有悬停：点一下牌山也算移上去
+    el.addEventListener('pointerdown', this.onPointerMove);
     el.addEventListener('pointerleave', () => this.pointer.set(-9, -9));
     el.addEventListener('click', this.onClick);
     this.loop();
@@ -1117,7 +1127,12 @@ export class Table3D {
     const targets = new Map<TileId, Placement>();
     for (let s = 0; s < 4; s++) this.placeSeat(g, s, view.me, targets);
     this.placeReveal(g, view.me, targets);
-    for (const [t, slot] of wallSlots(g)) targets.set(t, this.wallPlacement(slot, view.me));
+    this.wallIds.clear();
+    for (const [t, slot] of wallSlots(g)) {
+      targets.set(t, this.wallPlacement(slot, view.me));
+      this.wallIds.add(t);
+    }
+    const ghosting = this.wallHover && !!view.seeThrough?.size;
     this.applyDeal(g, view.me, targets);
     this.placeRiichiSticks(g);
     for (let id = 0; id < TILE_COUNT; id++) {
@@ -1133,6 +1148,7 @@ export class Table3D {
         t.body.customDepthMaterial = t.back.customDepthMaterial = undefined;
         t.body.renderOrder = t.back.renderOrder = t.face.renderOrder = 0;
       }
+      this.ghostTile(t, id, ghosting && view.seeThrough!.has(id) && this.wallIds.has(id) ? target : null);
       if (!target) {
         t.group.visible = false;
         t.shown = false;
@@ -1987,6 +2003,59 @@ export class Table3D {
     if (id !== null && this.clickable.has(id)) this.onTileClick(id);
   };
 
+  // 宫永咲的王牌感知：鼠标移到牌山上（指着牌山上随便哪张牌）时，岭上牌和杠材变透明
+  private checkWallHover(): void {
+    const see = this.lastSync?.view.seeThrough;
+    let on = false;
+    if (see?.size) {
+      this.raycaster.setFromCamera(this.pointer, this.camera);
+      const groups = [...this.wallIds].map((id) => this.tiles[id].group).filter((gr) => gr.visible);
+      on = this.raycaster.intersectObjects(groups, true).length > 0;
+    }
+    if (on === this.wallHover) return;
+    this.wallHover = on;
+    if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
+  }
+
+  // 透明的牌：牌身、牌背淡成玻璃一样，牌背外面贴一张朝上的牌面（发一点粉光），隔着看得到是什么牌
+  private ghostTile(t: TileObj, id: TileId, at: Placement | null): void {
+    if (!at) {
+      if (t.ghost) t.ghost.visible = false;
+      return;
+    }
+    this.ghostFaceMat ??= new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.92, depthWrite: false, toneMapped: false, color: '#ffe3ec' });
+    // 换了牌面皮肤也跟着换
+    const map = this.faceMat?.map ?? this.atlas.texture;
+    if (this.ghostFaceMat.map !== map) {
+      this.ghostFaceMat.map = map;
+      this.ghostFaceMat.needsUpdate = true;
+    }
+    if (!t.ghost && this.ghostFaceMat) {
+      t.ghost = new THREE.Mesh(this.faceGeoms[faceIndex(id)], this.ghostFaceMat);
+      t.ghost.position.z = -TILE_T / 2 - 0.004;
+      t.ghost.renderOrder = 4;
+      t.group.add(t.ghost);
+    }
+    if (t.ghost) {
+      // 透出来的牌面朝上、正对着自己读（不管是哪一边的牌山）
+      t.ghost.quaternion.copy(at.quat).invert().multiply(GHOST_UP);
+      // 横着的牌山（左右两边）牌面转了 90°：缩小一点，不伸出牌外
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(t.ghost.quaternion);
+      t.ghost.scale.setScalar(Math.abs(up.x) > Math.abs(up.y) ? TILE_W / TILE_H : 1);
+      t.ghost.visible = true;
+    }
+    t.back.material = this.faded(this.ghostBackMat(), 0.3);
+    t.body.material = this.faded(this.bodyMat!, 0.35);
+    t.body.renderOrder = 1;
+    t.back.renderOrder = 2;
+  }
+
+  private ghostBack: THREE.Material | null = null;
+  private ghostBackMat(): THREE.Material {
+    this.ghostBack ??= new THREE.MeshStandardMaterial({ color: '#ffb3c8', emissive: '#ff7aa2', emissiveIntensity: 0.6, roughness: 0.3 });
+    return this.ghostBack;
+  }
+
   private pick(): TileId | null {
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const cands = [...this.clickable].map((id) => this.tiles[id].group);
@@ -2272,6 +2341,7 @@ export class Table3D {
 
   private tick(dt: number): void {
     this.now += dt;
+    this.checkWallHover();
     const hover = this.pick();
     if (hover !== this.hovered) {
       this.hoverSnap = { ids: [this.hovered, hover].filter((x): x is TileId => x !== null), until: this.now + 0.12 };

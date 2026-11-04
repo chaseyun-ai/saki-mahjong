@@ -44,6 +44,7 @@ import type { Ability } from './types';
 export interface AiStyle {
   mistakeRate: number; // 偶尔打出非最优牌的概率
   kanEager: boolean; // 能杠就杠
+  rinshan?: boolean; // 宫永咲：听牌前留着杠（岭上牌能让手牌前进才提前杠），留着第四张和淡要送来的岭上牌
   keepDora: boolean; // 尽量不打宝牌
   useForesight: boolean; // 根据先见决定要不要鸣牌
   foresightRiichi: boolean; // 只在先见到下一巡自摸时才立直，否则默听
@@ -107,7 +108,7 @@ export const CHARACTERS: Character[] = [
     school: '清澄高中',
     color: '#d97a8f',
     ability: sakiAbility,
-    ai: { ...baseAi, kanEager: true },
+    ai: { ...baseAi, kanEager: true, rinshan: true },
   },
   {
     id: 'kuro',

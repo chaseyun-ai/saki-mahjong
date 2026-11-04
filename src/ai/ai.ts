@@ -31,6 +31,7 @@ import { JUN } from '../abilities/jun';
 import { tokaChisui } from '../abilities/toka';
 import { haruRush } from '../abilities/haru';
 import { aislinnAiBrush, aislinnExtra, aislinnPlan } from '../abilities/aislinn';
+import { sakiAwaiFeed, sakiKanOk } from '../abilities/saki';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
 import { kokushiShanten, shanten, standardShanten, waitingKinds } from '../engine/shanten';
@@ -312,6 +313,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if ((a.type === 'ankan' || a.type === 'kakan') && tokaChisui(g, seat)) continue;
     if (a.type === 'ankan') {
       // 初美：风牌能杠就杠（配牌的暗刻摸到第四张、鸣出东北以后）
+      if (style.rinshan) {
+        const after = counts.slice();
+        after[a.kind] = 0;
+        if (sakiKanOk(g, seat, after, p.melds.length + 1)) return a;
+        continue;
+      }
       if (p.riichi || style.kanEager || (style.winds && isWind(a.kind))) return a;
       const after = counts.slice();
       after[a.kind] = 0;
@@ -319,6 +326,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     }
     // 咲也不在立直的人可能荣和这张时加杠（抢杠）
     const chankan = (k: Kind) => threats(g, seat).some((t) => g.seesRiichi(t, seat) && danger(g, seat, t, k, visibleCounts(g, seat)) >= 6);
+    if (a.type === 'kakan' && style.rinshan) {
+      const after = counts.slice();
+      after[kindOf(a.tile)]--;
+      if (!chankan(kindOf(a.tile)) && sakiKanOk(g, seat, after, p.melds.length)) return a;
+      continue;
+    }
     if (a.type === 'kakan' && ((style.kanEager && !chankan(kindOf(a.tile))) || threats(g, seat).length === 0)) {
       const after = counts.slice();
       after[kindOf(a.tile)]--;
@@ -380,6 +393,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const eyeRisk = (t: number, k: Kind) =>
     eyeSafe?.get(t)?.has(k) ? 0 : eyeLikely?.get(t)?.has(k) ? Math.min(1, danger(g, seat, t, k, visible)) : danger(g, seat, t, k, visible);
   const myDiscards = new Set(p.discards.map((d) => kindOf(d.tile)));
+  const sakiFeed = style.rinshan ? sakiAwaiFeed(g, seat) : null;
   // 照要和 1 番起胡：七对子一和就是 2 番，不往七对子做
   const shOf = style.streak && teruMirrored(g, seat) && teruLadder(g, seat).next === 1 ? standardShanten : shanten;
   const cands: Cand[] = [];
@@ -394,6 +408,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const sh = shOf(c, p.melds.length);
     let val = tileValue(g, seat, kindOf(a.tile), counts);
     if (style.keepDora && isDoraTile(g, a.tile)) val += 20;
+    // 咲：留着还没开的杠（第四张）和淡要送来的岭上牌的对子、刻子
+    if (style.rinshan && !sealed) {
+      const k = kindOf(a.tile);
+      if (counts[k] === 4) val += 25;
+      if (counts[k] >= 2 && k === sakiFeed) val += 20;
+    }
     // 夕：留着宝牌和成对的役牌
     if (style.firepower && (isDoraTile(g, a.tile) || (seraYakuhai(g, seat, kindOf(a.tile)) && counts[kindOf(a.tile)] >= 2))) val += 15;
     const ts = threats(g, seat);
@@ -902,7 +922,11 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   }
 
   const kan = legal.find((a) => a.type === 'daiminkan');
-  if (kan && style.kanEager) return kan;
+  if (kan && style.rinshan) {
+    const after = counts.slice();
+    after[k] = 0;
+    if (sakiKanOk(g, seat, after, p.melds.length + 1)) return kan;
+  } else if (kan && style.kanEager) return kan;
   // 初美：风牌能碰就碰、能杠就杠
   const windy = style.winds && !g.isSealed(seat);
   if (windy && isWind(k)) return kan ?? legal.find((a) => a.type === 'pon') ?? pass;

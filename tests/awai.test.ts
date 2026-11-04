@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { stackAt } from '../src/engine/wall';
 import { AWAI, awaiCanUse, awaiDomainOn, awaiEnergy, awaiStarPlan, awaiWaitingForCorner, awaiWaveTiles } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
+import { SAKI } from '../src/abilities/saki';
 import { suzuCounter } from '../src/abilities/suzu';
 import { teruLadder } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
@@ -60,6 +61,7 @@ describe('大星淡：被动', () => {
   it('时间迟滞：别人的配牌 5–6 向听，挡得住、会支配牌山的人（玄）只压到 3 向听；她自己配牌就听牌', () => {
     let deals = 0;
     let unmet = 0;
+    let noPlan = 0;
     for (let seed = 1; seed <= 12; seed++) {
       play(seed, (g) => {
         const awai = g.players.findIndex((p) => p.name === 'awai');
@@ -68,13 +70,16 @@ describe('大星淡：被动', () => {
           for (const p of g.players) {
             const sh = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)));
             if (p.seat === awai) {
-              expect(sh).toBe(0);
+              // 偶尔排不出天听配牌（牌山里凑不出符合别人规矩的一手），这时不查
+              if ((g.abilityState[awai] as { tenpaiDeal?: boolean }).tenpaiDeal) expect(sh).toBe(0);
+              else noPlan++;
               continue;
             }
             const goal = goals(g, awai)[p.seat];
             // 玄、天使和（挡得住别人的影响）只压到 slowShantenWeak
             const weak = p.name === 'kuro' || (p.name === 'nodoka' && nodokaAngel(g, p.seat));
-            expect(goal).toBe(weak ? AWAI.slowShantenWeak : goal >= AWAI.slowShanten ? goal : -1);
+            // 咲：配牌偏对子，只压到 SAKI.awaiLag 向听
+            expect(goal).toBe(p.name === 'saki' ? SAKI.awaiLag : weak ? AWAI.slowShantenWeak : goal >= AWAI.slowShanten ? goal : -1);
             // 天使和有一半的概率挡掉这条规矩（挡掉的不算没满足），不查她的向听
             if (!g.dealUnmet.some((r) => r.ability === 'awai' && r.target === p.seat) && !(p.name === 'nodoka' && weak)) expect(sh).toBeGreaterThanOrEqual(goal);
             deals++;
@@ -87,8 +92,9 @@ describe('大星淡：被动', () => {
         });
       });
     }
-    console.log({ deals, unmet });
+    console.log({ deals, unmet, noPlan });
     expect(deals).toBeGreaterThan(100);
+    expect(noPlan).toBeLessThan(deals * 0.02);
     expect(unmet).toBeLessThan(deals * 0.05);
   }, 120000);
 
@@ -98,7 +104,8 @@ describe('大星淡：被动', () => {
     let uraHits = 0;
     let kuroWins = 0;
     let tenhou = 0;
-    for (let seed = 1; seed <= 20; seed++) {
+    // 玄的能力一直在的场次里谁都中不了里宝牌：多打几场，挑得出玄打出宝牌失去能力的局
+    for (let seed = 1; seed <= 40; seed++) {
       play(seed, (g) => {
         const awai = g.players.findIndex((p) => p.name === 'awai');
         let kanKind = -1;
@@ -131,7 +138,8 @@ describe('大星淡：被动', () => {
     expect(kans).toBeGreaterThan(10);
     // 杠完以后被别人和掉、被流局，都有可能；但大多数时候她会自摸，而且玄的能力不在时里宝牌就是杠的那张
     expect(wins + kuroWins).toBeGreaterThan(kans * 0.6);
-    expect(uraHits).toBeGreaterThan(wins * 0.9);
+    // 咲在淡之前开过两次杠时，淡的杠翻到第 4 张杠宝牌，下面的里宝牌没事先藏好，牌山里也可能换不出来
+    expect(uraHits).toBeGreaterThanOrEqual(wins * 0.8);
   }, 120000);
 
   it('转角的第四张放在开局后摸牌经过的第 2 个转角前（来不及时退到第 1 个）', () => {
@@ -252,7 +260,12 @@ describe('大星淡：主动技能', () => {
       g.act(0, chooseAction(g, 0, chars[0].ai));
       const before = honorPairs();
       if (!runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0 && p.drawn !== null)) break;
-      if (before < 14) expect(honorPairs()).toBe(before + 1);
+      // 还缺的字牌被别人摸走了（咲的对子长成刻子也会拿走字牌）、牌山里没有了时摸不到
+      const need = [27, 28, 29, 30, 31, 32, 33].filter((k) => toCounts(p.hand.filter((t) => t !== p.drawn))[k] < 2);
+      const left = before < 14 && need.length > 0;
+      if (left && honorPairs() !== before + 1) {
+        expect(g.wall.live.concat(g.wall.rinshan).some((t) => need.includes(kindOf(t)))).toBe(false);
+      } else if (before < 14) expect(honorPairs()).toBe(before + 1);
       draws++;
     }
     console.log({ draws, honors: honorPairs() });
