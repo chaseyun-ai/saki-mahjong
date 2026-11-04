@@ -1,6 +1,7 @@
 import type { Game } from '../engine/game';
 import { shanten } from '../engine/shanten';
 import { TileId, kindOf, toCounts } from '../engine/tiles';
+import { SHIZUNO, shizunoMistOver } from './shizuno';
 import { PRIORITY, type Ability } from './types';
 
 // 天江衣（龙门渊）：
@@ -34,6 +35,7 @@ interface KoromoState {
   lucky?: boolean; // 这一局海底掷过了没有：true 发动，false 没发动
   shifted?: boolean; // 这一局已经把海底挪给自己过了
   haitei?: TileId; // 安排好的海底牌（锁住）
+  fogged?: boolean; // 稳乃的雾遮住了这一局的海底（掷过就是 true/false）
 }
 
 const gameStateOf = (g: Game, seat: number) => g.abilityGameState[seat] as KoromoGameState;
@@ -91,6 +93,12 @@ export const koromoAbility: Ability = {
       const last = w.live.length - 1;
       // 听的牌变了（换了听、吃碰过）就重新安排
       const planned = st.haitei !== undefined && w.live[last] === st.haitei && waits.includes(kindOf(st.haitei));
+      // 稳乃的雾：第一次要安排海底时按雾的浓度掷一次，遮住了这一局海底就不归她
+      if (st.lucky && !planned && st.fogged === undefined) {
+        const L = shizunoMistOver(g, seat);
+        st.fogged = L > 0 && g.rng.chance(Math.min(1, L * SHIZUNO.haiteiFog));
+        if (st.fogged) st.lucky = false;
+      }
       if (st.lucky && !planned) {
         if (st.haitei !== undefined && w.live[last] === st.haitei) w.locked.delete(st.haitei, 'koromo');
         st.haitei = undefined;
@@ -122,6 +130,10 @@ export const koromoAbility: Ability = {
   afterDraw(g, seat) {
     const st = stateOf(g, seat);
     const p = g.players[seat];
+    if (st.fogged && g.wall.remaining === 0 && !g.rinshanDraw) {
+      const sz = [0, 1, 2, 3].find((s) => s !== seat && g.active(s)?.id === 'shizuno');
+      if (sz !== undefined) g.emit({ type: 'ability', seat: sz, ability: 'shizuno', text: '雾遮住了海底', target: seat });
+    }
     if (st.haitei !== undefined && p.drawn === st.haitei && g.wall.remaining === 0) {
       g.emit({ type: 'ability', seat, ability: 'koromo', text: '海底捞月' });
     }

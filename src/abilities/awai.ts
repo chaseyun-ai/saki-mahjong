@@ -74,6 +74,7 @@ interface AwaiState {
   kanKind?: Kind; // 暗刻是哪种牌（转角暗杠还有戏时才有）
   corner?: TileId; // 放在转角的第四张
   kanned?: boolean; // 已经暗杠了
+  kanUra?: number; // 杠里那张里宝指示牌是第几张（稳乃的雾会把它改走，见 doraControl.mistUra）
   riichiChecked?: boolean; // 第一张打出去了：看过是不是双立直
   used?: AwaiSkillId[]; // 这一局按过的技能
   decohere?: boolean; // 退相干等着下一次摸牌
@@ -81,6 +82,11 @@ interface AwaiState {
 }
 
 const stateOf = (g: Game, seat: number) => g.abilityState[seat] as AwaiState;
+
+// 这一局杠里的里宝指示牌是第几张（没杠过是 undefined）
+export function awaiKanUra(g: Game, seat: number): number | undefined {
+  return stateOf(g, seat).kanUra;
+}
 const gameStateOf = (g: Game, seat: number) => {
   const gs = g.abilityGameState[seat] as AwaiGameState;
   if (gs.energy === undefined) {
@@ -670,7 +676,8 @@ export const awaiAbility: Ability = {
     s.kanned = true;
     // 杠以后翻的那张宝牌下面的里宝牌，指向她杠的牌
     const kan = s.kanKind;
-    g.wall.bringToUra(g.wall.doraRevealed - 1, (t) => doraFromIndicator(kindOf(t)) === kan, g.rng);
+    s.kanUra = g.wall.doraRevealed - 1;
+    g.wall.bringToUra(s.kanUra, (t) => doraFromIndicator(kindOf(t)) === kan, g.rng);
   },
 
   // 第一张打出去：不是双立直就不留转角暗杠

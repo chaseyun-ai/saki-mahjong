@@ -1,10 +1,13 @@
 import type { Game } from '../engine/game';
 import { KIND_COUNT, Kind, TileId, doraFromIndicator, kindOf, toCounts } from '../engine/tiles';
-import { shizunoDora } from './shizuno';
+import { awaiKanUra } from './awai';
+import { SHIZUNO, shizunoDora, shizunoMist } from './shizuno';
 
 // 宝牌控制的统一入口。宝牌、杠宝牌、里宝牌分三个时刻定，每个时刻按同一张优先级表，上面的规矩下面不能违反：
 // 1. 松实玄（能力还在）：别人手里不会有宝牌、赤宝牌，和牌也中不了里宝牌，新翻的杠宝牌不指向别人手里、副露已有的牌。谁都改不了
 // 2. 高鸭稳乃深山（满 6 个标记）：开局宝牌、杠宝牌往她手里最多的牌变（shizuno.ts 自己定），她和牌时里宝牌也是
+// 2b. 稳乃起雾（雾 L 级）：别家立直和牌时里宝牌按雾的浓度避开和牌那家（mistUra），淡的杠里按雾的浓度少中几张。
+//     排在和牌的人自己的控里能力后面做，所以压得过它们；immune、absolute 的人（姬子拿钥匙、涅莉押 3 点、照）不受影响
 // 3. 和牌的人自己的控里能力（Ability.claimUra：爽的海神威、涅莉押 2、3 点、稳乃、咲的自我限制）。只有和牌的那家算，所以互不冲突
 // 4. 宫永咲：她开杠翻出的杠宝牌、她和牌时的里宝牌不指向她自己的牌（岭上摸到赤宝牌照常可以）。
 //    这是她的控场能力，会被稳乃削弱；满 6 个标记的稳乃在场时直接失效（决赛大将战那次杠出了里宝牌）
@@ -76,8 +79,38 @@ export function settleUra(g: Game, winners: number[], winTile?: TileId): void {
   const winner = winners[0];
   if (!g.players[winner].riichi) return;
   const own = g.active(winner);
-  if (!own?.claimUra || g.quelled(winner) || g.damped(winner)) return;
-  own.claimUra(g, winner, winTile);
+  if (own?.claimUra && !g.quelled(winner) && !g.damped(winner)) own.claimUra(g, winner, winTile);
+  mistUra(g, winner, winTile);
+}
+
+// 淡的杠里不受影响中四张；雾 L 级时最多中几张：1 级一半照旧、一半 2 张，2 级 2 张，3 级 1 张，4 级 0 张（期望 3、2、1、0）
+function kanUraCap(g: Game, L: number): number {
+  if (L <= 0) return 4;
+  if (L === 1) return g.rng.chance(0.5) ? 4 : 2;
+  return [4, 2, 2, 1, 0][Math.min(L, 4)];
+}
+
+// 稳乃的雾压别家立直和牌的里宝牌（她自己和牌时是 claimUra，不走这里）
+function mistUra(g: Game, winner: number, winTile?: TileId): void {
+  const sz = [0, 1, 2, 3].find((s) => s !== winner && g.active(s)?.id === 'shizuno' && shizunoMist(g, s) > 0 && !g.quelled(s));
+  if (sz === undefined || g.isImmune(winner) || g.isAbsolute(winner)) return;
+  const L = shizunoMist(g, sz);
+  const w = g.wall;
+  const theirs = toCounts(tilesOf(g, winner, winTile));
+  const mine = toCounts(tilesOf(g, sz));
+  const hits = (t: TileId) => theirs[doraFromIndicator(kindOf(t))];
+  const kan = g.active(winner)?.id === 'awai' ? awaiKanUra(g, winner) : undefined;
+  for (let i = 0; i < w.doraRevealed; i++) {
+    const bring = (pred: (t: TileId) => boolean) => w.bringToUra(i, pred, g.rng);
+    if (i === kan) {
+      // 杠里：换成中得不超过 cap 张、尽量接近 cap 的指示牌（换不到就再少一张）
+      const cap = kanUraCap(g, L);
+      if (hits(w.uraIndicators[i]) <= cap) continue;
+      for (let n = cap; n >= 0; n--) if (bring((t) => hits(t) === n)) break;
+      continue;
+    }
+    if (g.rng.chance(SHIZUNO.mistUra[Math.min(L, SHIZUNO.mistUra.length - 1)])) steerAway(w.uraIndicators[i], theirs, mine, bring);
+  }
 }
 
 // 咲和牌时：里宝牌不指向她自己的牌（满 6 个标记的稳乃在场时不管）
