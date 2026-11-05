@@ -87,3 +87,7 @@ npx vite-node scripts/toka.ts 300 south [start]   # 龙门渊透华：多少场�
 ## 牌面字体
 
 万子和字牌的字形取自 [霞鹜文楷 TC（LXGW WenKai TC）](https://github.com/lxgw/LxgwWenkaiTC) Bold，SIL Open Font License 1.1。`scripts/gen-glyphs.ts` 从 `scripts/fonts/` 里的字体子集生成 `src/ui/glyphs.ts`，游戏运行时不需要加载字体。
+
+## 特效参考
+
+薄墨初美的鬼门法阵（`src/ui3d/kimonSigil.ts`）的画法参考了 [Humpalumps/ultra-elements](https://github.com/Humpalumps/ultra-elements)（MIT）的 `Sigils.js` 和 `Shockwaves.js`：用距离场画法阵线条、笔顺式描线、“白色灯丝 + 彩色外层 + 红比蓝散得开的光晕”、冲击波半径照 t^0.4 的爆炸波曲线。代码是照这个思路重写的，没有整段照搬；版权声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
