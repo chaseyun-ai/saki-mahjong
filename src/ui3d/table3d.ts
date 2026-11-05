@@ -57,6 +57,11 @@ const SIDE_HAND_PUSH_25D = 0.7;
 // 整排手牌就露出来了。牌山收进去以后右上角的缝变窄，右边（下家）的牌山整排往下挪一点，上下两个转角的缝一样宽
 const TOP_WALL_IN_25D = 0.8;
 const TOP_HAND_PUSH_25D = 0.8;
+// 中央控制台的高度。2.5D 镜头从自己这边斜着看过去，控制台太高会把对家的立直棒挡住一半，所以 2.5D 矮一点
+const CONSOLE_H = 0.5;
+const CONSOLE_H_25D = 0.3;
+// 2.5D 对家的立直棒再往牌河那边挪一点，离控制台远些（离牌河第一行还留着空）
+const TOP_STICK_OUT_25D = 0.07;
 const RIGHT_WALL_DOWN_25D = 0.2;
 
 // 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
@@ -294,7 +299,7 @@ export class Table3D {
   private modelUrls: string[] = [];
   private modelFailed = false;
   private loadingEl: HTMLDivElement | null = null;
-  private dice = new Dice(0.5);
+  private dice: Dice;
   private deal: DealState | null = null;
   private handAnims: HandAnim[] = [];
   // 这一局牌河摆放的随机微变化用哪一套（vary.ts 的 pondJitter）
@@ -382,6 +387,7 @@ export class Table3D {
     this.consoleTex.colorSpace = THREE.SRGBColorSpace;
     this.consoleTex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
 
+    this.dice = new Dice(this.consoleH);
     this.buildRoom();
     this.buildTiles();
     this.scene.add(this.dice.group);
@@ -470,14 +476,15 @@ export class Table3D {
       new THREE.MeshStandardMaterial({ color: '#0c0d0f', roughness: 0.25, metalness: 0.3 }),
       new THREE.MeshStandardMaterial({ map: this.consoleTex, roughness: 0.2, emissive: '#ffffff', emissiveMap: this.consoleTex, emissiveIntensity: 0.35 }),
     ];
-    const box = new THREE.Mesh(new RoundedBoxGeometry(CONSOLE_HALF * 2, 0.5, CONSOLE_HALF * 2, 4, 0.25), consoleMats[0]);
-    box.position.y = 0.25;
+    const h = this.consoleH;
+    const box = new THREE.Mesh(new RoundedBoxGeometry(CONSOLE_HALF * 2, h, CONSOLE_HALF * 2, 4, Math.min(0.25, h / 2)), consoleMats[0]);
+    box.position.y = h / 2;
     box.receiveShadow = true;
     box.castShadow = true;
     this.scene.add(box);
     const top = new THREE.Mesh(new THREE.PlaneGeometry(CONSOLE_HALF * 2 - 0.3, CONSOLE_HALF * 2 - 0.3), consoleMats[1]);
     top.rotation.x = -Math.PI / 2;
-    top.position.y = 0.505;
+    top.position.y = h + 0.005;
     this.scene.add(top);
   }
 
@@ -850,7 +857,12 @@ export class Table3D {
     if (this.lastSync?.view.ids[seat] === 'toki') {
       return this.toWorld(seat, me, 0, STICK_LEN / 2, this.dim.pondZ - 0.5, new THREE.Euler(0, 0, Math.PI / 2));
     }
-    return this.toWorld(seat, me, 0, 0.09, this.dim.pondZ - 0.35, STANDING);
+    const out = this.style === '25d' && (seat - me + 4) % 4 === 2 ? TOP_STICK_OUT_25D : 0;
+    return this.toWorld(seat, me, 0, 0.09, this.dim.pondZ - 0.35 + out, STANDING);
+  }
+
+  private get consoleH(): number {
+    return this.style === '25d' ? CONSOLE_H_25D : CONSOLE_H;
   }
 
   // 抽屉里那根立直棒的位置（抽屉拉开时）

@@ -26,6 +26,13 @@ function play(g: Game, styles: (typeof CHARACTERS)[number]['ai'][], step?: () =>
   }
 }
 
+// 把牌山里一张 kind 的牌换到下一张
+function putOnTop(g: Game, kind: number) {
+  const live = g.wall.live;
+  const i = live.findIndex((t) => kindOf(t) === kind);
+  [live[0], live[i]] = [live[i], live[0]];
+}
+
 const result = (deltas: number[]): RoundResult => ({ kind: 'win', wins: [], tenpai: [false, false, false, false], deltas });
 
 describe('龙门渊的四人', () => {
@@ -128,7 +135,7 @@ describe('龙门渊透华', () => {
     expect(tokaChisui(game(4, 2, tokaAbility), 2)).toBe(false);
   });
 
-  it('治水：别人摸不到会被鸣的牌，手里有对子以后不再成对；透华自己摸的也是死牌', () => {
+  it('治水：别人摸不到会被鸣的牌，手里有对子以后不再成对，换牌不改进不进张', () => {
     const g = game(1, 0, tokaAbility);
     (g.abilityGameState[0] as { at?: number }).at = 0;
     g.round = 1;
@@ -144,20 +151,30 @@ describe('龙门渊透华', () => {
       p.riichi = false;
     }
     expect(g.waits(1)).toEqual([]);
+    // 下一张是一万（透华手里成对，打出去会被碰）
+    putOnTop(g, 0);
     const rule = tokaAbility.beforeAnyDraw!(g, 0, 1, false)!;
+    expect(rule.deny(g.wall.live[0])).toBe(true);
     // 别人手里的对子（碰）
     for (const k of [0, 17, 27]) expect(rule.deny(k * 4 + 1)).toBe(true);
     // 下家 2 号位能吃的：她有三饼、五饼，四饼不来
     expect(rule.deny(12 * 4 + 1)).toBe(true);
     // 已经有一个对子：手里的单张不再成对
     expect(rule.deny(3 * 4 + 1)).toBe(true);
-    // 谁也鸣不了的七万照常来
-    expect(rule.deny(6 * 4 + 1)).toBe(false);
+    // 换上来的牌进不进张照原来那张（一万）
+    const useful = usefulKinds(g, 1);
+    for (let k = 0; k < 34; k++) if (useful.has(k) !== useful.has(0)) expect(rule.deny(k * 4 + 1)).toBe(true);
+    // 谁也鸣不了、也不进张的牌照常能来
+    expect([...Array(34).keys()].some((k) => !rule.deny(k * 4 + 1))).toBe(true);
+    // 下一张本来就是死牌：不用换
+    const dead = [...Array(34).keys()].find((k) => !rule.deny(k * 4 + 1))!;
+    putOnTop(g, dead);
+    expect(tokaAbility.beforeAnyDraw!(g, 0, 1, false)).toBeFalsy();
     // 岭上牌不管
     expect(tokaAbility.beforeAnyDraw!(g, 0, 1, true)).toBeFalsy();
   });
 
-  it('治水：别人听牌时有一半的概率摸不到和了牌', () => {
+  it('治水：别人听牌时摸到和了牌的，按 tsumoCut 换走', () => {
     const g = game(1, 0, tokaAbility);
     (g.abilityGameState[0] as { at?: number }).at = 0;
     g.round = 1;
@@ -165,13 +182,16 @@ describe('龙门渊透华', () => {
     g.players[1].hand = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13].map((k) => k * 4 + 3);
     g.players[1].melds = [];
     expect(g.waits(1)).toEqual([13]);
+    // 下一张就是五饼
+    putOnTop(g, 13);
     let denied = 0;
     for (let i = 0; i < 400; i++) {
       const rule = tokaAbility.beforeAnyDraw!(g, 0, 1, false);
-      if (rule?.deny(13 * 4)) denied++;
+      if (rule?.deny(g.wall.live[0])) denied++;
     }
-    expect(denied / 400).toBeGreaterThan(0.4);
-    expect(denied / 400).toBeLessThan(0.6);
+    // 治水时牌山里和了牌比平常多（别人摸不走），砍得比一半多，算下来和常态比大约减半
+    expect(denied / 400).toBeGreaterThan(TOKA.tsumoCut - 0.08);
+    expect(denied / 400).toBeLessThan(TOKA.tsumoCut + 0.08);
     // 自己摸牌不管（她自己的在 beforeDraw 里）
     expect(tokaAbility.beforeAnyDraw!(g, 0, 0, false)).toBeFalsy();
   });

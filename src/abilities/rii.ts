@@ -6,8 +6,8 @@ import type { Ability, BindKey } from './types';
 
 // 白水哩（新道寺）：
 // - 被动：别人对她配牌、摸牌的影响减半（Ability.resist，和天使和一样；absolute 的玄照样管得到她）
-// - 番缚：每一局她第一次出牌的时候，可以给自己缚上 1–7 番。这一局和出的番数（宝牌、赤宝牌、里宝牌都算）正好是番缚数，
-//   得到一把钥匙；没和成（别人和了、流局），得到一把破碎的钥匙；和了但番数不对，什么也没有。
+// - 番缚：每一局她第一次出牌的时候，可以给自己缚上 1–7 番。这一局和出的番数（宝牌、赤宝牌、里宝牌都算）不少于番缚数，
+//   得到一把钥匙（多出来的一发、里宝牌不会把钥匙弄丢）；没和成（别人和了、流局），得到一把破碎的钥匙；和了但番数不够，什么也没有。
 //   钥匙记着是哪一局（东/南场几局几本场）。鹤田姬子在钥匙记的那一局能和出两倍番缚的牌（见 himeko.ts）。
 //   缚没缚只有她自己知道：不出字、不放切入，头像框上也不显示；只有宫永照的照魔镜看得穿（Ability.insight）
 // aiBindShanten：电脑的哩只在第一次出牌前手牌不差于几向听时才番缚（烂牌缚了也和不了，只会给姬子一把破碎的钥匙）
@@ -55,7 +55,7 @@ export function riiGuess(g: Game, seat: number): number {
 export const riiAbility: Ability = {
   id: 'rii',
   name: '番缚',
-  description: `被动：别人对她配牌、摸牌的影响减半。番缚：每一局第一次出牌时可以给自己缚上 1–${RII.maxBind} 番，和出的番数正好是番缚数就得到一把钥匙，没和成得到一把破碎的钥匙，番数不对什么也没有。钥匙记着是哪一局，鹤田姬子在那一局能和出两倍番缚的牌。缚没缚只有宫永照看得穿。`,
+  description: `被动：别人对她配牌、摸牌的影响减半。番缚：每一局第一次出牌时可以给自己缚上 1–${RII.maxBind} 番，和出的番数不少于番缚数就得到一把钥匙，没和成得到一把破碎的钥匙，番数不够什么也没有。钥匙记着是哪一局，鹤田姬子在那一局能和出两倍番缚的牌。缚没缚只有宫永照看得穿。`,
 
   resist() {
     return RII.resist;
@@ -74,7 +74,7 @@ export const riiAbility: Ability = {
     const bind = stateOf(g, seat).bind;
     if (bind === undefined) return;
     const win = result.wins.find((w) => w.seat === seat);
-    if (win && win.result.han !== bind) return;
+    if (win && win.result.han < bind) return;
     const gs = gameStateOf(g, seat);
     gs.keys = [...(gs.keys ?? []), { label: g.roundLabel(), round: g.round, bind, broken: !win }];
     g.emit({ type: 'ability', seat, ability: 'rii', text: win ? '钥匙' : '破碎的钥匙' });
@@ -93,7 +93,7 @@ export const riiAbility: Ability = {
     const bind = riiBind(g, seat);
     const keys = riiKeys(g, seat);
     const list = keys.length ? `钥匙：${keys.map((k) => `${k.label}${k.broken ? '（碎）' : ''}缚${k.bind}`).join('、')}` : '还没有钥匙';
-    if (bind !== null) return { label: '番缚', note: `这一局缚了 ${bind} 番，正好和出 ${bind} 番得到钥匙。${list}`, enabled: false, active: true };
+    if (bind !== null) return { label: '番缚', note: `这一局缚了 ${bind} 番，和出 ${bind} 番以上得到钥匙。${list}`, enabled: false, active: true };
     const ready = riiCanBind(g, seat);
     const choices = Array.from({ length: RII.maxBind }, (_, i) => ({ id: String(i + 1), label: `${i + 1}番`, enabled: ready }));
     return { label: '番缚', note: ready ? `第一次出牌前可以缚上几番（只有照看得穿）。${list}` : `这一局没缚，第一次出牌前才能缚。${list}`, enabled: ready, choices };
