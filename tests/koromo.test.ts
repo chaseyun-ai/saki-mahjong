@@ -1,18 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { CHARACTERS } from '../src/abilities/characters';
-import { KOROMO_READERS, koromoDisruptor, koromoHaiteiOn, koromoMoon } from '../src/abilities/koromo';
+import { CHARACTERS, baseAi, type AiStyle } from '../src/abilities/characters';
+import { KOROMO, KOROMO_READERS, koromoAbility, koromoDisruptor, koromoHaiteiTile, koromoMoon, koromoResist, koromoRouteOn } from '../src/abilities/koromo';
+import type { Ability } from '../src/abilities/types';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
-import { toCounts } from '../src/engine/tiles';
+import { kindOf, toCounts } from '../src/engine/tiles';
 
-const lineup = ['koromo', 'saki', 'nodoka', 'kuro'].map((id) => CHARACTERS.find((c) => c.id === id)!);
+const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
+const koromo = byId('koromo');
 
-function play(seed: number, setup: (g: Game, me: number) => void) {
-  const seats = [0, 1, 2, 3].map((i) => lineup[(i + seed) % 4]);
-  const g = new Game({ seed, players: seats.map((c) => ({ name: c.id, ability: c.ability })) });
-  const me = seats.findIndex((c) => c.id === 'koromo');
-  setup(g, me);
+interface Seat {
+  id: string;
+  ability: Ability | null;
+  ai: AiStyle;
+}
+const plain: Seat = { id: 'none', ability: null, ai: baseAi };
+
+// 衣和三家没能力的电脑打一个半庄（座位随种子转）
+function play(seed: number, setup: (g: Game, me: number) => void, me: Seat = koromo, others: Seat[] = [plain, plain, plain]) {
+  const seats = [me, ...others];
+  const order = [0, 1, 2, 3].map((i) => seats[(i + seed) % 4]);
+  const g = new Game({ seed, format: 'east', players: order.map((c) => ({ name: c.id, ability: c.ability })) });
+  const mine = order.indexOf(me);
+  setup(g, mine);
   let steps = 0;
   while (g.phase !== 'gameEnd' && ++steps < 20000) {
     if (g.phase === 'roundEnd') {
@@ -20,13 +31,15 @@ function play(seed: number, setup: (g: Game, me: number) => void) {
       continue;
     }
     const s = g.waitingSeats()[0];
-    g.act(s, chooseAction(g, s, seats[s].ai));
+    g.act(s, chooseAction(g, s, order[s].ai));
   }
 }
 
+const fullMoon = (g: Game, me: number) => ((g.abilityGameState[me] as { moon?: number }).moon = 4);
+
 describe('天江衣', () => {
-  it('月相整场不变', () => {
-    for (let seed = 1; seed <= 5; seed++) {
+  it('月相整场不变；月相只管挡别人的干扰：满月 60%，新月 15%，霞和玄挡不住', () => {
+    for (let seed = 1; seed <= 3; seed++) {
       play(seed, (g, me) => {
         const moon = koromoMoon(g, me);
         expect(moon).not.toBeNull();
@@ -35,118 +48,156 @@ describe('天江衣', () => {
         });
       });
     }
-  }, 60000);
+    const g = new Game({ seed: 1, players: ['koromo', 'kasumi', 'kuro', 'teru'].map((id) => ({ name: id, ability: byId(id).ability })) });
+    const gs = g.abilityGameState[0] as { moon?: number };
+    gs.moon = 4;
+    expect(koromoResist(g, 0)).toBeCloseTo(0.6);
+    expect(koromoAbility.resist!(g, 0, 3)).toBeCloseTo(0.6);
+    expect(koromoAbility.resist!(g, 0, 1)).toBe(0);
+    expect(koromoAbility.resist!(g, 0, 2)).toBe(0);
+    gs.moon = 0;
+    expect(koromoResist(g, 0)).toBeCloseTo(0.15);
+  });
 
-  it('满月：别人一向听、两向听时摸不到进张；海底安排好、没人打乱时，最后一张就是她的和了牌', () => {
-    let checked = 0;
-    let leaks = 0;
+  it('海底捞月：配完牌海底归她才发动；海底牌只给她看，没人打乱、她听着它时，最后一张就是她的和了牌', () => {
+    let deals = 0;
     let haitei = 0;
-    // 满月海底一直没人打乱、最后一张她自摸的局不多，挑一段里面有的种子
-    for (let seed = 15; seed <= 30; seed++) {
+    for (let seed = 1; seed <= 30; seed++) {
       play(seed, (g, me) => {
-        (g.abilityGameState[me] as { moon?: number }).moon = 4;
-        expect(koromoMoon(g, me)!.name).toBe('满月');
+        fullMoon(g, me);
         g.onEvent((e) => {
-          if (e.type !== 'draw') return;
-          const p = g.players[e.seat];
-          if (e.seat === me) {
-            const planned = (g.abilityState[me] as { haitei?: number }).haitei;
-            if (planned !== undefined && p.drawn === planned && g.wall.remaining === 0) {
-              haitei++;
-              expect(g.legalActions(me).some((a) => a.type === "tsumo")).toBe(true);
-            }
-            return;
+          if (e.type === 'ability' && e.seat === me && e.text === '海底捞月') {
+            deals++;
+            // 没人鸣牌的话最后一张归她，牌山最后一张就是那张海底牌
+            expect((g.dealer + g.wall.live.length - 1) % 4).toBe(me);
+            expect(g.wall.live.at(-1)).toBe(koromoHaiteiTile(g, me));
+            expect(koromoRouteOn(g, me)).toBe(true);
+            expect(koromoAbility.skill!(g, me)!.note).toContain('海底是');
           }
-          if (g.rinshanDraw) return;
-          const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
-          if (before < 1 || before > 2) return;
-          checked++;
-          if (shanten(toCounts(p.hand), p.melds.length) < before) leaks++;
+          if (e.type !== 'draw' || e.seat !== me || g.wall.remaining !== 0 || g.rinshanDraw) return;
+          const p = g.players[me];
+          if (koromoRouteOn(g, me) && p.drawn === koromoHaiteiTile(g, me) && g.waits(me).length === 0) {
+            const before = p.hand.filter((t) => t !== p.drawn);
+            if (shanten(toCounts(before), p.melds.length) === 0) {
+              haitei++;
+              expect(g.legalActions(me).some((a) => a.type === 'tsumo')).toBe(true);
+            }
+          }
         });
       });
     }
-    console.log({ checked, leaks, haitei });
-    expect(checked).toBeGreaterThan(200);
-    // 进张被换光、或者被怜和淡锁住时才挡不住
-    expect(leaks).toBeLessThan(checked * 0.05);
+    console.log({ deals, haitei });
+    expect(deals).toBeGreaterThan(3);
     expect(haitei).toBeGreaterThan(0);
   }, 120000);
 
-  it('听牌后海底挪给她：之后没人鸣牌开杠，最后一张一定她摸；被错开以后还会再挪回来；牌数不变', () => {
-    let kept = 0;
-    let broken = 0;
-    let shifts = 0;
-    // 没人鸣牌开杠一直打到海底的局很少（一百多场里只有几局），挑一段里面有的种子
-    for (let seed = 80; seed <= 103; seed++) {
-      play(seed, (g, me) => {
-        (g.abilityGameState[me] as { moon?: number }).moon = 4;
-        let shifted = false;
-        let disturbed = false;
-        g.onEvent((e) => {
-          if (e.type === 'roundStart') shifted = disturbed = false;
-          if (e.type === 'call' && shifted) disturbed = true;
-          if (e.type === 'ability' && e.text === '海底挪移') {
-            // 被错开以后再挪一次，又是没人打乱的状态
-            disturbed = false;
-            shifted = true;
-            shifts++;
-            const all = [...g.wall.allTiles(), ...g.players.flatMap((p) => [...p.hand, ...p.discards.map((d) => d.tile), ...p.melds.flatMap((m) => m.tiles)])];
-            expect(new Set(all).size).toBe(136);
-            expect(g.wall.allTiles().length).toBe(new Set(g.wall.allTiles()).size);
-          }
-          if (e.type !== 'draw' || !shifted || g.rinshanDraw || g.wall.remaining !== 0) return;
-          if (!disturbed) {
-            expect(e.seat).toBe(me);
-            kept++;
-          } else if (e.seat !== me) broken++;
-        });
-      });
-    }
-    console.log({ shifts, kept, broken });
-    expect(shifts).toBeGreaterThan(10);
-    expect(kept).toBeGreaterThan(0);
-  }, 120000);
-
-  it('电脑的衣：海底捞月会发动的局也照常立直（被错开了能力会自己挪回来）', () => {
-    let riichi = 0;
+  it('海底路线上：别家一向听、两向听摸不到进张，听了牌的不能自摸；不在路线上没有地狱', () => {
+    let checked = 0;
+    let leaks = 0;
+    let off = 0;
+    let offLeaks = 0;
+    let tsumoChecks = 0;
     for (let seed = 1; seed <= 16; seed++) {
       play(seed, (g, me) => {
-        (g.abilityGameState[me] as { moon?: number }).moon = 4;
+        fullMoon(g, me);
         g.onEvent((e) => {
-          if (e.type !== 'discard' || e.seat !== me || !e.riichi) return;
-          if (koromoHaiteiOn(g, me)) riichi++;
+          if (e.type !== 'draw' || e.seat === me || g.rinshanDraw) return;
+          const p = g.players[e.seat];
+          if (koromoRouteOn(g, me) && g.legalActions(e.seat).length) {
+            tsumoChecks++;
+            expect(g.legalActions(e.seat).some((a) => a.type === 'tsumo')).toBe(false);
+          }
+          const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
+          if (before < 1 || before > 2) return;
+          const better = shanten(toCounts(p.hand), p.melds.length) < before;
+          if (koromoRouteOn(g, me)) {
+            checked++;
+            if (better) leaks++;
+          } else {
+            off++;
+            if (better) offLeaks++;
+          }
         });
       });
     }
-    console.log('海底会发动时衣立直', riichi);
+    console.log({ checked, leaks, off, offLeaks, tsumoChecks });
+    expect(checked).toBeGreaterThan(50);
+    expect(leaks).toBeLessThan(checked * 0.05);
+    expect(offLeaks).toBeGreaterThan(off * 0.15);
+  }, 120000);
+
+  it('海底路线上她立直以后，谁打的牌都鸣不了', () => {
+    let frozen = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+      play(seed, (g, me) => {
+        fullMoon(g, me);
+        g.onEvent((e) => {
+          if (e.type !== 'discard' || !koromoRouteOn(g, me) || !(g.players[me].riichi || g.players[me].riichiPending)) return;
+          frozen++;
+          for (const acts of g.pending.values()) expect(acts.every((a) => a.type === 'ron' || a.type === 'pass')).toBe(true);
+        });
+      });
+    }
+    console.log({ frozen });
+    expect(frozen).toBeGreaterThan(0);
+  }, 120000);
+
+  it('电脑的衣：海底路线上先默听，牌山剩 4 张时才立直', () => {
+    let riichi = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+      play(seed, (g, me) => {
+        fullMoon(g, me);
+        g.onEvent((e) => {
+          if (e.type !== 'discard' || e.seat !== me || !e.riichi || !koromoRouteOn(g, me)) return;
+          riichi++;
+          expect(g.wall.remaining).toBeLessThanOrEqual(KOROMO.riichiAt);
+        });
+      });
+    }
+    console.log('海底路线上立直', riichi);
     expect(riichi).toBeGreaterThan(0);
   }, 120000);
 
-  it('夜之支配：满月时她自己一向听以上摸到进张的比例明显高于新月', () => {
-    const rate = (moon: number) => {
-      let n = 0;
-      let good = 0;
-      for (let seed = 1; seed <= 8; seed++) {
-        play(seed, (g, me) => {
-          (g.abilityGameState[me] as { moon?: number }).moon = moon;
-          g.onEvent((e) => {
-            if (e.type !== 'draw' || e.seat !== me || g.rinshanDraw) return;
-            const p = g.players[me];
-            const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
-            if (before < 1) return;
-            n++;
-            if (shanten(toCounts(p.hand), p.melds.length) < before) good++;
-          });
+  it('海底挪移：一向听以内鸣牌听牌、最后一张轮到她时，海底换成她的和了牌', () => {
+    let moved = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+      play(seed, (g, me) => {
+        fullMoon(g, me);
+        g.onEvent((e) => {
+          if (e.type !== 'ability' || e.seat !== me || e.text !== '海底挪移') return;
+          moved++;
+          expect(g.players[me].melds.some((m) => m.type === 'chi' || m.type === 'pon')).toBe(true);
+          const t = koromoHaiteiTile(g, me)!;
+          expect(g.wall.live.at(-1)).toBe(t);
+          expect(g.waits(me)).toContain(kindOf(t));
+          expect(koromoRouteOn(g, me)).toBe(true);
         });
-      }
-      return good / n;
+      });
+    }
+    console.log({ moved });
+    expect(moved).toBeGreaterThan(0);
+  }, 120000);
+
+  it('潮起潮落：不在海底路线上、她还没听牌时，大约 15% 的摸牌换成进张', () => {
+    let eligible = 0;
+    let tide = 0;
+    const spy: Ability = {
+      ...koromoAbility,
+      beforeAnyDraw(g, seat, drawer, rinshan) {
+        const pre = !rinshan && drawer === seat && !koromoRouteOn(g, seat) && shanten(toCounts(g.players[seat].hand), g.players[seat].melds.length) >= 1;
+        const r = koromoAbility.beforeAnyDraw!(g, seat, drawer, rinshan);
+        if (pre && !koromoRouteOn(g, seat)) {
+          eligible++;
+          if (r?.text === '潮起潮落') tide++;
+        }
+        return r;
+      },
     };
-    const full = rate(4);
-    const fresh = rate(0);
-    console.log({ full, fresh });
-    // 满月 60%、新月 15% 的概率换成进张，再加上本来就摸得到的
-    expect(full).toBeGreaterThan(0.55);
-    expect(full - fresh).toBeGreaterThan(0.15);
+    for (let seed = 1; seed <= 12; seed++) play(seed, () => {}, { ...koromo, ability: spy });
+    console.log({ eligible, tide, rate: tide / eligible });
+    expect(eligible).toBeGreaterThan(300);
+    expect(tide / eligible).toBeGreaterThan(0.1);
+    expect(tide / eligible).toBeLessThan(0.2);
   }, 120000);
 
   it('别家电脑：咲、久、真子、美穗子每局都会去错开她的海底，别人大约三成', () => {
@@ -154,7 +205,7 @@ describe('天江衣', () => {
     let others = 0;
     const N = 400;
     for (let i = 0; i < N; i++) {
-      const g = new Game({ seed: i + 1, players: [lineup[0], lineup[1], lineup[2], lineup[3]].map((c) => ({ name: c.id, ability: c.ability })) });
+      const g = new Game({ seed: i + 1, players: ['koromo', 'saki', 'nodoka', 'kuro'].map((id) => ({ name: id, ability: byId(id).ability })) });
       if (koromoDisruptor(g, 0, 1, true)) readers++;
       if (koromoDisruptor(g, 0, 2, false)) others++;
       // 同一局再问一次答案不变

@@ -9,7 +9,7 @@ import { SERA, seraYakuhai } from '../abilities/sera';
 import { SUMIRE, sumireAimedAt, sumireMarks, sumireTarget } from '../abilities/sumire';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
-import { KOROMO_READERS, koromoDisruptor, koromoHaiteiOn } from '../abilities/koromo';
+import { KOROMO, KOROMO_READERS, koromoDisruptor, koromoHaiteiOn, koromoRouteOn, koromoRouteSet } from '../abilities/koromo';
 import { mihokoEyeOpen, mihokoLikelySafe, mihokoSafeKinds } from '../abilities/mihoko';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { seikoFish } from '../abilities/seiko';
@@ -201,16 +201,15 @@ function allLastHold(g: Game, seat: number, tsumo: boolean): boolean {
   return rankAfter > 0 && rankAfter === rank(g.players.map((q) => q.score));
 }
 
-// 衣听牌的局，海底轮到她：返回衣的座位（别人鸣一手不退向听的牌，把摸牌顺序错开），不是就 null
+// 衣在海底路线上、海底轮到她：返回衣的座位（别人鸣一手不退向听的牌，把摸牌顺序错开），不是就 null
 function koromoHaiteiSeat(g: Game, seat: number): number | null {
   const n = g.wall.live.length;
   if (n > 12) return null;
-  const k = [0, 1, 2, 3].find((s) => s !== seat && g.abilities[s]?.id === 'koromo' && !g.isSealed(s) && koromoHaiteiOn(g, s));
+  const k = [0, 1, 2, 3].find((s) => s !== seat && g.abilities[s]?.id === 'koromo' && !g.isSealed(s) && koromoRouteOn(g, s));
   if (k === undefined) return null;
   // 有经验的人每局都会去错开，别人每局只有一定概率想得到
   if (!koromoDisruptor(g, k, seat, KOROMO_READERS.includes(g.abilities[seat]?.id ?? ''))) return null;
-  // 她听牌了（假装知道衣的海底），不鸣的话最后一张归她
-  if (!g.waits(k).length) return null;
+  // 衣在海底路线上（看她的头像标记就知道），不鸣的话最后一张归她
   return (g.lastDiscard!.seat + n) % 4 === k ? k : null;
 }
 
@@ -613,7 +612,10 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       if ( nellyLiveWaits(g, p.hand.filter((t) => t !== best.a.tile), p.melds.length) < 2) return best.a;
       return riichi;
     }
-    // 衣：海底被错开以后能力会自己挪回来，所以照常立直
+    // 衣：海底路线上先默听（还要留着鸣牌把海底挪回来），牌山剩 KOROMO.riichiAt 张（倒数第二次摸牌）时立直，下一巡海底自摸
+    if (style.haitei && !sealed && koromoRouteOn(g, seat)) return g.wall.remaining > KOROMO.riichiAt ? best.a : riichi;
+    // 海底暂时被错开：也先默听，留着鸣牌挪回来
+    if (style.haitei && !sealed && koromoRouteSet(g, seat) && g.wall.remaining > KOROMO.riichiAt) return best.a;
     // 优希：东场坐庄听的是只等一种牌的烂听牌（边张、坎张、单骑），牌山还多就先默听等改良
     if (style.eastWind && seat === g.dealer && yuukiActive(g, seat) && g.wall.remaining > YUUKI_AI.waitLate && waitingKinds(c, p.melds.length).length === 1) return best.a;
     // 照：天梯要正好和出下一层。默听接得上就默听；立直才接得上就立直；都接不上时，默听比下一层小才立直往上抬
@@ -965,12 +967,13 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const honitsuOk =
     dye !== null && inDye(tile) && p.melds.every((m) => m.tiles.every(inDye)) && p.hand.filter((t) => !inDye(t)).length <= 2;
 
-  // 衣：听牌了、海底不是自己的，找一手吃碰把海底挪到自己（海底捞月本身就是役）；
-  // 海底已经是自己的，就不吃不碰，免得把它挪走
-  // 还差一步听牌时，能一手吃碰同时听牌、拿到海底的也鸣
-  if (style.haitei && !p.riichi && cur <= 1) {
+  // 衣：海底路线上（海底归她）不吃不碰，免得把它挪走；
+  // 一向听以内、海底不归她时，能一手吃碰听牌、又让最后一张轮到自己的就鸣（海底挪移）
+  if (style.haitei && !p.riichi && !sealedMe && koromoRouteOn(g, seat)) return pass;
+  if (style.haitei && !p.riichi && !sealedMe && cur <= 1 && koromoHaiteiOn(g, seat)) {
     const last = g.wall.live.length - 1;
     if (cur === 0 && (g.lastDiscard!.seat + 1 + last) % 4 === seat) return pass;
+    // 海底挪移：鸣完打一张，下一张由下家摸，最后一张正好轮到自己（海底是役，无役也鸣）
     if (last >= 4 && (seat + 1 + last) % 4 === seat) {
       for (const a of legal) {
         if (a.type !== 'pon' && a.type !== 'chi') continue;

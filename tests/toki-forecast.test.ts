@@ -64,7 +64,8 @@ describe('园城寺怜：演算出来的下一张', () => {
           previews++;
         },
       });
-      expect(previews).toBeGreaterThan(100);
+      // 一场里预览了很多次（淡在的话一场打得很快，少的时候不到一百次）
+      expect(previews).toBeGreaterThan(50);
       expect(JSON.stringify(watched.events)).toBe(JSON.stringify(plain.events));
       expect(watched.players.map((p) => p.score)).toEqual(plain.players.map((p) => p.score));
     }

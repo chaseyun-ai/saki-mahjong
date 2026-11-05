@@ -1,5 +1,5 @@
 import { AWAI } from '../abilities/awai';
-import { MOON_PHASES } from '../abilities/koromo';
+import { KOROMO, MOON_PHASES } from '../abilities/koromo';
 import { TOKA } from '../abilities/toka';
 import type { Game, GameEvent } from '../engine/game';
 import { TileId, kindOf } from '../engine/tiles';
@@ -199,9 +199,11 @@ export interface TraceLine {
 // 不换牌的能力消息，有的换个说法更好懂
 const NOTE_TEXT: Record<string, (who: string) => string> = {
   'awai-时间迟滞': (who) => `${who}的时间迟滞：另外三家的配牌压到 ${AWAI.slowShanten}–${AWAI.slowShanten + 1} 向听（挡得住、会支配牌山的人是 ${AWAI.slowShantenWeak} 向听）。`,
-  'koromo-海底捞月': (who) => `${who}摸到了牌山最后一张：海底捞月。`,
+  'koromo-海底捞月': (who) => `配完牌，牌山最后一张归${who}：海底变成她的和了牌，这一局走海底路线，别家进入一向听地狱、不能自摸。`,
+  'koromo-海底挪移': (who) => `${who}鸣牌听牌，最后一张轮到了她：海底变成她的和了牌，这一局走海底路线。`,
+  'koromo-海底自摸': (who) => `${who}摸到了牌山最后一张：海底捞月。`,
   ...Object.fromEntries(
-    MOON_PHASES.map((m) => [`koromo-${m.name}`, (who: string) => `今晚是${m.name}${m.icon}，${who}的能力${m.power >= 1 ? '全开' : `只有满月时的 ${Math.round(m.power * 100)}%`}。`]),
+    MOON_PHASES.map((m) => [`koromo-${m.name}`, (who: string) => `今晚是${m.name}${m.icon}，别人的能力有 ${Math.round(KOROMO.resist * m.power * 100)}% 干扰不到${who}。`]),
   ),
   'hatsumi-鬼门': (who) => `${who}坐北家：鬼门打开，配牌里东风、北风各两张。`,
   'hatsumi-里鬼门': (who) => `${who}把东风、北风都鸣了出来：里鬼门，西风、南风会接着来。`,

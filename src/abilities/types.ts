@@ -108,6 +108,10 @@ export interface Ability {
   canWin?(g: Game, seat: number): boolean;
   // 不许 target 和牌（涅莉的七姐妹封住的人）
   forbidsWin?(g: Game, seat: number, target: number): boolean;
+  // 不许 target 自摸（衣的海底路线上，别人听了牌也不能自摸）。荣和照样可以
+  forbidsTsumo?(g: Game, seat: number, target: number): boolean;
+  // 这一刻谁打的牌都鸣不了（衣在海底路线上立直以后，海底一定轮到她）
+  freezesCalls?(g: Game, seat: number): boolean;
   // 这一局（第 round 局）别人封印不了她（小莳的神乐、和的天使和）
   unsealable?(g: Game, seat: number, round: number): boolean;
   // 这一局是天听配牌：坐庄时第一次摸牌不给天和（淡的天听、照的九莲宝灯、小莳的琼琼杵尊）
@@ -122,7 +126,10 @@ export interface Ability {
   pressSkill?(g: Game, seat: number, choice?: string): void;
   // 挡得住别人影响的比例（0–1，天使和是 0.5）：别人给她配牌、摸牌定的规矩每一条有这个概率不算，
   // 别人调整配牌时这一局有这个概率碰不到她的配牌。absolute 的能力照样管得到
-  resist?(g: Game, seat: number): number;
+  // from：定规矩的是哪一家（衣的月相挡不住霞）
+  resist?(g: Game, seat: number, from?: number): number;
+  // 挡得住别人削弱自己能力的比例（衣的月相挡深山）：damped 的概率乘上 1 − 这个数
+  dampResist?(g: Game, seat: number): number;
   // 淡的时间迟滞只把她的配牌压到几向听（宫永咲：配牌偏对子，别人五向听时她四向听）。没写按淡的规矩算
   lagShanten?: number;
   // 照魔镜照不穿她（小莳的天照）：照看不到她的能力状态，电脑的照也读不出她听什么
