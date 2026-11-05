@@ -11,7 +11,7 @@ import { warmKind } from './yu';
 // 船久保浩子（千里山）：没有能力，是队里的数据分析担当。看过所有对手的牌谱，知道每个能力者靠什么和牌、怎么打断。
 // 电脑的浩子（AiStyle.scout）照“经验”打：
 // - 鸣牌打断：手绘板画着的爱丽丝（一鸣就碎）、立直一发巡的怜和龙华（错开先见到的那张）、立直的能力者（错开摸牌顺序），
-//   不退向听就鸣；衣的海底每局都去错开（和咲、久她们一样）
+//   有役、不退向听就鸣（没役的鸣牌和不了，只会一直放铳，不做）；衣的海底每局都去错开（和咲、久她们一样）
 // - 防守：知道能力者要的是什么牌，那家要防的时候，那些牌当成更危险的牌
 // 只用桌上看得见的东西（谁坐在哪、手绘板、立直、副露、宝牌），不偷看手牌和牌山
 export const HIROKO = {
@@ -69,7 +69,7 @@ export const HIROKO_NOTES: Record<string, string> = {
 // 能力还在起作用的对手
 const live = (g: Game, s: number, id: string) => g.active(s)?.id === id && !g.isSealed(s);
 
-// 为了打断谁鸣牌：any 是不退向听就鸣（要有役），urgent 是没役也鸣（爱丽丝的手绘板、一发巡的先见）
+// 为了打断谁鸣牌：any 是桌上有该打断的人，urgent 是特别该打断（爱丽丝的手绘板、一发巡的先见）。都要有役才鸣
 export function hirokoDisrupt(g: Game, seat: number): { any: boolean; urgent: boolean } {
   if (g.wall.remaining < HIROKO.minWall) return { any: false, urgent: false };
   let any = false;
