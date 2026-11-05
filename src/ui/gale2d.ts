@@ -1,5 +1,5 @@
 // 2D 牌桌上薄墨初美的里鬼门，照动画原作，和 3D 的（ui3d/gale.ts）同一个样子：
-// 紫色的风绕着牌桌打转、往里卷，四周暗成星空；和牌时桌心炸开白光，紫色的风像喷泉一样往上张开。
+// 紫色的风绕着牌桌打转、往里卷，四周暗成星空；和牌时那张和了牌（结算里砸下去的那张）炸开白光，紫色的风像喷泉一样往上张开。
 // 风丝画在一张 canvas 上：每条是两头细、中间粗的笔触，先铺一层紫晕再描一道白芯（叠加混合）。
 
 const STREAKS = 150;
@@ -28,7 +28,7 @@ interface Streak {
 }
 
 interface Ray {
-  angle: number;
+  angle: number; // 偏离喷泉正中方向的角度
   speed: number;
   len: number;
   width: number;
@@ -63,6 +63,7 @@ export class Gale2D {
   private release = 0;
   private releasing = false;
   private burstT = -1;
+  private burstAt: { x: number; y: number } | null = null;
   private clock = 0;
   private raf = 0;
   private last = 0;
@@ -101,8 +102,8 @@ export class Gale2D {
     }
     for (let i = 0; i < RAYS; i++) {
       this.rays.push({
-        // 大多往上（画面上方），往两边张开
-        angle: -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * (0.3 + Math.random() * 0.7),
+        // 偏离正中方向多少：大多贴着正中，往两边张开
+        angle: (Math.random() - 0.5) * Math.PI * (0.3 + Math.random() * 0.7),
         speed: 900 + Math.random() * 1400,
         len: 120 + Math.random() * 380,
         width: 3 + Math.random() * 12,
@@ -123,10 +124,11 @@ export class Gale2D {
     this.kick();
   }
 
-  // 和牌：风甩散，桌心炸开喷泉（盖在牌桌上面放完）
-  burst(): void {
+  // 和牌：风甩散，从 at（这一层里的坐标，一般是结算里那张和了牌；不给就是桌心偏下）炸开喷泉（盖在牌桌上面放完）
+  burst(at?: { x: number; y: number }): void {
     if (this.shown > 0.01) this.releasing = true;
     this.burstT = 0;
+    this.burstAt = at ?? null;
     this.el.classList.add('burst');
     this.kick();
   }
@@ -240,13 +242,18 @@ export class Gale2D {
     band(0.3, `rgba(255,232,255,${(alpha * 0.7).toFixed(3)})`);
   }
 
-  // 和牌的喷泉：从桌心偏下往上、往两边张开，中心一团白光
+  // 和牌的喷泉：从和了牌（或桌心偏下）往上、往两边张开，中心一团白光
   private drawBurst(cx: number, cy: number, w: number, h: number): void {
     const ctx = this.ctx;
     const T = this.burstT;
     const fade = Math.pow(Math.max(0, 1 - T / 2.2), 1.4);
-    const ox = cx;
-    const oy = cy + h * 0.12;
+    const ox = this.burstAt?.x ?? cx;
+    const oy = this.burstAt?.y ?? cy + h * 0.12;
+    // 喷泉朝哪边：桌心就往上；从和了牌炸开时朝画面中间（牌在结算上方，就往下、往两边泼开），张得更开
+    const toward = Math.atan2(cy - oy, cx - ox);
+    const near = Math.hypot(cx - ox, cy - oy) < h * 0.15;
+    const base = this.burstAt && !near ? toward : -Math.PI / 2;
+    const spread = this.burstAt ? 1.5 : 1;
     for (const r of this.rays) {
       const t = Math.max(0, T - r.delay);
       if (t <= 0) continue;
@@ -256,7 +263,7 @@ export class Gale2D {
       for (let k = 0; k <= 10; k++) {
         const u = k / 10;
         const d = head + (tail - head) * u;
-        const a = r.angle + (d / 900) * r.bend;
+        const a = base + r.angle * spread + (d / 900) * r.bend;
         pts.push([ox + Math.cos(a) * d, oy + Math.sin(a) * d, Math.pow(Math.sin(Math.PI * u), 0.5) * (1 - 0.3 * u)]);
       }
       this.stroke(pts, r.width * (1 + head / 800), r.col, fade * (1 + 1.5 * Math.exp(-head / 200)));

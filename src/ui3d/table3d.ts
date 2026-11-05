@@ -91,6 +91,12 @@ const TOPPLE_STAGGER = 0.07;
 const REVEAL_DELAY_25D = 1.4;
 const BOLT_LEAD = 0.2;
 const TOPPLE_STAGGER_25D = 0.03;
+// 初美聚着风和牌：手牌倒完，和了牌举起来、停一下、往桌上砸（秒）。砸到桌面那一下从这张牌炸开
+const SLAM_LIFT = 0.34;
+const SLAM_HANG = 0.14;
+const SLAM_DROP = 0.09;
+const SLAM_TIME = SLAM_LIFT + SLAM_HANG + SLAM_DROP;
+const SLAM_HOP = 0.32; // 砸下去以后桌上的牌跟着震一下
 
 // 用手搬牌的动作：伸手、拿起来移过去、放下停一下、收手（秒）
 interface HandTiming {
@@ -156,6 +162,10 @@ interface RevealState {
   stagger: number; // 一张张往下倒，相邻两张隔多久
   wins: { seat: number; tsumo: boolean; tile: TileId }[];
   topple: Map<TileId, { at: number; from: Placement | null }>;
+  // 要砸的和了牌：不跟着手牌倒，at 时举起来往下砸（自摸是手里那张，荣和是从牌河拿过来）
+  slams: Map<TileId, { seat: number; at: number; from: Placement | null; hit: boolean }>;
+  // 砸下去那一下：桌上的牌从这里往外震一下
+  hops: { at: number; x: THREE.Vector3 }[];
 }
 
 interface Flight {
@@ -949,8 +959,14 @@ export class Table3D {
     }
   }
 
-  // 和牌：金色光柱、闪光粒子，镜头往和牌的人那边推一点
-  private winFx(seat: number, tsumo: boolean, color: string = FX_GOLD): void {
+  // 和牌：金色光柱、闪光粒子，镜头往和牌的人那边推一点。
+  // 初美砸牌的和牌（slam）光已经从那张牌上炸过了，这里只撒一把紫色的光点，人照样举手、前倾
+  private winFx(seat: number, tsumo: boolean, color: string = FX_GOLD, slam: THREE.Vector3 | null = null): void {
+    if (slam) {
+      this.effects.sparkles(slam.clone().setY(0.6), color, 60, 4, 2);
+      if (tsumo) this.callFx(seat, 'call');
+      return;
+    }
     const at = this.seatPoint(seat, 0, 0.1, this.dim.handZ - 2.5);
     this.effects.beam(at, color, 14, 2.2);
     this.effects.ring(at, color, 14, 1.2);
@@ -1083,6 +1099,16 @@ export class Table3D {
       const wave = (LOOKS[this.lastSync?.view.ids[s] ?? '']?.reveal ?? 'wave') === 'wave';
       fxAt = Math.max(fxAt, at + (wave ? (n - 1) * stagger : 0) + TOPPLE_TIME + 0.1);
     }
+    // 初美聚着风和牌：手牌先倒，倒完那张和了牌举起来往桌上砸，砸到的时候才放特效
+    const slams: RevealState['slams'] = new Map();
+    for (const w of r.wins) {
+      if (!this.galeWin(w.seat)) continue;
+      const n = g.players[w.seat].hand.filter((t) => t !== w.tile).length;
+      const wave = (LOOKS[this.lastSync?.view.ids[w.seat] ?? '']?.reveal ?? 'wave') === 'wave';
+      const slamAt = at + (wave ? Math.max(0, n - 1) * stagger : 0) + TOPPLE_TIME + 0.12;
+      slams.set(w.tile, { seat: w.seat, at: slamAt, from: null, hit: false });
+      fxAt = Math.max(fxAt, slamAt + SLAM_TIME);
+    }
     // 被荣和的立直不成立，还没拿出来的立直棒不拿了
     this.handAnims = this.handAnims.filter((a) => a.kind !== 'stick');
     for (const d of this.drawers) d.open = 0;
@@ -1094,11 +1120,15 @@ export class Table3D {
       stagger,
       wins: r.wins.map((w) => ({ seat: w.seat, tsumo: w.from === null, tile: w.tile })),
       topple: new Map(),
+      slams,
+      hops: [],
     };
     for (const w of r.wins) {
       if (w.from === null) continue;
       const a = this.handAnims.find((x) => x.seat === w.from && x.kind === 'tile');
-      if (a) a.hold = fxAt - this.now + 0.4;
+      // 要被拿去砸的牌，放铳的人的手在它被拿走前收回去
+      const slam = slams.get(w.tile);
+      if (a) a.hold = (slam ? slam.at : fxAt + 0.4) - this.now;
     }
   }
 
@@ -1309,14 +1339,95 @@ export class Table3D {
     return !!gale && gale.seat === seat && gale.level > 0;
   }
 
-  // 初美和牌：风被甩散，桌心炸开一团白光，紫色的风像喷泉一样往上、往外张开；画面白一下
-  private galeBurst(): void {
-    this.gale?.burst();
-    this.shake = Math.max(this.shake, 0.8);
+  // 初美和牌：风被甩散，那张和了牌上炸开一团白光，紫色的风像喷泉一样往上、往外张开；画面从那里白一下
+  private galeBurst(at: THREE.Vector3): void {
+    // 喷泉往桌子中间那边张开：不往镜头上糊，四家看起来都是冲着牌桌上空
+    const lean = new THREE.Vector2(-at.x, -at.z);
+    if (lean.length() > 0.5) lean.normalize().multiplyScalar(1.4);
+    else lean.set(0, 0);
+    this.gale?.burst(at, this.style === '25d' ? 0.7 : 0.6, lean);
+    this.shake = Math.max(this.shake, 1);
+    const p = at.clone().project(this.camera);
     const flash = document.createElement('div');
     flash.className = 'gale-flash3d';
+    flash.style.setProperty('--x', `${(((p.x + 1) / 2) * 100).toFixed(1)}%`);
+    flash.style.setProperty('--y', `${(((1 - p.y) / 2) * 100).toFixed(1)}%`);
     this.container.appendChild(flash);
     window.setTimeout(() => flash.remove(), 1400);
+  }
+
+  // 砸牌：手牌倒完，和了牌从原地（荣和是牌河里那张）举到头顶、牌面朝自己一歪，停一下，再狠狠拍到倒好的手牌右边；
+  // 拍到桌面那一下从这张牌炸开，桌上的牌从这里往外震一下
+  private animateSlams(rv: RevealState): void {
+    const easeOut = (x: number) => 1 - (1 - x) ** 3;
+    for (const [id, e] of rv.slams) {
+      const tile = this.tiles[id];
+      const to = tile.target;
+      if (!to || this.now < rv.at || e.hit) continue;
+      this.held.add(id);
+      if (this.now < e.at) continue;
+      const g = tile.group;
+      if (!e.from) {
+        e.from = { pos: g.position.clone(), quat: g.quaternion.clone(), scale: g.scale.x };
+        // 别人和牌：举牌的时候镜头就往那边推，看得清砸下去那一下
+        if (e.seat !== this.lastSync?.view.me) this.zoom = { t: 0, target: this.seatPoint(e.seat, 0, 4, this.dim.seatZ - 2) };
+      }
+      const out = this.seatPoint(e.seat, 0, 0, 1).normalize();
+      const side = this.seatPoint(e.seat, 1, 0, 0).normalize();
+      // 举到手牌前上方一点，往桌子中间、往这一排中间各偏一点（自己这家举起来也不会冲出画面），砸的时候斜着落回去
+      const apex = to.pos
+        .clone()
+        .addScaledVector(out, -0.5 * to.scale)
+        .addScaledVector(side, -to.pos.dot(side) * 0.3)
+        .add(new THREE.Vector3(0, 2.3 * to.scale, 0));
+      const tilt = (a: number) => new THREE.Quaternion().setFromAxisAngle(side, a).multiply(to.quat);
+      const k = this.now - e.at;
+      if (k < SLAM_LIFT) {
+        const f = easeOut(k / SLAM_LIFT);
+        g.position.copy(e.from.pos).lerp(apex, f);
+        g.position.y += Math.sin(Math.PI * f) * 0.6 * to.scale;
+        g.quaternion.copy(e.from.quat).slerp(tilt(1.0), f);
+        g.scale.setScalar(THREE.MathUtils.lerp(e.from.scale, to.scale * 1.3, f));
+      } else if (k < SLAM_LIFT + SLAM_HANG) {
+        // 停在最高处，再往后蓄一下力
+        const f = (k - SLAM_LIFT) / SLAM_HANG;
+        g.position.copy(apex).addScaledVector(out, 0.25 * f * to.scale);
+        g.position.y += 0.15 * f * to.scale;
+        g.quaternion.copy(tilt(1.0 + 0.3 * f));
+        g.scale.setScalar(to.scale * 1.3);
+      } else if (k < SLAM_TIME) {
+        const f = ((k - SLAM_LIFT - SLAM_HANG) / SLAM_DROP) ** 2;
+        const top = apex.clone().addScaledVector(out, 0.25 * to.scale).add(new THREE.Vector3(0, 0.15 * to.scale, 0));
+        g.position.copy(top).lerp(to.pos, f);
+        g.quaternion.copy(tilt(1.3)).slerp(to.quat, f);
+        g.scale.setScalar(THREE.MathUtils.lerp(to.scale * 1.3, to.scale, f));
+      } else {
+        e.hit = true;
+        g.position.copy(to.pos);
+        g.quaternion.copy(to.quat);
+        g.scale.setScalar(to.scale);
+        this.galeBurst(to.pos.clone());
+        this.effects.ring(to.pos.clone().setY(0.05), '#ffffff', 3.5, 0.45);
+        this.effects.flash(to.pos.clone().setY(0.6), '#f6d8ff', 6, 0.35);
+        rv.hops.push({ at: this.now, x: to.pos.clone() });
+      }
+    }
+    // 震一下：离砸的地方越近跳得越高、越早；牌山不动
+    rv.hops = rv.hops.filter((h) => this.now < h.at + SLAM_HOP + 0.6);
+    for (const h of rv.hops) {
+      for (const [id, tile] of this.tiles.entries()) {
+        const to = tile.target;
+        if (!to || this.wallSlotOf.has(id) || rv.slams.has(id) || rv.topple.has(id)) continue;
+        const d = Math.hypot(to.pos.x - h.x.x, to.pos.z - h.x.z);
+        const k = (this.now - h.at - d * 0.025) / SLAM_HOP;
+        if (k < 0 || k > 1 || d > 22) continue;
+        this.held.add(id);
+        tile.group.position.copy(to.pos);
+        tile.group.position.y += Math.sin(Math.PI * k) * 0.35 * Math.exp(-d / 6) * to.scale;
+        tile.group.quaternion.copy(to.quat);
+        tile.group.scale.setScalar(to.scale);
+      }
+    }
   }
 
   // 桃子隐身：那张牌落桌停半拍，她的牌河和手牌在原地慢慢淡掉，影子跟着一起淡（像别人的视线从她身上滑开）；淡完重新摆一次（就看不见了）
@@ -1701,9 +1812,10 @@ export class Table3D {
       });
       if (win === null) continue;
       const tsumo = g.players[s].hand.includes(win);
-      // 自摸的那张跟着一起倒；荣和的那张等倒完再从牌河移过来
-      if (tsumo || this.now >= rv.fxAt) out.set(win, this.toWorld(s, me, facing ? row.x0 : x + 0.5, (TILE_T / 2) * row.hs, z, FACE_UP, yaw, row.hs));
-      if (tsumo) topple(win, tiles.length);
+      const slam = rv.slams.has(win);
+      // 自摸的那张跟着一起倒；荣和的那张等倒完再从牌河移过来。要砸的那张由 animateReveal 搬过去
+      if (tsumo || slam || this.now >= rv.fxAt) out.set(win, this.toWorld(s, me, facing ? row.x0 : x + 0.5, (TILE_T / 2) * row.hs, z, FACE_UP, yaw, row.hs));
+      if (tsumo && !slam) topple(win, tiles.length);
     }
   }
 
@@ -2370,10 +2482,8 @@ export class Table3D {
     if (rv.boltAt !== null && this.now >= rv.boltAt) {
       rv.boltAt = null;
       for (const w of rv.wins) {
-        if (this.galeWin(w.seat)) {
-          this.galeBurst();
-          continue;
-        }
+        // 初美的和了牌不劈闪电：等手牌倒完自己砸下去
+        if (rv.slams.has(w.tile)) continue;
         const at = this.tiles[w.tile].group.position.clone();
         // 从画面上沿（靠中间一点）斜着劈下来：起点和那张牌一样远，牌在画面上方时闪电也不会大半截出了画面
         const p = at.clone().project(this.camera);
@@ -2386,11 +2496,11 @@ export class Table3D {
       rv.fxDone = true;
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
       for (const w of rv.wins) {
-        // 3D 不放闪电：初美的紫光在倒完牌时冲
-        if (this.galeWin(w.seat) && this.style !== '25d') this.galeBurst();
-        this.winFx(w.seat, w.tsumo, this.galeWin(w.seat) ? '#c870ff' : FX_GOLD);
+        const slam = rv.slams.has(w.tile) ? this.tiles[w.tile].group.position.clone() : null;
+        this.winFx(w.seat, w.tsumo, slam ? '#c870ff' : FX_GOLD, slam);
       }
     }
+    this.animateSlams(rv);
     const pivot = (p: Placement) => new THREE.Vector3(0, -TILE_H / 2, -TILE_T / 2).multiplyScalar(p.scale).applyQuaternion(p.quat);
     for (const [id, e] of rv.topple) {
       const tile = this.tiles[id];
@@ -2462,7 +2572,11 @@ export class Table3D {
       if (Math.abs(this.gale.dark - this.roomDark) > 0.002) {
         this.roomDark = this.gale.dark;
         this.applyRoom();
-        this.galeVoid().style.opacity = this.roomDark.toFixed(3);
+      }
+      const veil = this.gale.veil.toFixed(3);
+      if (veil !== '0.000' || this.galeVoidEl) {
+        const el = this.galeVoid();
+        if (el.style.opacity !== veil) el.style.opacity = veil;
       }
     }
     this.water?.update(dt);

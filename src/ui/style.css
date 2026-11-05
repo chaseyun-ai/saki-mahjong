@@ -1604,6 +1604,73 @@ button {
   outline: 2px solid var(--gold);
 }
 
+/* 2D：初美聚着风和牌，结算里手牌一张张倒下，倒完和了牌举起来、停一下、狠狠砸下去；
+   砸到那一下整块晃一下，紫光从这张牌炸开（gale2d.ts）。--t 是已经放了多久（重画时接着放），--slam 是开始举牌的时间，
+   和 app.ts 的 slamStart2d / slamImpact2d 对得上 */
+.win.slam .win-hand > .tile {
+  transform-origin: 50% 100%;
+  animation: slam-topple 0.22s cubic-bezier(0.5, 0, 0.9, 0.5) both;
+  animation-delay: calc(var(--t, 0s) + var(--i, 0) * 0.035s);
+}
+.win.slam .win-hand > .win-tile {
+  position: relative;
+  z-index: 2;
+  transform-origin: 50% 50%;
+  animation: slam-drop 0.55s linear both;
+  animation-delay: calc(var(--t, 0s) + var(--slam, 0.7s));
+}
+.win.slam {
+  animation: slam-shake 0.4s linear both;
+  animation-delay: calc(var(--t, 0s) + var(--slam, 0.7s) + 0.55s);
+}
+@keyframes slam-topple {
+  from {
+    transform: perspective(240px) rotateX(78deg);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes slam-drop {
+  0% {
+    transform: translateY(6px) scale(1);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+  12% {
+    opacity: 1;
+  }
+  55% {
+    transform: translate(-6px, -54px) scale(2.2) rotate(-8deg);
+    animation-timing-function: ease-in-out;
+  }
+  84% {
+    transform: translate(-10px, -60px) scale(2.3) rotate(-13deg);
+    animation-timing-function: cubic-bezier(0.7, 0, 1, 0.6);
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes slam-shake {
+  0%, 100% { transform: none; }
+  15% { transform: translate(-4px, 3px); }
+  35% { transform: translate(4px, -2px); }
+  55% { transform: translate(-2px, 1px); }
+  75% { transform: translate(1px, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .win.slam,
+  .win.slam .win-hand > .tile {
+    animation: none;
+  }
+}
+
 .ura {
   display: flex;
   gap: 4px;
@@ -6492,13 +6559,13 @@ html:root .tm-draft .tmd-go {
   50% { opacity: 1; }
 }
 
-/* 3D 牌桌：初美和牌时画面白一下，再褪成紫 */
+/* 3D 牌桌：初美的和了牌砸到桌上时，画面从那张牌白一下，再褪成紫 */
 .gale-flash3d {
   position: absolute;
   inset: 0;
   pointer-events: none;
   mix-blend-mode: screen;
-  background: radial-gradient(circle at 50% 55%, #fff 0%, #f2c8ff 30%, rgba(170, 60, 255, 0.5) 60%, rgba(90, 20, 160, 0) 100%);
+  background: radial-gradient(circle at var(--x, 50%) var(--y, 55%), #fff 0%, #f2c8ff 30%, rgba(170, 60, 255, 0.5) 60%, rgba(90, 20, 160, 0) 100%);
   animation: gale-flash3d 1.3s ease-out forwards;
 }
 @keyframes gale-flash3d {

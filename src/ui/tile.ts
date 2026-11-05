@@ -12,6 +12,8 @@ export interface TileOpts {
   data?: Record<string, string | number>;
   // 手绘风格的牌面（爱丽丝的手绘板）；不写就跟着 setSketchTiles
   sketch?: boolean;
+  // 写在牌上的内联样式（比如动画用的 CSS 变量）
+  style?: string;
 }
 
 // 2D 牌桌变成手绘板时，所有牌都画成手绘风格（爱丽丝）
@@ -42,7 +44,8 @@ export function tileHtml(id: TileId, opts: TileOpts = {}): string {
   const data = Object.entries(opts.data ?? {})
     .map(([key, v]) => ` data-${key}="${v}"`)
     .join('');
-  return `<div class="${cls.join(' ')}"${data}><div class="face">${face(id, sketch)}</div></div>`;
+  const style = opts.style ? ` style="${opts.style}"` : '';
+  return `<div class="${cls.join(' ')}"${data}${style}><div class="face">${face(id, sketch)}</div></div>`;
 }
 
 // 美穗子睁开右眼时，别人手牌的牌背按花色上色：万红、筒蓝、索绿、字牌白

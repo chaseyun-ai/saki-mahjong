@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // 薄墨初美的里鬼门（3D、2.5D），照动画原作：东风、北风都鸣出来以后，紫色的风绕着牌桌打转、一圈圈往里卷，
-// 四周暗下来、出现星点；和牌时桌心炸开一团白光，紫色的风像喷泉一样往上、往外张开。
+// 四周暗下来、出现星点；和牌时那张和了牌上炸开一团白光，紫色的风像喷泉一样往上、往外张开。
 // - 每一缕风是一条笔触：两头细、中间粗，中心一道白芯、外面一层紫晕，沿着走向带一点毛糙的抖动
 // - 风丝的位置全在顶点着色器里按时间算（每条只存几个随机数），一帧不用在 CPU 上改顶点
 // - 宽度朝着镜头展开；线细到不足 1.5 个像素时不再变细而是变暗，远处的风丝不会断成虚线
@@ -110,13 +110,16 @@ void main() {
 }
 `;
 
-// 和牌的喷泉：从桌心往上、往外张开的风丝
+// 和牌的喷泉：从那张和了牌往上、往外张开的风丝
 const RAY_VERT = /* glsl */ `
 attribute vec2 aUS;
 attribute vec4 iA; // angle, lean, speed, delay
 attribute vec4 iB; // len, width, curl, seed
 attribute vec3 iCol;
 uniform float uT;
+uniform vec3 uOrigin;
+uniform float uScale;
+uniform vec2 uDir; // 往哪边张开（水平方向，长度 0 就四面八方）
 varying float vSide;
 varying float vU;
 varying float vAlpha;
@@ -124,20 +127,21 @@ varying vec3 vCol;
 ${STRIP}
 vec3 at(float d) {
   float a = iA.x + d * iB.z * 0.03;
+  vec2 h = normalize(vec2(sin(a), -cos(a)) + uDir + vec2(1e-4, 0.0));
   float rad = 0.4 + d * iA.y * (1.0 + d * 0.035);
   float y = d * (1.0 - iA.y * 0.35);
-  return vec3(sin(a) * rad, y, -cos(a) * rad);
+  return vec3(h.x * rad, y, h.y * rad);
 }
 void main() {
   float t = max(0.0, uT - iA.w);
   float head = iA.z * (1.0 - exp(-t * 2.2)) / 2.2 * 2.2;
   float tail = max(0.0, head - iB.x);
   float d = mix(head, tail, aUS.x);
-  vec3 P = at(d);
-  vec3 P2 = at(d + 0.2);
+  vec3 P = uOrigin + at(d) * uScale;
+  vec3 P2 = uOrigin + at(d + 0.2) * uScale;
   float taper = pow(sin(3.14159 * clamp(aUS.x, 0.0, 1.0)), 0.5) * (1.0 - 0.3 * aUS.x);
   float aa;
-  vec3 pos = expand(P, P2, iB.y * taper * (1.0 + d * 0.03), aUS.y, aa);
+  vec3 pos = expand(P, P2, iB.y * taper * (1.0 + d * 0.03) * uScale, aUS.y, aa);
   float fade = (uT > iA.w ? 1.0 : 0.0) * pow(max(0.0, 1.0 - uT / 2.4), 1.4);
   vAlpha = fade * aa * (1.0 + 2.0 * exp(-d * 0.25));
   vSide = aUS.y;
@@ -147,7 +151,7 @@ void main() {
 }
 `;
 
-// 桌心那一团白光（竖着拉长、朝着镜头）
+// 和了牌上那一团白光（竖着拉长、朝着镜头）
 const CORE_VERT = /* glsl */ `
 varying vec2 vUv;
 void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
@@ -236,6 +240,8 @@ class GaleBurst {
   private coreMat: THREE.ShaderMaterial;
   private shock: THREE.Mesh;
   private shockMat: THREE.ShaderMaterial;
+  private origin = new THREE.Vector3();
+  private scale = 1;
   private t = -1;
 
   constructor(res: THREE.IUniform, size: number) {
@@ -256,7 +262,7 @@ class GaleBurst {
     inst(g, 'iB', b, 4);
     inst(g, 'iCol', c, 3);
     g.instanceCount = RAYS;
-    this.rayMat = additive({ uT: { value: 0 }, uResY: res, uBright: { value: 1.3 } }, RAY_VERT, STRIP_FRAG);
+    this.rayMat = additive({ uT: { value: 0 }, uResY: res, uBright: { value: 1.3 }, uOrigin: { value: this.origin }, uScale: { value: 1 }, uDir: { value: new THREE.Vector2() } }, RAY_VERT, STRIP_FRAG);
     const rays = new THREE.Mesh(g, this.rayMat);
     rays.frustumCulled = false;
     rays.renderOrder = 9;
@@ -273,8 +279,15 @@ class GaleBurst {
     this.group.visible = false;
   }
 
-  play(): void {
+  // at：喷泉从哪里冒出来（桌面上那张和了牌）；scale：整团放大缩小；lean：往哪边张开（水平，x/z）
+  play(at: THREE.Vector3, scale: number, lean: THREE.Vector2): void {
     this.t = 0;
+    this.origin.copy(at);
+    this.scale = scale;
+    this.rayMat.uniforms.uScale.value = scale;
+    this.rayMat.uniforms.uDir.value.copy(lean);
+    this.shock.position.set(at.x, 0.08, at.z);
+    this.shock.scale.setScalar(scale);
     this.group.visible = true;
   }
 
@@ -288,8 +301,10 @@ class GaleBurst {
     // 竖着的光团只绕竖轴转向镜头
     const cam = new THREE.Vector3();
     camera.getWorldPosition(cam);
-    this.core.rotation.set(0, Math.atan2(cam.x, cam.z), 0);
-    this.core.scale.set(1 + t * 0.6, 1 + t * 0.3, 1);
+    const s = this.scale;
+    this.core.position.set(this.origin.x, this.origin.y + 4 * s, this.origin.z);
+    this.core.rotation.set(0, Math.atan2(cam.x - this.origin.x, cam.z - this.origin.z), 0);
+    this.core.scale.set(s * (1 + t * 0.6), s * (1 + t * 0.3), 1);
     this.shockMat.uniforms.uX.value = Math.min(1, t / 1.4);
     if (t > 2.6) {
       this.t = -1;
@@ -384,6 +399,11 @@ export class Gale {
     return this.shown * (1 - this.release) * 0.85;
   }
 
+  // 盖在画面上的星空暗角：和牌一炸很快撤掉（不然压在画面边上的白光会发灰）
+  get veil(): number {
+    return this.shown * Math.max(0, 1 - this.release * 12) * 0.85;
+  }
+
   setLevel(level: number): void {
     const v = Math.max(0, Math.min(1, level));
     // 新的一局又聚起来：撤掉散掉的状态
@@ -394,13 +414,13 @@ export class Gale {
     this.level = v;
   }
 
-  // 和牌那一下：风被甩散，桌心炸开喷泉
-  burst(): void {
+  // 和牌那一下：风被甩散，从那张和了牌（at，桌面上）炸开喷泉，往 lean 那边张开（一般朝着桌子中间）
+  burst(at: THREE.Vector3 = new THREE.Vector3(), scale = 1, lean = new THREE.Vector2()): void {
     if (this.shown > 0.01 && !this.releasing) {
       this.releasing = true;
       this.release = 0.001;
     }
-    this.burstFx.play();
+    this.burstFx.play(at, scale, lean);
   }
 
   update(dt: number, camera: THREE.Camera, renderer: THREE.WebGLRenderer): void {
