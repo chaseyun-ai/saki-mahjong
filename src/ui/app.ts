@@ -1456,10 +1456,15 @@ export class App {
     return ['hiroe', 'mako'].includes(this.chars[this.me]?.id) && !this.game?.isSealed(this.me);
   }
 
-  // 听牌的人头像旁边的灯：牌越大越亮（只给操作洋榎的玩家看）
+  // 感知得到别人听牌多大的人：洋榎、真子，和天江衣（只有灯，不知道听哪几张）
+  private sensesTenpaiSize(): boolean {
+    return this.isHiroe() || (this.chars[this.me]?.id === 'koromo' && !this.game?.isSealed(this.me));
+  }
+
+  // 听牌的人头像旁边的灯：牌越大越亮（只给操作洋榎、衣的玩家看）
   private bulbHtml(s: number): string {
     const g = this.game!;
-    if (!this.isHiroe() || s === this.me || this.vision || (g.phase !== 'turn' && g.phase !== 'calls') || g.stealthed(s, this.me)) return '';
+    if (!this.sensesTenpaiSize() || s === this.me || this.vision || (g.phase !== 'turn' && g.phase !== 'calls') || g.stealthed(s, this.me)) return '';
     if (this.chars[this.me].id === 'mako' && !makoKnows(g, s)) return '';
     const r = readTenpai(g, s);
     if (!r) return '';

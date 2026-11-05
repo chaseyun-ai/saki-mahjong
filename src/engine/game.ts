@@ -289,6 +289,16 @@ export class Game {
     return ![0, 1, 2, 3].some((o) => o !== seat && this.binds(o, seat) && !!this.active(o)?.forbidsWin?.(this, o, seat));
   }
 
+  // 别人的能力许不许这家自摸（衣的海底路线：别人听了牌也不能自摸）
+  canTsumo(seat: number): boolean {
+    return ![0, 1, 2, 3].some((o) => o !== seat && this.binds(o, seat) && !!this.active(o)?.forbidsTsumo?.(this, o, seat));
+  }
+
+  // caller 现在鸣不了别人打的牌（衣在海底路线上听牌、立直以后）。佛灭时不算
+  callsFrozen(caller: number): boolean {
+    return !this.fieldVoid() && [0, 1, 2, 3].some((s) => !!this.active(s)?.freezesCalls?.(this, s, caller));
+  }
+
   // 这家的能力这一局被别人封印了没有（爽的蛇神威）。round 不写是现在这一局（发牌前是马上要开的那一局）
   isSealed(seat: number, round = this.phase === 'predeal' ? this.round + 1 : this.round): boolean {
     const own = this.abilities[seat];
@@ -399,9 +409,10 @@ export class Game {
   // 没有人削弱时不掷随机数
   damped(seat: number): boolean {
     if (this.isAbsolute(seat) || this.isImmune(seat) || this.fieldVoid()) return false;
+    const keep = 1 - (this.active(seat)?.dampResist?.(this, seat) ?? 0);
     for (let o = 0; o < 4; o++) {
       if (o === seat) continue;
-      const p = this.active(o)?.dampens?.(this, o) ?? 0;
+      const p = (this.active(o)?.dampens?.(this, o) ?? 0) * keep;
       if (p > 0 && this.rng.chance(p)) return true;
     }
     return false;
@@ -416,7 +427,7 @@ export class Game {
   // target 这一下挡住了 from 的影响（天使和：一半的概率）。absolute 的挡不住；没有 resist 的人不掷随机数
   private shrugs(from: number, target: number): boolean {
     if (from === target || this.isAbsolute(from)) return false;
-    const r = this.active(target)?.resist?.(this, target) ?? 0;
+    const r = this.active(target)?.resist?.(this, target, from) ?? 0;
     return r > 0 && this.rng.chance(r);
   }
 
@@ -761,7 +772,7 @@ export class Game {
     const p = this.players[seat];
     const out: Action[] = [];
     if (p.drawn !== null) {
-      if (this.canWin(seat) && this.winResult(seat, p.drawn, true)) out.push({ type: 'tsumo' });
+      if (this.canWin(seat) && this.canTsumo(seat) && this.winResult(seat, p.drawn, true)) out.push({ type: 'tsumo' });
       if (this.isFirstTurn(seat)) {
         const kinds = new Set(p.hand.map(kindOf));
         if (YAOCHU_KINDS.filter((k) => kinds.has(k)).length >= 9) out.push({ type: 'kyuushu' });
@@ -919,7 +930,7 @@ export class Game {
       const q = this.players[o];
       const opts: Action[] = [];
       if (this.canWin(o) && this.winResult(o, tile, false)) opts.push({ type: 'ron' });
-      if (this.wall.remaining > 0 && !q.riichi) {
+      if (this.wall.remaining > 0 && !q.riichi && !this.callsFrozen(o)) {
         const same = q.hand.filter((t) => kindOf(t) === kind);
         for (const pair of distinctPairs(same)) opts.push({ type: 'pon', tiles: pair });
         if (same.length === 3 && this.totalKans() < 4) opts.push({ type: 'daiminkan' });

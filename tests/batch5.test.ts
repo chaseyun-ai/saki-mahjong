@@ -93,13 +93,15 @@ describe('末原恭子', () => {
         g.onEvent((e) => {
           if (e.type === 'ability' && e.ability === 'kyouko') broke++;
           if (kyoukoBreaking(g, 0) && g.phase !== 'roundEnd') {
-            expect(g.isSealed(1)).toBe(true);
+            // 衣的月相每局有一定概率挡住封印
+            const resisted = (g.abilityGameState[1] as { sealRoll?: Record<number, boolean> }).sealRoll?.[g.round];
+            expect(g.isSealed(1)).toBe(!resisted);
             expect(g.isSealed(3)).toBe(true);
             expect(g.isSealed(2)).toBe(false);
           }
           if (e.type === 'draw' && e.seat === 0 && !g.rinshanDraw) expect(kyoukoBreaking(g, 0)).toBe(false);
-          // 被打断的人不发动能力（玄可以）
-          if (e.type === 'ability' && kyoukoBreaking(g, 0) && e.seat !== 0) expect(e.ability).toBe('kuro');
+          // 被打断的人不发动能力（玄可以，衣的月相挡住了打断也可以）
+          if (e.type === 'ability' && kyoukoBreaking(g, 0) && e.seat !== 0) expect(e.ability === 'kuro' || (e.ability === 'koromo' && !g.isSealed(e.seat))).toBe(true);
         });
       });
     }
