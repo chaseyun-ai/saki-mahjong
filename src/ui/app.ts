@@ -45,7 +45,7 @@ import { THEMES, ThemeId, currentTheme, setTheme } from './theme';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
-import { MatchSettings, loadSettings, parseTarget, pickOpponents, rulesOf, saveSettings, setOption, setupHtml } from './matchSetup';
+import { DEFAULT_SETTINGS, MatchSettings, TABLE_MODES, TableMode, loadSettings, loadTableMode, matchPanelHtml, parseTarget, pickOpponents, ruleSummary, rulesOf, saveSettings, saveTableMode, setOption, visualPanelHtml } from './matchSetup';
 import { ForecastCache } from '../ai/forecast';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
@@ -90,17 +90,13 @@ interface Toast {
   kind: string; // riichi / call / kan / win 时有特效样式
 }
 
-// 洋榎的灯：颜色从白到紫，光芒条数就是档位
-// 选人页右上角的牌桌视角下拉
-const SEL_MODES: ['25d' | '3d' | '2d', string][] = [
-  ['25d', '2.5D'],
-  ['3d', '3D 实验'],
-  ['2d', '2D'],
-];
-// 选人页顶栏的齿轮、随机出场的骰子
-const GEAR_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>`;
+// 选人页顶栏：对局设置（滑杆）、视觉设置（调色盘）、更多（三个点）；随机出场的骰子
+const SLIDERS_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></g></svg>`;
+const PALETTE_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3a9 9 0 0 0 0 18c1.4 0 2-1 2-2 0-1.4-1.2-1.6-1.2-2.8 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.4 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.4" fill="currentColor"/><circle cx="10" cy="7" r="1.4" fill="currentColor"/><circle cx="15" cy="7" r="1.4" fill="currentColor"/></svg>`;
+const MORE_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg>`;
 const DICE_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><circle cx="16" cy="8" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="8" cy="16" r="1.6" fill="currentColor"/><circle cx="16" cy="16" r="1.6" fill="currentColor"/></svg>`;
 
+// 洋榎的灯：颜色从白到紫，光芒条数就是档位
 const BULB_COLORS = ['#f4f1e0', '#ffd84a', '#ff9f2e', '#ff4a3a', '#c35bff'];
 const BULB_NAMES = ['一千多', '两三千', '五千左右', '满贯', '跳满以上'];
 function bulbSvg(lv: number): string {
@@ -130,10 +126,12 @@ export class App {
   private gone = new Set<number>();
   private vanishAt = new Map<number, number>();
   // 25d：3D 牌桌、不坐人物，从上往下看（默认）；3d：坐着人物的实验版；2d：网页画的平面牌桌
-  private mode: '25d' | '3d' | '2d' = '25d';
-  // 单人对局的规则（设置弹窗），setupFor 是弹窗开着时选的角色
+  private mode: TableMode = loadTableMode();
+  // 单人对局的规则、动画开关（matchSetup.ts）；panel 是选人页上开着的设置面板
   private settings: MatchSettings = loadSettings();
-  private setupFor: string | null = null;
+  private panel: 'match' | 'visual' | null = null;
+  // 页面主人才能换素材：视觉设置里多一行入口
+  private canSkins = false;
   // 牌桌右边的四个开关：理（自动理牌）、和（自动和牌）、鸣（不吃碰杠）、切（自动摸切）
   private assist = { sort: true, win: false, call: false, cut: false };
   // 不自动理牌时自己手牌的摆法（不含刚摸的那张）；null 是照顺序排
@@ -222,18 +220,20 @@ export class App {
       if (!this.heroTip()) this.showCharTip(null);
       else if (!to?.closest?.('.char-card') && this.tipFor !== this.picked) this.showCharTip(this.pickedCard());
     });
-    // 选人页顶栏的两个下拉：牌桌视角、皮肤
+    // 对局设置里的对手下拉、一位必要点数：改了就记下来
     root.addEventListener('change', (e) => {
-      const el = e.target as HTMLSelectElement;
-      if (el.dataset.ui === 'mode-pick' && SEL_MODES.some(([v]) => v === el.value)) {
-        this.mode = el.value as '25d' | '3d' | '2d';
-        this.renderSelect();
-      } else if (el.dataset.ui === 'theme-pick' && THEMES.some((t) => t.id === el.value)) {
-        setTheme(el.value as ThemeId);
-        this.renderSelect();
+      const el = e.target as HTMLElement;
+      if (el.matches('.setup-select, #setup-target')) {
+        this.readTarget();
+        saveSettings(this.settings);
+        this.refreshRuleSummary();
       }
     });
-    // 齿轮菜单开着时，点别的地方就收起来
+    // Esc 关掉设置面板
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.panel) this.closePanel();
+    });
+    // 更多菜单开着时，点别的地方就收起来
     root.addEventListener('click', (e) => {
       const open = root.querySelector('details.sel-more[open]');
       if (open && !open.contains(e.target as Node)) open.removeAttribute('open');
@@ -277,34 +277,31 @@ export class App {
     this.auto = false;
     // 3D 牌桌要用的人物模型现在就开始在后台下载
     if (this.mode === '3d') preloadModels(MODEL_URLS);
-    const opt = (v: string, label: string, on: boolean) => `<option value="${v}"${on ? ' selected' : ''}>${label}</option>`;
-    const modes = SEL_MODES.map(([v, label]) => opt(v, label, v === this.mode)).join('');
-    const themes = THEMES.map((t) => opt(t.id, t.name, t.id === currentTheme())).join('');
     const hero = this.heroTip();
-    // 顶栏：标题，右上角是牌桌视角、皮肤两个下拉，齿轮里放素材（页面主人才有）和动作调试。
-    // 下面一排是两种玩法的标签，团体赛点了就进布阵；随机出场用上次的规则直接开局
+    // 顶栏：标题，右上角是对局设置、视觉设置两个面板的入口，三个点里放动作调试。
+    // 下面一排是两种玩法的标签，团体赛点了就进布阵；随机出场照对局设置直接开局
     this.root.innerHTML = `
       <div class="select-screen">
         <div class="sel-main">
         <header class="sel-top">
           <h1>超能力麻将</h1>
           <div class="sel-tools">
-            <label class="sel-tool"><span>牌桌</span><select data-ui="mode-pick" aria-label="牌桌视角">${modes}</select></label>
-            <label class="sel-tool"><span>皮肤</span><select data-ui="theme-pick" aria-label="界面皮肤">${themes}</select></label>
+            <button class="sel-set" data-ui="open-match" aria-haspopup="dialog">${SLIDERS_SVG}<span>对局设置</span></button>
+            <button class="sel-set" data-ui="open-visual" aria-haspopup="dialog">${PALETTE_SVG}<span>视觉设置</span></button>
             <details class="sel-more">
-              <summary aria-label="更多" title="素材 · 动作调试">${GEAR_SVG}</summary>
-              <div class="sel-more-menu"><span id="skin-entry"></span><button data-ui="lab">动作调试</button></div>
+              <summary aria-label="更多" title="动作调试">${MORE_SVG}</summary>
+              <div class="sel-more-menu"><button data-ui="lab">动作调试</button></div>
             </details>
           </div>
         </header>
         <nav class="sel-modes">
           <button class="on" aria-current="page">个人对局<small>选一位，和三个电脑打</small></button>
           <button data-ui="team">团体赛拟真<small>四队蛇形选人，五人接力</small></button>
-          <button class="sel-random" data-ui="random" title="随便抽一位，用上次的规则直接开局">${DICE_SVG}随机出场</button>
+          <button class="sel-random" data-ui="random" title="随便抽一位，照对局设置直接开局">${DICE_SVG}随机出场</button>
         </nav>
         <div class="school-tabs" role="tablist">${this.schoolTabsHtml()}</div>
         <div class="school-page">${this.schoolPageHtml()}</div>
-        <p class="sel-hint">${hero ? '点头像看能力，再点一下或按「出场」就用上次的规则开局；局数、点数、对手在「规则 · 对手」里改。' : '鼠标停在头像上看能力（手机上点一下看），点头像选定，设置好规则就开始。'}对手从其余角色里随机抽三位，由电脑操作。</p>
+        <p class="sel-hint">${hero ? '点头像看能力，再点一下或按「出场」开局。' : '鼠标停在头像上看能力（手机上点一下看），点头像就开局。'}局数、点数、对手在右上角「对局设置」里改，皮肤、牌桌视角在「视觉设置」里换。</p>
         <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品 · 3D 人物由 VRoid 官方 CC0 示例模型改色</p>
         </div>
         <div class="char-tip" hidden></div>
@@ -312,11 +309,14 @@ export class App {
       </div>`;
     // 换了皮肤的选人页：介绍不再是浮窗，固定在左边当大立绘面板，先放这一页的第一位
     if (hero) this.pickCard(this.root.querySelector<HTMLElement>('.char-card'));
-    // 能换素材的人（页面主人）才看得到“素材”入口
+    // 能换素材的人（页面主人）在视觉设置里多一行“角色素材”
     void canEditSkins().then((ok) => {
-      const slot = this.root.querySelector('#skin-entry');
-      if (ok && slot) slot.innerHTML = '<button data-ui="skins">素材</button>';
+      if (ok === this.canSkins) return;
+      this.canSkins = ok;
+      if (this.panel === 'visual') this.renderPanel();
     });
+    // 换皮肤会重画整页：开着的设置面板照样开着
+    this.renderPanel();
   }
 
   // 大立绘面板选定的角色：鼠标停在别的头像上时临时换过去看，移开了换回来；再点一下选定的头像就开局
@@ -335,16 +335,60 @@ export class App {
     return this.picked ? this.root.querySelector<HTMLElement>(`.char-card[data-pick="${this.picked}"]`) : null;
   }
 
-  // 出场、随机出场：不弹设置，照上次的规则开局（规则记在浏览器里，第一次是默认规则）
+  // 出场、随机出场、点头像：照对局设置开局（记在浏览器里，第一次是默认规则）
   private quickStart(id: string): void {
-    this.setupFor = null;
+    this.panel = null;
     this.startGame(id);
   }
 
-  // 「规则 · 对手」，或者经典皮肤上点了头像：弹出对局设置，按“开始对战”再开局
-  private openSetup(id: string): void {
-    this.setupFor = id;
-    this.renderSetup();
+  // 右上角的两个设置面板
+  private openPanel(kind: 'match' | 'visual'): void {
+    this.root.querySelector('details.sel-more[open]')?.removeAttribute('open');
+    this.panel = kind;
+    this.renderPanel();
+    this.root.querySelector<HTMLElement>('.set-x')?.focus();
+  }
+
+  private closePanel(): void {
+    if (this.panel === 'match') {
+      this.readTarget();
+      saveSettings(this.settings);
+    }
+    const kind = this.panel;
+    this.panel = null;
+    this.renderPanel();
+    this.refreshRuleSummary();
+    this.root.querySelector<HTMLElement>(`[data-ui="open-${kind}"]`)?.focus();
+  }
+
+  // 面板重画：滚动位置、键盘焦点留在原处（手机上面板会滚动，点一个选项不要跳回顶上）
+  private renderPanel(): void {
+    const slot = this.root.querySelector('#setup');
+    if (!slot) return;
+    const old = slot.querySelector<HTMLElement>('.set-panel');
+    const top = old?.scrollTop ?? 0;
+    const focus = document.activeElement instanceof HTMLElement && slot.contains(document.activeElement) ? document.activeElement : null;
+    const key = focus?.dataset.ui ? `[data-ui="${focus.dataset.ui}"]${focus.dataset.k ? `[data-k="${focus.dataset.k}"]` : ''}[data-v="${focus.dataset.v ?? ''}"]` : null;
+    slot.innerHTML =
+      this.panel === 'match'
+        ? matchPanelHtml(this.settings)
+        : this.panel === 'visual'
+          ? visualPanelHtml(this.settings, currentTheme(), this.mode, this.canSkins)
+          : '';
+    const panel = slot.querySelector<HTMLElement>('.set-panel');
+    if (panel) panel.scrollTop = top;
+    if (key) slot.querySelector<HTMLElement>(key)?.focus();
+  }
+
+  private ruleSummaryHtml(): string {
+    const { main, opp } = ruleSummary(this.settings);
+    return `${SLIDERS_SVG}<span>${main}<span class="hero-opp"> · ${opp}</span></span>`;
+  }
+
+  // 大立绘面板上出场旁边那一行规则：改了设置跟着变
+  private refreshRuleSummary(): void {
+    const el = this.root.querySelector('.hero-rules');
+    if (el) el.innerHTML = this.ruleSummaryHtml();
   }
 
   // 选人页按学校分页（schools.ts）：一页一个学校，点角色直接开局
@@ -471,7 +515,7 @@ export class App {
           <div class="char-desc">${c.ability ? c.ability.description : '不靠能力，只靠扎实的牌效和防守。电脑操作这个角色时不会失误。'}</div>
           <button class="hero-more" data-ui="desc-more" hidden>展开全文</button>
           ${this.formToggleHtml(c.id)}
-          <div class="hero-actions"><button class="hero-go" data-ui="go" data-id="${c.id}">出场</button><button class="hero-rules" data-ui="rules" data-id="${c.id}">规则 · 对手</button></div>
+          <div class="hero-actions"><button class="hero-go" data-ui="go" data-id="${c.id}">出场</button><button class="hero-rules" data-ui="open-match" title="对局设置">${this.ruleSummaryHtml()}</button></div>
         </div>`;
       tip.style.left = tip.style.top = '';
       const desc = tip.querySelector<HTMLElement>('.char-desc');
@@ -499,15 +543,7 @@ export class App {
     tip.style.top = `${Math.round(Math.min(Math.max(8, y), innerHeight - 8 - h))}px`;
   }
 
-  // 选了角色：先弹规则设置，按“开始对战”再开局
-  private renderSetup(): void {
-    const slot = this.root.querySelector('#setup');
-    if (!slot) return;
-    const c = this.setupFor ? CHARACTERS.find((x) => x.id === this.setupFor) : null;
-    slot.innerHTML = c ? setupHtml(this.settings, c.name, c.color) : '';
-  }
-
-  // 自由输入的一位必要点数、下拉选的对手：弹窗重画、开局之前先收进来
+  // 自由输入的一位必要点数、下拉选的对手：面板重画、关上之前先收进来
   private readTarget(): void {
     const input = this.root.querySelector<HTMLInputElement>('#setup-target');
     if (input) this.settings.target = parseTarget(input.value);
@@ -1142,6 +1178,11 @@ export class App {
   // ---------- 点击 ----------
 
   private onClick(e: MouseEvent): void {
+    // 点设置面板外面的暗处：关上
+    if ((e.target as HTMLElement).classList?.contains('set-modal')) {
+      this.closePanel();
+      return;
+    }
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pick],[data-tile],[data-act],[data-ui]');
     if (!el) return;
     if (el.dataset.pick) {
@@ -1152,20 +1193,24 @@ export class App {
         else this.pickCard(el, true);
         return;
       }
-      // 经典皮肤：手指点的第一下只看介绍，再点同一个才弹设置
+      // 经典皮肤：手指点的第一下只看介绍，再点同一个才开局
       if (this.lastPointer === 'touch' && this.tipFor !== id) {
         this.showCharTip(el);
         return;
       }
-      this.openSetup(id);
+      this.quickStart(id);
       return;
     }
     if (el.dataset.ui === 'go' && el.dataset.id) {
       this.quickStart(el.dataset.id);
       return;
     }
-    if (el.dataset.ui === 'rules' && el.dataset.id) {
-      this.openSetup(el.dataset.id);
+    if (el.dataset.ui === 'open-match' || el.dataset.ui === 'open-visual') {
+      this.openPanel(el.dataset.ui === 'open-match' ? 'match' : 'visual');
+      return;
+    }
+    if (el.dataset.ui === 'panel-close') {
+      this.closePanel();
       return;
     }
     if (el.dataset.ui === 'random') {
@@ -1189,20 +1234,28 @@ export class App {
     if (el.dataset.ui === 'setup-opt' && el.dataset.k && el.dataset.v) {
       this.readTarget();
       setOption(this.settings, el.dataset.k, el.dataset.v);
-      this.renderSetup();
-      return;
-    }
-    if (el.dataset.ui === 'setup-cancel') {
-      this.setupFor = null;
-      this.renderSetup();
-      return;
-    }
-    if (el.dataset.ui === 'setup-go' && this.setupFor) {
-      this.readTarget();
       saveSettings(this.settings);
-      const id = this.setupFor;
-      this.setupFor = null;
-      this.startGame(id);
+      this.renderPanel();
+      return;
+    }
+    if (el.dataset.ui === 'match-reset') {
+      // 只换规则和对手；透华的常态 / 治水、动画开关是别处的设置，留着
+      const { chisui, drawPath, vary } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary };
+      saveSettings(this.settings);
+      this.renderPanel();
+      return;
+    }
+    if (el.dataset.ui === 'vis-theme' && THEMES.some((t) => t.id === el.dataset.v)) {
+      setTheme(el.dataset.v as ThemeId);
+      this.renderSelect();
+      return;
+    }
+    if (el.dataset.ui === 'vis-mode' && TABLE_MODES.some((m) => m.id === el.dataset.v)) {
+      this.mode = el.dataset.v as TableMode;
+      saveTableMode(this.mode);
+      if (this.mode === '3d') preloadModels(MODEL_URLS);
+      this.renderPanel();
       return;
     }
     if (el.dataset.ui === 'lab') {
@@ -1225,6 +1278,7 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'skins') {
+      this.panel = null;
       new SkinEditor(this.root, () => this.renderSelect());
       return;
     }
