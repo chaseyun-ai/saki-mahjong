@@ -13,6 +13,7 @@ const pool = process.argv[4] ?? 'random';
 const from = Number(process.argv[5] ?? 1);
 const me = CHARACTERS.find((c) => c.id === id)!;
 const plain = CHARACTERS.find((c) => c.id === 'izumi')!;
+let othersRank = 0, kaoriDeals = 0, kaoriWins = 0;
 let rankSum = 0, first = 0, last = 0, score = 0, wins = 0, dealIns = 0, rounds = 0, winPts = 0, yakuman = 0, special = 0;
 for (let seed = from; seed < from + games; seed++) {
   const rng = new Rng(seed * 977);
@@ -27,6 +28,8 @@ for (let seed = from; seed < from + games; seed++) {
   const g = new Game({ seed, format: 'south', players: order.map((c) => ({ name: c.name, ability: c.ability })) });
   g.onEvent((e) => {
     if (e.type === 'ability' && e.seat === mine && (e.text === '新手运' || e.text === '背水')) special++;
+    if (e.type === 'ability' && e.seat === mine && e.text === '新手运') kaoriDeals++;
+    if (e.type === 'roundEnd' && id === 'kaori' && e.result.wins.some((w) => w.seat === mine) && g.events.some((x) => x.type === 'ability' && x.seat === mine && x.text === '新手运' && g.events.indexOf(x) > g.events.map((y) => y.type).lastIndexOf('roundStart'))) kaoriWins++;
     if (e.type !== 'roundEnd') return;
     rounds++;
     for (const w of e.result.wins) {
@@ -48,9 +51,11 @@ for (let seed = from; seed < from + games; seed++) {
     g.act(s, chooseAction(g, s, order[s].ai));
   }
   const rank = g.ranking().indexOf(mine);
+  // 同桌三人的平均顺位（看她拖不拖得住能力者）
+  for (let s = 0; s < 4; s++) if (s !== mine) othersRank += g.ranking().indexOf(s) + 1;
   rankSum += rank + 1;
   if (rank === 0) first++;
   if (rank === 3) last++;
   score += g.players[mine].score;
 }
-console.log(JSON.stringify({ id, pool, games, rankSum, first, last, score, wins, dealIns, rounds, winPts, yakuman, special }));
+console.log(JSON.stringify({ id, pool, games, rankSum, first, last, score, wins, dealIns, rounds, winPts, yakuman, special, othersRank, kaoriDeals, kaoriWins }));

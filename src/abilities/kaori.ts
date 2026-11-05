@@ -10,7 +10,6 @@ import type { Ability } from './types';
 // 电脑的佳织拿到役满听牌后只摸切、不鸣牌，能和就和
 export const KAORI = {
   chance: 0.01, // 每局配牌是役满听牌的概率
-  tries: 30, // 挑几副牌型，挑到牌山里凑得齐的为止
 };
 
 export interface KaoriHand {
@@ -20,34 +19,64 @@ export interface KaoriHand {
 
 const pick = <T>(g: Game, xs: readonly T[]): T => xs[g.rng.int(xs.length)];
 
-// 随机一副役满听牌（13 张）
-export function yakumanTemplate(g: Game): KaoriHand {
-  const honors = [27, 28, 29, 30, 31, 32, 33];
-  switch (g.rng.int(4)) {
-    case 0: {
+// 同一门花色里离得近（差 2 以内）的两种牌：刻子挨着会拆出顺子，听的牌就不一定是役满了（111 222 333 4 荣 1 是 11 123 123 234）
+const near = (a: Kind, b: Kind) => a < 27 && b < 27 && Math.floor(a / 9) === Math.floor(b / 9) && Math.abs(a - b) <= 2;
+
+// 随机挑 n 种牌，每种至少 need[i] 张能用，两两不挨着。挑不出来是 null
+function spread(g: Game, avail: number[], need: number[], from: Kind[]): Kind[] | null {
+  for (let tries = 0; tries < 20; tries++) {
+    const out: Kind[] = [];
+    for (const n of need) {
+      const ok = from.filter((k) => avail[k] >= n && !out.includes(k) && !out.some((o) => near(o, k)));
+      if (!ok.length) break;
+      out.push(pick(g, ok));
+    }
+    if (out.length === need.length) return out;
+  }
+  return null;
+}
+
+// 随机一副役满听牌（13 张），听哪张和出来都是役满。avail：她的配牌和发完牌以后的牌山里每种牌能用几张，
+// 只挑凑得齐的牌型（别人配牌里的牌换不过来）。都凑不齐是 null
+export function yakumanTemplate(g: Game, avail: number[]): KaoriHand | null {
+  const all = [...Array(34).keys()];
+  const honors = all.filter((k) => k >= 27);
+  const shapes: (() => KaoriHand | null)[] = [
+    () => {
       // 国士无双：十二种幺九各一张，再一种成对，听剩下那一种
       const wait = pick(g, YAOCHU_KINDS);
       const rest = YAOCHU_KINDS.filter((k) => k !== wait);
-      return { name: '国士无双', kinds: [...rest, pick(g, rest)] };
-    }
-    case 1: {
+      const pairs = rest.filter((k) => avail[k] >= 2);
+      if (rest.some((k) => avail[k] < 1) || !pairs.length) return null;
+      return { name: '国士无双', kinds: [...rest, pick(g, pairs)] };
+    },
+    () => {
       // 四暗刻单骑：四个暗刻加一张
-      const ks = g.rng.shuffle([...Array(34).keys()]).slice(0, 5);
-      return { name: '四暗刻', kinds: [...ks.slice(0, 4).flatMap((k) => [k, k, k]), ks[4]] };
-    }
-    case 2: {
+      const ks = spread(g, avail, [3, 3, 3, 3, 1], all);
+      return ks && { name: '四暗刻', kinds: [...ks.slice(0, 4).flatMap((k) => [k, k, k]), ks[4]] };
+    },
+    () => {
       // 大三元：三元牌三副刻子，再一个对子和一个两面搭子
-      const suit = g.rng.int(3) * 9;
-      const n = 1 + g.rng.int(6); // 二三 到 七八：两面
-      const pair = pick(g, [...Array(27).keys()].filter((k) => k !== suit + n && k !== suit + n + 1));
-      return { name: '大三元', kinds: [HAKU, HAKU, HAKU, HATSU, HATSU, HATSU, CHUN, CHUN, CHUN, suit + n, suit + n + 1, pair, pair] };
-    }
-    default: {
+      if ([HAKU, HATSU, CHUN].some((k) => avail[k] < 3)) return null;
+      const runs = all.filter((k) => k < 27 && k % 9 >= 1 && k % 9 <= 6 && avail[k] >= 1 && avail[k + 1] >= 1);
+      if (!runs.length) return null;
+      const n = pick(g, runs);
+      const pairs = all.filter((k) => k < 27 && avail[k] >= 2 && !near(k, n) && !near(k, n + 1));
+      if (!pairs.length) return null;
+      const pair = pick(g, pairs);
+      return { name: '大三元', kinds: [HAKU, HAKU, HAKU, HATSU, HATSU, HATSU, CHUN, CHUN, CHUN, n, n + 1, pair, pair] };
+    },
+    () => {
       // 字一色：三副字牌刻子、两个字牌对子（双碰）
-      const ks = g.rng.shuffle([...honors]).slice(0, 5);
-      return { name: '字一色', kinds: [...ks.slice(0, 3).flatMap((k) => [k, k, k]), ks[3], ks[3], ks[4], ks[4]] };
-    }
+      const ks = spread(g, avail, [3, 3, 3, 2, 2], honors);
+      return ks && { name: '字一色', kinds: [...ks.slice(0, 3).flatMap((k) => [k, k, k]), ks[3], ks[3], ks[4], ks[4]] };
+    },
+  ];
+  for (const shape of g.rng.shuffle(shapes)) {
+    const t = shape();
+    if (t) return t;
   }
+  return null;
 }
 
 interface KaoriState {
@@ -62,11 +91,15 @@ export function kaoriYakuman(g: Game, seat: number): string | null {
 
 const usable = (g: Game) => (t: TileId) => !isDoraTile(g, t) && !g.wall.locked.has(t);
 
-// 她的配牌和发完牌以后的牌山里（没锁住、不是宝牌）凑得齐 kinds 吗
-function enough(g: Game, seat: number, kinds: Kind[]): boolean {
+// 她的配牌和发完牌以后的牌山里（没锁住、不是宝牌）每种牌有几张
+function availOf(g: Game, seat: number): number[] {
   const w = g.wall;
-  const pool = [...g.dealIndices(seat).map((i) => w.live[i]), ...w.live.slice(52)].filter(usable(g));
-  return kinds.every((k) => pool.filter((t) => kindOf(t) === k).length >= kinds.filter((x) => x === k).length);
+  return toCounts([...g.dealIndices(seat).map((i) => w.live[i]), ...w.live.slice(52)].filter(usable(g)));
+}
+
+function enough(g: Game, seat: number, kinds: Kind[]): boolean {
+  const avail = availOf(g, seat);
+  return kinds.every((k) => avail[k] >= kinds.filter((x) => x === k).length);
 }
 
 // 把她的配牌换成 kinds。先看牌山里够不够，再一张张换；中途换不动就算了（返回 false）
@@ -96,12 +129,7 @@ export const kaoriAbility: Ability = {
 
   beforeDeal(g, seat) {
     if (!g.rng.chance(KAORI.chance)) return;
-    // 别人配牌里的牌换不过来，凑不齐的牌型换一副再试
-    let t: KaoriHand | null = null;
-    for (let n = 0; n < KAORI.tries && !t; n++) {
-      const x = yakumanTemplate(g);
-      if (enough(g, seat, x.kinds)) t = x;
-    }
+    const t = yakumanTemplate(g, availOf(g, seat));
     if (!t || !dealHand(g, seat, t.kinds)) return;
     // 真的是听牌才算（别人的规矩挡住、换了一半的不算）
     const hand = g.dealIndices(seat).map((i) => g.wall.live[i]);

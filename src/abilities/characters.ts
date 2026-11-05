@@ -616,7 +616,8 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'yumi',
-    cost: 2,
+    // 南风战对随机能力者平均顺位 2.47，和 3 费一档
+    cost: 3,
     name: '加治木由美',
     school: '鹤贺学园',
     color: '#3a4a6a',

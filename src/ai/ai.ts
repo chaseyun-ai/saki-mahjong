@@ -370,6 +370,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     trap: number; // 洋榎：听牌时听的是自己打过的牌的筋（引っ掛け）
     bad: number; // 久：打这张听的是烂听牌（只等一种牌，还有剩的）
     bowl: number; // 灼：打这张以后听成保龄球型（2 是希腊教堂）
+    feed: number; // 浩子：这张是同桌能力者要的牌（漫爆发的六到九、灼的饼子、初美的西南风……）
   };
   // 被爽的蛇神威封印时读不了牌
   const sealed = g.isSealed(seat);
@@ -453,7 +454,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     }
     const shape = style.bowling && !sealed && sh === 0 ? bowlingOf(c, p.melds.length) : null;
     const bowl = shape === 'church' ? 2 : shape ? 1 : 0;
-    cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl });
+    const feed = style.scout && !sealed ? Math.max(0, ...[0, 1, 2, 3].map((o) => hirokoBias(g, seat, o, kindOf(a.tile)))) : 0;
+    cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl, feed });
   }
 
   // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌；涅莉的宣言局也一样，留下做的那门花色
@@ -485,7 +487,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 灼听牌时：两种听法都有牌可和，挑保龄球型（希腊教堂最好），比留筒子还要紧
   const bowlOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.bowl - x.bowl : 0);
   const attackOrder = (x: Cand, y: Cand) =>
-    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
+    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || bowlOrder(x, y) || keep(x) - keep(y) || x.feed - y.feed || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
   cands.sort(attackOrder);
   // 怜：假设打掉现在最想打的那张，演算自己下一次摸到什么，按它重排。
   // 失误先掷（随机数用掉的时刻和别人一样），再演算：演算拿到的随机数和之后真的牌局一致

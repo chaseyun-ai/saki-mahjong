@@ -137,8 +137,8 @@ describe('妹尾佳织', () => {
 });
 
 describe('加治木由美', () => {
-  it('2 费，常态顺 5%', () => {
-    expect(byId('yumi').cost).toBe(2);
+  it('3 费，常态顺 5%', () => {
+    expect(byId('yumi').cost).toBe(3);
     expect(yumiAbility.beforeDeal).toBeTruthy();
     expect(yumiAbility.beforeDraw).toBeTruthy();
   });
