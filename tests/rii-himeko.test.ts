@@ -67,7 +67,7 @@ describe('白水哩', () => {
     expect(tried).toBeGreaterThan(0);
   }, 60000);
 
-  it('和出的番数正好是番缚数得到钥匙，没和成是破碎的钥匙，番数不对什么也没有；钥匙记着场、局、本场', () => {
+  it('和出的番数不少于番缚数得到钥匙，没和成是破碎的钥匙，番数不够什么也没有；钥匙记着场、局、本场', () => {
     const seen = { key: 0, broken: 0, none: 0 };
     for (let seed = 1; seed <= 40 && (seen.key === 0 || seen.none === 0); seed++) {
       const { g, seats } = setup(seed, ['rii', 'izumi', 'mako', 'kyouko'], { format: 'south' });
@@ -90,7 +90,7 @@ describe('白水哩', () => {
           expect(keys.length).toBe(before + 1);
           expect(keys.at(-1)).toMatchObject({ label, bind, broken: true });
           seen.broken++;
-        } else if (win.result.han === bind) {
+        } else if (win.result.han >= bind) {
           expect(keys.length).toBe(before + 1);
           expect(keys.at(-1)).toMatchObject({ label, bind, broken: false });
           seen.key++;
