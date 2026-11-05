@@ -469,7 +469,7 @@ export class App {
           <div class="char-school">${c.school}${region ? `<span>${region}代表</span>` : ''}</div>
           <div class="hero-title"><div class="char-name">${c.name}</div><span class="hero-cost" title="团体赛费用">${c.cost}<small>费</small></span></div>
           <div class="char-ability">${c.ability ? c.ability.name : '无能力'}</div>
-          <div class="char-desc">${c.ability ? c.ability.description : '不靠能力，只靠扎实的牌效和防守。电脑操作这个角色时不会失误。'}</div>
+          <div class="char-desc">${c.ability ? c.ability.description : c.note ?? '不靠能力，只靠扎实的牌效和防守。'}</div>
           <button class="hero-more" data-ui="desc-more" hidden>展开全文</button>
           ${this.formToggleHtml(c.id)}
           <div class="hero-actions"><button class="hero-go" data-ui="go" data-id="${c.id}">出场</button><button class="hero-rules" data-ui="rules" data-id="${c.id}">规则 · 对手</button></div>
