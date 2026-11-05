@@ -104,6 +104,33 @@ export const LOOKS: Record<string, Look> = {
   tomoki: { model: 'models/vroid-shino.v2.glb', hair: '#4a4660', eyes: '#5e5a7e', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
   // 国广一：借怜的短发模型换成深蓝色头发、蓝色眼睛
   hajime: { model: 'models/vroid-f.v2.glb', hair: '#283050', eyes: '#4a6aa8', hairContrast: 0.5, reveal: 'wave', pose: 'edge', borrowed: true },
+  // 风越、鹤贺、千里山、新道寺、姬松的新人：先占位
+  // 吉留未春：借咲的短发模型换成深棕色头发、棕色眼睛
+  miharu: { model: 'models/vroid-e.v2.glb', hair: '#4a3428', eyes: '#6a4a32', hairContrast: 0.6, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 文堂星夏：借怜的短发模型换成黑色头发、灰蓝色眼睛
+  seika: { model: 'models/vroid-f.v2.glb', hair: '#24222a', eyes: '#4a5a7a', hairContrast: 0.5, reveal: 'wave', pose: 'edge', borrowed: true },
+  // 深堀纯代：借霞的长发模型换成黑色头发、深棕色眼睛
+  sumiyo: { model: 'models/vroid-shino.v2.glb', hair: '#1e1c20', eyes: '#4a3a2e', hairContrast: 0.5, reveal: 'slam', pose: 'edge', borrowed: true },
+  // 池田华菜：借咲的短发模型换成橙棕色头发、金色眼睛（猫一样）
+  kana: { model: 'models/vroid-e.v2.glb', hair: '#b8642e', eyes: '#c8a03a', hairContrast: 0.7, reveal: 'slam', pose: 'edge', borrowed: true },
+  // 津山睦月：借怜的短发模型换成黑色头发、深蓝色眼睛
+  mutsuki: { model: 'models/vroid-f.v2.glb', hair: '#22242e', eyes: '#3a4a6a', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 妹尾佳织：借和的长发模型换成浅棕色头发、棕色眼睛
+  kaori: { model: 'models/vroid-g.v2.glb', hair: '#a8805a', eyes: '#7a5a3a', hairContrast: 0.7, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 蒲原智美：借咲的短发模型换成金棕色头发、棕色眼睛
+  satomi: { model: 'models/vroid-e.v2.glb', hair: '#c09a5a', eyes: '#7a5a32', hairContrast: 0.7, reveal: 'slam', pose: 'edge', borrowed: true },
+  // 加治木由美：借霞的长发模型换成黑色头发、灰色眼睛
+  yumi: { model: 'models/vroid-shino.v2.glb', hair: '#202024', eyes: '#5a5a62', hairContrast: 0.5, reveal: 'slam', pose: 'crossed', borrowed: true },
+  // 船久保浩子：借怜的短发模型换成深棕色头发、深棕色眼睛（戴眼镜的数据分析担当）
+  hiroko: { model: 'models/vroid-f.v2.glb', hair: '#3a2a22', eyes: '#4a3a2e', hairContrast: 0.6, reveal: 'wave', pose: 'crossed', borrowed: true },
+  // 安河内美子：借和的长发模型换成黑色头发、紫色眼睛
+  mieko: { model: 'models/vroid-g.v2.glb', hair: '#26222c', eyes: '#6a5a8a', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 江崎仁美：借咲的短发模型换成棕色头发、绿色眼睛
+  hitomi: { model: 'models/vroid-e.v2.glb', hair: '#6a4a32', eyes: '#4a7a5a', hairContrast: 0.6, reveal: 'wave', pose: 'edge', borrowed: true },
+  // 真濑由子：借和的长发模型换成金棕色头发、棕色眼睛
+  yuuko: { model: 'models/vroid-g.v2.glb', hair: '#c8945a', eyes: '#8a5a32', hairContrast: 0.7, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 爱宕娟慧：借洋榎同款的咲的短发模型换成深棕色头发、棕色眼睛
+  kinue: { model: 'models/vroid-e.v2.glb', hair: '#4a2c22', eyes: '#7a4e2a', hairContrast: 0.6, reveal: 'slam', pose: 'crossed', borrowed: true },
   // 永水的三人：先占位
   // 狩宿巴：借霞的长发模型换成黑发、红褐色眼睛
   tomoe: { model: 'models/vroid-shino.v2.glb', hair: '#1e1a22', eyes: '#8a4a4a', hairContrast: 0.5, reveal: 'wave', pose: 'lap', borrowed: true },

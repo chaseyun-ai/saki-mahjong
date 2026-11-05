@@ -29,6 +29,8 @@ import { bowlingOf, isPin } from '../abilities/arata';
 import { hatsumiOpen } from '../abilities/hatsumi';
 import { JUN } from '../abilities/jun';
 import { tokaChisui } from '../abilities/toka';
+import { kaoriYakuman } from '../abilities/kaori';
+import { hirokoBias, hirokoDisrupt } from '../abilities/hiroko';
 import { haruRush } from '../abilities/haru';
 import { aislinnAiBrush, aislinnExtra, aislinnPlan } from '../abilities/aislinn';
 import { sakiAwaiFeed, sakiKanOk } from '../abilities/saki';
@@ -202,13 +204,13 @@ function allLastHold(g: Game, seat: number, tsumo: boolean): boolean {
 }
 
 // 衣听牌的局，海底轮到她：返回衣的座位（别人鸣一手不退向听的牌，把摸牌顺序错开），不是就 null
-function koromoHaiteiSeat(g: Game, seat: number): number | null {
+function koromoHaiteiSeat(g: Game, seat: number, scout = false): number | null {
   const n = g.wall.live.length;
   if (n > 12) return null;
   const k = [0, 1, 2, 3].find((s) => s !== seat && g.abilities[s]?.id === 'koromo' && !g.isSealed(s) && koromoHaiteiOn(g, s));
   if (k === undefined) return null;
   // 有经验的人每局都会去错开，别人每局只有一定概率想得到
-  if (!koromoDisruptor(g, k, seat, KOROMO_READERS.includes(g.abilities[seat]?.id ?? ''))) return null;
+  if (!koromoDisruptor(g, k, seat, scout || KOROMO_READERS.includes(g.abilities[seat]?.id ?? ''))) return null;
   // 她听牌了（假装知道衣的海底），不鸣的话最后一张归她
   if (!g.waits(k).length) return null;
   return (g.lastDiscard!.seat + n) % 4 === k ? k : null;
@@ -281,6 +283,14 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const risk = (t: TileId) => Math.max(0, ...threats(g, seat).map((o) => danger(g, seat, o, kindOf(t), visible)));
     const extra = himekoExtra(g, seat, twin).sort((a, b) => risk(a) - risk(b));
     const out = extra.map((t) => legal.find((a) => a.type === 'discard' && !a.riichi && a.tile === t)).find((a) => a);
+    if (out) return out;
+  }
+
+  // 佳织的新手运：役满听牌的局只摸切，能和就和
+  if (style.beginner && kaoriYakuman(g, seat)) {
+    const tsumo = find('tsumo');
+    if (tsumo) return tsumo;
+    const out = p.drawn === null ? undefined : legal.find((a) => a.type === 'discard' && !a.riichi && a.tile === p.drawn);
     if (out) return out;
   }
 
@@ -383,7 +393,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
           ? teruDanger(g, seat)
           : dangerKinds(g, seat);
   // 被堇瞄准时，读得出牌的人（洋榎、真子、睁眼的美穗子）和照察觉得到她听什么，不给她点
-  const aimed = !sealed && (style.reads || style.memory || eyeReads || style.mirror) ? sumireAimedAt(g, seat) : null;
+  const aimed = !sealed && (style.reads || style.memory || eyeReads || style.mirror || style.scout) ? sumireAimedAt(g, seat) : null;
   // 堇：听牌时挑听目标多余牌的打法
   const marks = style.sniper ? sumireMarks(g, seat) : null;
   // 天使和专注对局，不失误
@@ -392,8 +402,14 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 张数是 3 的倍数的花色多半没有他的听牌（门清的七对子例外），危险度压到 1
   const eyeSafe = style.eye && !sealed ? new Map(threats(g, seat).map((t) => [t, mihokoSafeKinds(g, seat, t)])) : null;
   const eyeLikely = style.eye && !sealed ? new Map(threats(g, seat).map((t) => [t, mihokoLikelySafe(g, seat, t)])) : null;
+  // 浩子：知道能力者要的牌，那些牌更危险（现物照样安全）
+  const scoutRisk = (t: number, k: Kind) => (style.scout && !sealed ? hirokoBias(g, seat, t, k) : 0);
   const eyeRisk = (t: number, k: Kind) =>
-    eyeSafe?.get(t)?.has(k) ? 0 : eyeLikely?.get(t)?.has(k) ? Math.min(1, danger(g, seat, t, k, visible)) : danger(g, seat, t, k, visible);
+    eyeSafe?.get(t)?.has(k)
+      ? 0
+      : eyeLikely?.get(t)?.has(k)
+        ? Math.min(1, danger(g, seat, t, k, visible))
+        : danger(g, seat, t, k, visible) && danger(g, seat, t, k, visible) + scoutRisk(t, k);
   const myDiscards = new Set(p.discards.map((d) => kindOf(d.tile)));
   const sakiFeed = style.rinshan ? sakiAwaiFeed(g, seat) : null;
   // 照要和 1 番起胡：七对子一和就是 2 番，不往七对子做
@@ -456,6 +472,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     (flush ? inFlush(kindOf(c.a.tile)) : suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) ||
     (style.warm && warmKind(kindOf(c.a.tile))) ||
     (style.bowling && !sealed && isPin(kindOf(c.a.tile))) ||
+    (style.pin1 && !sealed && kindOf(c.a.tile) === 9) ||
     (style.winds && !sealed && isWind(kindOf(c.a.tile))) ||
     seeds?.has(kindOf(c.a.tile)) ||
     focus?.keep(kindOf(c.a.tile))
@@ -891,6 +908,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const pass = legal.find((a) => a.type === 'pass')!;
   // 姬子钥匙的那一局：门清自摸才是那副牌的番数，不鸣牌也不荣和
   if (style.twin && himekoPlan(g, seat)) return pass;
+  // 佳织的新手运：役满听牌的局不鸣牌，能荣和就和
+  if (style.beginner && kaoriYakuman(g, seat)) return legal.find((a) => a.type === 'ron') ?? pass;
   // 爱丽丝画着手绘板：不鸣牌（一鸣就碎），能荣和照样和
   if (aislinnPlan(g, seat)) return legal.find((a) => a.type === 'ron') ?? pass;
   // 淡的星符汇聚：门清做大七星，不鸣牌
@@ -910,7 +929,7 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const cur = shanten(counts, p.melds.length);
 
   // 衣听牌、海底归她：鸣一手不退向听的牌，把海底错开
-  const koromo = !p.riichi && !style.haitei ? koromoHaiteiSeat(g, seat) : null;
+  const koromo = !p.riichi && !style.haitei ? koromoHaiteiSeat(g, seat, !!style.scout && !g.isSealed(seat)) : null;
   if (koromo !== null) {
     for (const a of legal) {
       if ((a.type !== 'pon' && a.type !== 'chi') || (seat + g.wall.live.length) % 4 === koromo) continue;
@@ -982,8 +1001,10 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   }
 
   // 恭子：桌上有能力起作用的人，就鸣牌打乱流向（不退向听就鸣；有能力的人立直了，没役也鸣）
-  const disrupt = style.disrupt && !g.isSealed(seat) && g.wall.remaining >= KYOUKO.aiMinWall && kyoukoTargets(g, seat).length > 0;
-  const disruptAny = disrupt && kyoukoTargets(g, seat).some((s) => g.seesRiichi(s, seat));
+  // 浩子：看得见手绘板、一发巡的先见、立直的能力者，不退向听就鸣打断（手绘板和一发巡没役也鸣）
+  const scout = style.scout && !g.isSealed(seat) ? hirokoDisrupt(g, seat) : null;
+  const disrupt = (style.disrupt && !g.isSealed(seat) && g.wall.remaining >= KYOUKO.aiMinWall && kyoukoTargets(g, seat).length > 0) || !!scout?.any;
+  const disruptAny = (style.disrupt && disrupt && kyoukoTargets(g, seat).some((s) => g.seesRiichi(s, seat))) || !!scout?.urgent;
   // 纯：别人立直了、牌山还多时，有役不退向听就鸣，错开流向（别人一巡不进张，立直的人摸不到和了牌）
   const jam = !!style.jam && !sealedMe && g.wall.remaining >= JUN.aiMinWall && [0, 1, 2, 3].some((s) => s !== seat && g.seesRiichi(s, seat));
 

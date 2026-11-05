@@ -99,6 +99,19 @@ const PACES: Record<string, Partial<Pace>> = {
   jun: { speed: 0.9, spread: 1.1 },
   tomoki: { speed: 0.9, spread: 0.5 }, // 网络麻将出身，手快、每次都差不多
   hajime: { speed: 1 },
+  kana: { speed: 0.85, spread: 1.3 }, // 猫一样风风火火
+  miharu: { speed: 1.05 },
+  seika: { speed: 1 },
+  sumiyo: { speed: 1.05, spread: 0.8 },
+  mutsuki: { speed: 1.05 },
+  kaori: { speed: 1.3, spread: 1.4 }, // 新手，要想好久
+  satomi: { speed: 0.9, spread: 1.2 }, // 大大咧咧
+  yumi: { speed: 1, spread: 0.6 }, // 冷静
+  hiroko: { speed: 1.1, spread: 0.8 }, // 边打边翻资料
+  mieko: { speed: 1.05 },
+  hitomi: { speed: 0.95 },
+  yuuko: { speed: 1 },
+  kinue: { speed: 0.95, spread: 0.9 },
   kyouko: { speed: 1.1, spread: 1.2 }, // 凡人拼命算
   yu: { speed: 1.1 }, // 怕冷，慢吞吞的
   toki: { speed: 1.15 }, // 身体弱，一巡先见要看一眼

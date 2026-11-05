@@ -127,7 +127,7 @@ export class TeamFlow {
     const last = this.lastPick();
     const pop = this.pop;
     this.pop = false;
-    const desc = (c: Character) => c.ability?.description ?? (isSub(c) ? '替补选手：没有能力，牌效一般。' : '不靠能力，只靠扎实的牌效和防守。');
+    const desc = (c: Character) => c.ability?.description ?? (isSub(c) ? '替补选手：没有能力，牌效一般。' : c.note ?? '不靠能力，只靠扎实的牌效和防守。');
     const abil = (c: Character) => c.ability?.name ?? (isSub(c) ? '替补' : '无能力');
     const cost = (t: number) => run.teams[t].picks.reduce((s, c) => s + c.cost, 0);
 

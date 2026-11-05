@@ -2,6 +2,7 @@ import { CHARACTERS, Character } from '../abilities/characters';
 import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
+import { HIROKO_NOTES } from '../abilities/hiroko';
 import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored } from '../abilities/teru';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
@@ -458,7 +459,7 @@ export class App {
       <div class="char-name">${c.name}</div>
       <div class="char-school">${c.school}</div>
       <div class="char-ability">${c.ability ? c.ability.name : '无能力'}</div>
-      <div class="char-desc">${c.ability ? c.ability.description : '不靠能力，只靠扎实的牌效和防守。电脑操作这个角色时不会失误。'}</div>`;
+      <div class="char-desc">${c.ability ? c.ability.description : c.note ?? '不靠能力，只靠扎实的牌效和防守。'}</div>`;
     tip.hidden = false;
     if (hero) {
       // 名字旁边是费用（团体赛选人的档位）；说明太长先收起来、淡出，按“展开全文”看完
@@ -1588,12 +1589,23 @@ export class App {
   // 照魔镜看过以后，别人头像上的镜子：指着（手机上点）看这家能力现在的状态
   private mirrorHtml(s: number): string {
     const g = this.game!;
+    if (this.chars[this.me]?.id === 'hiroko' && s !== this.me) return this.notebookHtml(s);
     if (this.chars[this.me]?.id !== 'teru' || s === this.me || !teruMirrored(g, this.me) || g.isSealed(this.me)) return '';
     const c = this.chars[s];
     const proof = !!g.active(s)?.mirrorProof?.(g, s);
     const lines = proof ? ['天岩户：照魔镜照不进去'] : c.ability ? c.ability.insight?.(g, s) ?? [c.ability.description] : ['没有能力，只靠牌效和防守'];
     const name = c.ability ? c.ability.name : '无能力';
     return `<span class="mirror" tabindex="0" aria-label="照魔镜：${c.name}">镜<span class="mirror-pop"><b>${c.name} · ${name}</b>${lines.map((l) => `<span>${l}</span>`).join('')}</span></span>`;
+  }
+
+  // ---------- 船久保浩子：资料本 ----------
+
+  // 别人头像上的“资”：指着（手机上点）看浩子资料本里这家能力的对策
+  private notebookHtml(s: number): string {
+    const c = this.chars[s];
+    if (!c.ability) return '';
+    const tip = HIROKO_NOTES[c.ability.id] ?? c.ability.description;
+    return `<span class="mirror notebook" tabindex="0" aria-label="资料本：${c.name}">资<span class="mirror-pop"><b>${c.name} · ${c.ability.name}</b><span>${tip}</span></span></span>`;
   }
 
   // ---------- 臼泽塞：镜片 ----------
