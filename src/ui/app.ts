@@ -10,7 +10,7 @@ import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
-import { Kimon2D } from './kimon2d';
+import { Gale2D } from './gale2d';
 import { aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
 import { playRebuild, playShatter } from './sketchFx';
 import { playNetWipe } from './netFx';
@@ -58,7 +58,6 @@ const NET_CATCHUP = 400;
 const NET_BAR = 26;
 const NET_WIND = '東南西北';
 // 2D 牌桌上里鬼门的风最多几道弧线
-const GALE_ARCS = 12;
 // 3D、2.5D 牌桌：上一张牌落桌、这家摸完牌以后再想这么久才出（毫秒）。
 // 算上出牌动作，电脑一回合（落桌到落桌）约 1.1 秒，和雀魂差不多。3D 的角色伸手要 0.3 秒，所以想得短一点
 const AI_TURN_DELAY_3D = 360;
@@ -157,7 +156,7 @@ export class App {
   // netFrom 是换过去之前的视角（2.5D、3D 时临时把 mode 改成 2d，变回来或离开牌桌时还原）
   private netView = false;
   private netFrom: '25d' | '3d' | '2d' | null = null;
-  private kimon2d: Kimon2D | null = null; // 2D 牌桌上初美的鬼门法阵
+  private gale2dFx: Gale2D | null = null; // 2D 牌桌上初美的紫色旋风
   private netTimer: number | null = null;
   // 怜“看下一巡”（演算）：玩家操作怜时的体力。
   // 演算中 vision 不是 null：this.game 换成牌局的复制品放到牌桌上演，真的牌局和演算前的表情先存在 vision 里，退出时换回来。
@@ -1885,8 +1884,7 @@ export class App {
     return out;
   }
 
-  // 2D 牌桌：桌心画鬼门法阵（和 3D 同一个图案），外面几道细细的紫色风弧往里卷；都在一层盖在牌桌上的 div 里
-  // （不跟着牌桌重画，动画不会断）。和牌时法阵爆亮、推开一圈冲击波，一阵紫光往上冲
+  // 2D 牌桌：初美的紫色旋风画在一层盖在牌桌上的 canvas 里（不跟着牌桌重画，动画不会断）
   private gale2d(level: number): void {
     const host = document.querySelector('.stage .table');
     if (!host) return;
@@ -1894,37 +1892,19 @@ export class App {
     if (!el) {
       el = document.createElement('div');
       el.className = 'gale';
-      const colors = ['#c23cff', '#e04cff', '#9b3cff', '#ff5ae6', '#b45cff', '#f0a8ff'];
-      const arcs = Array.from({ length: GALE_ARCS }, (_, k) => {
-        const s = 560 + Math.random() * 420;
-        const d = 3.4 + Math.random() * 3;
-        return `<i style="--k:${k}"><b style="--s:${s.toFixed(0)}px;--e:${(0.75 + Math.random() * 0.25).toFixed(2)};--d:${d.toFixed(2)}s;--w:${(1 + Math.random() * 0.8).toFixed(1)}px;--c:${colors[k % colors.length]};animation-delay:${(-Math.random() * d).toFixed(2)}s"></b></i>`;
-      }).join('');
-      const rays = Array.from({ length: 72 }, () => {
-        const a = (Math.random() - 0.5) * 70;
-        return `<u style="--a:${a.toFixed(1)}deg;--len:${(120 + Math.random() * 260).toFixed(0)}px;--x:${((Math.random() - 0.5) * 50).toFixed(0)}px;--c:${colors[Math.floor(Math.random() * colors.length)]};animation-delay:${(Math.random() * 0.35).toFixed(2)}s"></u>`;
-      }).join('');
-      el.innerHTML = `${arcs}<span class="gale-shock"></span><span class="gale-burst">${rays}</span>`;
-      this.kimon2d = new Kimon2D();
-      el.prepend(this.kimon2d.el);
+      this.gale2dFx = new Gale2D();
+      el.append(this.gale2dFx.el);
       host.prepend(el);
     }
-    el.style.setProperty('--lv', level.toFixed(3));
-    el.style.setProperty('--n', String(GALE_ARCS));
-    const view = this.galeView();
-    // 艮卦（鬼门）朝着初美和她下家（东家）中间那个角
-    if (view) this.kimon2d?.setGen(180 - 90 * ((view.seat - this.me + 4) % 4) - 45);
-    this.kimon2d?.setLevel(level);
+    this.gale2dFx?.setLevel(level);
   }
 
-  // 2D：和牌那一下紫光往上冲（盖在结算上面，冲完自己收起来）
+  // 2D：和牌那一下桌心炸开，紫色的风往上喷（这时盖在结算上面，放完自己收起来）
   private galeBurst2d(): void {
     const el = document.querySelector<HTMLElement>('.stage .table > .gale');
     if (!el) return;
-    el.classList.remove('burst');
-    void el.offsetWidth;
     el.classList.add('burst');
-    this.kimon2d?.burst();
+    this.gale2dFx?.burst();
     window.setTimeout(() => el.classList.remove('burst'), 2600);
   }
 

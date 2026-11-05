@@ -6451,7 +6451,7 @@ html:root .tm-draft .tmd-go {
   50% { filter: drop-shadow(0 0 3px #d090ff) drop-shadow(0 0 9px #9a4cff); }
 }
 
-/* 2D 牌桌：紫色的风绕着牌桌打转、往中间卷（--lv 0–1 决定亮出来几道） */
+/* 2D 牌桌：初美的紫色旋风（gale2d.ts 画在 canvas 上），和牌时整层盖到结算上面 */
 .gale {
   position: absolute;
   inset: 0;
@@ -6459,193 +6459,61 @@ html:root .tm-draft .tmd-go {
   overflow: hidden;
   z-index: 0;
 }
-.gale > i {
-  position: absolute;
-  inset: 0;
-  opacity: clamp(0, calc(var(--lv, 0) * var(--n, 40) - var(--k)), 1);
-  transition: opacity 1.4s ease;
-}
-.gale > i > b {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: var(--s);
-  height: calc(var(--s) * var(--e, 1));
-  margin: calc(var(--s) * var(--e, 1) / -2) 0 0 calc(var(--s) / -2);
-  border-radius: 50%;
-  border: var(--w) solid transparent;
-  border-top-color: var(--c);
-  filter: drop-shadow(0 0 4px var(--c)) drop-shadow(0 0 1px #fff);
-  animation: gale-spin var(--d) linear infinite;
-}
-@keyframes gale-spin {
-  0% { transform: rotate(0deg) scale(1.45); opacity: 0; }
-  15% { opacity: 0.95; }
-  80% { opacity: 0.85; }
-  100% { transform: rotate(560deg) scale(0.2); opacity: 0; }
-}
-
-/* 鬼门法阵（2D）：白色灯丝 + 紫色光晕，描的进度由 kimon2d.ts 控制 */
-.kimon2d {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(92%, 680px);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  opacity: 0;
-  transition: opacity 1.2s ease;
-}
-.kimon2d.on {
-  opacity: 1;
-}
-.kimon2d svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  filter: drop-shadow(0 0 0.6px #f3d6ff) drop-shadow(0 0 4px #b04cff) drop-shadow(0 0 12px rgba(140, 50, 255, 0.55));
-}
-.kimon2d .ks * {
-  fill: none;
-  stroke: #f8ecff;
-  stroke-linecap: round;
-}
-.kimon2d .kw {
-  fill: rgba(150, 70, 255, 0.07);
-  stroke: none;
-}
-.kimon2d [data-p='dash'] {
-  stroke-dasharray: 0.026 0.016 !important;
-  transform-origin: 0 0;
-  animation: kimon-dash 24s linear infinite;
-}
-@keyframes kimon-dash {
-  to { transform: rotate(-405deg); }
-}
-.kimon2d .kspin {
-  transform: rotate(var(--gen, 90deg));
-}
-.kimon2d .kt path {
-  stroke-width: 0.015;
-  stroke-linecap: butt;
-}
-.kimon2d .kt {
-  opacity: 0;
-  transition: opacity 0.4s;
-}
-.kimon2d .kt.lit {
-  opacity: 1;
-  animation: kimon-lit 0.9s ease-out;
-}
-.kimon2d .kt.gen.lit path {
-  stroke: #fff;
-  filter: drop-shadow(0 0 0.02px #fff);
-  animation: kimon-gen 1.8s ease-in-out infinite;
-}
-@keyframes kimon-lit {
-  0% { filter: brightness(3) drop-shadow(0 0 0.04px #fff); }
-}
-@keyframes kimon-gen {
-  50% { opacity: 0.55; }
-}
-.kimon2d .kpen {
-  fill: #fff;
-  filter: drop-shadow(0 0 0.03px #fff) drop-shadow(0 0 0.06px #e0a0ff);
-  transition: opacity 0.3s;
-}
-.kimon2d.tenpai svg {
-  animation: kimon-pulse2d 2s ease-in-out infinite;
-}
-@keyframes kimon-pulse2d {
-  50% { filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 7px #c060ff) drop-shadow(0 0 20px rgba(150, 60, 255, 0.7)); }
-}
-/* 和牌：阵爆亮、放大一点，再淡掉 */
-.kimon2d.flare {
-  animation: kimon-flare 1.6s ease-out forwards;
-}
-@keyframes kimon-flare {
-  0% { filter: brightness(1); }
-  12% { filter: brightness(2.6); transform: translate(-50%, -50%) scale(1.03); opacity: 1; }
-  100% { filter: brightness(1); transform: translate(-50%, -50%) scale(1.12); opacity: 0; }
-}
-.kimon2d.gone:not(.flare) {
-  opacity: 0;
-}
-.gale-shock {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 40px;
-  height: 40px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  display: none;
-}
-.gale.burst .gale-shock {
-  display: block;
-  animation: gale-shock 1.3s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
-  border: 2px solid #fff;
-  box-shadow: 0 0 10px 3px #c060ff, inset 0 0 26px 6px rgba(170, 80, 255, 0.55);
-}
-@keyframes gale-shock {
-  0% { width: 40px; height: 40px; opacity: 1; }
-  100% { width: 1500px; height: 1500px; opacity: 0; }
-}
-
-/* 和牌：一阵紫光从牌桌中间往上冲，盖在结算上面 */
-.gale-burst {
-  position: absolute;
-  left: 50%;
-  top: 62%;
-  width: 0;
-  height: 0;
-  display: none;
-}
 .gale.burst {
   z-index: 60;
 }
-.gale.burst > i {
-  opacity: 0;
-  transition: opacity 0.3s;
-}
-.gale.burst .gale-burst {
-  display: block;
-}
-.gale-burst::before {
-  content: '';
+.gale2d,
+.gale2d canvas {
   position: absolute;
-  left: -260px;
-  top: -260px;
-  width: 520px;
-  height: 520px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 风起来时四周暗成星空（中间留出牌桌）；透明度由 JS 跟着风的浓淡调 */
+.gale-void {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse 46% 44% at 50% 50%, rgba(7, 4, 14, 0) 55%, rgba(7, 4, 14, 0.7) 80%, rgba(5, 2, 10, 0.95) 100%);
+}
+.gale-void i {
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
   border-radius: 50%;
-  background: radial-gradient(circle, #fff 0%, rgba(240, 190, 255, 0.85) 18%, rgba(190, 70, 255, 0.45) 45%, transparent 70%);
-  animation: gale-flash 1.4s ease-out forwards;
+  background: #f4e6ff;
+  box-shadow: 0 0 4px #c890ff;
+  animation: gale-star 3s ease-in-out infinite;
 }
-.gale-burst > u {
+@keyframes gale-star {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 1; }
+}
+
+/* 3D 牌桌：初美和牌时画面白一下，再褪成紫 */
+.gale-flash3d {
   position: absolute;
-  left: var(--x);
-  bottom: 0;
-  width: 5px;
-  height: var(--len);
-  margin-left: -2.5px;
-  border-radius: 2px;
-  background: linear-gradient(to top, transparent, var(--c) 35%, #fff);
-  box-shadow: 0 0 8px var(--c);
-  transform-origin: 50% 100%;
-  opacity: 0;
-  animation: gale-ray 2s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background: radial-gradient(circle at 50% 55%, #fff 0%, #f2c8ff 30%, rgba(170, 60, 255, 0.5) 60%, rgba(90, 20, 160, 0) 100%);
+  animation: gale-flash3d 1.3s ease-out forwards;
 }
-@keyframes gale-ray {
-  0% { transform: rotate(var(--a)) translateY(0) scaleY(0.2); opacity: 0; }
-  10% { opacity: 1; }
-  70% { opacity: 0.9; }
-  100% { transform: rotate(var(--a)) translateY(-900px) scaleY(1.4); opacity: 0; }
+@keyframes gale-flash3d {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  100% { opacity: 0; }
 }
-@keyframes gale-flash {
-  0% { transform: scale(0.2); opacity: 0; }
-  15% { transform: scale(1); opacity: 1; }
-  100% { transform: scale(1.6); opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .gale-void i,
+  .gale-flash3d {
+    animation: none;
+  }
+  .gale-flash3d {
+    opacity: 0;
+  }
 }
 
 /* 透华的治水：2D 牌桌上铺一层平静的水面。冷蓝色、水底光纹慢慢晃，中间每隔几秒荡开一圈很轻的涟漪 */

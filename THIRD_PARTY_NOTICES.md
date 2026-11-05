@@ -4,7 +4,7 @@
 
 https://github.com/Humpalumps/ultra-elements
 
-The kimon sigil effect (`src/ui3d/kimonSigil.ts`, `src/ui/kimon2d.ts`) follows techniques from Ultra Elements' `src/vfx/Sigils.js` and `src/vfx/Shockwaves.js`: signed-distance sigil strokes revealed in pen order, filament-and-sheath shading with a dispersive halo, and a blast-wave (r ∝ t^0.4) shock ring. The code was rewritten for this project.
+Hatsumi's purple whirlwind (`src/ui3d/gale.ts`) follows techniques from Ultra Elements' `src/vfx/Ribbons.js` and `src/vfx/Shockwaves.js`: analytic ribbons whose centreline is evaluated per vertex in the vertex shader and expanded towards the camera, the "phone-wire" rule that a strip thinner than 1.5 px dims instead of thinning, and a blast-wave (r ∝ t^0.4) shock ring. The code was rewritten for this project.
 
 ```
 MIT License

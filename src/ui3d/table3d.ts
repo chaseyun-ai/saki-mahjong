@@ -12,7 +12,6 @@ import { Dice } from './dice';
 import { Effects } from './effects';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
-import { KimonSigil } from './kimonSigil';
 import { StillWater } from './stillWater';
 import { glowGlyph } from '../ui/tileArt';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
@@ -129,10 +128,10 @@ export interface AirPose {
 }
 const AIR_POSE: AirPose = { dx: 0.2, lift: 2.4, inward: 0.4, tilt: -0.9, yaw: 0.15, roll: -0.1, scale: 1.2 };
 
-// 初美的鬼门法阵外圈半径：在牌河外沿（约 7.8）和牌山内沿（约 9.06）之间
-const SIGIL_R = 8.5;
 // 鸣牌、立直、和牌的特效颜色
 const FX_GOLD = '#ffd36b';
+// 初美的风聚起来时四周压成的颜色：带一点紫的夜空
+const GALE_VOID = new THREE.Color('#07040e');
 const FX_RED = '#ff5a4f';
 interface Character {
   seat: number;
@@ -345,7 +344,8 @@ export class Table3D {
   private ripples: THREE.Mesh[] = [];
   // 初美的里鬼门：绕着牌桌打转的紫色的风（用到时才建）
   private gale: Gale | null = null;
-  private sigil: KimonSigil | null = null;
+  private roomBase = new THREE.Color(); // 房间本来的颜色（手绘板会换）
+  private roomDark = 0; // 初美的风让四周暗下来多少
   // 透华的治水：桌布上的水面（用到时才建，换桌子尺寸时重建）
   private water: StillWater | null = null;
   // 初美鸣出来的东、北中间那张牌上的紫光（牌 id → 贴在牌面上的发光字和光柱）
@@ -435,6 +435,7 @@ export class Table3D {
   // ---------- 场景 ----------
 
   private buildRoom(): void {
+    this.roomBase.set(this.colors.room);
     this.scene.background = new THREE.Color(this.colors.room);
     this.scene.fog = new THREE.Fog(this.colors.room, 40, 80);
 
@@ -1201,17 +1202,10 @@ export class Table3D {
   private syncGale(view: SyncView): void {
     const level = view.gale?.level ?? 0;
     if (level > 0 && !this.gale) {
-      this.sigil = new KimonSigil(SIGIL_R);
-      this.gale = new Gale(this.dim.tableHalf * 1.3, SIGIL_R * 0.98);
-      this.scene.add(this.sigil.group, this.gale.group);
-    }
-    // 艮卦（鬼门）朝着初美和她下家（东家）中间那个角
-    if (view.gale && this.sigil) {
-      const d = this.seatPoint(view.gale.seat, 0, 0, 1).add(this.seatPoint((view.gale.seat + 1) % 4, 0, 0, 1));
-      this.sigil.setGen(Math.atan2(d.x, -d.z));
+      this.gale = new Gale(this.dim.tableHalf * 2.3, 4);
+      this.scene.add(this.gale.group, this.gale.burstGroup);
     }
     this.gale?.setLevel(level);
-    this.sigil?.setLevel(level);
     const want = view.glowTiles ?? new Set<TileId>();
     for (const [id, obj] of this.glows) {
       if (want.has(id)) continue;
@@ -1315,14 +1309,14 @@ export class Table3D {
     return !!gale && gale.seat === seat && gale.level > 0;
   }
 
-  private galeBurst(tile: TileId): void {
-    const at = this.tiles[tile].group.position.clone();
-    at.y = 0.1;
-    this.effects.galeBurst(at, this.camera.position, 90);
-    this.gale?.release();
-    // 法阵爆亮、推开一圈冲击波，然后连风一起散掉
-    this.sigil?.burst();
-    this.shake = Math.max(this.shake, 0.7);
+  // 初美和牌：风被甩散，桌心炸开一团白光，紫色的风像喷泉一样往上、往外张开；画面白一下
+  private galeBurst(): void {
+    this.gale?.burst();
+    this.shake = Math.max(this.shake, 0.8);
+    const flash = document.createElement('div');
+    flash.className = 'gale-flash3d';
+    this.container.appendChild(flash);
+    window.setTimeout(() => flash.remove(), 1400);
   }
 
   // 桃子隐身：那张牌落桌停半拍，她的牌河和手牌在原地慢慢淡掉，影子跟着一起淡（像别人的视线从她身上滑开）；淡完重新摆一次（就看不见了）
@@ -1449,10 +1443,39 @@ export class Table3D {
     felt.needsUpdate = true;
     (this.tableMats!.frame as THREE.MeshStandardMaterial).color.copy(on ? new THREE.Color('#e9e6dc') : sk.normal.frame);
     (this.tableMats!.trim as THREE.MeshStandardMaterial).color.copy(on ? new THREE.Color('#2a2a30') : sk.normal.trim);
-    const room = on ? new THREE.Color('#e4e1d8') : sk.normal.room;
-    this.scene.background = room;
-    if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(room);
+    this.roomBase.copy(on ? new THREE.Color('#e4e1d8') : sk.normal.room);
+    this.applyRoom();
     for (const e of sk.edges) e.visible = on;
+  }
+
+  // 画面四周压暗的一层（中间留出牌桌），散着一闪一闪的星点
+  private galeVoidEl: HTMLDivElement | null = null;
+  private galeVoid(): HTMLDivElement {
+    if (this.galeVoidEl) return this.galeVoidEl;
+    const el = document.createElement('div');
+    el.className = 'gale-void';
+    el.innerHTML = Array.from({ length: 70 }, () => {
+      // 只撒在四周：中间那块椭圆是牌桌
+      let x = 0;
+      let y = 0;
+      do {
+        x = Math.random();
+        y = Math.random();
+      } while (((x - 0.5) / 0.42) ** 2 + ((y - 0.5) / 0.4) ** 2 < 1);
+      const d = 1.5 + Math.random() * 3;
+      return `<i style="left:${(x * 100).toFixed(1)}%;top:${(y * 100).toFixed(1)}%;--s:${(1 + Math.random() * 2).toFixed(1)}px;animation-duration:${d.toFixed(2)}s;animation-delay:${(-Math.random() * d).toFixed(2)}s"></i>`;
+    }).join('');
+    this.container.appendChild(el);
+    this.galeVoidEl = el;
+    return el;
+  }
+
+  // 房间的颜色：本来的颜色往星空的深紫黑里压（初美的风越浓压得越暗），地板跟着一起
+  private applyRoom(): void {
+    const c = this.roomBase.clone().lerp(GALE_VOID, this.roomDark);
+    this.scene.background = c;
+    if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(c);
+    (this.tableMats?.floor as THREE.MeshStandardMaterial | undefined)?.color.copy(c);
   }
 
   // 现在这一帧的画面（手绘板碎掉时拿来切成碎片）
@@ -2348,7 +2371,7 @@ export class Table3D {
       rv.boltAt = null;
       for (const w of rv.wins) {
         if (this.galeWin(w.seat)) {
-          this.galeBurst(w.tile);
+          this.galeBurst();
           continue;
         }
         const at = this.tiles[w.tile].group.position.clone();
@@ -2364,7 +2387,7 @@ export class Table3D {
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
       for (const w of rv.wins) {
         // 3D 不放闪电：初美的紫光在倒完牌时冲
-        if (this.galeWin(w.seat) && this.style !== '25d') this.galeBurst(w.tile);
+        if (this.galeWin(w.seat) && this.style !== '25d') this.galeBurst();
         this.winFx(w.seat, w.tsumo, this.galeWin(w.seat) ? '#c870ff' : FX_GOLD);
       }
     }
@@ -2433,8 +2456,15 @@ export class Table3D {
     this.animateReveal();
     this.effects.update(dt);
     this.mist.update(dt);
-    this.gale?.update(dt);
-    this.sigil?.update(dt);
+    if (this.gale) {
+      this.gale.update(dt, this.camera, this.renderer);
+      // 风浓的时候四周暗下来（动画里牌桌四周是一片星空）
+      if (Math.abs(this.gale.dark - this.roomDark) > 0.002) {
+        this.roomDark = this.gale.dark;
+        this.applyRoom();
+        this.galeVoid().style.opacity = this.roomDark.toFixed(3);
+      }
+    }
     this.water?.update(dt);
     this.updateGlows();
     // 引力圆慢慢转、一胀一缩

@@ -90,4 +90,4 @@ npx vite-node scripts/toka.ts 300 south [start]   # 龙门渊透华：多少场�
 
 ## 特效参考
 
-薄墨初美的鬼门法阵（`src/ui3d/kimonSigil.ts`）的画法参考了 [Humpalumps/ultra-elements](https://github.com/Humpalumps/ultra-elements)（MIT）的 `Sigils.js` 和 `Shockwaves.js`：用距离场画法阵线条、笔顺式描线、“白色灯丝 + 彩色外层 + 红比蓝散得开的光晕”、冲击波半径照 t^0.4 的爆炸波曲线。代码是照这个思路重写的，没有整段照搬；版权声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+薄墨初美里鬼门的紫色旋风（`src/ui3d/gale.ts`）参考了 [Humpalumps/ultra-elements](https://github.com/Humpalumps/ultra-elements)（MIT）：风丝照它 `Ribbons.js` 的做法在顶点着色器里按时间算出位置、朝镜头展开，细到不足 1.5 个像素时变暗而不再变细；和牌时地上那一圈冲击波的半径照它 `Shockwaves.js` 的 t^0.4 爆炸波曲线。代码是照这个思路重写的，没有整段照搬；版权声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
