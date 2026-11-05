@@ -1,6 +1,6 @@
 // 一个角色的强度：每场都让她上桌，另外三家从对手池里抽，座位随机，南风战。
 // 用法：npx vite-node scripts/strength.ts 角色id [场数] [对手：random|plain] [起始种子]
-// random：从全部角色里随机抽三人（不含她）；plain：三个没有能力的人（二条泉）
+// random：从全部角色里随机抽三人（不含她）；plain：三个没有能力的人（二条泉）；也可以写三个角色 id，用逗号隔开（固定对手）
 // 输出一行 JSON：平均顺位、一位率、四位率、终局均分、和了率、平均打点、放铳率，还有角色自己的计数（佳织的役满局等）
 import { CHARACTERS } from '../src/abilities/characters';
 import { chooseAction } from '../src/ai/ai';
@@ -16,7 +16,12 @@ const plain = CHARACTERS.find((c) => c.id === 'izumi')!;
 let rankSum = 0, first = 0, last = 0, score = 0, wins = 0, dealIns = 0, rounds = 0, winPts = 0, yakuman = 0, special = 0;
 for (let seed = from; seed < from + games; seed++) {
   const rng = new Rng(seed * 977);
-  const others = pool === 'plain' ? [plain, plain, plain] : rng.shuffle(CHARACTERS.filter((c) => c.id !== id)).slice(0, 3);
+  const others =
+    pool === 'plain'
+      ? [plain, plain, plain]
+      : pool.includes(',')
+        ? pool.split(',').map((x) => CHARACTERS.find((c) => c.id === x)!)
+        : rng.shuffle(CHARACTERS.filter((c) => c.id !== id)).slice(0, 3);
   const order = rng.shuffle([me, ...others]);
   const mine = order.indexOf(me);
   const g = new Game({ seed, format: 'south', players: order.map((c) => ({ name: c.name, ability: c.ability })) });
