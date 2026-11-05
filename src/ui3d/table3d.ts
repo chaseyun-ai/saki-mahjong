@@ -2045,8 +2045,8 @@ export class Table3D {
     return this.glassBack;
   }
 
-  // 投影：看得穿的牌在它那排牌山前面（往桌子中间）平放一张朝上的半透明牌面，朝向和那一家的牌一样。
-  // 上层的牌投在第一排，下层的投在再往里一排，上下两张都看得见
+  // 看得穿的牌：上层的牌变成玻璃，牌面透到牌顶上（朝向和那一家的牌一样）；
+  // 下层的牌被上层挡着，在它那排牌山前面（往桌子中间）平放一张半透明的投影牌面
   private syncProjections(seen: Set<TileId>, me: number): void {
     for (const [id, gr] of this.projections) if (!seen.has(id)) gr.visible = false;
     for (const id of seen) {
@@ -2056,7 +2056,9 @@ export class Table3D {
       const at = this.projPlacement(slot, me);
       gr.position.copy(at.pos);
       gr.quaternion.copy(at.quat);
-      gr.scale.setScalar(PROJ_SCALE);
+      gr.scale.setScalar(slot.level === 0 ? 1 : PROJ_SCALE);
+      // 透到牌顶上的牌面不要投影的底板
+      gr.children[0].visible = slot.level === 1;
       gr.visible = true;
     }
   }
@@ -2065,9 +2067,12 @@ export class Table3D {
     const x = (STACKS_HALF - slot.stack) * WALL_PITCH;
     const rel = (slot.wall - me + 4) % 4;
     const flat = this.style === '25d';
-    const row = TILE_H * PROJ_SCALE + 0.06;
-    const z = WALL_Z - (flat && rel === 2 ? TOP_WALL_IN_25D : 0) - TILE_H / 2 - 0.08 - row / 2 - slot.level * row;
-    const out = this.toWorld(slot.wall, me, x, PROJ_Y, z, FACE_UP);
+    const wallZ = WALL_Z - (flat && rel === 2 ? TOP_WALL_IN_25D : 0);
+    // 上层：贴在牌顶上；下层：牌山前面一排
+    const out =
+      slot.level === 0
+        ? this.toWorld(slot.wall, me, x, TILE_T * 2 + 0.006, wallZ, FACE_UP)
+        : this.toWorld(slot.wall, me, x, PROJ_Y, wallZ - TILE_H / 2 - 0.08 - (TILE_H * PROJ_SCALE) / 2, FACE_UP);
     if (flat && rel === 1) out.pos.z += RIGHT_WALL_DOWN_25D;
     return out;
   }
