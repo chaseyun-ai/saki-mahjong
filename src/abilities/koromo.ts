@@ -7,8 +7,10 @@ import { PRIORITY, type Ability } from './types';
 // 天江衣（龙门渊）：
 // - 一向听地狱：别人一向听、两向听时，进张常常被换走（已经听牌的人不受影响，所以压不住淡的双立直）
 // - 海底捞月：她听牌时，如果牌山最后一张不归她，把牌山末尾多出的一到三张挪进王牌区（和开杠补王牌一样），
-//   让最后一张正好轮到她（每局一次）；最后一张轮到她时，换成她的和了牌并锁住。
-//   之后有人鸣牌错开顺序、有人开杠把最后一张挪进王牌区，海底就换人摸了（原作里咲就是这样破的）
+//   让最后一张正好轮到她；最后一张轮到她时，换成她的和了牌并锁住。
+//   有人鸣牌错开顺序以后，下一次摸牌时她会再挪回来（牌山剩得够才行），所以要在最后几张里错开才有用
+//   （原作里咲就是这样破的）
+// - 夜之支配：她自己一向听以上时，摸牌常常换成进张（别人被挡掉的进张流到她手里）
 // - 月相：每个半庄随机一个月相，越接近满月越强
 export const MOON_PHASES = [
   { name: '新月', icon: '🌑', power: 0.25 },
@@ -26,14 +28,21 @@ export const KOROMO = {
   hellChance: 1, // 别人离听牌不远时，这一次摸牌的进张被挡住的概率
   hellDepth: 2, // 几向听以内会被挡（2：一向听、两向听摸到进张都会被换走）
   haiteiChance: 1, // 这一局听牌后，海底安排成和了牌的概率
+  nightChance: 0.6, // 她自己离听牌还差一步以上时，这一次摸牌换成进张的概率
+  // 别家电脑（没经验的）每局会想到去鸣牌错开她海底的概率；KOROMO_READERS 里的人每局都会
+  aiDisrupt: 0.3,
 };
+
+// 看得穿衣的海底、每局都会去错开的人：原作里和她交过手、有经验的
+export const KOROMO_READERS = ['saki', 'hisa', 'mako', 'mihoko'];
 
 interface KoromoGameState {
   moon?: number;
 }
 interface KoromoState {
   lucky?: boolean; // 这一局海底掷过了没有：true 发动，false 没发动
-  shifted?: boolean; // 这一局已经把海底挪给自己过了
+  shifted?: boolean; // 这一局已经把海底挪给自己过了（被错开以后还会再挪）
+  disrupt?: Record<number, boolean>; // 别家电脑这一局想不想去错开她的海底（按座位，掷过才有）
   haitei?: TileId; // 安排好的海底牌（锁住）
   fogged?: boolean; // 稳乃的雾遮住了这一局的海底（掷过就是 true/false）
 }
@@ -46,6 +55,14 @@ export function koromoHaiteiOn(g: Game, seat: number): boolean {
   return stateOf(g, seat).lucky !== false;
 }
 
+// 电脑 viewer 这一局会不会去鸣牌错开衣的海底：有经验的人一定会，别人每局掷一次
+export function koromoDisruptor(g: Game, seat: number, viewer: number, readers: boolean): boolean {
+  const st = stateOf(g, seat);
+  st.disrupt ??= {};
+  st.disrupt[viewer] ??= readers || g.rng.chance(KOROMO.aiDisrupt);
+  return st.disrupt[viewer];
+}
+
 export function koromoMoon(g: Game, seat: number) {
   const m = gameStateOf(g, seat).moon;
   return m === undefined ? null : MOON_PHASES[m];
@@ -54,7 +71,7 @@ export function koromoMoon(g: Game, seat: number) {
 export const koromoAbility: Ability = {
   id: 'koromo',
   name: '海底捞月',
-  description: `别人离听牌只差一两步时，摸到的进张常常被换走（一向听地狱，已经听牌的人不受影响）；她听牌时，牌山最后一张会挪到轮到她摸（每局一次，之后有人鸣牌、开杠还是会错开），那张就是和了牌。每个半庄随机一个月相，满月时一定发动，新月只剩四分之一。`,
+  description: `别人离听牌只差一两步时，摸到的进张常常被换走（一向听地狱，已经听牌的人不受影响）；她自己离听牌还差一步以上时，常常摸到进张（夜之支配）；她听牌时，牌山最后一张会挪到轮到她摸，那张就是和了牌，被人鸣牌错开了还会再挪回来，要在最后几张里错开才有用。每个半庄随机一个月相，满月时一定发动，新月只剩四分之一。`,
   priority: PRIORITY.koromo,
 
   beforeDeal(g, seat) {
@@ -79,10 +96,20 @@ export const koromoAbility: Ability = {
     const lastDrawer = (drawer + (rinshan ? 1 : 0) + last) % 4;
     const waits = g.players[seat].hand.length % 3 === 1 ? g.waits(seat) : [];
     if (waits.length && last >= 0) st.lucky ??= g.rng.chance(KOROMO.haiteiChance * power);
+    // 她自己拆了听牌：安排好的海底牌放掉，听回来再重新安排
+    if (!waits.length && g.players[seat].hand.length % 3 === 1 && st.haitei !== undefined) {
+      w.locked.delete(st.haitei, 'koromo');
+      st.haitei = undefined;
+    }
     // 海底不归她：末尾多出的几张挪进王牌区，让最后一张轮到她（锁住的牌不挪；岭上摸牌时不动）
-    if (waits.length && st.lucky && !st.shifted && !rinshan && lastDrawer !== seat) {
+    if (waits.length && st.lucky && !rinshan && lastDrawer !== seat) {
       const k = (lastDrawer - seat + 4) % 4;
       const tail = w.live.slice(w.live.length - k);
+      // 被错开以后再挪：她自己锁住的旧海底牌在要挪走的那几张里，先解锁（挪回来以后重新安排）
+      if (st.haitei !== undefined && tail.includes(st.haitei) && last - k >= 4 && tail.every((t) => t === st.haitei || !w.locked.has(t))) {
+        w.locked.delete(st.haitei, 'koromo');
+        st.haitei = undefined;
+      }
       if (last - k >= 4 && tail.every((t) => !w.locked.has(t))) {
         w.overflow.push(...w.live.splice(w.live.length - k, k).reverse());
         st.shifted = true;
@@ -108,8 +135,26 @@ export const koromoAbility: Ability = {
         }
       }
     }
+    // 夜之支配：她自己一向听以上时，摸牌换成进张
+    if (drawer === seat) {
+      if (rinshan) return;
+      const me = g.players[seat];
+      const mine = toCounts(me.hand);
+      const sh0 = shanten(mine, me.melds.length);
+      if (sh0 < 1 || !g.rng.chance(KOROMO.nightChance * power)) return;
+      return {
+        seat,
+        ability: 'koromo',
+        text: '夜之支配',
+        deny: (t) => {
+          mine[kindOf(t)]++;
+          const after = shanten(mine, me.melds.length);
+          mine[kindOf(t)]--;
+          return after >= sh0;
+        },
+      };
+    }
     // 一向听地狱
-    if (drawer === seat) return;
     const p = g.players[drawer];
     const counts = toCounts(p.hand);
     const sh = shanten(counts, p.melds.length);

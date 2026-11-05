@@ -9,7 +9,7 @@ import { SERA, seraYakuhai } from '../abilities/sera';
 import { SUMIRE, sumireAimedAt, sumireMarks, sumireTarget } from '../abilities/sumire';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
-import { koromoHaiteiOn } from '../abilities/koromo';
+import { KOROMO_READERS, koromoDisruptor, koromoHaiteiOn } from '../abilities/koromo';
 import { mihokoEyeOpen, mihokoLikelySafe, mihokoSafeKinds } from '../abilities/mihoko';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { seikoFish } from '../abilities/seiko';
@@ -207,6 +207,8 @@ function koromoHaiteiSeat(g: Game, seat: number): number | null {
   if (n > 12) return null;
   const k = [0, 1, 2, 3].find((s) => s !== seat && g.abilities[s]?.id === 'koromo' && !g.isSealed(s) && koromoHaiteiOn(g, s));
   if (k === undefined) return null;
+  // 有经验的人每局都会去错开，别人每局只有一定概率想得到
+  if (!koromoDisruptor(g, k, seat, KOROMO_READERS.includes(g.abilities[seat]?.id ?? ''))) return null;
   // 她听牌了（假装知道衣的海底），不鸣的话最后一张归她
   if (!g.waits(k).length) return null;
   return (g.lastDiscard!.seat + n) % 4 === k ? k : null;
@@ -611,10 +613,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       if ( nellyLiveWaits(g, p.hand.filter((t) => t !== best.a.tile), p.melds.length) < 2) return best.a;
       return riichi;
     }
-    // 衣：海底不是自己的、这一局也没法再挪给自己，就不立直，留着吃碰把海底挪过来（打掉这张以后，最后一张轮到谁：从下家起数）
-    // 衣：海底捞月还会发动的局一律默听（海底本身就是役）。立直以后不能吃碰，别人鸣牌错开牌序时就没法把海底挪回来了。
-    // 这一局海底没发动才照常立直
-    if (style.haitei && koromoHaiteiOn(g, seat)) return best.a;
+    // 衣：海底被错开以后能力会自己挪回来，所以照常立直
     // 优希：东场坐庄听的是只等一种牌的烂听牌（边张、坎张、单骑），牌山还多就先默听等改良
     if (style.eastWind && seat === g.dealer && yuukiActive(g, seat) && g.wall.remaining > YUUKI_AI.waitLate && waitingKinds(c, p.melds.length).length === 1) return best.a;
     // 照：天梯要正好和出下一层。默听接得上就默听；立直才接得上就立直；都接不上时，默听比下一层小才立直往上抬
