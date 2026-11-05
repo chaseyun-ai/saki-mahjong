@@ -4,8 +4,10 @@ import * as THREE from 'three';
 // level 0–1：照她小四喜的进度，越接近听牌风越多，听牌时最多。浓淡渐变，不是一下子出现。
 // 每一缕风是一条弯弯的光带（头亮尾淡），沿螺旋往里卷，卷到桌子中间附近散掉，再从外圈生出来。
 // release()：和牌时风一下子散掉（往上冲的那一下由 Effects.galeBurst 放）
+// 桌子中间画着鬼门法阵（kimonSigil.ts），风只留少少几缕细丝，卷到法阵外圈就散掉：
+// 风本身看不见，靠少数几道细线带出方向，比一大团粗光带干净
 
-const STREAKS = 160; // 最多几缕
+const STREAKS = 44; // 最多几缕
 const SEG = 14; // 每缕分几段
 const PALETTE = ['#c23cff', '#e04cff', '#9b3cff', '#ff5ae6', '#b45cff', '#f0a8ff'];
 
@@ -140,8 +142,8 @@ export class Gale {
     s.r = first ? this.inner + Math.random() * (this.outer - this.inner) : this.outer * (0.85 + Math.random() * 0.2);
     // 大多贴着牌桌转，少数飘得高一点
     s.y = 0.3 + Math.pow(Math.random(), 2) * 2.6;
-    s.span = 0.35 + Math.random() * 0.75;
-    s.width = 0.14 + Math.random() * 0.24;
+    s.span = 0.5 + Math.random() * 0.9;
+    s.width = 0.04 + Math.random() * 0.08;
     s.omega = 0.9 + Math.random() * 1.1;
     s.inward = 1.2 + Math.random() * 2.2;
     s.tilt = 0.25 + Math.random() * 0.6;
@@ -205,7 +207,7 @@ export class Gale {
         this.pos[v * 3 + 4] = p.y + side.y * w;
         this.pos[v * 3 + 5] = p.z + side.z * w;
         // 头亮尾淡（加法混合：颜色越暗越透明）
-        const b = alpha * Math.pow(1 - u, 1.2) * (u < 0.08 ? 2.2 : 1.6);
+        const b = alpha * Math.pow(1 - u, 1.4) * (u < 0.08 ? 1.6 : 1.1);
         for (const o of [0, 3]) {
           this.col[v * 3 + o] = s.color.r * b;
           this.col[v * 3 + o + 1] = s.color.g * b;
@@ -217,7 +219,7 @@ export class Gale {
     this.geo.attributes.color.needsUpdate = true;
     // 桌面中间的紫光：聚得越多越亮，轻轻一明一暗
     const gm = this.glow.material as THREE.MeshBasicMaterial;
-    gm.opacity = amount * (0.28 + 0.06 * Math.sin(this.t * 2.4));
+    gm.opacity = amount * (0.1 + 0.03 * Math.sin(this.t * 2.4));
     this.glow.scale.setScalar(this.inner * 3 + amount * 10);
   }
 }

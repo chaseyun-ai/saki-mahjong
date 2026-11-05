@@ -12,6 +12,7 @@ import { Dice } from './dice';
 import { Effects } from './effects';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
+import { KimonSigil } from './kimonSigil';
 import { StillWater } from './stillWater';
 import { glowGlyph } from '../ui/tileArt';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
@@ -128,6 +129,8 @@ export interface AirPose {
 }
 const AIR_POSE: AirPose = { dx: 0.2, lift: 2.4, inward: 0.4, tilt: -0.9, yaw: 0.15, roll: -0.1, scale: 1.2 };
 
+// 初美的鬼门法阵外圈半径：在牌河外沿（约 7.8）和牌山内沿（约 9.06）之间
+const SIGIL_R = 8.5;
 // 鸣牌、立直、和牌的特效颜色
 const FX_GOLD = '#ffd36b';
 const FX_RED = '#ff5a4f';
@@ -342,6 +345,7 @@ export class Table3D {
   private ripples: THREE.Mesh[] = [];
   // 初美的里鬼门：绕着牌桌打转的紫色的风（用到时才建）
   private gale: Gale | null = null;
+  private sigil: KimonSigil | null = null;
   // 透华的治水：桌布上的水面（用到时才建，换桌子尺寸时重建）
   private water: StillWater | null = null;
   // 初美鸣出来的东、北中间那张牌上的紫光（牌 id → 贴在牌面上的发光字和光柱）
@@ -1197,10 +1201,17 @@ export class Table3D {
   private syncGale(view: SyncView): void {
     const level = view.gale?.level ?? 0;
     if (level > 0 && !this.gale) {
-      this.gale = new Gale(this.dim.tableHalf * 1.3, 2.6);
-      this.scene.add(this.gale.group);
+      this.sigil = new KimonSigil(SIGIL_R);
+      this.gale = new Gale(this.dim.tableHalf * 1.3, SIGIL_R * 0.98);
+      this.scene.add(this.sigil.group, this.gale.group);
+    }
+    // 艮卦（鬼门）朝着初美和她下家（东家）中间那个角
+    if (view.gale && this.sigil) {
+      const d = this.seatPoint(view.gale.seat, 0, 0, 1).add(this.seatPoint((view.gale.seat + 1) % 4, 0, 0, 1));
+      this.sigil.setGen(Math.atan2(d.x, -d.z));
     }
     this.gale?.setLevel(level);
+    this.sigil?.setLevel(level);
     const want = view.glowTiles ?? new Set<TileId>();
     for (const [id, obj] of this.glows) {
       if (want.has(id)) continue;
@@ -1307,8 +1318,10 @@ export class Table3D {
   private galeBurst(tile: TileId): void {
     const at = this.tiles[tile].group.position.clone();
     at.y = 0.1;
-    this.effects.galeBurst(at, this.camera.position);
+    this.effects.galeBurst(at, this.camera.position, 90);
     this.gale?.release();
+    // 法阵爆亮、推开一圈冲击波，然后连风一起散掉
+    this.sigil?.burst();
     this.shake = Math.max(this.shake, 0.7);
   }
 
@@ -2421,6 +2434,7 @@ export class Table3D {
     this.effects.update(dt);
     this.mist.update(dt);
     this.gale?.update(dt);
+    this.sigil?.update(dt);
     this.water?.update(dt);
     this.updateGlows();
     // 引力圆慢慢转、一胀一缩
