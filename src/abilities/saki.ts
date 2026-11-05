@@ -6,7 +6,8 @@ import { avoidOwnUra } from './doraControl';
 import type { Ability } from './types';
 
 // 宫永咲（清澄）：岭上开花。
-// - 王牌感知：看得到 4 张岭上牌，也知道自己的杠材（刻子、碰的第四张）在牌山哪里（界面上鼠标移到牌山，这些牌变透明）。
+// - 王牌感知：看得到 4 张岭上牌，也知道自己的杠材（刻子、碰的第四张）在牌山哪里（界面上杠材的第四张一直透明、在牌山前面投影出牌面，
+//   鼠标移到岭上牌上时岭上牌也投影出来）。
 //   电脑照这个打：听牌前不杠，岭上牌能让手牌前进才提前杠（杠来进手）；淡等着转角暗杠时，留着岭上那张牌的对子、刻子，等淡打出来大明杠
 // - 杠的气息：杠完能听牌时，容易摸到第四张；对子容易长成刻子。听牌开杠，岭上牌就是和了牌
 // - 配牌偏对子：淡的时间迟滞只把她压到 SAKI.awaiLag 向听（原作里别人五向听，她七对子四向听）
@@ -70,12 +71,15 @@ function readyAfterKan(g: Game, seat: number, k: Kind): boolean {
   return waitingKinds(c, p.melds.length).length > 0;
 }
 
-// 王牌感知：她看得穿的牌（岭上牌、牌山里自己杠材的第四张）
-export function sakiSeesThrough(g: Game, seat: number): Set<TileId> {
+// 王牌感知：牌山里她杠材的第四张（一直看得见）。岭上牌她也看得穿（g.wall.rinshan）
+export function sakiKanTiles(g: Game, seat: number): Set<TileId> {
   const kinds = new Set(sakiKanKinds(g, seat));
-  const out = new Set<TileId>(g.wall.rinshan);
-  for (const t of g.wall.live) if (kinds.has(kindOf(t))) out.add(t);
-  return out;
+  return new Set(g.wall.live.filter((t) => kinds.has(kindOf(t))));
+}
+
+// 她看得穿的全部牌：岭上牌和牌山里杠材的第四张
+export function sakiSeesThrough(g: Game, seat: number): Set<TileId> {
+  return new Set([...g.wall.rinshan, ...sakiKanTiles(g, seat)]);
 }
 
 // 淡在等转角暗杠：她摸的岭上牌是现在的第一张岭上牌。淡立直了只能打出来
@@ -112,7 +116,7 @@ function pairUp(g: Game, seat: number, want: number): void {
 export const sakiAbility: Ability = {
   id: 'saki',
   name: '岭上开花',
-  description: `王牌感知：看得到岭上牌和牌山里自己杠材的位置（鼠标移到牌山上，这些牌变透明）。杠的气息：杠完能听牌时 ${SAKI.kanTile * 100}% 摸到第四张，对子容易长成刻子；听牌开杠，岭上牌就是和了牌。配牌偏对子，淡的时间迟滞只压到 ${SAKI.awaiLag} 向听。天意：往正负零（${SAKI.target - SAKI.band}–${SAKI.target + SAKI.band}）打，落后 ${SAKI.pushBelow} 以上时天意发力，领先 ${SAKI.calmAbove} 以上收手。她的杠一般不给自己加宝牌、里宝牌（岭上的赤宝牌照拿）。`,
+  description: `王牌感知：牌山里自己杠材的第四张一直是透明的，牌山前面投影出牌面；鼠标移到岭上牌上，岭上牌也投影出来。杠的气息：杠完能听牌时 ${SAKI.kanTile * 100}% 摸到第四张，对子容易长成刻子；听牌开杠，岭上牌就是和了牌。配牌偏对子，淡的时间迟滞只压到 ${SAKI.awaiLag} 向听。天意：往正负零（${SAKI.target - SAKI.band}–${SAKI.target + SAKI.band}）打，落后 ${SAKI.pushBelow} 以上时天意发力，领先 ${SAKI.calmAbove} 以上收手。她的杠一般不给自己加宝牌、里宝牌（岭上的赤宝牌照拿）。`,
 
   lagShanten: SAKI.awaiLag,
 
