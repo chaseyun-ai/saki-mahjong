@@ -204,9 +204,9 @@ const VANISH_DELAY = 0.15;
 // 淡掉的时候牌往这个颜色靠（苍白、带一点冷色）
 const GHOST = new THREE.Color('#e6edf5');
 const VANISH_TIME = 1;
-// 宫永咲的王牌感知：牌山前面投影出来的牌比真牌小一点，浮在牌河的牌上面一点（牌河摆到第三行也不被挡住）
+// 宫永咲的王牌感知：牌山前面投影出来的牌比真牌小一点，平贴在桌面上（像投在桌布上的影子）
 const PROJ_SCALE = 0.8;
-const PROJ_Y = TILE_T + 0.03;
+const PROJ_Y = 0.012;
 
 interface TileObj {
   group: THREE.Group;
