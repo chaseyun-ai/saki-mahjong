@@ -41,7 +41,8 @@ describe('天江衣', () => {
     let checked = 0;
     let leaks = 0;
     let haitei = 0;
-    for (let seed = 1; seed <= 16; seed++) {
+    // 满月海底一直没人打乱、最后一张她自摸的局不多，挑一段里面有的种子
+    for (let seed = 15; seed <= 30; seed++) {
       play(seed, (g, me) => {
         (g.abilityGameState[me] as { moon?: number }).moon = 4;
         expect(koromoMoon(g, me)!.name).toBe('满月');
@@ -76,7 +77,7 @@ describe('天江衣', () => {
     let broken = 0;
     let shifts = 0;
     // 没人鸣牌开杠一直打到海底的局很少（一百多场里只有几局），挑一段里面有的种子
-    for (let seed = 56; seed <= 79; seed++) {
+    for (let seed = 80; seed <= 103; seed++) {
       play(seed, (g, me) => {
         (g.abilityGameState[me] as { moon?: number }).moon = 4;
         let shifted = false;

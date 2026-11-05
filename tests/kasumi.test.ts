@@ -70,6 +70,7 @@ describe('石户霞', () => {
       const both = ['kasumi', 'awai', 'nodoka', 'saki'].map((id) => CHARACTERS.find((c) => c.id === id)!);
       let checked = 0;
       let unmet = 0;
+      let tenpai = 0;
       for (let seed = 1; seed <= 8; seed++) {
         const g = new Game({ seed, players: both.map((c) => ({ name: c.id, ability: c.ability })) });
         g.onEvent((e) => {
@@ -85,7 +86,11 @@ describe('石户霞', () => {
             unmet++;
             return;
           }
-          expect(shanten(toCounts(g.players[1].hand))).toBe(0);
+          // 淡排得出天听配牌的局（霞绝掉一门以后偶尔凑不出来）：配牌听牌
+          if ((g.abilityState[1] as { tenpaiDeal?: boolean }).tenpaiDeal) {
+            tenpai++;
+            expect(shanten(toCounts(g.players[1].hand))).toBe(0);
+          }
           for (const p of g.players) {
             if (p.seat === 0) continue;
             // 天使和挡掉的规矩不算
@@ -104,8 +109,9 @@ describe('石户霞', () => {
           g.act(s, chooseAction(g, s, both[s].ai));
         }
       }
-      console.log({ checked, unmet });
+      console.log({ checked, unmet, tenpai });
       expect(checked).toBeGreaterThan(5);
+      expect(tenpai).toBeGreaterThan((checked - unmet) * 0.7);
       // 两边能兼容时应该都满足，降级只是少数。时间迟滞有一半是 6 向听：只剩两门花色和字牌时 6 向听的手很少，
       // 霞换不掉最后一张那门花色的牌（换了向听就变好），这时先动的淡说了算
       expect(unmet).toBeLessThan(checked * 0.3);

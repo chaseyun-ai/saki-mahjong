@@ -5544,3 +5544,51 @@ html:root .select-screen.team-screen.tm-draft {
   border-color: #9fd4ff;
   color: #fff;
 }
+
+/* 宫永咲的王牌感知（2D）：4 张岭上牌平时是牌背，鼠标移到中间的牌山信息上牌背变透明，看得到是什么牌 */
+.rinshan-peek {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-quiet);
+}
+.rinshan-peek > span {
+  margin-right: 3px;
+}
+.rinshan-peek .tile.peek {
+  position: relative;
+}
+.rinshan-peek .tile.peek::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(160deg, #4a96c6, var(--tile-back));
+  transition: opacity 0.35s ease;
+}
+.rinshan-peek .tile.peek .face {
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+.center:hover .rinshan-peek .tile.peek::after {
+  opacity: 0.28;
+}
+.center:hover .rinshan-peek .tile.peek .face {
+  opacity: 0.9;
+}
+.center:hover .rinshan-peek .tile.peek {
+  box-shadow: 0 0 6px rgba(255, 170, 200, 0.85);
+}
+.kan-peek {
+  font-size: 11px;
+  color: #ffc2d4;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  max-width: 200px;
+  text-align: center;
+}
+.center:hover .kan-peek {
+  opacity: 1;
+}
