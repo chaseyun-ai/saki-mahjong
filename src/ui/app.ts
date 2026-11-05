@@ -90,6 +90,16 @@ interface Toast {
 }
 
 // 洋榎的灯：颜色从白到紫，光芒条数就是档位
+// 选人页右上角的牌桌视角下拉
+const SEL_MODES: ['25d' | '3d' | '2d', string][] = [
+  ['25d', '2.5D'],
+  ['3d', '3D 实验'],
+  ['2d', '2D'],
+];
+// 选人页顶栏的齿轮、随机出场的骰子
+const GEAR_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>`;
+const DICE_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><circle cx="16" cy="8" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="8" cy="16" r="1.6" fill="currentColor"/><circle cx="16" cy="16" r="1.6" fill="currentColor"/></svg>`;
+
 const BULB_COLORS = ['#f4f1e0', '#ffd84a', '#ff9f2e', '#ff4a3a', '#c35bff'];
 const BULB_NAMES = ['一千多', '两三千', '五千左右', '满贯', '跳满以上'];
 function bulbSvg(lv: number): string {
@@ -204,7 +214,27 @@ export class App {
     root.addEventListener('pointerout', (e) => {
       if (e.pointerType !== 'mouse') return;
       const card = (e.target as HTMLElement).closest<HTMLElement>('.char-card');
-      if (card && !card.contains(e.relatedTarget as Node)) this.showCharTip(null);
+      const to = e.relatedTarget as HTMLElement | null;
+      if (!card || card.contains(to)) return;
+      // 大立绘面板：移到别的头像上由 pointerover 换人，移出头像就换回选定的那位（不然走去按“出场”的路上会换成别人）
+      if (!this.heroTip()) this.showCharTip(null);
+      else if (!to?.closest?.('.char-card') && this.tipFor !== this.picked) this.showCharTip(this.pickedCard());
+    });
+    // 选人页顶栏的两个下拉：牌桌视角、皮肤
+    root.addEventListener('change', (e) => {
+      const el = e.target as HTMLSelectElement;
+      if (el.dataset.ui === 'mode-pick' && SEL_MODES.some(([v]) => v === el.value)) {
+        this.mode = el.value as '25d' | '3d' | '2d';
+        this.renderSelect();
+      } else if (el.dataset.ui === 'theme-pick' && THEMES.some((t) => t.id === el.value)) {
+        setTheme(el.value as ThemeId);
+        this.renderSelect();
+      }
+    });
+    // 齿轮菜单开着时，点别的地方就收起来
+    root.addEventListener('click', (e) => {
+      const open = root.querySelector('details.sel-more[open]');
+      if (open && !open.contains(e.target as Node)) open.removeAttribute('open');
     });
     root.addEventListener('focusin', (e) => {
       // 只管用键盘切过来的；点出来的焦点交给上面的指针事件
@@ -245,37 +275,74 @@ export class App {
     this.auto = false;
     // 3D 牌桌要用的人物模型现在就开始在后台下载
     if (this.mode === '3d') preloadModels(MODEL_URLS);
-    const themes = THEMES.map((t) => `<button class="${t.id === currentTheme() ? 'on' : ''}" data-ui="theme" data-theme="${t.id}">${t.name}</button>`).join('');
+    const opt = (v: string, label: string, on: boolean) => `<option value="${v}"${on ? ' selected' : ''}>${label}</option>`;
+    const modes = SEL_MODES.map(([v, label]) => opt(v, label, v === this.mode)).join('');
+    const themes = THEMES.map((t) => opt(t.id, t.name, t.id === currentTheme())).join('');
+    const hero = this.heroTip();
+    // 顶栏：标题，右上角是牌桌视角、皮肤两个下拉，齿轮里放素材（页面主人才有）和动作调试。
+    // 下面一排是两种玩法的标签，团体赛点了就进布阵；随机出场用上次的规则直接开局
     this.root.innerHTML = `
       <div class="select-screen">
         <div class="sel-main">
-        <h1>超能力麻将</h1>
-        <p class="subtitle">选择你的角色（鼠标停在头像上看能力，手机上点一下看、再点一下选定），选好以后设置规则开始对战。对手从其余角色里随机抽三位，由电脑操作。</p>
-        <div class="mode-switch">
-          <button class="${this.mode === '25d' ? 'on' : ''}" data-ui="mode-25d">2.5D 牌桌</button>
-          <button class="${this.mode === '3d' ? 'on' : ''}" data-ui="mode-3d">3D 实验</button>
-          <button class="${this.mode === '2d' ? 'on' : ''}" data-ui="mode-2d">2D 牌桌</button>
-        </div>
-        <button class="lab-entry team-entry" data-ui="team">团体赛拟真</button>
-        <button class="lab-entry" data-ui="lab">动作调试</button><span id="skin-entry"></span>
-        <div class="theme-switch"><span>皮肤</span>${themes}</div>
+        <header class="sel-top">
+          <h1>超能力麻将</h1>
+          <div class="sel-tools">
+            <label class="sel-tool"><span>牌桌</span><select data-ui="mode-pick" aria-label="牌桌视角">${modes}</select></label>
+            <label class="sel-tool"><span>皮肤</span><select data-ui="theme-pick" aria-label="界面皮肤">${themes}</select></label>
+            <details class="sel-more">
+              <summary aria-label="更多" title="素材 · 动作调试">${GEAR_SVG}</summary>
+              <div class="sel-more-menu"><span id="skin-entry"></span><button data-ui="lab">动作调试</button></div>
+            </details>
+          </div>
+        </header>
+        <nav class="sel-modes">
+          <button class="on" aria-current="page">个人对局<small>选一位，和三个电脑打</small></button>
+          <button data-ui="team">团体赛拟真<small>四队蛇形选人，五人接力</small></button>
+          <button class="sel-random" data-ui="random" title="随便抽一位，用上次的规则直接开局">${DICE_SVG}随机出场</button>
+        </nav>
         <div class="school-tabs" role="tablist">${this.schoolTabsHtml()}</div>
         <div class="school-page">${this.schoolPageHtml()}</div>
-        <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品<br />3D 人物由 VRoid 官方 CC0 示例模型改色</p>
+        <p class="sel-hint">${hero ? '点头像看能力，再点一下或按「出场」就用上次的规则开局；局数、点数、对手在「规则 · 对手」里改。' : '鼠标停在头像上看能力（手机上点一下看），点头像选定，设置好规则就开始。'}对手从其余角色里随机抽三位，由电脑操作。</p>
+        <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品 · 3D 人物由 VRoid 官方 CC0 示例模型改色</p>
         </div>
         <div class="char-tip" hidden></div>
         <div id="setup"></div>
       </div>`;
-    // 换了皮肤的选人页：介绍不再是浮窗，固定在左边当大立绘面板，先放第一位
-    if (this.heroTip()) {
-      this.showCharTip(this.root.querySelector<HTMLElement>('.char-card'));
-      this.tipFor = null;
-    }
+    // 换了皮肤的选人页：介绍不再是浮窗，固定在左边当大立绘面板，先放这一页的第一位
+    if (hero) this.pickCard(this.root.querySelector<HTMLElement>('.char-card'));
     // 能换素材的人（页面主人）才看得到“素材”入口
     void canEditSkins().then((ok) => {
       const slot = this.root.querySelector('#skin-entry');
-      if (ok && slot) slot.innerHTML = '<button class="lab-entry" data-ui="skins">素材</button>';
+      if (ok && slot) slot.innerHTML = '<button data-ui="skins">素材</button>';
     });
+  }
+
+  // 大立绘面板选定的角色：鼠标停在别的头像上时临时换过去看，移开了换回来；再点一下选定的头像就开局
+  private picked: string | null = null;
+
+  // chosen：玩家自己点选的（换页、刚打开时默认放第一位，不算点选，点它一下只是选定、不开局）
+  private chosen = false;
+
+  private pickCard(card: HTMLElement | null, chosen = false): void {
+    this.picked = card?.dataset.pick ?? null;
+    this.chosen = chosen && !!card;
+    this.showCharTip(card);
+  }
+
+  private pickedCard(): HTMLElement | null {
+    return this.picked ? this.root.querySelector<HTMLElement>(`.char-card[data-pick="${this.picked}"]`) : null;
+  }
+
+  // 出场、随机出场：不弹设置，照上次的规则开局（规则记在浏览器里，第一次是默认规则）
+  private quickStart(id: string): void {
+    this.setupFor = null;
+    this.startGame(id);
+  }
+
+  // 「规则 · 对手」，或者经典皮肤上点了头像：弹出对局设置，按“开始对战”再开局
+  private openSetup(id: string): void {
+    this.setupFor = id;
+    this.renderSetup();
   }
 
   // 选人页按学校分页（schools.ts）：一页一个学校，点角色直接开局
@@ -284,7 +351,7 @@ export class App {
   private schoolTabsHtml(): string {
     return SCHOOLS.map((s) => {
       const on = s.name === this.school;
-      return `<button class="${on ? 'on' : ''}" role="tab" aria-selected="${on}" data-ui="school" data-school="${s.name}" style="--s:${s.color}">${s.short}<small>${membersOf(s.name).length}</small></button>`;
+      return `<button class="${on ? 'on' : ''}" role="tab" aria-selected="${on}" data-ui="school" data-school="${s.name}" style="--s:${s.color}"><i></i>${s.short}<small>${membersOf(s.name).length}</small></button>`;
     }).join('');
   }
 
@@ -294,13 +361,18 @@ export class App {
     const cards = membersOf(s.name)
       .map(
         (c) => `
-      <button class="char-card" data-pick="${c.id}" style="--c:${c.color}" aria-label="${c.name}：${c.ability?.name ?? '无能力'}">
+      <button class="char-card" data-pick="${c.id}" style="--c:${c.color}" aria-label="${c.name}，${c.cost} 费：${c.ability?.name ?? '无能力'}">
         <div class="char-portrait">${c.name.slice(-1)}<img src="${this.cardPortrait(c.id)}" alt="" onerror="this.remove()" />${this.formSwitchHtml(c.id)}</div>
-        <div class="char-name">${c.name}</div>
+        <span class="char-cost" aria-hidden="true">${c.cost}</span>
+        <div class="char-name">${c.name}<small>${c.ability?.name ?? '无能力'}</small></div>
       </button>`,
       )
       .join('');
-    return `<div class="school-head" style="--s:${s.color}"><b>${s.name}</b>${s.region ? `<span>${s.region}代表</span>` : ''}<em>${membersOf(s.name).length} 人</em></div>
+    // 前一所、后一所学校（和手机上左右滑一样）
+    const i = SCHOOLS.indexOf(s);
+    const near = (d: number) => SCHOOLS[(i + d + SCHOOLS.length) % SCHOOLS.length].short;
+    const pager = SCHOOLS.length > 1 ? `<span class="school-pager"><button data-ui="school-step" data-d="-1" aria-label="前一所学校">‹ ${near(-1)}</button><button data-ui="school-step" data-d="1" aria-label="后一所学校">${near(1)} ›</button></span>` : '';
+    return `<div class="school-head" style="--s:${s.color}"><b>${s.name}</b>${s.region ? `<span>${s.region}代表</span>` : ''}<em>${membersOf(s.name).length} 人</em>${pager}</div>
       <div class="char-grid">${cards}</div>`;
   }
 
@@ -347,8 +419,9 @@ export class App {
     if (!tabs || !page) return;
     tabs.innerHTML = this.schoolTabsHtml();
     page.innerHTML = this.schoolPageHtml();
-    this.showCharTip(this.heroTip() ? page.querySelector<HTMLElement>('.char-card') : null);
-    if (this.heroTip()) this.tipFor = null;
+    tabs.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (this.heroTip()) this.pickCard(page.querySelector<HTMLElement>('.char-card'));
+    else this.showCharTip(null);
   }
 
   // 前一页、后一页（手机上左右滑）
@@ -386,9 +459,25 @@ export class App {
       <div class="char-desc">${c.ability ? c.ability.description : '不靠能力，只靠扎实的牌效和防守。电脑操作这个角色时不会失误。'}</div>`;
     tip.hidden = false;
     if (hero) {
+      // 名字旁边是费用（团体赛选人的档位）；说明太长先收起来、淡出，按“展开全文”看完
+      const region = SCHOOLS.find((s) => s.name === c.school)?.region;
       tip.innerHTML = `<div class="hero-art"><img src="${cutinArt(c.id, 'ability').url}" alt="" onerror="this.remove()" /><span>${c.name.slice(-1)}</span></div>
-        <div class="hero-plate">${tip.innerHTML}${this.formToggleHtml(c.id)}<button class="hero-go" data-pick="${c.id}">出场</button></div>`;
+        <div class="hero-plate">
+          <div class="char-school">${c.school}${region ? `<span>${region}代表</span>` : ''}</div>
+          <div class="hero-title"><div class="char-name">${c.name}</div><span class="hero-cost" title="团体赛费用">${c.cost}<small>费</small></span></div>
+          <div class="char-ability">${c.ability ? c.ability.name : '无能力'}</div>
+          <div class="char-desc">${c.ability ? c.ability.description : '不靠能力，只靠扎实的牌效和防守。电脑操作这个角色时不会失误。'}</div>
+          <button class="hero-more" data-ui="desc-more" hidden>展开全文</button>
+          ${this.formToggleHtml(c.id)}
+          <div class="hero-actions"><button class="hero-go" data-ui="go" data-id="${c.id}">出场</button><button class="hero-rules" data-ui="rules" data-id="${c.id}">规则 · 对手</button></div>
+        </div>`;
       tip.style.left = tip.style.top = '';
+      const desc = tip.querySelector<HTMLElement>('.char-desc');
+      const more = tip.querySelector<HTMLElement>('.hero-more');
+      if (desc && more && desc.scrollHeight > desc.clientHeight + 2) {
+        tip.querySelector('.hero-plate')?.classList.add('clipped');
+        more.hidden = false;
+      }
       return;
     }
     const r = card.getBoundingClientRect();
@@ -1054,13 +1143,41 @@ export class App {
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pick],[data-tile],[data-act],[data-ui]');
     if (!el) return;
     if (el.dataset.pick) {
-      // 手指点的：第一下只看介绍，再点同一个才开始
-      if (this.lastPointer === 'touch' && this.tipFor !== el.dataset.pick) {
+      const id = el.dataset.pick;
+      // 大立绘面板：点头像选定，再点一下选定的头像就开局（和按“出场”一样）
+      if (this.heroTip()) {
+        if (this.chosen && this.picked === id) this.quickStart(id);
+        else this.pickCard(el, true);
+        return;
+      }
+      // 经典皮肤：手指点的第一下只看介绍，再点同一个才弹设置
+      if (this.lastPointer === 'touch' && this.tipFor !== id) {
         this.showCharTip(el);
         return;
       }
-      this.setupFor = el.dataset.pick;
-      this.renderSetup();
+      this.openSetup(id);
+      return;
+    }
+    if (el.dataset.ui === 'go' && el.dataset.id) {
+      this.quickStart(el.dataset.id);
+      return;
+    }
+    if (el.dataset.ui === 'rules' && el.dataset.id) {
+      this.openSetup(el.dataset.id);
+      return;
+    }
+    if (el.dataset.ui === 'random') {
+      this.quickStart(CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)].id);
+      return;
+    }
+    if (el.dataset.ui === 'school-step') {
+      this.stepSchool(Number(el.dataset.d) || 1);
+      return;
+    }
+    if (el.dataset.ui === 'desc-more') {
+      const plate = el.closest('.hero-plate');
+      const open = !!plate?.classList.toggle('open');
+      el.textContent = open ? '收起' : '展开全文';
       return;
     }
     if (el.dataset.ui === 'toka-form') {
@@ -1111,16 +1228,6 @@ export class App {
     }
     if (el.dataset.ui === 'school' && el.dataset.school) {
       this.showSchool(el.dataset.school);
-      return;
-    }
-    if (el.dataset.ui === 'theme' && el.dataset.theme) {
-      setTheme(el.dataset.theme as ThemeId);
-      this.renderSelect();
-      return;
-    }
-    if (el.dataset.ui === 'mode-25d' || el.dataset.ui === 'mode-3d' || el.dataset.ui === 'mode-2d') {
-      this.mode = el.dataset.ui.slice(5) as '25d' | '3d' | '2d';
-      this.renderSelect();
       return;
     }
     const g = this.game;

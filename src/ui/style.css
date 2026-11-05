@@ -175,6 +175,266 @@ button {
   line-height: 1.3;
 }
 
+/* 头像下面一行小字写能力名，左上角写费用（团体赛选人的档位） */
+.char-card {
+  position: relative;
+}
+
+.char-card .char-name small {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.char-cost {
+  position: absolute;
+  z-index: 1;
+  top: 6px;
+  left: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--gold);
+  font: 700 13px/18px var(--t-num, sans-serif);
+  text-align: center;
+}
+
+/* ---------- 选人页顶栏：标题，右上角牌桌、皮肤下拉和齿轮菜单 ---------- */
+
+.sel-main {
+  text-align: left;
+}
+
+.sel-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.select-screen .sel-top h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 34px;
+  white-space: nowrap;
+}
+
+.sel-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sel-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 0 0 12px;
+  border: 1px solid var(--t-line, rgba(255, 255, 255, 0.16));
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+  color: var(--ink-quiet);
+  cursor: pointer;
+}
+
+.sel-tool select {
+  height: 100%;
+  padding: 0 26px 0 0;
+  border: none;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M0 0h10L5 6z' fill='%23aab'/%3E%3C/svg%3E") no-repeat right 10px center / 9px 6px;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sel-tool select option {
+  background: #14213d;
+  color: #fff;
+}
+
+.sel-tool:focus-within {
+  border-color: var(--gold);
+}
+
+.sel-more {
+  position: relative;
+}
+
+.sel-more summary {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--t-line, rgba(255, 255, 255, 0.16));
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--ink-quiet);
+  list-style: none;
+  cursor: pointer;
+}
+
+.sel-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.sel-more[open] summary {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.sel-more-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid var(--t-line, rgba(255, 255, 255, 0.16));
+  border-radius: 4px;
+  background: #14213d;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.sel-more-menu #skin-entry {
+  display: contents;
+}
+
+.sel-more-menu button {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--ink);
+  font-size: 14px;
+  text-align: left;
+}
+
+.sel-more-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 两种玩法的标签，右边是随机出场 */
+.sel-modes {
+  display: flex;
+  align-items: flex-end;
+  gap: 28px;
+  margin-top: 14px;
+  border-bottom: 1px solid var(--t-line, rgba(255, 255, 255, 0.16));
+}
+
+.sel-modes > button {
+  margin-bottom: -1px;
+  padding: 6px 0 10px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--ink-quiet);
+  font-size: 18px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sel-modes > button.on {
+  color: var(--ink);
+  border-bottom-color: var(--gold);
+  cursor: default;
+}
+
+.sel-modes > button:not(.on, .sel-random):hover {
+  color: var(--ink);
+}
+
+.sel-modes small {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-quiet);
+}
+
+.sel-modes > .sel-random {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  margin: 0 0 6px auto;
+  padding: 6px 14px;
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  border-radius: 3px;
+  color: var(--gold);
+  font-size: 14px;
+}
+
+.sel-modes > .sel-random:hover {
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+}
+
+.school-tabs button i {
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--s);
+}
+
+.school-tabs button.on i {
+  background: #14181c;
+}
+
+.school-pager {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.school-pager button {
+  padding: 2px 10px;
+  border: 1px solid var(--t-line, rgba(255, 255, 255, 0.16));
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--ink-quiet);
+  font-size: 13px;
+}
+
+.school-pager button:hover {
+  color: var(--ink);
+}
+
+.sel-hint {
+  margin: 16px 0 0;
+  font-size: 13px;
+  color: var(--ink-quiet);
+}
+
+/* 经典皮肤：还是居中一栏，内容靠左 */
+:root[data-theme='classic'] .sel-main {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+:root[data-theme='classic'] .school-tabs,
+:root[data-theme='classic'] .school-head {
+  justify-content: flex-start;
+}
+
+:root[data-theme='classic'] .char-grid {
+  justify-content: start;
+}
+
+:root[data-theme='classic'] .char-card .char-portrait {
+  margin-top: 6px;
+}
+
 .char-tip {
   position: fixed;
   z-index: 20;
@@ -3161,107 +3421,694 @@ html:root .select-screen.team-screen {
   overflow-y: auto;
 }
 
-.tm-mini.ghost {
-  opacity: 0.55;
-  outline: 2px dashed var(--gold);
-  outline-offset: 1px;
-}
-
-.tm-mini.empty {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-}
-
-/* 选人（格斗游戏式）：左边大立绘和能力，右边阵容，底下这一档的候选 */
+/* 选人：四队像打麻将一样围一桌。上、左、右是电脑三队，下面是自己；桌子中间是起家指示器和这一档的候选（麻将牌），
+   右下角是点中的那位的切入图、能力和「就选她」。桌布、牌背跟着皮肤走（--felt、--tile-back），和牌局里一个颜色。
+   --tu 是随窗口缩放的长度单位（1440×900 时是 9px），牌和指示器都按它算 */
 html:root .select-screen.team-screen.tm-draft {
+  --tu: min(1vh, 0.625vw);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  grid-template-areas: 'head head' 'stage side' 'pick pick';
-  gap: 14px 20px;
-  padding: 16px 24px 20px;
+  grid-template-columns: calc(var(--tu) * 10.5) minmax(0, 1fr) calc(var(--tu) * 10.5);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: 'bar bar bar' '. n .' 'w felt e' 'me me me';
+  gap: calc(var(--tu) * 1.1);
+  padding: 14px 22px 16px;
   text-align: left;
   overflow: hidden;
 }
 
-.tmd-head {
-  grid-area: head;
-  justify-content: flex-start;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+.tmd-bar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
 }
 
-.tm-draft .tmd-head h1 {
+.tmd-bar .lab-entry {
+  margin: 0;
+}
+
+.tm-draft .tmd-bar h1 {
   margin: 0;
   font-size: 26px;
+  white-space: nowrap;
 }
 
-.tmd-head .tm-order {
-  margin: 0 0 0 auto;
+.tmd-rule {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-quiet);
+  text-align: right;
 }
 
-.tmd-stage {
-  grid-area: stage;
+/* ---- 麻将牌样子的角色卡：牌面是头像，左上角红字写费用，下面两层是牌的侧边和牌背 ---- */
+.tmd-tile {
+  --w: calc(var(--tu) * 8.6);
+  --h: calc(var(--tu) * 9.4);
   position: relative;
-  min-height: 0;
-  border-radius: 12px;
-  overflow: hidden;
-  background:
-    radial-gradient(ellipse at 30% 45%, color-mix(in srgb, var(--c) 55%, transparent), transparent 70%),
-    linear-gradient(115deg, rgba(0, 0, 0, 0.45) 40%, color-mix(in srgb, var(--c) 30%, rgba(0, 0, 0, 0.45)));
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: var(--w);
+  height: var(--h);
+  margin: 0 0 6px;
+  padding: 4px 4px 0;
+  border: none;
+  border-radius: 7px;
+  background: linear-gradient(var(--tile-face), color-mix(in srgb, var(--tile-face) 82%, var(--tile-edge)));
+  box-shadow:
+    0 3px 0 var(--tile-edge),
+    0 6px 0 var(--tile-back),
+    0 8px 12px rgba(0, 0, 0, 0.45);
+  color: #1d2433;
+  font: inherit;
+  font-size: var(--fs, 12px);
+  text-align: center;
+  transition: transform 0.15s;
 }
 
-.tmd-stage::before {
-  content: '';
+button.tmd-tile {
+  cursor: pointer;
+}
+
+button.tmd-tile:hover:not(.sel) {
+  transform: translateY(-4px);
+}
+
+.tmd-pic {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: linear-gradient(160deg, var(--c), color-mix(in srgb, var(--c) 40%, #0a1226));
+}
+
+.tmd-pic b {
+  font-size: calc(var(--h) * 0.3);
+  font-weight: 900;
+  color: #fff;
+}
+
+.tmd-pic img {
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(115deg, transparent 0 40px, rgba(255, 255, 255, 0.03) 40px 80px);
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 18%;
 }
 
-.tmd-art {
+.tmd-nm {
+  padding: 1px 0 3px;
+  font-weight: 900;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tmd-cn {
   position: absolute;
-  left: 3%;
-  bottom: 0;
+  top: 6px;
+  left: 7px;
   z-index: 1;
-  height: 106%;
-  max-width: 60%;
-  object-fit: contain;
-  object-position: bottom;
-  filter: drop-shadow(0 0 30px rgba(0, 0, 0, 0.6));
-  -webkit-mask-image: linear-gradient(90deg, #000 75%, transparent);
-  mask-image: linear-gradient(90deg, #000 75%, transparent);
+  padding: 2px 4px;
+  border-radius: 2px;
+  background: var(--man);
+  color: #fff;
+  font: 700 13px/1 var(--t-num, sans-serif);
 }
 
-/* 没有图（替补、图没加载出来）时显示的大字 */
-.tmd-art + .tmd-letter {
+/* 被选走的扣成牌背，贴上那一队的签 */
+.tmd-tile.back {
+  background: linear-gradient(var(--tile-back), color-mix(in srgb, var(--tile-back) 72%, #000));
+  box-shadow:
+    0 3px 0 color-mix(in srgb, var(--tile-back) 55%, #000),
+    0 6px 0 var(--tile-face),
+    0 8px 12px rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.tmd-tile.back .tmd-pic {
+  background: none;
+}
+
+.tmd-tile.back .tmd-pic img {
+  opacity: 0.18;
+  filter: grayscale(1);
+}
+
+.tmd-tile.back .tmd-pic b {
+  opacity: 0.25;
+}
+
+.tmd-tag {
+  position: absolute;
+  top: 38%;
+  left: -4px;
+  right: -4px;
+  z-index: 2;
+  padding: 1px 0;
+  background: var(--t);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  transform: rotate(-10deg);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+
+/* 点中的那张抬起来，像打麻将选牌 */
+.tmd-tile.sel {
+  transform: translateY(-12px);
+  box-shadow:
+    0 3px 0 var(--tile-edge),
+    0 6px 0 var(--tile-back),
+    0 0 0 3px var(--gold),
+    0 14px 24px color-mix(in srgb, var(--gold) 35%, transparent);
+}
+
+.tmd-tile.back.sel {
+  box-shadow:
+    0 3px 0 color-mix(in srgb, var(--tile-back) 55%, #000),
+    0 6px 0 var(--tile-face),
+    0 0 0 3px var(--gold),
+    0 14px 24px color-mix(in srgb, var(--gold) 35%, transparent);
+}
+
+/* 还没选的位置：虚线框里写几费 */
+.tmd-tile.blank {
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 2px dashed rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: none;
+  color: var(--ink-quiet);
+  font: 700 calc(var(--h) * 0.26) / 1 var(--t-num, sans-serif);
+}
+
+.tmd-tile.blank small {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.tmd-tile.blank.now {
+  border-color: color-mix(in srgb, var(--gold) 60%, transparent);
+  color: var(--gold);
+}
+
+/* 轮到自己时，这一档的位置先放上点中的那位（虚的） */
+.tmd-tile.ghost {
+  border: 2px dashed var(--gold);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+  box-shadow: none;
+  color: var(--gold);
+}
+
+.tmd-tile.ghost .tmd-pic {
+  opacity: 0.55;
+}
+
+.tmd-tile.ghost .tmd-cn {
   display: none;
 }
 
-.tmd-letter {
+/* 刚选进来的牌落下来 */
+.tmd-tile.fresh {
+  animation: tmd-drop 0.45s cubic-bezier(0.3, 1.4, 0.6, 1) both;
+}
+
+@keyframes tmd-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-28px) scale(1.15);
+  }
+}
+
+/* ---- 座位 ---- */
+.tmd-seat {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tmd-seat.n {
+  grid-area: n;
+  justify-content: center;
+}
+
+.tmd-seat.w,
+.tmd-seat.e {
+  flex-direction: column;
+  justify-content: center;
+}
+
+.tmd-seat.w {
+  grid-area: w;
+}
+
+.tmd-seat.e {
+  grid-area: e;
+}
+
+.tmd-tiles {
+  display: flex;
+  gap: 10px;
+}
+
+.tmd-seat.w .tmd-tiles,
+.tmd-seat.e .tmd-tiles {
+  flex-direction: column;
+  gap: calc(var(--tu) * 0.9);
+}
+
+.tmd-seat.w .tmd-tile,
+.tmd-seat.e .tmd-tile {
+  --h: calc(var(--tu) * 7.1);
+}
+
+/* 左右两队的名牌窄：序号和队名一行，点数一行 */
+.tmd-seat.w .tmd-lab,
+.tmd-seat.e .tmd-lab {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1px 4px;
+  padding: 4px 6px;
+}
+
+.tmd-seat.w .tmd-sum,
+.tmd-seat.w .tmd-lab em,
+.tmd-seat.e .tmd-sum,
+.tmd-seat.e .tmd-lab em {
+  width: 100%;
+  text-align: center;
+}
+
+.tmd-lab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  background: var(--t);
+  color: #fff;
+  white-space: nowrap;
+}
+
+.tmd-lab b {
+  font-size: 15px;
+}
+
+.tmd-lab b small {
+  font-size: 12px;
+}
+
+.tmd-sum {
+  font: 700 12px var(--t-num, sans-serif);
+  opacity: 0.9;
+}
+
+.tmd-ord {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  font: 700 13px var(--t-num, sans-serif);
+}
+
+.tmd-lab em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* 轮到的那一队名牌发光 */
+.tmd-seat.on .tmd-lab {
+  animation: tmd-turn 1.2s ease-in-out infinite;
+  box-shadow:
+    0 0 0 2px var(--gold),
+    0 0 14px var(--t);
+}
+
+@keyframes tmd-turn {
+  50% {
+    box-shadow:
+      0 0 0 2px var(--gold),
+      0 0 28px var(--t);
+  }
+}
+
+/* 上一手的气泡：冒在那一队旁边 */
+.tmd-bubble {
   position: absolute;
-  left: 8%;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 220px;
+  z-index: 5;
+  padding: 6px 12px;
+  border-radius: 16px;
+  background: #fff;
+  color: #1d2433;
+  font-size: 14px;
   font-weight: 900;
-  color: rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.tmd-bubble b {
+  margin-right: 4px;
+  color: var(--t);
+}
+
+.tmd-bubble::before {
+  content: '';
+  position: absolute;
+  border: 6px solid transparent;
+}
+
+.tmd-bubble.pop {
+  animation: tmd-pop 0.35s cubic-bezier(0.3, 1.6, 0.6, 1) both;
+}
+
+@keyframes tmd-pop {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+
+.tmd-seat.n .tmd-bubble {
+  top: 100%;
+  left: 50%;
+  translate: -50% 12px;
+}
+
+.tmd-seat.n .tmd-bubble::before {
+  bottom: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border-bottom-color: #fff;
+  border-top: 0;
+}
+
+.tmd-seat.w .tmd-bubble {
+  top: 32%;
+  left: 100%;
+  translate: 14px 0;
+}
+
+.tmd-seat.w .tmd-bubble::before {
+  right: 100%;
+  top: 50%;
+  margin-top: -6px;
+  border-right-color: #fff;
+  border-left: 0;
+}
+
+.tmd-seat.e .tmd-bubble {
+  top: 32%;
+  right: 100%;
+  translate: -14px 0;
+}
+
+.tmd-seat.e .tmd-bubble::before {
+  left: 100%;
+  top: 50%;
+  margin-top: -6px;
+  border-left-color: #fff;
+  border-right: 0;
+}
+
+.tmd-seat.mine .tmd-bubble {
+  bottom: 100%;
+  left: 50%;
+  translate: -50% -12px;
+}
+
+.tmd-seat.mine .tmd-bubble::before {
+  top: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border-top-color: #fff;
+  border-bottom: 0;
+}
+
+/* ---- 牌桌 ---- */
+.tmd-felt {
+  grid-area: felt;
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--tu) * 3.6);
+  padding: 16px 24px 22px;
+  border-radius: 26px;
+  background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--felt) 86%, #fff) 0, var(--felt) 48%, var(--felt-dark) 100%);
+  box-shadow:
+    inset 0 0 0 6px color-mix(in srgb, var(--felt-dark) 70%, #000),
+    inset 0 0 0 8px color-mix(in srgb, var(--gold) 35%, transparent),
+    0 18px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* 起家指示器：四边是四队的颜色，轮到谁那边亮 */
+.tmd-compass {
+  position: relative;
+  flex: none;
+  width: calc(var(--tu) * 16);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--felt-dark) 45%, #050a14);
+  text-align: center;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+.tmd-compass i {
+  position: absolute;
+  border-radius: 3px;
+  background: var(--t);
+  opacity: 0.3;
+}
+
+.tmd-compass i.done {
+  opacity: 0.7;
+}
+
+.tmd-compass i.on {
+  opacity: 1;
+  box-shadow: 0 0 14px var(--t);
+}
+
+.tmd-compass .n,
+.tmd-compass .s {
+  left: 16%;
+  right: 16%;
+  height: 5%;
+}
+
+.tmd-compass .n {
+  top: 5%;
+}
+
+.tmd-compass .s {
+  bottom: 5%;
+}
+
+.tmd-compass .w,
+.tmd-compass .e {
+  top: 16%;
+  bottom: 16%;
+  width: 5%;
+}
+
+.tmd-compass .w {
+  left: 5%;
+}
+
+.tmd-compass .e {
+  right: 5%;
+}
+
+.tmd-tier {
+  font: 700 calc(var(--tu) * 5.6) / 1 var(--t-num, sans-serif);
+  color: var(--gold);
+}
+
+.tmd-tier small {
+  margin-left: 2px;
+  font-size: 0.32em;
+}
+
+.tmd-no {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ink-quiet);
+}
+
+.tmd-no b {
+  color: var(--ink);
+  font: 700 15px var(--t-num, sans-serif);
+}
+
+.tmd-dir {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink);
+  opacity: 0.8;
+}
+
+.tmd-pool {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-height: 100%;
+}
+
+.tmd-pool-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.tmd-pool-head b {
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+
+.tmd-pool-head span {
+  font-size: 12px;
+  color: var(--ink-quiet);
+}
+
+.tmd-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), auto);
+  justify-content: start;
+  gap: calc(var(--tu) * 2.2) calc(var(--tu) * 1.4);
+  min-height: 0;
+  padding-top: 12px;
+}
+
+.tmd-grid .tmd-tile {
+  --w: calc(var(--tu) * 10.4);
+  --h: calc(var(--tu) * 14.4);
+  --fs: 13px;
+}
+
+/* ---- 自己：五张牌 + 点中的那位的大卡 ---- */
+.tmd-me {
+  grid-area: me;
+  display: flex;
+  align-items: stretch;
+  gap: 22px;
+  min-width: 0;
+  min-height: calc(var(--tu) * 23);
+}
+
+.tmd-seat.mine {
+  flex: none;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.tmd-seat.mine .tmd-lab {
+  align-self: center;
+  padding: 8px 14px;
+}
+
+.tmd-seat.mine .tmd-lab b {
+  font-size: 18px;
+}
+
+.tmd-seat.mine .tmd-tile {
+  --w: calc(var(--tu) * 11.4);
+  --h: calc(var(--tu) * 15.4);
+  --fs: 15px;
+}
+
+/* 大卡：里面一层贴着底边，展开全文时往上长、盖住桌面 */
+.tmd-card {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.tmd-card-in {
+  position: absolute;
+  z-index: 3;
+  inset: 0 0 6px;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--t-line, rgba(255, 255, 255, 0.14));
+  border-left: 5px solid var(--gold);
+  background: var(--t-panel, rgba(8, 26, 30, 0.94));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.tmd-card.open .tmd-card-in {
+  top: auto;
+  min-height: calc(100% - 6px);
+  max-height: calc(100vh - 140px);
+}
+
+.tmd-art {
+  position: relative;
+  flex: none;
+  width: min(calc(var(--tu) * 25), 38%);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 40% 45%, color-mix(in srgb, var(--c) 60%, transparent), transparent 75%),
+    color-mix(in srgb, var(--c) 25%, #0a1226);
+}
+
+.tmd-art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 55% 30%;
+}
+
+.tmd-letter {
+  font-size: calc(var(--tu) * 11);
+  font-weight: 900;
+  color: color-mix(in srgb, var(--c) 55%, #fff);
+  opacity: 0.7;
 }
 
 .tmd-stamp {
   position: absolute;
-  left: 24px;
-  top: 24px;
-  z-index: 2;
-  transform: rotate(-8deg);
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  rotate: -12deg;
   padding: 4px 14px;
   border: 3px solid var(--t);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--t) 70%, transparent);
-  color: #fff;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--t);
   font-size: 22px;
   font-weight: 900;
-  text-align: center;
   line-height: 1.1;
+  text-align: center;
+  filter: brightness(1.3);
 }
 
 .tmd-stamp small {
@@ -3269,226 +4116,112 @@ html:root .select-screen.team-screen.tm-draft {
   font-size: 12px;
 }
 
-.tmd-plate {
-  position: absolute;
-  right: 28px;
-  top: 32px;
-  z-index: 2;
+.tmd-info {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  flex-direction: row-reverse;
+  flex-direction: column;
+  padding: 10px 16px 12px;
+}
+
+.tmd-nmr {
+  display: flex;
   align-items: center;
-  gap: 14px;
-  text-align: right;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tmd-name {
+  font-size: clamp(18px, calc(var(--tu) * 3.1), 30px);
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .tmd-badge {
   flex: none;
-  width: 62px;
-  height: 62px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
   background: var(--gold);
-  color: #1a1200;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  font: 700 32px var(--t-num, sans-serif);
-  line-height: 1;
+  color: #1a1a1a;
+  font: 700 21px/1 var(--t-num, sans-serif);
 }
 
 .tmd-badge small {
-  font-size: 12px;
-}
-
-.tmd-name {
-  font: 900 44px var(--t-title, sans-serif);
-  letter-spacing: 2px;
-  color: #fff;
-  text-shadow: 0 3px 0 var(--c), 0 0 18px rgba(0, 0, 0, 0.6);
+  display: none;
 }
 
 .tmd-school {
+  font-size: 12px;
   color: var(--ink-quiet);
-}
-
-.tmd-desc {
-  position: absolute;
-  right: 28px;
-  bottom: 28px;
-  z-index: 2;
-  width: 44%;
-  max-height: calc(100% - 150px);
-  overflow-y: auto;
-  padding: 14px 18px;
-  border-left: 4px solid var(--gold);
-  border-radius: 4px;
-  background: rgba(5, 10, 25, 0.82);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tmd-abil {
-  font: 900 22px var(--t-title, sans-serif);
+  margin-top: 2px;
+  font-size: clamp(13px, calc(var(--tu) * 1.8), 17px);
+  font-weight: 900;
   color: var(--gold);
 }
 
-.tmd-desc p {
-  margin: 6px 0 0;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.tmd-side {
-  grid-area: side;
+.tmd-desc {
+  flex: 1 1 auto;
   min-height: 0;
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.65;
+  opacity: 0.88;
+}
+
+.tmd-card.clipped:not(.open) .tmd-desc {
+  -webkit-mask-image: linear-gradient(#000 60%, transparent);
+  mask-image: linear-gradient(#000 60%, transparent);
+}
+
+.tmd-card.open .tmd-desc {
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
-.tmd-side h3 {
-  margin: 4px 0 0;
-  font-size: 14px;
-  color: var(--t, var(--ink-quiet));
-  filter: brightness(1.2);
-}
-
-.tmd-roster {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.tmd-slot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 52px;
-  padding: 6px 10px;
-  border-left: 4px solid var(--c);
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.3);
-}
-
-.tmd-slot.open {
-  outline: 2px solid var(--gold);
-  background: color-mix(in srgb, var(--gold) 10%, rgba(0, 0, 0, 0.3));
-}
-
-.tmd-cost {
-  width: 16px;
-  font: 700 22px var(--t-num, sans-serif);
-  color: var(--ink-quiet);
-}
-
-.tmd-slot .tm-mini {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-}
-
-.tmd-who {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.tmd-who b {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tmd-who small {
+.tmd-more {
+  flex: none;
+  margin: 0 0 0 auto;
+  padding: 1px 0;
+  border: none;
+  background: none;
+  color: var(--gold);
   font-size: 12px;
-  color: var(--ink-quiet);
+  cursor: pointer;
 }
 
-.tmd-other {
+.tmd-more::after {
+  content: ' ▾';
+}
+
+.tmd-card.open .tmd-more::after {
+  content: ' ▴';
+}
+
+.tmd-acts {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-left: 4px solid var(--t);
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.3);
-}
-
-.tmd-other.on {
-  box-shadow: 0 0 0 1px var(--t), 0 0 12px color-mix(in srgb, var(--t) 50%, transparent);
-}
-
-.tmd-other .tm-mini {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-}
-
-.tmd-tname {
-  width: 40px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--t);
-  filter: brightness(1.2);
-}
-
-.tmd-rule {
-  margin: auto 0 0;
-  font-size: 12px;
-  color: var(--ink-quiet);
-}
-
-.tmd-pick {
-  grid-area: pick;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.tmd-thumbs {
-  flex: 1;
-  display: flex;
   gap: 12px;
+  margin-top: auto;
+  padding-top: 8px;
 }
 
-.tmd-thumb {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.3);
-  color: var(--ink);
-  font-weight: 700;
-  text-align: left;
-}
-
-.tmd-thumb .tm-mini {
-  width: 54px;
-  height: 54px;
-  font-size: 22px;
-}
-
-.tmd-thumb > span:not(.tm-mini):not(.tm-tag) {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tmd-thumb.sel {
-  border-color: var(--gold);
-  background: color-mix(in srgb, var(--gold) 12%, rgba(0, 0, 0, 0.3));
-}
-
-.tmd-thumb.taken {
-  opacity: 0.45;
-}
-
-.tmd-go {
+html:root .tm-draft .tmd-go {
+  flex: none;
   margin: 0;
-  min-width: 160px;
+  min-width: 150px;
+  padding: 8px 28px;
+  font-size: 17px;
 }
 
 .tmd-go:disabled {
@@ -3496,13 +4229,48 @@ html:root .select-screen.team-screen.tm-draft {
   cursor: default;
 }
 
-/* 皮肤：转播是斜切的块，和风是木框纸签，觉醒发光 */
-:root[data-theme='broadcast'] .tmd-thumb {
-  transform: skewX(-8deg);
+.tmd-hint {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--ink-quiet);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-:root[data-theme='broadcast'] .tmd-thumb > * {
-  transform: skewX(8deg);
+/* 窄一点的屏幕（平板横放）：自己的牌小一号，给大卡留地方 */
+@media (max-width: 1100px) and (min-width: 761px) {
+  .tmd-seat.mine .tmd-tile {
+    --w: calc(var(--tu) * 9.6);
+    --h: calc(var(--tu) * 13);
+  }
+
+  .tmd-seat.mine .tmd-lab {
+    padding: 6px 10px;
+  }
+
+  .tmd-seat.mine .tmd-lab b small,
+  .tmd-hint {
+    display: none;
+  }
+}
+
+/* 皮肤：转播是斜切的块，和风是木框纸签，觉醒发光 */
+:root[data-theme='broadcast'] .tm-draft .tmd-bar h1::before {
+  font-size: 12px;
+  vertical-align: 4px;
+}
+
+:root[data-theme='broadcast'] .tmd-seat.n .tmd-lab,
+:root[data-theme='broadcast'] .tmd-seat.mine .tmd-lab {
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 0, 90% 100%, 0 100%);
+  padding-right: 16px;
+}
+
+:root[data-theme='broadcast'] .tmd-seat.on.n .tmd-lab,
+:root[data-theme='broadcast'] .tmd-seat.on.mine .tmd-lab {
+  clip-path: none;
 }
 
 :root[data-theme='broadcast'] .tmd-go {
@@ -3510,52 +4278,94 @@ html:root .select-screen.team-screen.tm-draft {
   transform: skewX(-8deg);
 }
 
-:root[data-theme='broadcast'] .tm-draft .tmd-head h1::before {
-  font-size: 12px;
-  vertical-align: 4px;
+:root[data-theme='broadcast'] .tmd-card-in {
+  border-radius: 0;
 }
 
-:root[data-theme='washi'] .tmd-stage {
+:root[data-theme='washi'] .tmd-felt {
+  box-shadow:
+    inset 0 0 0 7px var(--t-wood),
+    inset 0 0 0 9px var(--t-wood-line),
+    0 18px 40px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme='washi'] .tmd-compass {
+  background: var(--t-wood);
+  border: 2px solid var(--t-wood-line);
+}
+
+:root[data-theme='washi'] .tmd-card-in {
   border: 3px solid var(--t-wood-line);
-}
-
-:root[data-theme='washi'] .tmd-desc {
+  border-left-color: var(--t-hot);
   background: var(--t-paper);
   color: var(--t-paper-ink);
-  border-left-color: var(--t-hot);
-}
-
-:root[data-theme='washi'] .tmd-abil {
-  color: var(--t-hot);
-  font-weight: 400;
 }
 
 :root[data-theme='washi'] .tmd-name {
+  font-family: var(--t-title);
   font-weight: 400;
 }
 
-:root[data-theme='washi'] .tmd-slot,
-:root[data-theme='washi'] .tmd-other,
-:root[data-theme='washi'] .tmd-thumb {
-  background: var(--t-wood);
+:root[data-theme='washi'] .tmd-abil,
+:root[data-theme='washi'] .tmd-more {
+  color: var(--t-hot);
 }
 
-:root[data-theme='awaken'] .tmd-stage {
+:root[data-theme='washi'] .tmd-abil {
+  font-weight: 700;
+}
+
+:root[data-theme='washi'] .tmd-school,
+:root[data-theme='washi'] .tmd-hint {
+  color: #6b563d;
+}
+
+:root[data-theme='washi'] .tmd-badge {
+  background: var(--t-hot);
+  color: #fff;
+}
+
+:root[data-theme='washi'] .tmd-lab {
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  border-radius: 2px;
+}
+
+:root[data-theme='awaken'] .tmd-felt {
+  box-shadow:
+    inset 0 0 0 6px color-mix(in srgb, var(--felt-dark) 70%, #000),
+    inset 0 0 0 8px color-mix(in srgb, var(--t-glow) 55%, transparent),
+    0 0 36px rgba(169, 139, 255, 0.3);
+}
+
+:root[data-theme='awaken'] .tmd-compass {
   border: 1px solid var(--t-line);
-  box-shadow: 0 0 24px rgba(169, 139, 255, 0.35);
+  box-shadow: 0 0 18px rgba(169, 139, 255, 0.35);
 }
 
-:root[data-theme='awaken'] .tmd-desc {
-  background: var(--t-panel);
+:root[data-theme='awaken'] .tmd-lab {
+  border-radius: 14px;
+}
+
+:root[data-theme='awaken'] .tmd-card-in {
+  border-color: var(--t-line);
   border-left-color: var(--t-glow);
-  box-shadow: 0 0 16px rgba(169, 139, 255, 0.3);
+  border-radius: 10px;
+  box-shadow: 0 0 18px rgba(169, 139, 255, 0.3);
 }
 
-:root[data-theme='awaken'] .tmd-thumb.sel {
-  box-shadow: 0 0 16px var(--t-glow);
+:root[data-theme='awaken'] .tmd-tile.sel {
+  box-shadow:
+    0 3px 0 var(--tile-edge),
+    0 6px 0 var(--tile-back),
+    0 0 0 3px var(--t-glow),
+    0 0 26px var(--t-glow);
 }
 
-/* 竖着的手机：从上往下是立绘、候选、阵容，整页滚 */
+:root[data-theme='awaken'] .tmd-badge {
+  box-shadow: 0 0 12px var(--gold);
+}
+
+/* 竖着的手机：从上往下是三队、牌桌、自己和大卡，整页滚 */
 @media (max-width: 760px) {
   html:root .select-screen.team-screen.tm-draft {
     display: flex;
@@ -3565,188 +4375,476 @@ html:root .select-screen.team-screen.tm-draft {
     overflow-y: auto;
   }
 
-  .tm-draft .tmd-head h1 {
+  .tmd-bar {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+
+  .tm-draft .tmd-bar h1 {
     font-size: 20px;
-  }
-
-  .tmd-head .tm-order {
-    margin: 0;
-    font-size: 13px;
-  }
-
-  .tmd-stage {
-    flex: none;
-  }
-
-  .tmd-art {
-    position: relative;
-    display: block;
-    left: -4%;
-    height: 300px;
-    max-width: 78%;
-  }
-
-  .tmd-letter {
-    position: relative;
-    display: block;
-    transform: none;
-    left: 0;
-    top: 0;
-    height: 300px;
-    padding-left: 24px;
-    line-height: 300px;
-    font-size: 160px;
-  }
-
-  .tmd-plate {
-    right: 14px;
-    top: 16px;
-  }
-
-  .tmd-name {
-    font-size: 28px;
-  }
-
-  .tmd-badge {
-    width: 46px;
-    height: 46px;
-    font-size: 24px;
-  }
-
-  .tmd-stamp {
-    left: 12px;
-    top: 12px;
-    font-size: 16px;
-  }
-
-  .tmd-desc {
-    position: relative;
-    inset: auto;
-    width: auto;
-    max-height: none;
-    margin: 0 10px 10px;
-  }
-
-  .tmd-pick {
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .tmd-thumbs {
-    width: 100%;
-    gap: 6px;
-  }
-
-  .tmd-thumb,
-  :root[data-theme='broadcast'] .tmd-thumb,
-  :root[data-theme='broadcast'] .tmd-thumb > * {
-    transform: none;
-  }
-
-  .tmd-thumb {
-    flex-direction: column;
-    gap: 4px;
-    padding: 6px 4px;
-    font-size: 12px;
-  }
-
-  .tmd-thumb .tm-mini {
-    width: 100%;
-    height: 56px;
-  }
-
-  .tmd-thumb .tm-tag {
-    top: 2px;
-    right: 2px;
-    font-size: 10px;
-  }
-
-  .tmd-go {
-    width: 100%;
-  }
-
-  .tmd-side {
-    overflow: visible;
-  }
-
-  .tmd-slot {
-    height: 44px;
-  }
-
-  .tmd-slot .tm-mini {
-    width: 32px;
-    height: 32px;
-  }
-}
-
-/* 横着的手机：矮，名字和说明缩小 */
-@media (max-height: 500px) and (min-width: 761px) {
-  html:root .select-screen.team-screen.tm-draft {
-    grid-template-columns: minmax(0, 1fr) 260px;
-    gap: 8px 12px;
-    padding: 8px 12px;
-  }
-
-  .tmd-head {
-    padding-bottom: 4px;
-  }
-
-  .tm-draft .tmd-head h1 {
-    font-size: 18px;
-  }
-
-  .tmd-name {
-    font-size: 26px;
-  }
-
-  .tmd-plate {
-    top: 12px;
-    right: 14px;
-  }
-
-  .tmd-badge {
-    width: 40px;
-    height: 40px;
-    font-size: 20px;
-  }
-
-  .tmd-desc {
-    right: 12px;
-    bottom: 12px;
-    width: 52%;
-    max-height: calc(100% - 80px);
-    padding: 8px 12px;
-  }
-
-  .tmd-abil {
-    font-size: 16px;
-  }
-
-  .tmd-desc p {
-    font-size: 12px;
-  }
-
-  .tmd-slot {
-    height: 34px;
-  }
-
-  .tmd-slot .tm-mini {
-    width: 26px;
-    height: 26px;
-  }
-
-  .tmd-other .tm-mini {
-    width: 22px;
-    height: 22px;
   }
 
   .tmd-rule {
+    width: 100%;
+    margin: 0;
+    text-align: left;
+  }
+
+  .tmd-seat.n {
+    order: 1;
+  }
+
+  .tmd-seat.w {
+    order: 2;
+  }
+
+  .tmd-seat.e {
+    order: 3;
+  }
+
+  .tmd-felt {
+    order: 4;
+  }
+
+  .tmd-me {
+    order: 5;
+  }
+
+  .tmd-seat,
+  .tmd-seat.w,
+  .tmd-seat.e {
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+
+  .tmd-seat.w .tmd-tiles,
+  .tmd-seat.e .tmd-tiles {
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .tmd-lab {
+    width: 64px;
+    flex: none;
+  }
+
+  .tmd-tiles {
+    gap: 6px;
+  }
+
+  .tmd-tile,
+  .tmd-seat.w .tmd-tile,
+  .tmd-seat.e .tmd-tile,
+  .tmd-seat.mine .tmd-tile {
+    --w: 46px;
+    --h: 56px;
+    --fs: 10px;
+  }
+
+  .tmd-seat:not(.mine) .tmd-nm,
+  .tmd-cn {
     display: none;
   }
 
-  .tmd-thumb .tm-mini {
-    width: 34px;
-    height: 34px;
+  .tmd-bubble {
+    display: none;
+  }
+
+  .tmd-felt {
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 10px 16px;
+    border-radius: 16px;
+  }
+
+  .tmd-compass {
+    width: 92px;
+  }
+
+  .tmd-tier {
+    font-size: 30px;
+  }
+
+  .tmd-no,
+  .tmd-dir {
+    font-size: 10px;
+  }
+
+  .tm-draft > * {
+    flex: none;
+  }
+
+  .tmd-pool {
+    width: 100%;
+    max-height: none;
+  }
+
+  .tmd-grid {
+    grid-template-columns: repeat(auto-fill, 58px);
+    justify-content: center;
+    gap: 14px 8px;
+  }
+
+  .tmd-grid .tmd-tile {
+    --w: 58px;
+    --h: 78px;
+    --fs: 10px;
+  }
+
+  .tmd-me {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .tmd-seat.mine {
+    align-items: center;
+  }
+
+  .tmd-card-in,
+  .tmd-card.open .tmd-card-in {
+    position: static;
+    max-height: none;
+    flex-direction: column;
+  }
+
+  .tmd-art {
+    width: auto;
+    height: 160px;
+  }
+
+  .tmd-card.clipped:not(.open) .tmd-desc {
+    max-height: 6.6em;
+  }
+}
+
+/* 横着的手机：矮，牌、字都缩小，对手的牌不写名字 */
+@media (max-height: 500px) and (min-width: 761px) {
+  html:root .select-screen.team-screen.tm-draft {
+    grid-template-columns: 52px minmax(0, 1fr) 52px;
+    gap: 5px;
+    padding: 6px 10px;
+  }
+
+  .tmd-bar {
+    gap: 8px;
+  }
+
+  .tm-draft .tmd-bar h1 {
+    font-size: 16px;
+    letter-spacing: 2px;
+  }
+
+  .tmd-bar .lab-entry {
+    padding: 2px 8px;
+    font-size: 11px;
+  }
+
+  .tmd-rule {
+    font-size: 9px;
+  }
+
+  .tmd-tile {
+    margin-bottom: 4px;
+    padding: 2px 2px 0;
+    border-radius: 4px;
+    box-shadow:
+      0 2px 0 var(--tile-edge),
+      0 4px 0 var(--tile-back),
+      0 5px 8px rgba(0, 0, 0, 0.45);
+  }
+
+  .tmd-tile.back {
+    box-shadow:
+      0 2px 0 color-mix(in srgb, var(--tile-back) 55%, #000),
+      0 4px 0 var(--tile-face),
+      0 5px 8px rgba(0, 0, 0, 0.45);
+  }
+
+  .tmd-tile.sel,
+  .tmd-tile.back.sel {
+    transform: translateY(-6px);
+  }
+
+  .tmd-pic {
+    border-radius: 3px;
+  }
+
+  .tmd-nm {
+    padding: 0 0 1px;
+  }
+
+  .tmd-cn {
+    display: none;
+  }
+
+  .tmd-tag {
+    font-size: 8px;
+  }
+
+  .tmd-tile.blank {
+    border-width: 1px;
+  }
+
+  .tmd-tile.blank small {
+    display: none;
+  }
+
+  .tmd-seat {
+    gap: 4px;
+  }
+
+  .tmd-tiles {
+    gap: 5px;
+  }
+
+  .tmd-seat:not(.mine) .tmd-nm {
+    display: none;
+  }
+
+  .tmd-seat.n .tmd-tile {
+    --w: 34px;
+    --h: 36px;
+  }
+
+  .tmd-seat.w .tmd-tile,
+  .tmd-seat.e .tmd-tile {
+    --w: 40px;
+    --h: 26px;
+  }
+
+  .tmd-seat.w .tmd-tiles,
+  .tmd-seat.e .tmd-tiles {
+    gap: 3px;
+  }
+
+  .tmd-lab {
+    padding: 2px 5px;
+    gap: 0;
+  }
+
+  .tmd-seat.n .tmd-lab {
+    flex-direction: row;
+    gap: 3px;
+  }
+
+  .tmd-lab b {
+    font-size: 10px;
+  }
+
+  .tmd-lab b small {
+    display: none;
+  }
+
+  .tmd-sum {
+    display: none;
+  }
+
+  .tmd-lab em {
+    font-size: 8px;
+  }
+
+  .tmd-ord {
+    width: 13px;
+    height: 13px;
+    font-size: 9px;
+  }
+
+  .tmd-bubble {
+    padding: 2px 7px;
+    font-size: 9px;
+  }
+
+  .tmd-seat.n .tmd-bubble {
+    translate: -50% 6px;
+  }
+
+  .tmd-seat.w .tmd-bubble {
+    translate: 8px 0;
+  }
+
+  .tmd-seat.e .tmd-bubble {
+    translate: -8px 0;
+  }
+
+  .tmd-seat.mine .tmd-bubble {
+    translate: -50% -6px;
+  }
+
+  .tmd-felt {
+    gap: 14px;
+    padding: 6px 12px 10px;
+    border-radius: 14px;
+    box-shadow:
+      inset 0 0 0 4px color-mix(in srgb, var(--felt-dark) 70%, #000),
+      inset 0 0 0 5px color-mix(in srgb, var(--gold) 35%, transparent);
+  }
+
+  .tmd-compass {
+    width: 82px;
+    border-radius: 8px;
+  }
+
+  .tmd-tier {
+    font-size: 28px;
+  }
+
+  .tmd-no {
+    margin-top: 1px;
+    font-size: 8px;
+  }
+
+  .tmd-no b {
+    font-size: 10px;
+  }
+
+  .tmd-dir {
+    margin-top: 0;
+    font-size: 8px;
+  }
+
+  .tmd-pool {
+    gap: 2px;
+  }
+
+  .tmd-pool-head b {
+    font-size: 11px;
+  }
+
+  .tmd-pool-head span {
+    font-size: 8px;
+  }
+
+  .tmd-grid {
+    gap: 9px 7px;
+    padding: 7px 3px 4px;
+    overflow-y: auto;
+  }
+
+  .tmd-grid .tmd-tile {
+    --w: 50px;
+    --h: 64px;
+    --fs: 8px;
+  }
+
+  .tmd-me {
+    gap: 8px;
+    min-height: 92px;
+  }
+
+  .tmd-seat.mine {
+    gap: 6px;
+  }
+
+  .tmd-seat.mine .tmd-lab {
+    padding: 3px 6px;
+  }
+
+  .tmd-seat.mine .tmd-lab b {
+    font-size: 11px;
+  }
+
+  .tmd-seat.mine .tmd-tile {
+    --w: 54px;
+    --h: 76px;
+    --fs: 9px;
+  }
+
+  .tmd-card-in {
+    border-left-width: 3px;
+  }
+
+  .tmd-card.open .tmd-card-in {
+    max-height: calc(100vh - 60px);
+  }
+
+  .tmd-art {
+    width: 96px;
+  }
+
+  .tmd-letter {
+    font-size: 48px;
+  }
+
+  .tmd-stamp {
+    padding: 2px 6px;
+    border-width: 2px;
+    font-size: 12px;
+  }
+
+  .tmd-stamp small {
+    font-size: 8px;
+  }
+
+  .tmd-info {
+    padding: 4px 8px 5px;
+  }
+
+  .tmd-nmr {
+    gap: 5px;
+  }
+
+  .tmd-name {
+    font-size: 15px;
+  }
+
+  .tmd-badge {
+    width: 20px;
+    height: 20px;
+    font-size: 13px;
+  }
+
+  .tmd-school {
+    font-size: 8px;
+  }
+
+  .tmd-abil {
+    margin-top: 0;
+    font-size: 10px;
+  }
+
+  .tmd-desc {
+    margin-top: 1px;
+    font-size: 8.5px;
+    line-height: 1.45;
+  }
+
+  .tmd-more {
+    font-size: 9px;
+    padding: 0;
+  }
+
+  .tmd-acts {
+    gap: 6px;
+    padding-top: 3px;
+  }
+
+  html:root .tm-draft .tmd-go {
+    min-width: 0;
+    padding: 3px 18px;
+    font-size: 12px;
+  }
+
+  /* 名字、费用、能力名排一行，说明多露一行 */
+  .tmd-info {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+  }
+
+  .tmd-desc,
+  .tmd-acts {
+    grid-column: 1 / -1;
+    align-self: stretch;
+  }
+
+  .tmd-school {
+    display: none;
+  }
+
+  .tmd-hint {
+    font-size: 8px;
   }
 }
 

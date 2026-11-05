@@ -101,7 +101,10 @@
 /* 左边大立绘面板，右边标题、开关和角色格子 */
 :root:not([data-theme='classic']) .select-screen {
   display: grid;
-  grid-template-columns: minmax(300px, 34%) 1fr;
+  grid-template-columns: minmax(300px, 32%) 1fr;
+  /* 只有一行、占满整高：设置弹窗的空格子（#setup）排到后面也不分走高度（以前分走了下面一条） */
+  grid-template-rows: minmax(0, 1fr);
+  grid-auto-rows: 0;
   padding: 0;
   text-align: left;
   overflow: hidden;
@@ -110,8 +113,10 @@
 :root:not([data-theme='classic']) .sel-main {
   grid-column: 2;
   grid-row: 1;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
-  padding: 28px 32px 24px;
+  padding: 24px 32px 18px;
 }
 
 :root:not([data-theme='classic']) .select-screen h1 {
@@ -134,15 +139,34 @@
   max-width: none;
 }
 
+:root:not([data-theme='classic']) .school-tabs,
+:root:not([data-theme='classic']) .school-head,
 :root:not([data-theme='classic']) .char-grid {
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  /* 右栏是竖排的 flex，左右 auto 外边距会让它们按内容撑宽，手机上横滑的学校标签就撑出屏幕 */
+  min-width: 0;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+:root:not([data-theme='classic']) .school-tabs {
+  margin-top: 14px;
+}
+
+:root:not([data-theme='classic']) .school-head {
+  margin-top: 20px;
+}
+
+/* 一所学校最多 5 人，一排放下，卡片大一点、带能力名 */
+:root:not([data-theme='classic']) .char-grid {
+  grid-template-columns: repeat(5, minmax(0, 176px));
   max-width: none;
-  gap: 12px;
+  gap: 14px;
 }
 
 :root:not([data-theme='classic']) .char-card {
   position: relative;
-  height: 142px;
+  height: auto;
+  aspect-ratio: 176 / 250;
   padding: 0;
   overflow: hidden;
   gap: 0;
@@ -156,7 +180,8 @@
   height: auto;
   border-radius: 0;
   background: none;
-  font-size: 54px;
+  font-size: clamp(44px, 5.4vw, 80px);
+  padding-bottom: 22%;
 }
 
 :root:not([data-theme='classic']) .char-card .char-portrait img {
@@ -166,13 +191,30 @@
 :root:not([data-theme='classic']) .char-card .char-name {
   position: relative;
   width: 100%;
-  padding: 20px 6px 6px;
+  padding: 30px 4px 8px;
   font-weight: 900;
-  font-size: 14px;
+  font-size: clamp(13px, 1.18vw, 17px);
   text-align: center;
+  white-space: nowrap;
+}
+
+:root:not([data-theme='classic']) .char-card .char-name small {
+  margin-top: 2px;
+  font-size: clamp(10px, 0.9vw, 13px);
+}
+
+:root:not([data-theme='classic']) .char-cost {
+  top: 8px;
+  left: 8px;
+  min-width: 22px;
+  height: 22px;
+  font-size: 17px;
+  line-height: 22px;
 }
 
 :root:not([data-theme='classic']) .footnote {
+  margin-top: auto;
+  padding-top: 16px;
   text-align: left;
 }
 
@@ -268,18 +310,97 @@
 :root:not([data-theme='classic']) .char-tip .char-desc {
   font-size: 13px;
   line-height: 1.7;
-  max-height: 8.5em;
+  max-height: 10.2em;
+  overflow: hidden;
+}
+
+/* 说明太长：收起来时下面淡出，按“展开全文”看完 */
+.hero-plate.clipped:not(.open) .char-desc {
+  -webkit-mask-image: linear-gradient(#000 65%, transparent);
+  mask-image: linear-gradient(#000 65%, transparent);
+}
+
+:root:not([data-theme='classic']) .hero-plate.open .char-desc {
+  max-height: 55vh;
   overflow-y: auto;
 }
 
-.hero-go {
+.hero-more {
   align-self: flex-start;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--gold);
+  font-size: 12px;
+}
+
+.hero-more::after {
+  content: ' ▾';
+}
+
+.hero-plate.open .hero-more::after {
+  content: ' ▴';
+}
+
+/* 名字旁边的费用 */
+.hero-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.char-tip .char-school span {
+  margin-left: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  opacity: 0.75;
+}
+
+.hero-cost {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: #1a1a1a;
+  font: 700 24px/1 var(--t-num);
+}
+
+.hero-cost small {
+  margin-top: -3px;
+  font: 700 9px/1 var(--t-body);
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-top: 14px;
+}
+
+.hero-go {
   padding: 10px 38px;
   border: none;
   font-size: 18px;
   font-weight: 900;
   color: #fff;
+}
+
+.hero-rules {
+  padding: 8px 16px;
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  border-radius: 3px;
+  background: none;
+  color: var(--gold);
+  font-size: 13px;
+}
+
+.hero-rules:hover {
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
 }
 
 /* 窄屏（竖着的手机）：立绘面板放到上面一条 */
@@ -307,37 +428,131 @@
     font-size: 30px;
   }
 
-  :root:not([data-theme='classic']) .char-grid {
-    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  .select-screen .sel-top h1 {
+    font-size: 26px;
   }
 
-  :root:not([data-theme='classic']) .char-card {
-    height: 108px;
+  .sel-tool > span,
+  .sel-modes small {
+    display: none;
+  }
+
+  .sel-modes {
+    gap: 18px;
+  }
+
+  :root:not([data-theme='classic']) .char-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px;
+  }
+
+  :root:not([data-theme='classic']) .char-card .char-name {
+    font-size: 13px;
+  }
+
+  :root:not([data-theme='classic']) .char-card .char-name small {
+    font-size: 10px;
   }
 }
 
-/* 横着的手机：矮，立绘面板窄一点、字小一点 */
+/* 横着的手机：矮，立绘面板窄一点、字小一点；学校标签一行横着滑，角色第一屏就看得到 */
 @media (max-height: 500px) {
   :root:not([data-theme='classic']) .select-screen {
-    grid-template-columns: 40% 1fr;
+    grid-template-columns: 33% 1fr;
   }
 
   :root:not([data-theme='classic']) .sel-main {
-    padding: 12px 16px;
+    padding: 8px 12px 6px;
   }
 
-  :root:not([data-theme='classic']) .select-screen h1 {
-    font-size: 26px;
+  .select-screen .sel-top h1 {
+    font-size: 18px;
+    letter-spacing: 2px;
+  }
+
+  .sel-tool {
+    height: 26px;
+    padding-left: 8px;
+    font-size: 12px;
+  }
+
+  .sel-tool > span {
+    display: none;
+  }
+
+  .sel-tool select {
+    padding-right: 22px;
+    background-position: right 8px center;
+  }
+
+  .sel-more summary {
+    width: 26px;
+    height: 26px;
+  }
+
+  .sel-modes {
+    gap: 16px;
+    margin-top: 4px;
+  }
+
+  .sel-modes > button {
+    padding: 2px 0 5px;
+    font-size: 14px;
+  }
+
+  .sel-modes small,
+  .sel-hint {
+    display: none;
+  }
+
+  .sel-modes > .sel-random {
+    margin-bottom: 4px;
+    padding: 2px 10px;
+    font-size: 12px;
+  }
+
+  .school-tabs {
+    flex-wrap: nowrap;
+    gap: 4px;
+    margin-top: 7px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+    mask-image: linear-gradient(90deg, #000 88%, transparent);
+  }
+
+  .school-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .school-tabs button {
+    flex: none;
+    padding: 2px 9px;
+    font-size: 12px;
+  }
+
+  :root:not([data-theme='classic']) .school-head {
+    margin-top: 7px;
+    padding-bottom: 4px;
+  }
+
+  :root:not([data-theme='classic']) .school-head b {
+    font-size: 16px;
+  }
+
+  :root:not([data-theme='classic']) .school-head span,
+  :root:not([data-theme='classic']) .school-head em {
+    font-size: 11px;
+  }
+
+  .school-pager button {
+    padding: 1px 8px;
+    font-size: 11px;
   }
 
   :root:not([data-theme='classic']) .subtitle,
   :root:not([data-theme='classic']) .footnote {
     display: none;
-  }
-
-  :root:not([data-theme='classic']) .mode-switch button {
-    padding: 4px 12px;
-    font-size: 13px;
   }
 
   :root:not([data-theme='classic']) .lab-entry {
@@ -347,45 +562,90 @@
   }
 
   :root:not([data-theme='classic']) .char-tip {
-    padding: 0 14px 12px;
+    padding: 0 10px 10px;
   }
 
   :root:not([data-theme='classic']) .char-tip .char-name {
-    font-size: 26px;
+    font-size: 24px;
   }
 
   :root:not([data-theme='classic']) .char-tip .char-ability {
-    font-size: 15px;
+    font-size: 14px;
   }
 
   :root:not([data-theme='classic']) .char-tip .char-desc {
     font-size: 11px;
-    max-height: 5.2em;
+    line-height: 1.5;
+    max-height: 4.5em;
   }
 
   .hero-plate {
-    padding: 10px 12px;
+    padding: 8px 12px 10px;
+  }
+
+  .hero-title {
+    gap: 8px;
+  }
+
+  .hero-cost {
+    width: 28px;
+    height: 28px;
+    font-size: 17px;
+  }
+
+  .hero-cost small {
+    display: none;
+  }
+
+  .hero-more {
+    font-size: 10px;
+    padding: 0;
+  }
+
+  .hero-actions {
+    gap: 8px;
+    margin-top: 6px;
   }
 
   .hero-go {
-    margin-top: 8px;
-    padding: 6px 26px;
+    padding: 5px 24px;
     font-size: 15px;
   }
 
+  .hero-rules {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
   :root:not([data-theme='classic']) .char-grid {
-    grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
-    gap: 8px;
-    margin-top: 12px;
+    gap: 6px;
+    margin-top: 8px;
   }
 
   :root:not([data-theme='classic']) .char-card {
-    height: 96px;
+    aspect-ratio: 96 / 152;
+  }
+
+  :root:not([data-theme='classic']) .char-card .char-portrait {
+    font-size: 40px;
   }
 
   :root:not([data-theme='classic']) .char-card .char-name {
+    padding: 16px 1px 4px;
     font-size: 12px;
-    padding: 14px 2px 4px;
+  }
+
+  :root:not([data-theme='classic']) .char-card .char-name small {
+    font-size: 10px;
+  }
+
+  :root:not([data-theme='classic']) .char-cost {
+    top: 4px;
+    left: 4px;
+    min-width: 16px;
+    height: 16px;
+    font-size: 13px;
+    line-height: 16px;
   }
 }
 
@@ -408,6 +668,31 @@
   letter-spacing: 1px;
   vertical-align: 8px;
   background: var(--t-hot);
+}
+
+@media (max-height: 500px) {
+  :root[data-theme='broadcast'] .select-screen h1::before {
+    margin-right: 8px;
+    padding: 1px 6px;
+    font-size: 11px;
+    vertical-align: 3px;
+  }
+}
+
+/* 转播风：方角、斜切 */
+:root[data-theme='broadcast'] .school-tabs button,
+:root[data-theme='broadcast'] .school-pager button {
+  border-radius: 3px;
+}
+
+:root[data-theme='broadcast'] .char-cost {
+  left: 12%;
+  border-radius: 2px;
+  background: rgba(10, 18, 38, 0.85);
+}
+
+:root[data-theme='broadcast'] .hero-cost {
+  font-family: var(--t-num);
 }
 
 :root[data-theme='broadcast'] .mode-switch,
@@ -579,9 +864,71 @@
 
 :root[data-theme='washi'] .select-screen h1 {
   font-weight: 400;
-  font-size: 52px;
+  font-size: 46px;
   letter-spacing: 10px;
   color: var(--t-paper);
+}
+
+@media (max-height: 500px) {
+  :root[data-theme='washi'] .select-screen h1 {
+    font-size: 24px;
+    letter-spacing: 4px;
+  }
+}
+
+:root[data-theme='washi'] .sel-tool,
+:root[data-theme='washi'] .sel-more summary,
+:root[data-theme='washi'] .school-pager button {
+  border-color: var(--t-wood-line);
+  border-radius: 2px;
+  background: var(--t-wood);
+}
+
+:root[data-theme='washi'] .sel-more-menu {
+  border-color: var(--t-wood-line);
+  background: var(--t-wood);
+}
+
+:root[data-theme='washi'] .sel-tool select option {
+  background: var(--t-wood);
+}
+
+:root[data-theme='washi'] .sel-modes > button.on {
+  border-bottom-color: var(--t-hot);
+}
+
+:root[data-theme='washi'] .sel-modes > .sel-random {
+  border-radius: 2px;
+  background: var(--t-wood);
+  border-color: var(--t-wood-line);
+}
+
+/* 纸牌子上的小字、次要按钮用朱红，金色在米黄底上看不清 */
+:root[data-theme='washi'] .hero-more {
+  color: var(--t-hot);
+}
+
+:root[data-theme='washi'] .hero-rules {
+  margin-bottom: 4px;
+  border-color: color-mix(in srgb, var(--t-hot) 60%, transparent);
+  border-radius: 2px;
+  color: var(--t-hot);
+  font-weight: 700;
+}
+
+:root[data-theme='washi'] .hero-rules:hover {
+  background: color-mix(in srgb, var(--t-hot) 10%, transparent);
+}
+
+:root[data-theme='washi'] .hero-cost {
+  background: var(--t-hot);
+  color: var(--t-paper);
+  font-family: var(--t-num);
+}
+
+:root[data-theme='washi'] .char-cost {
+  background: var(--t-wood);
+  border-radius: 2px;
 }
 
 :root[data-theme='washi'] .mode-switch,
@@ -619,19 +966,35 @@
 }
 
 :root[data-theme='washi'] .char-card .char-portrait {
-  bottom: 30px;
+  bottom: 46px;
+  padding-bottom: 0;
   background: linear-gradient(var(--c), var(--t-paper));
   font-family: var(--t-title);
   font-weight: 400;
 }
 
 :root[data-theme='washi'] .char-card .char-name {
-  height: 30px;
+  height: 46px;
   padding: 4px 2px;
   color: var(--t-paper-ink);
   background: var(--t-paper);
   border-top: 2px solid var(--c);
   font-weight: 700;
+}
+
+:root[data-theme='washi'] .char-card .char-name small {
+  color: var(--t-hot);
+}
+
+@media (max-height: 500px) {
+  :root[data-theme='washi'] .char-card .char-portrait {
+    bottom: 36px;
+  }
+
+  :root[data-theme='washi'] .char-card .char-name {
+    height: 36px;
+    padding: 3px 1px;
+  }
 }
 
 :root[data-theme='washi'] .char-card:hover,
@@ -870,6 +1233,51 @@
 :root[data-theme='awaken'] .lab-entry {
   border-color: rgba(169, 139, 255, 0.6);
   color: var(--ink-quiet);
+}
+
+/* 觉醒风：圆角、紫色描边 */
+:root[data-theme='awaken'] .sel-tool,
+:root[data-theme='awaken'] .sel-more summary,
+:root[data-theme='awaken'] .school-pager button,
+:root[data-theme='awaken'] .sel-modes > .sel-random,
+:root[data-theme='awaken'] .hero-rules {
+  border-radius: 999px;
+}
+
+:root[data-theme='awaken'] .sel-tool,
+:root[data-theme='awaken'] .sel-more summary,
+:root[data-theme='awaken'] .school-pager button {
+  border-color: rgba(169, 139, 255, 0.45);
+}
+
+:root[data-theme='awaken'] .sel-tool {
+  padding-left: 14px;
+}
+
+:root[data-theme='awaken'] .sel-more-menu {
+  border-color: rgba(169, 139, 255, 0.45);
+  border-radius: 12px;
+  background: #1f1048;
+}
+
+:root[data-theme='awaken'] .sel-tool select option {
+  background: #1f1048;
+}
+
+:root[data-theme='awaken'] .sel-modes > button.on {
+  border-image: linear-gradient(90deg, var(--t-hot), var(--t-glow)) 1;
+}
+
+:root[data-theme='awaken'] .char-cost {
+  left: 10px;
+  top: 10px;
+  border-radius: 999px;
+  background: rgba(20, 10, 46, 0.8);
+}
+
+:root[data-theme='awaken'] .hero-cost {
+  background: linear-gradient(135deg, #fff, var(--gold));
+  box-shadow: 0 0 14px rgba(255, 211, 77, 0.6);
 }
 
 :root[data-theme='awaken'] .char-card {
