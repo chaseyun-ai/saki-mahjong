@@ -5,7 +5,7 @@ import { akoDistance, akoSense } from '../abilities/ako';
 import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored } from '../abilities/teru';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
-import { sakiKanKinds, sakiSeesThrough } from '../abilities/saki';
+import { sakiKanKinds, sakiKanTiles, sakiSeesThrough } from '../abilities/saki';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
@@ -1304,7 +1304,8 @@ export class App {
       airDraw: this.airDraw(),
       tintBacks: this.eyeOpen() && !this.vision ? new Set([1, 2, 3].flatMap((d) => g.players[(this.me + d) % 4].hand)) : undefined,
       akaBacks: this.vision ? undefined : this.akaSpots(),
-      seeThrough: this.sakiSees(),
+      kanSeen: this.sakiSees() && sakiKanTiles(this.game!, this.me),
+      rinshanSeen: this.sakiSees() && new Set(this.game!.wall.rinshan),
       waveBacks: this.vision || (g.phase !== 'turn' && g.phase !== 'calls') ? undefined : awaiWaveTiles(g, this.me),
       gravity: (g.phase === 'turn' || g.phase === 'calls') && awaiSourceOn(g),
       handOrder: this.myHand(),
@@ -1719,18 +1720,18 @@ export class App {
       ${scores}`;
   }
 
-  // 宫永咲的王牌感知（2D）：中间放 4 张岭上牌的牌背，鼠标移到中间的牌山信息上，牌背变透明看得到牌，还写着杠材在牌山第几张
+  // 宫永咲的王牌感知（2D）：中间放 4 张岭上牌的牌背，鼠标移到上面牌背变透明看得到牌；杠材在牌山第几张一直写着
   private sakiPeekHtml(): string {
     const see = this.sakiSees();
     if (!see) return '';
     const g = this.game!;
     const tiles = g.wall.rinshan.map((t) => tileHtml(t, { size: 'mini', classes: ['peek'] })).join('');
-    const kan = g.wall.live.flatMap((t, i) => (see.has(t) ? [`${kindLabel(kindOf(t))}（再摸 ${i + 1} 张）`] : []));
+    const kan = [...sakiKanTiles(g, this.me)].map((t) => `${kindLabel(kindOf(t))}（再摸 ${g.wall.live.indexOf(t) + 1} 张）`);
     const note = kan.length ? `杠材：${kan.join('、')}` : sakiKanKinds(g, this.me).length ? '杠材不在牌山里' : '';
     return `<div class="rinshan-peek" title="王牌感知"><span>岭上</span>${tiles}</div>${note ? `<div class="kan-peek">${note}</div>` : ''}`;
   }
 
-  // 宫永咲看得穿的牌（岭上牌、牌山里杠材的第四张）。不是她、能力被封住、不在打牌时没有
+  // 宫永咲的王牌感知开着没有（是她、能力没被封住、在打牌），开着时是她看得穿的牌（岭上牌、牌山里杠材的第四张）
   private sakiSees(): Set<TileId> | undefined {
     const g = this.game;
     if (!g || this.chars[this.me]?.id !== 'saki' || this.vision || (g.phase !== 'turn' && g.phase !== 'calls')) return undefined;

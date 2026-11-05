@@ -5545,7 +5545,7 @@ html:root .select-screen.team-screen.tm-draft {
   color: #fff;
 }
 
-/* 宫永咲的王牌感知（2D）：4 张岭上牌平时是牌背，鼠标移到中间的牌山信息上牌背变透明，看得到是什么牌 */
+/* 宫永咲的王牌感知（2D）：4 张岭上牌平时是牌背，鼠标移到上面牌背变透明，看得到是什么牌；杠材在牌山第几张一直写着 */
 .rinshan-peek {
   display: flex;
   align-items: center;
@@ -5572,23 +5572,18 @@ html:root .select-screen.team-screen.tm-draft {
   opacity: 0;
   transition: opacity 0.35s ease;
 }
-.center:hover .rinshan-peek .tile.peek::after {
+.rinshan-peek:hover .tile.peek::after {
   opacity: 0.28;
 }
-.center:hover .rinshan-peek .tile.peek .face {
+.rinshan-peek:hover .tile.peek .face {
   opacity: 0.9;
 }
-.center:hover .rinshan-peek .tile.peek {
+.rinshan-peek:hover .tile.peek {
   box-shadow: 0 0 6px rgba(255, 170, 200, 0.85);
 }
 .kan-peek {
   font-size: 11px;
   color: #ffc2d4;
-  opacity: 0;
-  transition: opacity 0.35s ease;
   max-width: 200px;
   text-align: center;
-}
-.center:hover .kan-peek {
-  opacity: 1;
 }
