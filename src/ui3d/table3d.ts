@@ -2068,11 +2068,15 @@ export class Table3D {
     const rel = (slot.wall - me + 4) % 4;
     const flat = this.style === '25d';
     const wallZ = WALL_Z - (flat && rel === 2 ? TOP_WALL_IN_25D : 0);
+    // 左右两边（竖着的）牌山转角那一墩：前面正好是横着那排牌山转角墩的投影，所以投到旁边，转角的空地上
+    const corner = (rel === 1 || rel === 3) && (slot.stack === 1 || slot.stack === STACKS_HALF * 2 - 1);
     // 上层：贴在牌顶上；下层：牌山前面一排
     const out =
       slot.level === 0
         ? this.toWorld(slot.wall, me, x, TILE_T * 2 + 0.006, wallZ, FACE_UP)
-        : this.toWorld(slot.wall, me, x, PROJ_Y, wallZ - TILE_H / 2 - 0.08 - (TILE_H * PROJ_SCALE) / 2, FACE_UP);
+        : corner
+          ? this.toWorld(slot.wall, me, x + Math.sign(x) * WALL_PITCH * 1.35, PROJ_Y, wallZ, FACE_UP)
+          : this.toWorld(slot.wall, me, x, PROJ_Y, wallZ - TILE_H / 2 - 0.08 - (TILE_H * PROJ_SCALE) / 2, FACE_UP);
     if (flat && rel === 1) out.pos.z += RIGHT_WALL_DOWN_25D;
     return out;
   }
