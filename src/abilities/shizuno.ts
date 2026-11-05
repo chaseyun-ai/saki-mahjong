@@ -10,6 +10,11 @@ import type { Ability } from './types';
 // - 每个标记：她自己配牌、进张顺利 5%（配牌换进让向听前进的牌，摸牌换成有效进张）
 // - 满 6 个：宝牌、杠宝牌、里宝牌往对她有利的方向变（宝牌变成她手里最多的牌，别人手里的宝牌换走），
 //   牌山上起一层白雾；之后每多 2 个，雾厚一级
+// - 起雾以后（雾 L 级）还会干扰别人：
+//   · 淡双立直的杠里：不受影响是中四张，雾越浓中得越少（期望 1 级 3 张、2 级 2 张、3 级 1 张、4 级 0 张，doraControl.mistUra）
+//   · 别家立直和牌的里宝牌：每张有 mistUra[L] 的概率避开和牌那家的牌
+//   · 衣的海底：安排好的海底牌，有 L × haiteiFog 的概率被雾遮住，这一局海底不归她（koromo.ts 里掷）
+//   · 姬子拿钥匙的那一局：她的自摸晚 L 巡（前 L 次摸牌不给要的牌）。她的 supreme 照旧，挡不住和牌
 export const SHIZUNO = {
   per: 0.05, // 每个标记的影响
   cap: 0.6, // 削弱别人最多到这么多（12 个标记）
@@ -21,6 +26,9 @@ export const SHIZUNO = {
   mistStep: 2, // 之后每多几个标记雾厚一级
   mistMax: 4, // 雾最厚几级
   dealTries: 4, // 配牌最多换几张（每张按影响的概率换）
+  mistUra: [0, 0.5, 0.65, 0.8, 0.95], // 雾 L 级时，别家立直和牌的每张里宝牌避开和牌那家的概率
+  haiteiFog: 0.25, // 雾每一级让衣安排好的海底被遮住的概率
+  himekoDelay: 1, // 雾每一级让姬子的自摸晚几巡
 };
 
 interface ShizunoGameState {
@@ -55,6 +63,16 @@ export function shizunoMist(g: Game, seat: number): number {
   const m = shizunoMarks(g, seat);
   if (m < SHIZUNO.doraAt) return 0;
   return Math.min(SHIZUNO.mistMax, 1 + Math.floor((m - SHIZUNO.doraAt) / SHIZUNO.mistStep));
+}
+
+// 别家（seat 以外）起雾的稳乃里雾最浓的那一级（没有是 0）。被高维领域、巨引力源压住时雾也不起作用
+export function shizunoMistOver(g: Game, seat: number): number {
+  let best = 0;
+  for (let s = 0; s < 4; s++) {
+    if (s === seat || g.active(s)?.id !== 'shizuno' || g.quelled(s)) continue;
+    best = Math.max(best, shizunoMist(g, s));
+  }
+  return best;
 }
 
 // 指示牌是 indicator 时宝牌是哪种
@@ -92,7 +110,7 @@ const kuroHoldsDora = (g: Game, seat: number): boolean =>
 export const shizunoAbility: Ability & { resetMarks(g: Game, seat: number): void } = {
   id: 'shizuno',
   name: '深山',
-  description: `被动。东一局没有标记，之后牌局每进行一场（本场也算）累计一个深山标记。每个标记让别人的能力每次发动有 ${SHIZUNO.per * 100}% 的概率不起作用，自己的配牌、进张顺利 ${Math.round(SHIZUNO.selfPer * 1000) / 10}%（别人最多受 ${SHIZUNO.cap * 100}% 影响，自己最多顺 ${SHIZUNO.selfCap * 100}%）。满 ${SHIZUNO.doraAt} 个起控制宝牌、杠宝牌、里宝牌：宝牌变成她手里最多的牌，别人该有的宝牌换走；牌山起雾，之后每多 ${SHIZUNO.mistStep} 个雾厚一级。`,
+  description: `被动。东一局没有标记，之后牌局每进行一场（本场也算）累计一个深山标记。每个标记让别人的能力每次发动有 ${SHIZUNO.per * 100}% 的概率不起作用，自己的配牌、进张顺利 ${Math.round(SHIZUNO.selfPer * 1000) / 10}%（别人最多受 ${SHIZUNO.cap * 100}% 影响，自己最多顺 ${SHIZUNO.selfCap * 100}%）。满 ${SHIZUNO.doraAt} 个起控制宝牌、杠宝牌、里宝牌：宝牌变成她手里最多的牌，别人该有的宝牌换走；牌山起雾，之后每多 ${SHIZUNO.mistStep} 个雾厚一级。起雾以后：淡的杠里雾越浓中得越少，别家立直和牌的里宝牌多半不中，衣的海底可能被雾遮住，姬子拿钥匙的那一局自摸晚几巡。`,
 
   // 平行宇宙：深山标记清零，这一局也不算（下一局从 1 个重新数）；雾跟着散掉
   resetMarks(g, seat) {
