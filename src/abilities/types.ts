@@ -110,8 +110,8 @@ export interface Ability {
   forbidsWin?(g: Game, seat: number, target: number): boolean;
   // 不许 target 自摸（衣的海底路线上，别人听了牌也不能自摸）。荣和照样可以
   forbidsTsumo?(g: Game, seat: number, target: number): boolean;
-  // 这一刻谁打的牌都鸣不了（衣在海底路线上立直以后，海底一定轮到她）
-  freezesCalls?(g: Game, seat: number): boolean;
+  // 这一刻 caller 鸣不了别人打的牌（衣在海底路线上听牌、立直以后，海底一定轮到她）
+  freezesCalls?(g: Game, seat: number, caller: number): boolean;
   // 这一局（第 round 局）别人封印不了她（小莳的神乐、和的天使和）
   unsealable?(g: Game, seat: number, round: number): boolean;
   // 这一局是天听配牌：坐庄时第一次摸牌不给天和（淡的天听、照的九莲宝灯、小莳的琼琼杵尊）

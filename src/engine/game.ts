@@ -294,9 +294,9 @@ export class Game {
     return ![0, 1, 2, 3].some((o) => o !== seat && this.binds(o, seat) && !!this.active(o)?.forbidsTsumo?.(this, o, seat));
   }
 
-  // 现在谁打的牌都鸣不了（衣在海底路线上立直以后）。佛灭时不算
-  callsFrozen(): boolean {
-    return !this.fieldVoid() && [0, 1, 2, 3].some((s) => !!this.active(s)?.freezesCalls?.(this, s));
+  // caller 现在鸣不了别人打的牌（衣在海底路线上听牌、立直以后）。佛灭时不算
+  callsFrozen(caller: number): boolean {
+    return !this.fieldVoid() && [0, 1, 2, 3].some((s) => !!this.active(s)?.freezesCalls?.(this, s, caller));
   }
 
   // 这家的能力这一局被别人封印了没有（爽的蛇神威）。round 不写是现在这一局（发牌前是马上要开的那一局）
@@ -930,7 +930,7 @@ export class Game {
       const q = this.players[o];
       const opts: Action[] = [];
       if (this.canWin(o) && this.winResult(o, tile, false)) opts.push({ type: 'ron' });
-      if (this.wall.remaining > 0 && !q.riichi && !this.callsFrozen()) {
+      if (this.wall.remaining > 0 && !q.riichi && !this.callsFrozen(o)) {
         const same = q.hand.filter((t) => kindOf(t) === kind);
         for (const pair of distinctPairs(same)) opts.push({ type: 'pon', tiles: pair });
         if (same.length === 3 && this.totalKans() < 4) opts.push({ type: 'daiminkan' });

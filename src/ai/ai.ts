@@ -295,7 +295,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   }
 
   const tsumo = find('tsumo');
-  if (tsumo && !(style.streak && teruWaits(g, seat, true)) && !(style.waves && nellyHolds(g, seat, true)) && !growHolds(g, seat, style, true) && !seraHolds(g, seat, style, true) && !allLastHold(g, seat, true)) return tsumo;
+  if (tsumo && !(style.streak && teruWaits(g, seat, true)) && !(style.waves && nellyHolds(g, seat, true)) && !growHolds(g, seat, style, true) && !seraHolds(g, seat, style, true) && !koromoHolds(g, seat, style, true) && !allLastHold(g, seat, true)) return tsumo;
 
   // 白望的迷途之家：这一次发动了就照算出来的打（不立直，反正会自摸）
   if (style.mayoiga) {
@@ -466,8 +466,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const aimOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.aim - x.aim || y.fit - x.fit : 0);
   // 灼听牌时：两种听法都有牌可和，挑保龄球型（希腊教堂最好），比留筒子还要紧
   const bowlOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.bowl - x.bowl : 0);
+  // 衣：海底路线上听着牌，海底一定是她的和了牌，听几张无所谓：先留宝牌（打点王）
+  const haiteiRich = style.haitei && !sealed && koromoRouteOn(g, seat);
+  const richOrder = (x: Cand, y: Cand) =>
+    haiteiRich && x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? (isDoraTile(g, x.a.tile) ? 1 : 0) - (isDoraTile(g, y.a.tile) ? 1 : 0) : 0;
   const attackOrder = (x: Cand, y: Cand) =>
-    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
+    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || richOrder(x, y) || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
   cands.sort(attackOrder);
   // 怜：假设打掉现在最想打的那张，演算自己下一次摸到什么，按它重排。
   // 失误先掷（随机数用掉的时刻和别人一样），再演算：演算拿到的随机数和之后真的牌局一致
@@ -808,6 +812,15 @@ function seraHolds(g: Game, seat: number, style: AiStyle, tsumo: boolean): boole
   return !!r && teruWinValue(r, tsumo, seat === g.dealer) < bigEnough(g, seat, SERA.mangan);
 }
 
+// 衣：海底路线上（海底归她），不到满贯（庄家 1.5 倍）的和先不和，等海底自摸（立直一发自摸海底再加宝牌）
+function koromoHolds(g: Game, seat: number, style: AiStyle, tsumo: boolean): boolean {
+  if (!style.haitei || g.isSealed(seat) || g.wall.remaining === 0 || !koromoRouteOn(g, seat)) return false;
+  const p = g.players[seat];
+  const tile = tsumo ? p.drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
+  const r = g.winResult(seat, tile, tsumo);
+  return !!r && teruWinValue(r, tsumo, seat === g.dealer) < bigEnough(g, seat, KOROMO.holdUnder);
+}
+
 // 堇：只和瞄准的那家打的牌（牌山快摸完了才谁打的都和）
 function sumireSkips(g: Game, seat: number, style: AiStyle): boolean {
   if (!style.sniper || g.wall.remaining <= SUMIRE.anyRon) return false;
@@ -899,7 +912,7 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (style.cornerKan && awaiStarPlan(g, seat)) return legal.find((a) => a.type === 'ron') ?? pass;
   const ron = legal.find((a) => a.type === 'ron');
   // 淡：等转角暗杠自摸，不荣和
-  if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false)) && !growHolds(g, seat, style, false) && !seraHolds(g, seat, style, false) && !sumireSkips(g, seat, style) && !allLastHold(g, seat, false)) return ron;
+  if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false)) && !growHolds(g, seat, style, false) && !seraHolds(g, seat, style, false) && !koromoHolds(g, seat, style, false) && !sumireSkips(g, seat, style) && !allLastHold(g, seat, false)) return ron;
   // 涅莉押了运势的局不鸣牌，门清做大
   if (style.waves && nellyTier(g, seat) > 0) return pass;
   // 透华治水：牌局平静如水，自己也不鸣
