@@ -5,6 +5,7 @@ import { shanten } from '../engine/shanten';
 import { EAST, KIND_COUNT, Kind, TileId, doraFromIndicator, isRed, kindOf, toCounts } from '../engine/tiles';
 import { isDoraTile, kuroLost } from './kuro';
 import { riiKeys } from './rii';
+import { SHIZUNO, shizunoMistOver } from './shizuno';
 import { PRIORITY, type Ability, type BindKey, type DealRule } from './types';
 
 // 鹤田姬子（新道寺）：只在白水哩拿到钥匙的那一局发动（别的局是普通人）。
@@ -399,6 +400,8 @@ export const himekoAbility: Ability = {
     }
     const plan = himekoPlan(g, seat);
     if (!plan || rinshan) return;
+    // 稳乃的雾：前 L 次摸牌看不清牌山，不给要的牌（自摸晚 L 巡）。别人的进张照样压住
+    if (g.players[seat].discards.length < shizunoMistOver(g, seat) * SHIZUNO.himekoDelay) return;
     const missing = himekoMissing(g, seat, plan);
     if (!missing.length) return;
     const first = missing.filter((k) => k !== plan.win);

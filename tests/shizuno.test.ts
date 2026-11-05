@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
+import { settleUra, tilesOf } from '../src/abilities/doraControl';
 import { SHIZUNO, shizunoAbility, shizunoDora, shizunoMarks, shizunoMist, shizunoPower } from '../src/abilities/shizuno';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
@@ -104,7 +105,8 @@ describe('高鸭稳乃', () => {
 
   it('配牌、进张随标记变顺：她和牌比三家没有能力的对手多', () => {
     const wins = [0, 0, 0, 0];
-    for (let seed = 1; seed <= 10; seed++) {
+    // 10 场太少，随机数稍有变化就翻过来；30 场稳定
+    for (let seed = 1; seed <= 30; seed++) {
       const g = newGame(seed, PLAIN);
       g.onEvent((e) => {
         if (e.type === 'roundEnd') for (const w of e.result.wins) wins[w.seat]++;
@@ -144,4 +146,83 @@ describe('深山削弱别人的能力不会弄坏别人的状态', () => {
       }
     }
   }, 120000);
+});
+
+// 一开局就让稳乃有 12 个深山标记（雾 4 级）：平行宇宙清空时记的那一局往前挪
+function deepMist(g: Game, seat: number, marks = 12) {
+  (g.abilityGameState[seat] as { reset?: number }).reset = g.round - marks;
+}
+
+describe('高鸭稳乃：起雾以后干扰别人', () => {
+  // 雾 L 级要几个标记：6 个 1 级，之后每 2 个一级
+  const marksFor = (L: number) => SHIZUNO.doraAt + (L - 1) * SHIZUNO.mistStep;
+
+  it('淡的杠里：不受影响中四张（暗刻那种），雾 2 级最多中 2 张、3 级最多 1 张、4 级一张也不中', () => {
+    let checked = 0;
+    for (const [L, cap] of [[2, 2], [3, 1], [4, 0]]) {
+      for (let seed = 1; seed <= 12; seed++) {
+        const ids = ['shizuno', 'awai', 'izumi', 'izumi'];
+        const g = newGame(seed, ids);
+        deepMist(g, 0, marksFor(L));
+        expect(shizunoMist(g, 0)).toBe(L);
+        const kan = (g.abilityState[1] as { kanKind?: number }).kanKind;
+        if (kan === undefined) continue;
+        // 当成淡已经暗杠、杠里指示牌是第 1 张里宝牌，立直自摸
+        (g.abilityState[1] as { kanUra?: number }).kanUra = 0;
+        g.players[1].riichi = true;
+        g.wall.bringToUra(0, (t) => doraFromIndicator(kindOf(t)) === kan, g.rng);
+        const theirs = toCounts(tilesOf(g, 1));
+        expect(theirs[kan]).toBeGreaterThan(cap);
+        settleUra(g, [1]);
+        expect(theirs[doraFromIndicator(kindOf(g.wall.uraIndicators[0]))]).toBeLessThanOrEqual(cap);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+  });
+
+  it('别家立直和牌：雾 4 级时里宝牌几乎都避开和牌那家的牌', () => {
+    let n = 0;
+    let clean = 0;
+    for (let seed = 1; seed <= 60; seed++) {
+      const g = newGame(seed, PLAIN);
+      deepMist(g, 0);
+      g.players[2].riichi = true;
+      settleUra(g, [2]);
+      n++;
+      if (toCounts(tilesOf(g, 2))[doraFromIndicator(kindOf(g.wall.uraIndicators[0]))] === 0) clean++;
+    }
+    expect(clean / n).toBeGreaterThan(0.85);
+  });
+
+  it('衣：雾 4 级时海底一定被遮住，一次海底捞月也和不到', () => {
+    const ids = ['shizuno', 'koromo', 'izumi', 'izumi'];
+    let fogged = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const g = newGame(seed, ids);
+      deepMist(g, 0);
+      g.onEvent((e) => {
+        if (e.type === 'ability' && e.seat === 1) expect(e.text).not.toBe('海底捞月');
+        if (e.type === 'roundEnd' && (g.abilityState[1] as { fogged?: boolean }).fogged) fogged++;
+      });
+      play(g, ids);
+    }
+    expect(fogged).toBeGreaterThan(0);
+  }, 240000);
+
+  it('姬子拿钥匙的那一局：雾 4 级时照样自摸，只是晚了 4 巡以上', () => {
+    const ids = ['himeko', 'shizuno', 'izumi', 'izumi'];
+    for (let seed = 1; seed <= 6; seed++) {
+      const g = new Game({ seed, format: 'east', keys: [[{ label: '东1局 0本场', round: 1, bind: 3, broken: false }], [], [], []], players: ids.map((id) => ({ name: id, ability: byId(id).ability })) });
+      deepMist(g, 1);
+      let steps = 0;
+      while (g.phase !== 'roundEnd' && ++steps < 5000) {
+        const s = g.waitingSeats()[0];
+        g.act(s, chooseAction(g, s, byId(ids[s]).ai));
+      }
+      const win = g.roundResult!.wins.find((w) => w.seat === 0);
+      expect(win?.from).toBeNull();
+      expect(g.players[0].discards.length).toBeGreaterThanOrEqual(4);
+    }
+  }, 60000);
 });
