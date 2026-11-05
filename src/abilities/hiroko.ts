@@ -6,13 +6,12 @@ import { hatsumiOpen } from './hatsumi';
 import { isDoraTile, kuroLost } from './kuro';
 import { seraYakuhai } from './sera';
 import { isHigh, suzuBurst } from './suzu';
-import { warmKind } from './yu';
 
 // 船久保浩子（千里山）：没有能力，是队里的数据分析担当。看过所有对手的牌谱，知道每个能力者靠什么和牌、怎么打断。
 // 电脑的浩子（AiStyle.scout）照“经验”打：
-// - 鸣牌打断：手绘板画着的爱丽丝（一鸣就碎）、立直一发巡的怜和龙华（错开先见到的那张）、立直的能力者（错开摸牌顺序），
-//   有役、不退向听就鸣（没役的鸣牌和不了，只会一直放铳，不做）；衣的海底每局都去错开（和咲、久她们一样）
-// - 防守：知道能力者要的是什么牌，那家要防的时候，那些牌当成更危险的牌
+// - 鸣牌打断：手绘板画着的爱丽丝（一鸣就碎）、立直一发巡的怜和龙华（错开先见到的那张），有役、不退向听就鸣
+//   （没役的鸣牌和不了，只会一直放铳，不做）；衣的海底每局都去错开（和咲、久她们一样）
+// - 防守：知道能力者要的是什么牌，那家要防的时候，那些牌当成更危险的牌；进张一样多时先打能力者不要的牌
 // 只用桌上看得见的东西（谁坐在哪、手绘板、立直、副露、宝牌），不偷看手牌和牌山
 export const HIROKO = {
   minWall: 8, // 牌山剩这么多以上才为了打断而鸣
@@ -33,7 +32,7 @@ export const HIROKO_NOTES: Record<string, string> = {
   nelly: '押了运势的局会在固定的巡目和，挡不住三倍满',
   sawaya: '云和神威：云的颜色就是她要的牌',
   yuuki: '东场最强，南场没劲：东场别硬拼',
-  yu: '万子、中、赤五和一三五七九筒、五七九索往她手里聚',
+  yu: '万子、中、赤五和一三五七九筒、五七九索往她手里聚：她染万子时万子危险',
   ako: '鸣得越多摸得越顺，看得出谁离听牌近',
   seiko: '鸣满三次以后两巡内自摸：鸣到两次就防',
   mako: '记得住没有能力的人的打牌习惯',
@@ -94,8 +93,6 @@ export function hirokoBias(g: Game, seat: number, threat: number, k: Kind): numb
       return suzuBurst(g, threat) && isHigh(k) ? 3 : 0;
     case 'arata':
       return isPin(k) && (k === 12 || k >= 14) ? 4 : 0;
-    case 'yu':
-      return warmKind(k) ? 2 : 0;
     case 'hatsumi':
       return hatsumiOpen(g, threat) && (k === SOUTH || k === WEST) ? 8 : 0;
     case 'kuro':

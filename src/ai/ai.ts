@@ -487,7 +487,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 灼听牌时：两种听法都有牌可和，挑保龄球型（希腊教堂最好），比留筒子还要紧
   const bowlOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.bowl - x.bowl : 0);
   const attackOrder = (x: Cand, y: Cand) =>
-    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || bowlOrder(x, y) || keep(x) - keep(y) || x.feed - y.feed || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.val - y.val;
+    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.feed - y.feed || x.val - y.val;
   cands.sort(attackOrder);
   // 怜：假设打掉现在最想打的那张，演算自己下一次摸到什么，按它重排。
   // 失误先掷（随机数用掉的时刻和别人一样），再演算：演算拿到的随机数和之后真的牌局一致
@@ -1003,9 +1003,9 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   }
 
   // 恭子：桌上有能力起作用的人，就鸣牌打乱流向（不退向听就鸣；有能力的人立直了，没役也鸣）
-  // 浩子：看得见手绘板、一发巡的先见、立直的能力者，有役、不退向听就鸣打断
+  // 浩子：手绘板画着、一发巡里的先见，有役、不退向听就鸣打断
   const scout = style.scout && !g.isSealed(seat) ? hirokoDisrupt(g, seat) : null;
-  const disrupt = (style.disrupt && !g.isSealed(seat) && g.wall.remaining >= KYOUKO.aiMinWall && kyoukoTargets(g, seat).length > 0) || !!scout?.any;
+  const disrupt = (style.disrupt && !g.isSealed(seat) && g.wall.remaining >= KYOUKO.aiMinWall && kyoukoTargets(g, seat).length > 0) || !!scout?.urgent;
   // 浩子不为打断做没役的鸣牌（鸣了和不了，只会一直放铳）
   const disruptAny = !!style.disrupt && disrupt && kyoukoTargets(g, seat).some((s) => g.seesRiichi(s, seat));
   // 纯：别人立直了、牌山还多时，有役不退向听就鸣，错开流向（别人一巡不进张，立直的人摸不到和了牌）
