@@ -1,6 +1,6 @@
 import type { Character } from '../abilities/characters';
 import type { BindKey } from '../abilities/types';
-import { POSITIONS, TIERS, TeamRun, isSub } from '../team/team';
+import { POSITIONS, TEAMS, TIERS, TeamRun, isSub } from '../team/team';
 import { cutinArt, portraitUrl } from '../ui3d/looks';
 
 // 团体赛拟真的几个画面（选人、布阵、队伍点数板、最终结果）。牌局本身还是 App 来打：
@@ -19,7 +19,10 @@ export class TeamFlow {
   private timer: number | null = null;
   private deadline = 0;
   private sel: number | null = null; // 布阵时点了哪个位置
-  private focus: string | null = null; // 选人时大立绘放的是谁
+  private focus: string | null = null; // 选人时大卡放的是谁
+  private armed: string | null = null; // 玩家点过一次的候选，再点一下就选她
+  private descOpen = false; // 大卡的能力说明展开了没有
+  private pop = false; // 刚有人选完：这次画面里上一手的气泡和牌要弹一下
   private screen: 'draft' | 'lineup' | 'board' | 'final' = 'draft';
 
   constructor(
@@ -60,31 +63,57 @@ export class TeamFlow {
     const team = run.picker()!;
     if (!run.teams[team].human) {
       this.timer = window.setTimeout(() => {
-        // 电脑选了谁，大立绘就换成谁，看得清被拿走的是哪位
+        // 电脑选了谁，大卡就换成谁，看得清被拿走的是哪位
         const c = run.aiPick();
         if (c) this.focus = c.id;
+        this.armed = null; // 点过的不算数了：轮到自己时要重新点两下才选
+        this.descOpen = false;
+        this.pop = true;
         this.draft();
       }, AI_PICK_MS);
     }
   }
 
-  private mini(c: Character): string {
-    return `<span class="tm-mini" style="--c:${c.color}">${c.name.slice(-1)}${isSub(c) ? '' : `<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" />`}</span>`;
+  // 麻将牌样子的角色卡：牌面上是头像（没有就是名字最后一个字），左上角写费用
+  private tile(c: Character, cls = '', attrs = '', extra = ''): string {
+    const img = isSub(c) ? '' : `<img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" />`;
+    return `<${attrs ? 'button' : 'div'} class="tmd-tile${cls}" style="--c:${c.color}"${attrs}><span class="tmd-cn">${c.cost}</span><span class="tmd-pic"><b>${c.name.slice(-1)}</b>${img}</span><span class="tmd-nm">${c.name}</span>${extra}</${attrs ? 'button' : 'div'}>`;
   }
 
-  // 大立绘那里放谁：点过的那位；轮到玩家时她要是被拿走了，换成这一档还没被选的第一个（真人优先于替补）
+  // 大卡放谁：点过的那位；轮到玩家时她要是被电脑拿走了，换成这一档还没被选的第一个（真人优先于替补）。
+  // 玩家自己去点被选走的牌，就照样放她（看能力，按钮是「已被选走」）
   private focused(): Character {
     const run = this.run;
     const pool = run.pool.get(run.tier) ?? [];
     const free = pool.filter((c) => run.takenBy(c) === null);
     const f = pool.find((c) => c.id === this.focus);
     const mine = run.teams[run.picker()!].human;
-    const c = f && !(mine && run.takenBy(f) !== null) ? f : (free.find((x) => !isSub(x)) ?? free[0] ?? pool[0]);
+    const keep = f && (!(mine && run.takenBy(f) !== null) || this.armed === f.id);
+    const c = keep ? f : (free.find((x) => !isSub(x)) ?? free[0] ?? pool[0]);
     this.focus = c.id;
     return c;
   }
 
-  // 格斗游戏式：左边大立绘和能力说明，底下一排这一档的候选，右边自己队的五个位置和别的队
+  // 上一手：哪一队选了谁（还没人选过是 null）
+  private lastPick(): { team: number; c: Character } | null {
+    const run = this.run;
+    const k = run.tierIdx * TEAMS.length + run.turn - 1;
+    if (k < 0) return null;
+    const tierIdx = Math.floor(k / TEAMS.length);
+    const team = run.order(TIERS[tierIdx])[k % TEAMS.length];
+    return { team, c: run.teams[team].picks[tierIdx] };
+  }
+
+  // 座位：玩家坐下面，按 5 费档的选人顺序逆时针往下排（下家在右，对家在上，上家在左）。
+  // 这样蛇形就是“这一档逆时针，下一档顺时针”
+  private seatOf(team: number): 's' | 'e' | 'n' | 'w' {
+    const first = this.run.first;
+    const k = (first.indexOf(team) - first.indexOf(this.run.human) + 4) % 4;
+    return (['s', 'e', 'n', 'w'] as const)[k];
+  }
+
+  // 四队围一桌：上、左、右三队和下面的自己各坐一边，桌子中间是起家指示器和这一档的候选（麻将牌），
+  // 右下角是点中的那位的切入图、能力和「就选她」
   private renderDraft(): void {
     const run = this.run;
     const team = run.picker()!;
@@ -92,53 +121,95 @@ export class TeamFlow {
     const me = this.me;
     const f = this.focused();
     const fBy = run.takenBy(f);
+    const order = run.order();
+    const ccw = (5 - run.tier) % 2 === 0;
+    const no = run.tierIdx * TEAMS.length + run.turn + 1;
+    const last = this.lastPick();
+    const pop = this.pop;
+    this.pop = false;
     const desc = (c: Character) => c.ability?.description ?? (isSub(c) ? '替补选手：没有能力，牌效一般。' : '不靠能力，只靠扎实的牌效和防守。');
     const abil = (c: Character) => c.ability?.name ?? (isSub(c) ? '替补' : '无能力');
-    const order = run
-      .order()
-      .map((t, k) => `<span class="tm-order-item${k === run.turn ? ' on' : k < run.turn ? ' done' : ''}" style="--t:${run.teams[t].color}">${run.teams[t].name}</span>`)
-      .join('<span class="tm-arrow">→</span>');
-    const art = isSub(f) ? '' : `<img class="tmd-art" src="${cutinArt(f.id, 'ability').url}" alt="" onerror="this.remove()" />`;
-    const stamp = fBy !== null ? `<div class="tmd-stamp" style="--t:${run.teams[fBy].color}">${run.teams[fBy].name}<small>已选</small></div>` : '';
-    const thumbs = (run.pool.get(run.tier) ?? [])
+    const cost = (t: number) => run.teams[t].picks.reduce((s, c) => s + c.cost, 0);
+
+    const seat = (t: number): string => {
+      const T = run.teams[t];
+      const tiles = TIERS.map((tier, k) => {
+        const c = T.picks[k];
+        if (c) return this.tile(c, last && pop && last.c.id === c.id ? ' fresh' : '');
+        if (T.human && tier === run.tier && mine && fBy === null) return this.tile(f, ' ghost');
+        return `<div class="tmd-tile blank${tier === run.tier ? ' now' : ''}">${tier}<small>费</small></div>`;
+      }).join('');
+      const bubble = last && last.team === t ? `<div class="tmd-bubble${pop ? ' pop' : ''}"><b>${T.name}</b>选了${last.c.name}</div>` : '';
+      const turn = t === team ? (T.human ? '<em>轮到你</em>' : '<em>在选……</em>') : '';
+      return `<div class="tmd-seat ${this.seatOf(t)}${t === team ? ' on' : ''}${T.human ? ' mine' : ''}" style="--t:${T.color}">
+          <div class="tmd-lab"><span class="tmd-ord">${order.indexOf(t) + 1}</span><b>${T.name}${T.human ? '<small>（你）</small>' : ''}</b><span class="tmd-sum">${cost(t)} 费</span>${turn}</div>
+          <div class="tmd-tiles">${tiles}</div>${bubble}
+        </div>`;
+    };
+
+    const pool = run.pool.get(run.tier) ?? [];
+    const free = pool.filter((c) => run.takenBy(c) === null).length;
+    // 候选排一行；多了排两行、三行，每行差不多一样多
+    const rows = pool.length <= 7 ? 1 : pool.length <= 16 ? 2 : 3;
+    const tiles = pool
       .map((c) => {
         const by = run.takenBy(c);
-        const tag = by !== null ? `<span class="tm-tag" style="--t:${run.teams[by].color}">${run.teams[by].name}</span>` : '';
-        return `<button class="tmd-thumb${c.id === f.id ? ' sel' : ''}${by !== null ? ' taken' : ''}" data-team-focus="${c.id}" style="--c:${c.color}">${this.mini(c)}<span>${c.name}</span>${tag}</button>`;
+        const tag = by !== null ? `<span class="tmd-tag" style="--t:${run.teams[by].color}">${run.teams[by].name}</span>` : '';
+        const label = `${c.name}，${abil(c)}${by !== null ? `，${run.teams[by].name}已选` : ''}`;
+        return this.tile(c, `${by !== null ? ' back' : ''}${c.id === f.id ? ' sel' : ''}`, ` data-team-focus="${c.id}" aria-label="${label}"`, tag);
       })
       .join('');
+    const sides = (['n', 'w', 's', 'e'] as const)
+      .map((d) => {
+        const t = [0, 1, 2, 3].find((i) => this.seatOf(i) === d)!;
+        const k = order.indexOf(t);
+        return `<i class="${d}${k === run.turn ? ' on' : k < run.turn ? ' done' : ''}" style="--t:${run.teams[t].color}"></i>`;
+      })
+      .join('');
+
+    const art = isSub(f) ? '' : `<img src="${cutinArt(f.id, 'ability').url}" alt="" onerror="this.remove()" />`;
+    const stamp = fBy !== null ? `<div class="tmd-stamp" style="--t:${run.teams[fBy].color}">${run.teams[fBy].name}<small>已选</small></div>` : '';
     const go = mine
       ? `<button class="primary tmd-go" data-team="pick"${fBy !== null ? ' disabled' : ''}>${fBy !== null ? '已被选走' : '就选她'}</button>`
       : `<button class="primary tmd-go" disabled>${run.teams[team].name}在选……</button>`;
-    const roster = TIERS.map((tier, k) => {
-      const c = me.picks[k];
-      const open = tier === run.tier && !c;
-      const body = c
-        ? `${this.mini(c)}<span class="tmd-who"><b>${c.name}</b><small>${abil(c)}</small></span>`
-        : open && mine && fBy === null
-          ? `${this.mini(f).replace('tm-mini', 'tm-mini ghost')}<span class="tmd-who"><b>${f.name}？</b><small>正在选</small></span>`
-          : `<span class="tmd-who"><small>${open ? '这一档' : '待选'}</small></span>`;
-      return `<div class="tmd-slot${open ? ' open' : ''}" style="--c:${c?.color ?? 'transparent'}"><span class="tmd-cost">${tier}</span>${body}</div>`;
-    }).join('');
-    const others = run.teams
-      .map((t, i) => (t.human ? '' : `<div class="tmd-other${i === team ? ' on' : ''}" style="--t:${t.color}"><span class="tmd-tname">${t.name}</span>${TIERS.map((_, k) => (t.picks[k] ? this.mini(t.picks[k]) : '<span class="tm-mini empty"></span>')).join('')}</div>`))
-      .join('');
+    const hint = mine ? (fBy !== null ? '换一位还没被选的' : `放进${me.name}的 ${run.tier} 费`) : '先看看，轮到你再选';
+
     this.root.innerHTML = `
       <div class="select-screen team-screen tm-draft">
-        <div class="tm-head tmd-head"><button class="lab-entry" data-team="exit">← 退出</button><h1>团体赛 · 选人</h1><div class="tm-order"><b>${run.tier} 费</b>${order}</div></div>
-        <section class="tmd-stage" style="--c:${f.color}">
-          ${art}<span class="tmd-letter">${f.name.slice(-1)}</span>${stamp}
-          <div class="tmd-plate"><div class="tmd-badge">${f.cost}<small>费</small></div><div><div class="tmd-name">${f.name}</div><div class="tmd-school">${f.school}</div></div></div>
-          <div class="tmd-desc"><div class="tmd-abil">${abil(f)}</div><p>${desc(f)}</p></div>
-        </section>
-        <div class="tmd-pick"><div class="tmd-thumbs">${thumbs}</div>${go}</div>
-        <aside class="tmd-side">
-          <h3 style="--t:${me.color}">${me.name}（你）</h3>
-          <div class="tmd-roster">${roster}</div>
-          <h3>其他队</h3>${others}
-          <p class="tmd-rule">每队每档选一人，正好 15 费。顺序是蛇形的：这一档先选的，下一档最后选。</p>
-        </aside>
+        <div class="tmd-bar"><button class="lab-entry" data-team="exit">← 退出</button><h1>团体赛 · 选人</h1><span class="tmd-rule">每档每队选一人，正好 15 费 · 这一档${ccw ? '逆' : '顺'}时针轮，下一档反过来</span></div>
+        ${[0, 1, 2, 3].filter((t) => !run.teams[t].human).map(seat).join('')}
+        <div class="tmd-felt">
+          <div class="tmd-compass">${sides}<div><div class="tmd-tier">${run.tier}<small>费</small></div><div class="tmd-no">第 <b>${no}</b> / ${TIERS.length * TEAMS.length} 手</div><div class="tmd-dir">${ccw ? '↺ 逆时针' : '↻ 顺时针'}</div></div></div>
+          <div class="tmd-pool">
+            <div class="tmd-pool-head"><b>${run.tier} 费档</b><span>${pool.length} 人 · 还剩 ${free} 人 · 点一下看能力${mine ? '，再点一下就选她' : ''}</span></div>
+            <div class="tmd-grid" style="--cols:${Math.ceil(pool.length / rows)}">${tiles}</div>
+          </div>
+        </div>
+        <div class="tmd-me">
+          ${seat(run.human)}
+          <div class="tmd-card${this.descOpen ? ' open' : ''}" style="--c:${f.color}"><div class="tmd-card-in">
+            <div class="tmd-art"><span class="tmd-letter">${f.name.slice(-1)}</span>${art}${stamp}</div>
+            <div class="tmd-info">
+              <div class="tmd-nmr"><b class="tmd-name">${f.name}</b><span class="tmd-badge">${f.cost}<small>费</small></span><span class="tmd-school">${f.school}</span></div>
+              <div class="tmd-abil">${abil(f)}</div>
+              <p class="tmd-desc">${desc(f)}</p>
+              <div class="tmd-acts">${go}<span class="tmd-hint">${hint}</span><button class="tmd-more" data-team="desc-more" hidden>${this.descOpen ? '收起' : '展开全文'}</button></div>
+            </div>
+          </div></div>
+        </div>
       </div>`;
+    this.fitDesc();
+  }
+
+  // 说明太长：先截住、淡出，给一个「展开全文」，展开时卡片往上长，盖住桌面
+  private fitDesc(): void {
+    const card = this.root.querySelector<HTMLElement>('.tmd-card');
+    const desc = card?.querySelector<HTMLElement>('.tmd-desc');
+    const more = card?.querySelector<HTMLElement>('.tmd-more');
+    if (!card || !desc || !more) return;
+    const clipped = this.descOpen || desc.scrollHeight > desc.clientHeight + 2;
+    card.classList.toggle('clipped', clipped);
+    more.hidden = !clipped;
   }
 
   // ---------- 布阵 ----------
@@ -263,13 +334,29 @@ export class TeamFlow {
 
   // ---------- 点击 ----------
 
+  // 玩家选大卡上的那位。选上了返回 true
+  private pickFocus(): boolean {
+    const run = this.run;
+    if (!this.focus || !run.pick(run.human, this.focus)) return false;
+    this.armed = null;
+    this.descOpen = false;
+    this.pop = true;
+    this.draft();
+    return true;
+  }
+
   private onClick = (e: Event): void => {
     if (!this.root.querySelector('.team-screen')) return;
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-team],[data-team-focus],[data-team-pos]');
     if (!el) return;
     const run = this.run;
     if (el.dataset.teamFocus && this.screen === 'draft') {
-      this.focus = el.dataset.teamFocus;
+      const id = el.dataset.teamFocus;
+      // 像打麻将点牌：点一下抬起来看能力，再点一下就选她
+      if (this.armed === id && this.focus === id && this.pickFocus()) return;
+      if (this.focus !== id) this.descOpen = false;
+      this.focus = id;
+      this.armed = id;
       this.renderDraft();
       return;
     }
@@ -290,7 +377,13 @@ export class TeamFlow {
         this.hooks.exit();
         return;
       case 'pick':
-        if (this.screen === 'draft' && this.focus && run.pick(run.human, this.focus)) this.draft();
+        if (this.screen === 'draft') this.pickFocus();
+        return;
+      case 'desc-more':
+        if (this.screen !== 'draft') return;
+        this.descOpen = !this.descOpen;
+        this.root.querySelector('.tmd-card')?.classList.toggle('open', this.descOpen);
+        el.textContent = this.descOpen ? '收起' : '展开全文';
         return;
       case 'lineup-done':
         this.board();
