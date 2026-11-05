@@ -19,7 +19,7 @@ for (let seed = 1; seed <= games; seed++) {
   const rng = new Rng(seed * 7919 + 13);
   const order = rng.shuffle([...chars]);
   const seatOf = (id: string) => order.findIndex((c) => c.id === id);
-  const aw = seatOf('awai'), ne = seatOf('nelly'), sh = seatOf('shizuno'), sk = seatOf('saki');
+  const aw = seatOf('awai'), ne = seatOf('nelly'), sk = seatOf('saki');
   const g = new Game({ seed: seed * 31 + 7, format: 'south', startScore: start, players: order.map((c) => ({ name: c.name, ability: c.ability })) });
   let firstDiscard = new Set<number>(); let awaiDR = false; let awaiKanUra = false; let nellyBet = false; let mist = false; let betTier = 0;
   g.onEvent((e: any) => {
