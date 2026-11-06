@@ -39,6 +39,10 @@ import { haruAbility } from './haru';
 import { hatsumiAbility } from './hatsumi';
 import { junAbility } from './jun';
 import { tokaAbility } from './toka';
+import { kanaAbility } from './kana';
+import { kaoriAbility } from './kaori';
+import { yumiAbility } from './yumi';
+import { kinueAbility } from './kinue';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -81,6 +85,9 @@ export interface AiStyle {
   winds?: boolean; // 薄墨初美：风牌能碰就碰、能杠就杠，留着风牌；东北鸣出来以后奔小四喜，能鸣就鸣
   kuromame?: boolean; // 泷见春：别人立直以后不立直，能吃就吃（小牌快和）
   jam?: boolean; // 井上纯：别人立直了、牌山还多时，有役不退向听就鸣，用鸣牌错开流向
+  scout?: boolean; // 船久保浩子：知道别人的能力，鸣牌打断（手绘板、一发巡的先见、立直的能力者、衣的海底），防守时能力者要的牌当危险牌
+  beginner?: boolean; // 妹尾佳织：新手运拿到役满听牌的局只摸切、不鸣牌
+  pin1?: boolean; // 爱宕娟慧：留着一筒
   twin: boolean; // 鹤田姬子：钥匙的那一局只照着那副牌打，先打不要的牌，不立直、不鸣牌、不荣和，等自摸
 }
 
@@ -96,6 +103,8 @@ export interface Character {
   // 素材页给这几个技能各留一个动画槽，发动时放这一段（name 和能力发动时出的字一样）
   // label、hint 是素材页上格子的名字和说明，不写按 name 来
   skillArts?: { id: string; name: string; label?: string; hint?: string }[];
+  // 没有能力的人的介绍（选人页、照魔镜里代替“无能力”的说明）
+  note?: string;
 }
 
 export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false, gods: false, rokuyou: false, dama: false, stealth: false, twin: false };
@@ -537,6 +546,133 @@ export const CHARACTERS: Character[] = [
     color: '#4a6aa8',
     ability: null,
     ai: { ...baseAi, mistakeRate: 0.05 },
+  },
+  // 风越女子：福路美穗子以外的四人（先锋美穗子、次锋未春、中坚星夏、副将纯代、大将华菜）
+  {
+    id: 'miharu',
+    cost: 1,
+    name: '吉留未春',
+    school: '风越女子',
+    color: '#5a8fc0',
+    ability: null,
+    ai: { ...baseAi, mistakeRate: 0.06 },
+  },
+  {
+    id: 'seika',
+    cost: 1,
+    name: '文堂星夏',
+    school: '风越女子',
+    color: '#c06a8a',
+    ability: null,
+    ai: { ...baseAi, mistakeRate: 0.06 },
+  },
+  {
+    id: 'sumiyo',
+    cost: 1,
+    name: '深堀纯代',
+    school: '风越女子',
+    color: '#6a7a5a',
+    ability: null,
+    ai: { ...baseAi, mistakeRate: 0.05 },
+  },
+  {
+    id: 'kana',
+    cost: 2,
+    name: '池田华菜',
+    school: '风越女子',
+    color: '#e08a3a',
+    ability: kanaAbility,
+    ai: { ...baseAi, mistakeRate: 0.06 },
+  },
+  // 鹤贺学园：东横桃子以外的四人（先锋睦月、次锋佳织、中坚智美、副将桃子、大将由美）
+  {
+    id: 'mutsuki',
+    cost: 1,
+    name: '津山睦月',
+    school: '鹤贺学园',
+    color: '#5a6a8a',
+    ability: null,
+    ai: { ...baseAi, mistakeRate: 0.06 },
+  },
+  {
+    id: 'kaori',
+    cost: 1,
+    name: '妹尾佳织',
+    school: '鹤贺学园',
+    color: '#d88aa8',
+    ability: kaoriAbility,
+    skillArts: [{ id: 'beginner', name: '新手运', hint: '配牌是役满听牌的那一局开头放这一段' }],
+    // 完全的新手，常常看漏
+    ai: { ...baseAi, mistakeRate: 0.15, beginner: true },
+  },
+  {
+    id: 'satomi',
+    cost: 1,
+    name: '蒲原智美',
+    school: '鹤贺学园',
+    color: '#c8a25a',
+    ability: null,
+    ai: { ...baseAi, mistakeRate: 0.06 },
+  },
+  {
+    id: 'yumi',
+    // 南风战对随机能力者平均顺位 2.47，和 3 费一档
+    cost: 3,
+    name: '加治木由美',
+    school: '鹤贺学园',
+    color: '#3a4a6a',
+    ability: yumiAbility,
+    // 冷静的部长代理，很少失误
+    ai: { ...baseAi, mistakeRate: 0.02 },
+  },
+  // 千里山女子：数据分析担当
+  {
+    id: 'hiroko',
+    cost: 2,
+    name: '船久保浩子',
+    school: '千里山女子',
+    color: '#7a5aa8',
+    ability: null,
+    note: '没有能力，是千里山的数据分析担当。看过所有对手的牌谱，知道每个能力者靠什么和牌：电脑的浩子会鸣牌打断手绘板、一发巡的先见、立直的能力者和衣的海底，防守时把能力者要的牌当成危险牌。玩家用浩子时，对手头像上的“资”能看到她的资料本。',
+    ai: { ...baseAi, mistakeRate: 0.02, scout: true },
+  },
+  // 新道寺女子：次锋美子、中坚仁美
+  {
+    id: 'mieko',
+    cost: 1,
+    name: '安河内美子',
+    school: '新道寺女子',
+    color: '#8a7ab0',
+    ability: null,
+    ai: { ...baseAi, mistakeRate: 0.05 },
+  },
+  {
+    id: 'hitomi',
+    cost: 1,
+    name: '江崎仁美',
+    school: '新道寺女子',
+    color: '#5a8a7a',
+    ability: null,
+    ai: { ...baseAi, mistakeRate: 0.05 },
+  },
+  // 姬松高中：次锋由子、副将娟慧
+  {
+    id: 'yuuko',
+    cost: 1,
+    name: '真濑由子',
+    school: '姬松高中',
+    color: '#d8a04a',
+    ability: null,
+    ai: { ...baseAi, mistakeRate: 0.05 },
+  },
+  {
+    id: 'kinue',
+    cost: 2,
+    name: '爱宕娟慧',
+    school: '姬松高中',
+    color: '#b8603a',
+    ability: kinueAbility,
+    ai: { ...baseAi, mistakeRate: 0.04, pin1: true },
   },
 ];
 

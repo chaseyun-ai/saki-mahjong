@@ -1,4 +1,5 @@
 import { CHARACTERS, type Character } from '../abilities/characters';
+import { APPEARANCE } from './schools';
 import { SkinSlot, cutinArt, defaultCutinArt, defaultPortraitUrl, defaultPowerPortraitUrl, portraitUrl, powerPortraitUrl, setSkins, skinOf } from '../ui3d/looks';
 
 // 素材页：页面主人在试玩页里给每个角色换头像、切入图、结算图，不用改代码。
@@ -174,7 +175,7 @@ export class SkinEditor {
   }
 
   private render = (): void => {
-    const tabs = CHARACTERS.map((c) => {
+    const tabs = APPEARANCE.map((c) => {
       const n = slotsOf(c).filter(({ slot }) => docs[c.id]?.[slot]).length;
       return `<button class="skin-tab${c.id === this.sel ? ' on' : ''}" data-skin-tab="${c.id}" style="--c:${c.color}">
           <span class="skin-tab-face"><img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></span>
