@@ -1,5 +1,5 @@
 import { CHARACTERS, type Character } from '../abilities/characters';
-import { APPEARANCE } from './schools';
+import { APPEARANCE, SCHOOLS, membersOf } from './schools';
 import { SkinSlot, cutinArt, defaultCutinArt, defaultPortraitUrl, defaultPowerPortraitUrl, portraitUrl, powerPortraitUrl, setSkins, skinOf } from '../ui3d/looks';
 
 // 素材页：页面主人在试玩页里给每个角色换头像、切入图、结算图，不用改代码。
@@ -135,27 +135,164 @@ function saveSel(id: string): void {
   }
 }
 
-// 素材页：上面一排角色（带已换几张），下面只放选中角色的格子，人多了也不用一直往下划
+// 素材页：左边是按学校分组的角色名单（上面能搜名字），右边是选中角色的全部格子，两边各自滚动。
+// 换了图、别人改了推过来时只重画名单和右边，名单的滚动位置、搜索框里的字都不动。电脑上可以直接把图拖到格子上
+const ROLES = ['先锋', '次锋', '中坚', '副将', '大将'];
+const ownCount = (c: Character) => slotsOf(c).filter(({ slot }) => docs[c.id]?.[slot]).length;
+const faceImg = (id: string) => `<img src="${portraitUrl(id, 'neutral')}" alt="" onerror="this.remove()" />`;
+
 export class SkinEditor {
   private status = '';
   private busy = false;
-  private sel = CHARACTERS.some((c) => c.id === loadSel()) ? loadSel()! : CHARACTERS[0].id;
+  private query = '';
+  private sel = CHARACTERS.some((c) => c.id === loadSel()) ? loadSel()! : APPEARANCE[0].id;
+  private events: [string, (e: Event) => void][] = [
+    ['click', (e) => this.onClick(e)],
+    ['change', (e) => this.onChange(e)],
+    ['input', (e) => this.onInput(e)],
+    ['dragover', (e) => this.onDrag(e as DragEvent)],
+    ['dragleave', (e) => this.onDragLeave(e as DragEvent)],
+    ['drop', (e) => this.onDrop(e as DragEvent)],
+  ];
 
   constructor(
     private root: HTMLElement,
     private back: () => void,
   ) {
-    listeners.add(this.render);
-    root.addEventListener('click', this.onClick);
-    root.addEventListener('change', this.onChange);
-    this.render();
+    listeners.add(this.refresh);
+    for (const [type, f] of this.events) root.addEventListener(type, f);
+    root.innerHTML = `
+      <div class="skin-screen">
+        <header class="skin-head">
+          <button class="lab-entry" data-skin-back>← 返回</button>
+          <h1>素材</h1>
+          <p class="skin-status" role="status"></p>
+        </header>
+        <div class="skin-body">
+          <nav class="skin-list" aria-label="角色">
+            <div class="skin-search"><input type="search" placeholder="找角色、学校" aria-label="找角色、学校" /></div>
+            <div class="skin-groups"></div>
+          </nav>
+          <main class="skin-detail"></main>
+        </div>
+      </div>`;
+    this.refresh();
+    // 上次看的人滚到名单里看得见的地方
+    root.querySelector('.skin-item.on')?.scrollIntoView({ block: 'center', inline: 'center' });
   }
 
   private close(): void {
-    listeners.delete(this.render);
-    this.root.removeEventListener('click', this.onClick);
-    this.root.removeEventListener('change', this.onChange);
+    listeners.delete(this.refresh);
+    for (const [type, f] of this.events) this.root.removeEventListener(type, f);
     this.back();
+  }
+
+  private refresh = (): void => {
+    this.renderList();
+    this.renderDetail();
+    this.renderStatus();
+  };
+
+  private renderStatus(): void {
+    const el = this.root.querySelector('.skin-status');
+    if (el) el.textContent = this.status;
+  }
+
+  // 左边的名单：学校一组，先锋到大将；搜索时只留名字、学校对得上的
+  private renderList(): void {
+    const box = this.root.querySelector('.skin-groups');
+    if (!box) return;
+    const q = this.query.trim().toLowerCase();
+    const hit = (c: Character, school: string) => !q || c.name.includes(q) || c.id.includes(q) || school.includes(q);
+    const groups = SCHOOLS.map((s) => {
+      const all = membersOf(s.name);
+      const shown = all.filter((c) => hit(c, s.name));
+      if (!shown.length) return '';
+      const n = all.reduce((sum, c) => sum + ownCount(c), 0);
+      const items = shown
+        .map((c) => {
+          const k = ownCount(c);
+          const on = c.id === this.sel;
+          return `<button class="skin-item${on ? ' on' : ''}" data-skin-tab="${c.id}" style="--c:${c.color}"${on ? ' aria-current="true"' : ''}>
+              <span class="skin-item-face">${faceImg(c.id)}</span>
+              <span class="skin-item-name">${c.name}</span>${k ? `<span class="skin-count" title="已换 ${k} 张">${k}</span>` : ''}
+            </button>`;
+        })
+        .join('');
+      return `<section class="skin-group" style="--c:${s.color}">
+          <h3 class="skin-group-head"><b>${s.short}</b><small>${s.region}</small>${n ? `<span class="skin-count" title="这个学校已换 ${n} 张">${n}</span>` : ''}</h3>
+          ${items}
+        </section>`;
+    }).join('');
+    box.innerHTML = groups || `<p class="skin-empty">没有对得上「${esc(this.query.trim())}」的角色</p>`;
+  }
+
+  // 右边：选中的人，上面是名字、学校、换了几张，下面每个格子一张图
+  private renderDetail(): void {
+    const box = this.root.querySelector<HTMLElement>('.skin-detail');
+    const c = CHARACTERS.find((x) => x.id === this.sel);
+    if (!box || !c) return;
+    const school = SCHOOLS.find((s) => s.name === c.school);
+    const at = school?.lineup.indexOf(c.id) ?? -1;
+    const slots = slotsOf(c);
+    const own = ownCount(c);
+    const off = this.busy ? ' disabled' : '';
+    const cells = slots
+      .map(({ slot, label, hint, skill }) => {
+        const mine = !!docs[c.id]?.[slot];
+        const shown = this.current(c.id, slot);
+        const tall = slot === 'face' || slot === 'blank' || slot === 'power';
+        const media = docs[c.id]?.[slot]?.video
+          ? `<video src="${shown}" muted autoplay loop playsinline></video>`
+          : shown
+            ? `<img src="${shown}" alt="" onerror="this.onerror=null;this.src='${this.fallback(c.id, slot)}'" />`
+            : `<span class="skin-glyph">${c.name.slice(-1)}</span>`;
+        const accept = skill ? [...TYPES, ...VIDEO_TYPES] : TYPES;
+        return `
+          <div class="skin-slot${mine ? ' own' : ''}${skill ? ' skill' : ''}" data-slot="${slot}">
+            <div class="skin-img${tall ? ' tall' : ''}">${media}</div>
+            <div class="skin-label">${label}${mine ? '<span class="skin-mark">已换</span>' : ''}</div>
+            <div class="skin-hint">${esc(hint)}</div>
+            <div class="skin-btns">
+              <label class="skin-btn${this.busy ? ' off' : ''}">${skill ? '换动画' : '换图'}<input type="file" accept="${accept.join(',')}" data-skin-char="${c.id}" data-skin-slot="${slot}"${off} /></label>
+              ${mine ? `<button class="skin-btn ghost" data-skin-reset="${c.id}:${slot}"${off}>恢复默认</button>` : ''}
+            </div>
+          </div>`;
+      })
+      .join('');
+    const top = box.dataset.char === c.id ? box.scrollTop : 0;
+    box.dataset.char = c.id;
+    box.style.setProperty('--c', c.color);
+    box.innerHTML = `
+      <div class="skin-who">
+        <span class="skin-who-face">${faceImg(c.id)}</span>
+        <div class="skin-who-text">
+          <h2>${c.name}</h2>
+          <p>${school ? `${school.short}${at >= 0 ? ' · ' + ROLES[at] : ''} · ` : ''}${own ? `<b>已换 ${own}</b> / ${slots.length} 格` : `${slots.length} 格都是默认图`}</p>
+        </div>
+        <div class="skin-step">
+          <button data-skin-step="-1" aria-label="上一位" title="上一位">‹</button>
+          <button data-skin-step="1" aria-label="下一位" title="下一位">›</button>
+        </div>
+      </div>
+      <p class="skin-tip">点「换图」<span class="skin-drag">或把图拖到格子上</span>就换，马上生效，打开试玩页的人都看得到；「恢复默认」换回原图。PNG、JPG、WebP、GIF 都行，透明背景用 PNG，技能动画格还能放 MP4、WebM。</p>
+      <div class="skin-cells">${cells}</div>`;
+    box.scrollTop = top;
+  }
+
+  private choose(id: string): void {
+    if (id === this.sel) return;
+    this.sel = id;
+    saveSel(id);
+    this.root.querySelectorAll('.skin-item.on').forEach((x) => {
+      x.classList.remove('on');
+      x.removeAttribute('aria-current');
+    });
+    const item = this.root.querySelector<HTMLElement>(`.skin-item[data-skin-tab="${id}"]`);
+    item?.classList.add('on');
+    item?.setAttribute('aria-current', 'true');
+    item?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    this.renderDetail();
   }
 
   // 这个格子现在显示哪张图
@@ -174,74 +311,77 @@ export class SkinEditor {
     return defaultCutinArt(id, slot.startsWith('skill-') ? skillKind(slot) : slot).url;
   }
 
-  private render = (): void => {
-    const tabs = APPEARANCE.map((c) => {
-      const n = slotsOf(c).filter(({ slot }) => docs[c.id]?.[slot]).length;
-      return `<button class="skin-tab${c.id === this.sel ? ' on' : ''}" data-skin-tab="${c.id}" style="--c:${c.color}">
-          <span class="skin-tab-face"><img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></span>
-          <span class="skin-tab-name">${c.name}</span>${n ? `<span class="skin-mark">已换 ${n}</span>` : ''}
-        </button>`;
-    }).join('');
-    const rows = CHARACTERS.filter((c) => c.id === this.sel).map((c) => {
-      const cells = slotsOf(c).map(({ slot, label, hint, skill }) => {
-        const own = !!docs[c.id]?.[slot];
-        const shown = this.current(c.id, slot);
-        const tall = slot === 'face' || slot === 'blank' || slot === 'power';
-        const media = docs[c.id]?.[slot]?.video
-          ? `<video src="${shown}" muted autoplay loop playsinline></video>`
-          : shown
-            ? `<img src="${shown}" alt="" onerror="this.onerror=null;this.src='${this.fallback(c.id, slot)}'" />`
-            : `<span class="skin-glyph">${c.name.slice(-1)}</span>`;
-        const accept = skill ? [...TYPES, ...VIDEO_TYPES] : TYPES;
-        return `
-          <div class="skin-slot${own ? ' own' : ''}${skill ? ' skill' : ''}">
-            <div class="skin-img${tall ? ' tall' : ''}">${media}</div>
-            <div class="skin-label">${label}${own ? '<span class="skin-mark">已换</span>' : ''}</div>
-            <div class="skin-hint">${esc(hint)}</div>
-            <div class="skin-btns">
-              <label class="skin-btn">${skill ? '换动画' : '换图'}<input type="file" accept="${accept.join(',')}" data-skin-char="${c.id}" data-skin-slot="${slot}" ${this.busy ? 'disabled' : ''} /></label>
-              ${own ? `<button class="skin-btn ghost" data-skin-reset="${c.id}:${slot}" ${this.busy ? 'disabled' : ''}>恢复默认</button>` : ''}
-            </div>
-          </div>`;
-      }).join('');
-      return `<div class="skin-row" style="--c:${c.color}"><div class="skin-name">${c.name}</div><div class="skin-cells">${cells}</div></div>`;
-    }).join('');
-    this.root.innerHTML = `
-      <div class="skin-screen">
-        <div class="skin-head">
-          <button class="lab-entry" data-skin-back>← 返回</button>
-          <h1>素材</h1>
-        </div>
-        <p class="subtitle">点“换图”选一张图（PNG、JPG、WebP、GIF，透明背景用 PNG），马上生效，所有打开试玩页的人都会看到。“恢复默认”换回原来的图。有单独技能动画的角色（比如爽）下面还有每个技能的动画格，可以放 GIF 或视频。</p>
-        <p class="skin-status">${esc(this.status)}</p>
-        <div class="skin-tabs">${tabs}</div>
-        ${rows}
-      </div>`;
-  };
-
-  private onClick = (e: Event): void => {
-    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-skin-back],[data-skin-reset],[data-skin-tab]');
+  private onClick(e: Event): void {
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-skin-back],[data-skin-reset],[data-skin-tab],[data-skin-step]');
     if (!el) return;
     if (el.dataset.skinBack !== undefined) {
       this.close();
       return;
     }
     if (el.dataset.skinTab) {
-      this.sel = el.dataset.skinTab;
-      saveSel(this.sel);
-      this.render();
+      this.choose(el.dataset.skinTab);
+      return;
+    }
+    if (el.dataset.skinStep) {
+      // 上一位、下一位：照名单的顺序（搜索时只在搜出来的人里走），到头了绕回去
+      const shown = [...this.root.querySelectorAll<HTMLElement>('.skin-item')].map((x) => x.dataset.skinTab!);
+      const list = shown.includes(this.sel) ? shown : APPEARANCE.map((c) => c.id);
+      const i = list.indexOf(this.sel);
+      const d = Number(el.dataset.skinStep) || 1;
+      this.choose(list[(i + d + list.length) % list.length]);
       return;
     }
     const [id, slot] = el.dataset.skinReset!.split(':') as [string, SkinSlot];
     void this.save(id, slot, null);
-  };
+  }
 
-  private onChange = (e: Event): void => {
+  private onChange(e: Event): void {
     const input = e.target as HTMLInputElement;
     if (!input.dataset.skinChar || !input.files?.[0]) return;
     void this.save(input.dataset.skinChar, input.dataset.skinSlot as SkinSlot, input.files[0]);
-  };
+  }
 
+  private onInput(e: Event): void {
+    const input = e.target as HTMLInputElement;
+    if (!input.closest('.skin-search')) return;
+    this.query = input.value;
+    this.renderList();
+  }
+
+  // 拖图进来：拖到格子上那一格亮起来，放下就换；拖到别处不让浏览器把图直接打开
+  private dragging(e: DragEvent): boolean {
+    return !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  }
+
+  private onDrag(e: DragEvent): void {
+    if (!this.dragging(e)) return;
+    e.preventDefault();
+    const slot = this.busy ? null : (e.target as HTMLElement).closest<HTMLElement>('.skin-slot');
+    e.dataTransfer!.dropEffect = slot ? 'copy' : 'none';
+    this.root.querySelectorAll('.skin-slot.drop').forEach((x) => x !== slot && x.classList.remove('drop'));
+    slot?.classList.add('drop');
+  }
+
+  private onDragLeave(e: DragEvent): void {
+    const slot = (e.target as HTMLElement).closest('.skin-slot');
+    if (slot && !slot.contains(e.relatedTarget as Node | null)) slot.classList.remove('drop');
+  }
+
+  private onDrop(e: DragEvent): void {
+    if (!this.dragging(e)) return;
+    e.preventDefault();
+    const slot = (e.target as HTMLElement).closest<HTMLElement>('.skin-slot');
+    slot?.classList.remove('drop');
+    const input = slot?.querySelector<HTMLInputElement>('input[type=file]');
+    const file = e.dataTransfer!.files[0];
+    if (!input || !file || this.busy) return;
+    if (!input.accept.split(',').includes(file.type)) {
+      this.status = input.accept.includes('video') ? '这一格只能放 PNG、JPG、WebP、GIF 图或 MP4、WebM 视频。' : '这一格只能放 PNG、JPG、WebP、GIF 图。';
+      this.renderStatus();
+      return;
+    }
+    void this.save(input.dataset.skinChar!, input.dataset.skinSlot as SkinSlot, file);
+  }
   // 换图（file）或换回默认（null）
   private async save(id: string, slot: SkinSlot, file: File | null): Promise<void> {
     const name = CHARACTERS.find((c) => c.id === id)?.name ?? id;
@@ -251,12 +391,12 @@ export class SkinEditor {
     const db = await connect();
     if (!assets || !db) {
       this.status = '这里换不了素材：只有页面主人在试玩页里能换。';
-      this.render();
+      this.renderStatus();
       return;
     }
     this.busy = true;
     this.status = file ? `正在上传 ${name} 的${label}……` : `正在把 ${name} 的${label}换回默认……`;
-    this.render();
+    this.refresh();
     const old = docs[id]?.[slot]?.id;
     try {
       const next: Doc = { ...(docs[id] ?? {}) };
@@ -289,6 +429,6 @@ export class SkinEditor {
               : `没换成功（${code ?? '图片打不开'}），过一会儿再试一次。`;
     }
     this.busy = false;
-    this.render();
+    this.refresh();
   }
 }

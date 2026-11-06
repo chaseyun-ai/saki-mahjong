@@ -217,7 +217,7 @@ export class App {
       const card = (e.target as HTMLElement).closest<HTMLElement>('.char-card');
       const to = e.relatedTarget as HTMLElement | null;
       if (!card || card.contains(to)) return;
-      // 大立绘面板：移到别的头像上由 pointerover 换人，移出头像就换回选定的那位（不然走去按“出场”的路上会换成别人）
+      // 大立绘面板：移到别的头像上由 pointerover 换人，移出头像就换回原来放着的那位（不然走去按“出场”的路上会换成别人）
       if (!this.heroTip()) this.showCharTip(null);
       else if (!to?.closest?.('.char-card') && this.tipFor !== this.picked) this.showCharTip(this.pickedCard());
     });
@@ -302,7 +302,7 @@ export class App {
         </nav>
         <div class="school-tabs" role="tablist">${this.schoolTabsHtml()}</div>
         <div class="school-page">${this.schoolPageHtml()}</div>
-        <p class="sel-hint">${hero ? '点头像看能力，再点一下或按「出场」开局。' : '鼠标停在头像上看能力（手机上点一下看），点头像就开局。'}局数、点数、对手在右上角「对局设置」里改，皮肤、牌桌视角在「视觉设置」里换。</p>
+        <p class="sel-hint">鼠标停在头像上看能力，点一下就开局（手机上先点一下看能力，再点一下开局）。局数、点数、对手在右上角「对局设置」里改，皮肤、牌桌视角在「视觉设置」里换。</p>
         <p class="footnote">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品 · 3D 人物由 VRoid 官方 CC0 示例模型改色</p>
         </div>
         <div class="char-tip" hidden></div>
@@ -320,15 +320,11 @@ export class App {
     this.renderPanel();
   }
 
-  // 大立绘面板选定的角色：鼠标停在别的头像上时临时换过去看，移开了换回来；再点一下选定的头像就开局
+  // 大立绘面板放着的角色：鼠标停在别的头像上时临时换过去看，移开了换回来；手指点一下就换成她
   private picked: string | null = null;
 
-  // chosen：玩家自己点选的（换页、刚打开时默认放第一位，不算点选，点它一下只是选定、不开局）
-  private chosen = false;
-
-  private pickCard(card: HTMLElement | null, chosen = false): void {
+  private pickCard(card: HTMLElement | null): void {
     this.picked = card?.dataset.pick ?? null;
-    this.chosen = chosen && !!card;
     this.showCharTip(card);
   }
 
@@ -1188,15 +1184,11 @@ export class App {
     if (!el) return;
     if (el.dataset.pick) {
       const id = el.dataset.pick;
-      // 大立绘面板：点头像选定，再点一下选定的头像就开局（和按“出场”一样）
-      if (this.heroTip()) {
-        if (this.chosen && this.picked === id) this.quickStart(id);
-        else this.pickCard(el, true);
-        return;
-      }
-      // 经典皮肤：手指点的第一下只看介绍，再点同一个才开局
-      if (this.lastPointer === 'touch' && this.tipFor !== id) {
-        this.showCharTip(el);
+      // 鼠标停上去就看过介绍了，键盘切过来也一样：点一下直接开局。
+      // 手指没有悬停：点的第一下先看介绍（大立绘面板换成她），点正在介绍的那位才开局
+      if (this.lastPointer === 'touch' && e.detail > 0 && this.tipFor !== id) {
+        if (this.heroTip()) this.pickCard(el);
+        else this.showCharTip(el);
         return;
       }
       this.quickStart(id);

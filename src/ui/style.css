@@ -1872,120 +1872,289 @@ button {
   vertical-align: top;
 }
 
-/* ---------- 素材页（src/ui/skins.ts）：每个角色一排，每个格子一张图 ---------- */
+/* ---------- 素材页（src/ui/skins.ts）：左边角色名单，右边选中角色的格子，两边各自滚动 ---------- */
 
 .skin-screen {
+  --skin-side: color-mix(in srgb, var(--t-bg, #0b1f23) 82%, #000);
   height: 100%;
-  overflow-y: auto;
-  padding: 24px 16px 40px;
-  background: radial-gradient(circle at 50% 20%, #24606a, #0b1f23 70%);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 75% 0%, color-mix(in srgb, var(--felt) 55%, transparent), transparent 65%),
+    var(--t-bg, #0b1f23);
 }
 
 .skin-head {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .skin-head .lab-entry {
+  flex: none;
   margin: 0;
+  padding: 7px 14px;
 }
 
 .skin-head h1 {
+  flex: none;
   margin: 0;
-  font-size: 32px;
-  letter-spacing: 6px;
+  font-family: var(--t-title, inherit);
+  font-size: 24px;
+  letter-spacing: 4px;
   color: var(--gold);
 }
 
 .skin-status {
-  min-height: 1.4em;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+  font-size: 14px;
   color: var(--gold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* 角色一排：点哪个看哪个；滚动时贴在顶上 */
-.skin-tabs {
-  position: sticky;
-  top: -24px;
-  z-index: 2;
+.skin-body {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  min-height: 0;
+}
+
+/* 名单：学校一组，组名贴在顶上 */
+.skin-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-width: 1100px;
-  margin: 0 auto 14px;
-  padding: 10px 0;
-  background: #0f2a2f;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--skin-side);
 }
 
-.skin-tab {
+.skin-search {
+  padding: 10px 10px 4px;
+}
+
+.skin-search input {
+  width: 100%;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  color: inherit;
+  background: rgba(0, 0, 0, 0.3);
+  font: inherit;
+  font-size: 14px;
+}
+
+.skin-search input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.skin-groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 8px 16px;
+}
+
+.skin-group {
+  margin-top: 8px;
+}
+
+.skin-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 2px;
+  padding: 6px 6px 4px;
+  font-size: 13px;
+  color: var(--c);
+  background: var(--skin-side);
+  border-bottom: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+}
+
+.skin-group-head small {
+  font-weight: 400;
+  color: var(--ink-quiet);
+}
+
+.skin-group-head .skin-count {
+  margin-left: auto;
+}
+
+.skin-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 12px 4px 4px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.3);
+  width: 100%;
+  margin-top: 2px;
+  padding: 3px 8px 3px 3px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   color: inherit;
+  background: none;
   font: inherit;
   font-size: 14px;
+  text-align: left;
   cursor: pointer;
 }
 
-.skin-tab.on {
+.skin-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.skin-item.on {
   border-color: var(--c);
-  background: color-mix(in srgb, var(--c) 35%, transparent);
+  background: color-mix(in srgb, var(--c) 30%, transparent);
   font-weight: 700;
 }
 
-.skin-tab-face {
-  width: 32px;
-  height: 32px;
+.skin-item-face,
+.skin-who-face {
+  flex: none;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--c);
 }
 
-.skin-tab-face img {
+.skin-item-face img,
+.skin-who-face img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: 50% 15%;
 }
 
-.skin-tab .skin-mark {
-  margin-left: 0;
+.skin-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.skin-row {
-  margin: 0 auto 18px;
-  max-width: 1100px;
-  padding: 12px;
-  border-radius: 14px;
-  border-left: 4px solid var(--c);
-  background: rgba(0, 0, 0, 0.25);
-}
-
-.skin-name {
-  margin-bottom: 8px;
-  font-size: 18px;
+/* 换了几张：名单上的小数字 */
+.skin-count {
+  flex: none;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: #1a1206;
+  background: var(--gold);
+}
+
+.skin-empty {
+  padding: 12px 6px;
+  font-size: 13px;
+  color: var(--ink-quiet);
+}
+
+/* 右边：选中角色的格子 */
+.skin-detail {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 20px 32px;
+}
+
+.skin-who {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 1100px;
+}
+
+.skin-who-face {
+  width: 60px;
+  height: 60px;
+  border: 2px solid var(--c);
+}
+
+.skin-who-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.skin-who h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.skin-who p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--ink-quiet);
+}
+
+.skin-who p b {
+  color: var(--gold);
+}
+
+.skin-step {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+
+.skin-step button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: inherit;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.skin-tip {
+  max-width: 1100px;
+  margin: 10px 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-quiet);
 }
 
 .skin-cells {
+  max-width: 1100px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 12px;
 }
 
 .skin-slot {
+  display: flex;
+  flex-direction: column;
   padding: 8px;
-  border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(6, 16, 18, 0.6);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .skin-slot.own {
   border-color: var(--gold);
+}
+
+/* 拖着图停在格子上 */
+.skin-slot.drop {
+  border: 1px dashed var(--gold);
+  background: color-mix(in srgb, var(--gold) 16%, rgba(0, 0, 0, 0.3));
 }
 
 /* 图都按比例完整显示；透明的地方露出角色颜色 */
@@ -2006,7 +2175,9 @@ button {
 }
 
 .skin-label {
-  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
   font-weight: 700;
 }
 
@@ -2021,25 +2192,39 @@ button {
 }
 
 .skin-hint {
-  min-height: 2.6em;
+  flex: 1;
+  margin-top: 2px;
   font-size: 12px;
+  line-height: 1.45;
   color: var(--ink-quiet);
 }
 
 .skin-btns {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .skin-btn {
-  padding: 5px 12px;
-  border: 1px solid rgba(240, 195, 90, 0.6);
+  position: relative;
+  padding: 5px 14px;
+  border: 1px solid color-mix(in srgb, var(--gold) 60%, transparent);
   border-radius: 999px;
   color: var(--gold);
   background: rgba(0, 0, 0, 0.3);
+  font: inherit;
   font-size: 13px;
   cursor: pointer;
+}
+
+.skin-btn:hover {
+  background: color-mix(in srgb, var(--gold) 14%, rgba(0, 0, 0, 0.3));
+}
+
+.skin-btn:focus-within {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .skin-btn.ghost {
@@ -2047,8 +2232,205 @@ button {
   color: var(--ink-quiet);
 }
 
+.skin-btn.off,
+.skin-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 选文件的框藏起来，点外面的“换图”打开；键盘还切得到 */
 .skin-btn input {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* 手机上拖不了图，不提 */
+@media (hover: none) {
+  .skin-drag {
+    display: none;
+  }
+}
+
+/* 手机横着：名单窄一点，格子小一点 */
+@media (max-height: 500px) {
+  .skin-head {
+    gap: 10px;
+    padding: 6px 12px;
+  }
+
+  .skin-head .lab-entry {
+    padding: 4px 12px;
+  }
+
+  .skin-head h1 {
+    font-size: 18px;
+    letter-spacing: 2px;
+  }
+
+  .skin-status {
+    font-size: 12px;
+  }
+
+  .skin-body {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+
+  .skin-search {
+    padding: 6px 8px 2px;
+  }
+
+  .skin-search input {
+    padding: 4px 10px;
+    font-size: 13px;
+  }
+
+  .skin-item {
+    padding: 2px 6px 2px 2px;
+    font-size: 13px;
+  }
+
+  .skin-item-face {
+    width: 24px;
+    height: 24px;
+  }
+
+  .skin-detail {
+    padding: 10px 12px 20px;
+  }
+
+  .skin-who-face {
+    width: 40px;
+    height: 40px;
+  }
+
+  .skin-who h2 {
+    font-size: 18px;
+  }
+
+  .skin-step button {
+    width: 32px;
+    height: 32px;
+  }
+
+  .skin-tip {
+    margin: 6px 0 10px;
+    font-size: 12px;
+  }
+
+  .skin-cells {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 8px;
+  }
+
+  .skin-img {
+    height: 110px;
+  }
+}
+
+/* 手机竖着：名单变成上面一条横着划的头像，学校名竖着写在每组前面 */
+@media (max-width: 600px) {
+  .skin-head h1 {
+    font-size: 20px;
+    letter-spacing: 2px;
+  }
+
+  .skin-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .skin-list {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .skin-search {
+    padding: 8px 12px 4px;
+  }
+
+  .skin-groups {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 12px 8px;
+  }
+
+  .skin-group {
+    flex: none;
+    display: flex;
+    gap: 2px;
+    margin: 0;
+  }
+
+  .skin-group-head {
+    position: static;
+    flex-direction: column;
+    justify-content: center;
+    margin: 0;
+    padding: 0 4px;
+    border-bottom: 0;
+    border-left: 2px solid var(--c);
+    writing-mode: vertical-rl;
+    font-size: 12px;
+  }
+
+  .skin-group-head small,
+  .skin-group-head .skin-count {
+    display: none;
+  }
+
+  .skin-item {
+    position: relative;
+    flex-direction: column;
+    gap: 2px;
+    width: 58px;
+    margin: 0;
+    padding: 4px 2px;
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .skin-item-face {
+    width: 40px;
+    height: 40px;
+  }
+
+  .skin-item-name {
+    width: 100%;
+  }
+
+  .skin-item .skin-count {
+    position: absolute;
+    top: 0;
+    right: 2px;
+  }
+
+  .skin-detail {
+    padding: 12px 12px 24px;
+  }
+
+  .skin-who-face {
+    width: 44px;
+    height: 44px;
+  }
+
+  .skin-who h2 {
+    font-size: 20px;
+  }
+
+  .skin-cells {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .skin-img {
+    height: 120px;
+  }
 }
 
 /* ---------- 3D 牌桌上的界面层 ---------- */
