@@ -6518,55 +6518,40 @@ html:root .tm-draft .tmd-go {
   50% { filter: drop-shadow(0 0 3px #d090ff) drop-shadow(0 0 9px #9a4cff); }
 }
 
-/* 字形光柱：一叠越往上越淡、越糊的字连成一道光，三个亮的字从牌面浮起来往上走（app.ts 的 kimonBeamHtml）。
+/* 光柱（照原作）：从牌面直直往上，和牌一样宽，底下亮、往上淡，两边柔和；牌面也染一层紫（app.ts 的 kimonBeamHtml）。
    光柱朝牌自己的“上”：横着的那张转了 -90°，它的上是本地的 +x */
 .kimon-beam {
   position: absolute;
-  inset: 0;
+  left: -8%;
+  right: -8%;
+  bottom: 0;
+  height: 340%;
   pointer-events: none;
   z-index: 3;
-  --bx: 0;
-  --by: -1;
+  background: linear-gradient(to top, rgba(165, 105, 255, 0.85) 0, rgba(145, 85, 255, 0.6) 22%, rgba(125, 65, 240, 0.28) 60%, rgba(110, 50, 230, 0) 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 22%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 22%, #000 78%, transparent 100%);
+  mix-blend-mode: screen;
+  animation: kimon-beam 2.4s ease-in-out infinite;
 }
 .tile.sideways .kimon-beam {
-  --bx: 1;
-  --by: 0;
+  left: 0;
+  right: auto;
+  top: -8%;
+  bottom: -8%;
+  width: 340%;
+  height: auto;
+  background: linear-gradient(to right, rgba(165, 105, 255, 0.85) 0, rgba(145, 85, 255, 0.6) 22%, rgba(125, 65, 240, 0.28) 60%, rgba(110, 50, 230, 0) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
 }
-.kimon-beam > i {
-  position: absolute;
-  inset: 0;
-  padding: 8% 6%;
-}
-.kimon-beam > i svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-.kimon-beam > .trail {
-  transform: translate(calc(var(--bx) * var(--k) * 5px), calc(var(--by) * var(--k) * 5px)) scale(calc(1 + var(--k) * 0.015));
-  opacity: calc(0.36 - var(--k) * 0.045);
-  filter: blur(calc(var(--k) * 0.3px)) drop-shadow(0 0 2px #9a4cff);
-}
-.kimon-beam > .rise {
-  opacity: 0;
-  filter: drop-shadow(0 0 2px #c27aff) drop-shadow(0 0 5px #8a3cff);
-  animation: kimon-rise 2.4s linear infinite;
-}
-@keyframes kimon-rise {
-  0% {
-    transform: none;
-    opacity: 0;
-  }
-  12% {
-    opacity: 0.95;
-  }
-  100% {
-    transform: translate(calc(var(--bx) * 46px), calc(var(--by) * 46px)) scale(1.12);
-    opacity: 0;
+@keyframes kimon-beam {
+  50% {
+    opacity: 0.75;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .kimon-beam > .rise {
+  .kimon-beam {
     animation: none;
   }
 }

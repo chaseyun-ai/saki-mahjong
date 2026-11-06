@@ -35,7 +35,6 @@ import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
 import { backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
-import { glowGlyph } from './tileArt';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
@@ -2462,7 +2461,7 @@ function meldTilesHtml(m: Meld, seat: number, size: 'pond' | 'mini', glow?: Set<
     .map((sl) => {
       if (sl.hidden) return backHtml(size);
       const lit = glow?.has(sl.tile);
-      const tile = tileHtml(sl.tile, { size, sideways: sl.sideways, classes: lit ? ['kimon-glow'] : [], after: lit ? kimonBeamHtml(sl.tile) : undefined });
+      const tile = tileHtml(sl.tile, { size, sideways: sl.sideways, classes: lit ? ['kimon-glow'] : [], after: lit ? kimonBeamHtml() : undefined });
       if (sl.stacked === undefined) return tile;
       return `<div class="meld-stack">${tileHtml(sl.stacked, { size, sideways: true })}${tile}</div>`;
     })
@@ -2511,13 +2510,10 @@ function slamImpact2d(handTiles: number): number {
   return slamStart2d(handTiles) + 0.55;
 }
 
-// 2D：初美鸣出来的东、北中间那张上的字形光柱。一叠越往上越淡、越糊的字连成一道光，
-// 再有三个亮的字从牌面浮起来往上走。动画按现在的时间接着放，牌桌重画时不会从头跳
-const KIMON_RISE = 2.4;
-function kimonBeamHtml(t: TileId): string {
-  const svg = glowGlyph(kindOf(t), '#ecd4ff');
-  const now = (performance.now() / 1000) % KIMON_RISE;
-  const trail = Array.from({ length: 7 }, (_, k) => `<i class="trail" style="--k:${k + 1}">${svg}</i>`).join('');
-  const rise = Array.from({ length: 3 }, (_, k) => `<i class="rise" style="animation-delay:${(-now - (k * KIMON_RISE) / 3).toFixed(2)}s">${svg}</i>`).join('');
-  return `<span class="kimon-beam" aria-hidden="true">${trail}${rise}</span>`;
+// 2D：初美鸣出来的东、北中间那张上的紫色光柱（照原作：和牌一样宽，底下亮往上淡）。
+// 明暗的动画按现在的时间接着放，牌桌重画时不会从头跳
+const KIMON_PULSE = 2.4;
+function kimonBeamHtml(): string {
+  const delay = -((performance.now() / 1000) % KIMON_PULSE);
+  return `<span class="kimon-beam" aria-hidden="true" style="animation-delay:${delay.toFixed(2)}s"></span>`;
 }

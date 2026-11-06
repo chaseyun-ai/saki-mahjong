@@ -14,7 +14,7 @@ import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
 import { StillWater } from './stillWater';
 import { glowGlyph } from '../ui/tileArt';
-import { GlyphBeam } from './glyphBeam';
+import { TileBeam } from './tileBeam';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
@@ -1251,7 +1251,7 @@ export class Table3D {
     }
   }
 
-  // 贴在牌面上的紫色发光字（和牌面同样大小、同样的位置），加一道从牌面往上投的字形光柱（牌躺着时就是朝天，见 glyphBeam.ts）
+  // 贴在牌面上的紫色发光字（和牌面同样大小、同样的位置），加一道从牌面直直往上的紫色光柱（牌躺着时就是朝天，见 tileBeam.ts）
   private makeGlow(id: TileId): THREE.Group {
     const kind = kindOf(id);
     let mat = this.glowMats.get(kind);
@@ -1284,8 +1284,8 @@ export class Table3D {
     const face = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W * 0.9, TILE_H * 0.9), mat);
     face.position.z = TILE_T / 2 + 0.006;
     face.renderOrder = 3;
-    const beam = new GlyphBeam(kind, TILE_W * 0.9, TILE_H * 0.9, TILE_T / 2);
-    group.add(face, beam.mesh);
+    const beam = new TileBeam(TILE_W * 0.96, TILE_H * 0.96, TILE_T / 2);
+    group.add(face, beam.group);
     group.userData.beam = beam;
     group.userData.faceMat = mat;
     return group;
@@ -1296,7 +1296,7 @@ export class Table3D {
     for (const [id, g] of this.glows) {
       const up = new THREE.Vector3(0, 0, 1).applyQuaternion(this.tiles[id].group.quaternion).y;
       const pulse = 0.75 + 0.25 * Math.sin(this.now * 2.6 + id);
-      (g.userData.beam as GlyphBeam).update(this.now, THREE.MathUtils.smoothstep(up, 0.75, 0.95) * pulse);
+      (g.userData.beam as TileBeam).update(this.now, THREE.MathUtils.smoothstep(up, 0.75, 0.95) * pulse);
       g.children[0].scale.setScalar(1);
       ((g.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.8 + 0.2 * pulse;
     }
