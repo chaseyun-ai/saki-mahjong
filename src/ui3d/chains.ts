@@ -1,12 +1,10 @@
 import * as THREE from 'three';
-import { BREAK, ChainLine, ChainOutcome, FADE, FAINT, GOLD, LOCK, QUICK_LOCK, chainPlan, clamp01, easeInOut, easeOut, goldTime, linkOffsets, lockTime } from '../ui/riiChainPlan';
-import { KEY_ART, keyArt } from '../ui/keyArt';
+import { BREAK, ChainOutcome, FADE, FAINT, GOLD, LOCK, LinkSpot, QUICK_LOCK, chainLinks, chainPlan, clamp01, dissolveAt, easeInOut, easeOut, lockTime, outcomeTime } from '../ui/riiChainPlan';
 
-// 白水哩的番缚（3D / 2.5D）：锁链压住手牌，结算时变金汇聚成钥匙，或者崩断碎落。
-// 布局和时间见 ui/riiChainPlan.ts。
-// 手法参考 ultra-elements（MIT）：一条锁链是一个 InstancedMesh，一节一个实例；
-// 碎开时每节换成两个半环，按初速度、自转和重力解析地算位置（不积分，快进、截图都对得上）；
-// 变金从压住手牌的地方往两头扫过去，扫到的那一节先白一下再定成金色。
+// 白水哩的番缚（3D / 2.5D）：锁链射过来缠在手牌上箍一圈；结算时变金碎成碎片冲上天（天空放晴、钥匙落下在
+// ui/skyKey.ts，画在整个画面上），或者一节节像粒子一样消散、剩下的化成光冲上天。布局和时间见 ui/riiChainPlan.ts。
+// 手法参考 ultra-elements（MIT）：一条锁链一个 InstancedMesh，一节一个实例；碎片、尘埃的位置按初速度、
+// 时间解析地算（不积分，快进、截图都对得上）。
 
 // 锁链画在这个面上：手牌中间，right 是手牌那一排的方向，up 是画面上方，toward 朝镜头
 export interface ChainFrame {
@@ -18,24 +16,34 @@ export interface ChainFrame {
   size: number; // 一张牌多宽（锁链节的大小跟着它）
 }
 
-const STEEL = new THREE.Color('#8e97a6');
+const IRON = new THREE.Color('#b4bcc8');
+const IRON_DARK = new THREE.Color('#8a919c');
 const GOLD_C = new THREE.Color('#ffc548');
 const HOT = new THREE.Color('#fff4d0');
-const CRACK = new THREE.Color('#f3f6ff');
+const PALE = new THREE.Color('#e9f1ff');
+const UP_WORLD = new THREE.Vector3(0, 1, 0);
+
+interface Link {
+  p: THREE.Vector3; // 世界坐标
+  t: THREE.Vector3; // 切线
+  n: THREE.Vector3; // 平躺那一节的法线
+  s: number;
+  loop: boolean;
+  // 结算时往天上冲的方向和快慢、打转
+  up: THREE.Vector3;
+  spin: THREE.Vector3;
+  drift: THREE.Vector3;
+}
 
 interface Chain {
-  line: ChainLine;
+  links: Link[];
+  length: number;
+  loopS: number; // 缠上手牌那一圈从哪里开始
   mesh: THREE.InstancedMesh;
   halves: THREE.InstancedMesh;
   mat: THREE.MeshStandardMaterial;
-  offsets: number[];
-  dir: THREE.Vector3;
-  side: THREE.Vector3; // 锁链所在平面里和它垂直的方向（绷一下时往这边抖）
-  cross: THREE.Vector3; // 压住手牌的那一点
-  start: number; // 锁上时这一条什么时候开始飞
-  clanked: boolean;
-  // 碎开：每节两个半环的初速度、转轴、转速
-  shards?: { v: THREE.Vector3; axis: THREE.Vector3; spin: number }[];
+  start: number;
+  clanks: number;
 }
 
 type Stage = { kind: 'lock'; t0: number; quick: boolean } | { kind: ChainOutcome; t0: number; shown: number } | { kind: 'idle' };
@@ -43,15 +51,12 @@ type Stage = { kind: 'lock'; t0: number; quick: boolean } | { kind: ChainOutcome
 export class ChainFx {
   readonly group = new THREE.Group();
   private chains: Chain[] = [];
-  private len: number;
-  private pitch: number;
   private now = 0;
   private stage: Stage = { kind: 'idle' };
-  private lockedAt = 0; // 锁好（开始变淡）的时间
-  private key: THREE.Mesh | null = null;
+  private lockedAt = 0;
   private sparks: { pts: THREE.Points; v: Float32Array; life: number; t: number }[] = [];
-  private flashed = false;
-  private tag = '';
+  private dust: { pts: THREE.Points; born: Float32Array; vel: Float32Array; origin: Float32Array; used: number } | null = null;
+  private trails: THREE.LineSegments | null = null;
   private done = false;
 
   constructor(
@@ -60,74 +65,95 @@ export class ChainFx {
     private onClank: (at: THREE.Vector3, color: THREE.ColorRepresentation, big: boolean) => void,
   ) {
     const s = frame.size;
-    // 锁链长到画面外面（2.5D 自己的手牌在画面下沿，往下也要够长）
-    this.len = frame.width * 0.62 + s * 9;
-    const r = 0.17 * s;
-    const tube = 0.05 * s;
-    this.pitch = r * 2 * 1.42 - tube * 1.6;
-    const linkGeo = new THREE.TorusGeometry(r, tube, 8, 18);
-    linkGeo.scale(1.42, 1, 1);
-    const halfGeo = new THREE.TorusGeometry(r, tube, 8, 10, Math.PI);
-    halfGeo.scale(1.42, 1, 1);
-    const offsets = linkOffsets(this.len, this.pitch);
-    for (const line of chainPlan(n)) {
-      const dir = frame.right.clone().multiplyScalar(Math.cos(line.angle)).addScaledVector(frame.up, Math.sin(line.angle));
-      const side = new THREE.Vector3().crossVectors(frame.toward, dir).normalize();
-      const cross = frame.center
-        .clone()
-        .addScaledVector(frame.right, line.x * frame.width)
-        .addScaledVector(frame.toward, s * 1.1);
-      const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 0.92, roughness: 0.3, transparent: true, opacity: 1, envMapIntensity: 1.3 });
-      const mesh = new THREE.InstancedMesh(linkGeo, mat, offsets.length);
-      const halves = new THREE.InstancedMesh(halfGeo, mat, offsets.length * 2);
+    // 链环做大一点、粗一点，细分多一点（太细太圆看着像塑料）
+    const r = 0.26 * s;
+    const tube = 0.075 * s;
+    const pitch = r * 2 * 1.38 - tube * 2.2;
+    const linkGeo = new THREE.TorusGeometry(r, tube, 12, 28);
+    linkGeo.scale(1.38, 1, 1);
+    const halfGeo = new THREE.TorusGeometry(r, tube, 10, 14, Math.PI);
+    halfGeo.scale(1.38, 1, 1);
+    const dims = { width: frame.width, height: s * 1.36, depth: s * 0.8, far: frame.width * 0.55 + s * 9, pitch };
+    let seed = 11;
+    const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+    chainPlan(n).forEach((line) => {
+      const built = chainLinks(line, dims);
+      const ut = frame.up.clone().multiplyScalar(Math.cos(line.tilt)).addScaledVector(frame.right, Math.sin(line.tilt));
+      const loopN = new THREE.Vector3().crossVectors(ut, frame.toward).normalize();
+      const links = built.links.map((l: LinkSpot) => {
+        const p = this.world(l.p);
+        const t = this.dir(l.t);
+        const base = l.loop ? loopN : frame.toward;
+        const n = base.clone().addScaledVector(t, -t.dot(base)).normalize();
+        // 冲上天：往画面上方，带一点往镜头、往两边散
+        const up = frame.up
+          .clone()
+          .multiplyScalar(0.9)
+          .addScaledVector(UP_WORLD, 0.45)
+          .addScaledVector(frame.right, (rnd() - 0.5) * 0.9)
+          .addScaledVector(frame.toward, (rnd() - 0.3) * 0.5)
+          .normalize()
+          .multiplyScalar(0.75 + rnd() * 0.5);
+        const spin = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar((rnd() * 2 - 1) * 9);
+        const drift = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(s * 1.2);
+        return { p, t, n, s: l.s, loop: l.loop, up, spin, drift };
+      });
+      const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 0.9, roughness: 0.34, transparent: true, opacity: 1, envMapIntensity: 1.7 });
+      const mesh = new THREE.InstancedMesh(linkGeo, mat, links.length);
+      const halves = new THREE.InstancedMesh(halfGeo, mat, links.length * 2);
       mesh.frustumCulled = halves.frustumCulled = false;
       mesh.renderOrder = halves.renderOrder = 7;
       halves.visible = false;
-      for (let k = 0; k < offsets.length; k++) mesh.setColorAt(k, STEEL);
-      for (let k = 0; k < offsets.length * 2; k++) halves.setColorAt(k, STEEL);
+      // 每一节铁色深浅差一点，不像一个模子出来的
+      links.forEach((_, k) => mesh.setColorAt(k, IRON.clone().lerp(IRON_DARK, rnd() * 0.7)));
+      for (let k = 0; k < links.length * 2; k++) halves.setColorAt(k, IRON);
       this.group.add(mesh, halves);
-      this.chains.push({ line, mesh, halves, mat, offsets, dir, side, cross, start: 0, clanked: false });
-    }
+      this.chains.push({ links, length: built.length, loopS: built.links[built.loopStart]?.s ?? 0, mesh, halves, mat, start: 0, clanks: 0 });
+    });
   }
 
-  // 锁上。quick：结算时才现出来的（别人的哩），一下子锁好，不放咔嚓
+  private world(p: [number, number, number]): THREE.Vector3 {
+    const f = this.frame;
+    return f.center.clone().addScaledVector(f.right, p[0]).addScaledVector(f.up, p[1]).addScaledVector(f.toward, p[2]);
+  }
+
+  private dir(t: [number, number, number]): THREE.Vector3 {
+    const f = this.frame;
+    return new THREE.Vector3().addScaledVector(f.right, t[0]).addScaledVector(f.up, t[1]).addScaledVector(f.toward, t[2]).normalize();
+  }
+
+  // 锁上。quick：结算时才现出来的（别人的哩），一下子缠好
   lock(quick = false): void {
     this.stage = { kind: 'lock', t0: this.now, quick };
-    const gap = quick ? QUICK_LOCK / Math.max(1, this.n) / 2 : LOCK.stagger;
+    const gap = quick ? QUICK_LOCK / Math.max(1, this.n) / 3 : LOCK.stagger;
     this.chains.forEach((c, i) => {
       c.start = i * gap;
-      c.clanked = quick;
+      c.clanks = quick ? 2 : 0;
     });
     this.lockedAt = this.now + (quick ? QUICK_LOCK : lockTime(this.n) + LOCK.hold);
   }
 
-  // 已经锁好了（比如换了视角、重开牌桌）：直接是淡淡的样子
+  // 已经锁好了（换了视角、重画）：直接是淡淡箍着的样子
   settle(): void {
     this.stage = { kind: 'lock', t0: this.now - 99, quick: true };
-    this.chains.forEach((c) => (c.clanked = true));
+    this.chains.forEach((c) => (c.clanks = 2));
     this.lockedAt = this.now - 99;
   }
 
-  // 结算：变金成钥匙、崩断、淡掉
-  finish(kind: ChainOutcome, tag = ''): void {
+  finish(kind: ChainOutcome): void {
     if (this.stage.kind !== 'lock') return;
-    this.tag = tag;
     this.stage = { kind, t0: this.now, shown: this.opacityNow() };
-    this.flashed = false;
-    if (kind === 'broken') this.prepareShards();
   }
 
   get locking(): boolean {
     return this.stage.kind === 'lock' && this.now < this.lockedAt;
   }
 
-  // 这一段还要放多久（秒）
   remaining(): number {
     const st = this.stage;
     if (st.kind === 'lock') return Math.max(0, this.lockedAt - this.now);
     if (st.kind === 'idle') return 0;
-    const total = st.kind === 'key' ? goldTime() : st.kind === 'broken' ? BREAK.show + BREAK.crack + BREAK.scatter : FADE;
-    return Math.max(0, st.t0 + total - this.now);
+    return Math.max(0, st.t0 + outcomeTime(st.kind) - this.now);
   }
 
   get finished(): boolean {
@@ -135,10 +161,8 @@ export class ChainFx {
   }
 
   private opacityNow(): number {
-    const st = this.stage;
-    if (st.kind !== 'lock') return 1;
-    const u = clamp01((this.now - this.lockedAt) / LOCK.dim);
-    return 1 + (FAINT - 1) * easeInOut(u);
+    if (this.stage.kind !== 'lock') return 1;
+    return 1 + (FAINT - 1) * easeInOut((this.now - this.lockedAt) / LOCK.dim);
   }
 
   update(dt: number): void {
@@ -150,344 +174,294 @@ export class ChainFx {
     else if (st.kind === 'broken') this.updateBroken(this.now - st.t0, st.shown);
     else this.updateFade(this.now - st.t0);
     this.updateSparks(dt);
+    this.updateDust();
   }
 
-  // ---------- 锁上 ----------
+  private m = new THREE.Matrix4();
+  private q = new THREE.Quaternion();
+  private basis = new THREE.Matrix4();
+  private sc = new THREE.Vector3();
+  private tmp = new THREE.Vector3();
+
+  // 一节锁链：长轴顺着锁链，一节平躺、一节立着交替扣在一起
+  private linkQuat(l: Link, k: number, out: THREE.Quaternion): THREE.Quaternion {
+    const z = k % 2 ? this.tmp.crossVectors(l.t, l.n).normalize() : l.n;
+    const y = new THREE.Vector3().crossVectors(z, l.t).normalize();
+    this.basis.makeBasis(l.t, y, z);
+    return out.setFromRotationMatrix(this.basis);
+  }
+
+  private put(c: Chain, k: number, pos: THREE.Vector3, scale: number): void {
+    this.linkQuat(c.links[k], k, this.q);
+    this.m.compose(pos, this.q, this.sc.setScalar(scale));
+    c.mesh.setMatrixAt(k, this.m);
+  }
+
+  // ---------- 锁上：射过来、缠一圈、射过来的那一截收进去 ----------
 
   private updateLock(quick: boolean): void {
     const t = this.now - (this.stage as { t0: number }).t0;
     const op = this.opacityNow();
-    const fly = quick ? QUICK_LOCK / 2 : LOCK.fly;
+    const fly = quick ? QUICK_LOCK * 0.6 : LOCK.fly;
+    const retract = quick ? QUICK_LOCK * 0.3 : LOCK.retract;
     for (const c of this.chains) {
       const u = (t - c.start) / fly;
-      const p = easeOut(u);
-      // 链头走到哪了：从 from 那一头射过来
-      const head = c.line.from * this.len * (1 - 2 * p);
-      // 链头扫过压住的那一点：咔嚓
-      if (!c.clanked && p >= 0.5) {
-        c.clanked = true;
-        this.onClank(c.cross, '#dfe8ff', false);
-        this.burst(c.cross, '#e8eeff', 26, this.frame.size * 5, 0.5);
+      // 前一半飞得快、缠的时候慢下来
+      const head = easeOut(u) * c.length;
+      const tail = easeInOut((t - c.start - fly) / retract) * c.loopS;
+      if (c.clanks === 0 && head >= c.loopS) {
+        c.clanks = 1;
+        const at = c.links[Math.min(c.links.length - 1, Math.round(c.loopS / (c.length / c.links.length)))]?.p ?? this.frame.center;
+        this.onClank(at, '#dfe8ff', false);
+        this.burst(at, '#e8eeff', 18, this.frame.size * 4, 0.45);
       }
-      // 飞完绷一下：两头固定，中间抖，越抖越小
-      const since = t - c.start - fly;
-      const wob = since > 0 ? Math.exp(-since * 7) * Math.sin(since * 38) * this.frame.size * 0.22 : 0;
+      if (c.clanks === 1 && u >= 1) {
+        c.clanks = 2;
+        this.burst(c.links[c.links.length - 1].p, '#e8eeff', 14, this.frame.size * 3, 0.4);
+      }
+      // 缠好绷一下：整圈收紧一点再弹回来
+      const since = t - c.start - fly - retract;
+      const squeeze = since > 0 ? 1 - Math.exp(-since * 8) * Math.sin(since * 30) * 0.06 : 1;
       c.mat.opacity = op;
       c.mat.depthWrite = op > 0.99;
       c.mat.emissive.set(0x000000);
-      for (let k = 0; k < c.offsets.length; k++) {
-        const s = c.offsets[k];
-        const shown = u > 0 && (c.line.from === 1 ? s >= head : s <= head);
-        const bend = wob * Math.cos((s / this.len) * Math.PI * 0.5);
-        this.placeLink(c, k, s, shown ? 1 : 0, bend);
+      for (let k = 0; k < c.links.length; k++) {
+        const l = c.links[k];
+        const shown = u > 0 && l.s <= head && l.s >= tail - 1e-6;
+        const pos = l.loop ? this.squeezed(l.p, squeeze) : l.p;
+        this.put(c, k, pos, shown ? 1 : 0);
       }
       c.mesh.instanceMatrix.needsUpdate = true;
     }
   }
 
-  private m = new THREE.Matrix4();
-  private q = new THREE.Quaternion();
-  private v = new THREE.Vector3();
-  private basis = new THREE.Matrix4();
-  private sc = new THREE.Vector3();
-
-  // 一节锁链：长轴顺着锁链，一节平躺、一节立着交替扣在一起
-  private linkQuat(c: Chain, k: number, out: THREE.Quaternion): THREE.Quaternion {
-    const x = c.dir;
-    const z = k % 2 ? c.side : this.frame.toward;
-    const y = this.v.crossVectors(z, x).normalize();
-    this.basis.makeBasis(x, y, z);
-    return out.setFromRotationMatrix(this.basis);
+  // 箍着手牌的那一圈往手牌中间收一点
+  private squeezed(p: THREE.Vector3, k: number): THREE.Vector3 {
+    if (k === 1) return p;
+    const c = this.frame.center;
+    const r = this.frame.right;
+    const along = p.clone().sub(c).dot(r);
+    const axis = c.clone().addScaledVector(r, along);
+    return axis.add(p.clone().sub(axis).multiplyScalar(k));
   }
 
-  private placeLink(c: Chain, k: number, s: number, scale: number, bend = 0): void {
-    const pos = c.cross.clone().addScaledVector(c.dir, s).addScaledVector(c.side, bend);
-    this.linkQuat(c, k, this.q);
-    this.m.compose(pos, this.q, this.sc.setScalar(scale));
-    c.mesh.setMatrixAt(k, this.m);
-  }
+  // ---------- 钥匙：变金 → 碎成金色碎片 → 冲上天（天空放晴、钥匙落下在 skyKey.ts）----------
 
-  // ---------- 钥匙 ----------
-
-  private trails: THREE.LineSegments | null = null;
-  private rays: THREE.Mesh | null = null;
-  private stars: THREE.Sprite[] = [];
-
-  private keyCenter(): THREE.Vector3 {
-    return this.frame.center.clone().addScaledVector(this.frame.up, this.frame.size * 3).addScaledVector(this.frame.toward, this.frame.size * 2.4);
-  }
-
-  private keyLen(): number {
-    return Math.min(this.frame.width * 0.62, this.frame.size * 9.5);
-  }
-
-  private keyQuat(): THREE.Quaternion {
-    return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(this.frame.right, this.frame.up, this.frame.toward));
-  }
-
-  // 照原作的顺序：锁链变金 → 碎成一片片金色碎片（锁定完成）→ 碎片拖着光汇到一点 → 炸出放射的光和星光 → 钥匙亮出来
   private updateKey(t: number, shown: number): void {
-    const { show, sweep, crack, gather, burst, hold, fade } = GOLD;
+    const { show, sweep, crack, rise } = GOLD;
     const op = shown + (1 - shown) * easeOut(t / show);
     const ts = t - show;
     const tc = ts - sweep;
-    const tg = tc - crack;
-    const tb = tg - gather;
-    const kc = this.keyCenter();
+    const tr = tc - crack;
     const size = this.frame.size;
     const col = new THREE.Color();
-    // 1. 变金：从压住手牌的地方往两头扫
     if (tc <= 0) {
       for (const c of this.chains) {
-        c.mat.depthWrite = op > 0.99;
         c.mat.opacity = op;
-        c.mat.emissive.set('#ff9a1f').multiplyScalar(0.6 * clamp01(ts / sweep));
-        const front = easeInOut(ts / sweep) * (this.len + size * 2);
-        for (let k = 0; k < c.offsets.length; k++) {
-          const d = front - Math.abs(c.offsets[k]);
-          col.copy(STEEL).lerp(GOLD_C, clamp01(d / (size * 1.6)));
-          if (d > 0 && d < size * 2.4) col.lerp(HOT, 1 - d / (size * 2.4));
+        c.mat.depthWrite = op > 0.99;
+        c.mat.emissive.set('#ff9a1f').multiplyScalar(0.55 * clamp01(ts / sweep));
+        // 从缠上的那一点顺着锁链扫过去
+        const front = easeInOut(ts / sweep) * (c.length - c.loopS + size * 2);
+        for (let k = 0; k < c.links.length; k++) {
+          const l = c.links[k];
+          const d = front - (l.s - c.loopS);
+          col.copy(IRON).lerp(GOLD_C, clamp01(d / (size * 1.2)));
+          if (d > 0 && d < size * 2) col.lerp(HOT, 1 - d / (size * 2));
           c.mesh.setColorAt(k, col);
-          this.placeLink(c, k, c.offsets[k], 1);
+          this.put(c, k, l.p, l.loop ? 1 : 0);
         }
         c.mesh.instanceMatrix.needsUpdate = true;
         if (c.mesh.instanceColor) c.mesh.instanceColor.needsUpdate = true;
       }
       return;
     }
-    // 2. 碎成金色碎片：每节两个半环，慢慢往外飘、打着转
-    if (!this.goldReady) this.prepareGoldShards();
-    const drift = (sh: { v: THREE.Vector3 }, home: THREE.Vector3, x: number) => home.clone().addScaledVector(sh.v, (1 - Math.exp(-x * 3)) / 3);
-    const total = this.chains.reduce((a, c) => a + c.offsets.length * 2, 0);
-    if (tg > 0 && !this.trails) {
+    // 碎开：每节两片半环，先往四周弹开一点、发着金光，接着越来越快冲上天，拖着光
+    this.rise(tc, crack, rise, size, GOLD_C, '#ffb640', (c) => c.links.map((l) => l.loop));
+    if (tr > rise) this.done = true;
+  }
+
+  // 碎片冲上天（钥匙和崩断共用）：who 决定哪几节参加
+  private rise(tc: number, crack: number, rise: number, size: number, color: THREE.Color, trail: string, who: (c: Chain) => boolean[]): void {
+    const tr = tc - crack;
+    if (!this.trails) {
+      const total = this.chains.reduce((a, c) => a + c.links.length * 2, 0);
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(total * 6), 3));
-      const mat = new THREE.LineBasicMaterial({ color: '#ffb640', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+      const mat = new THREE.LineBasicMaterial({ color: trail, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, opacity: 0 });
       this.trails = new THREE.LineSegments(geo, mat);
       this.trails.frustumCulled = false;
       this.trails.renderOrder = 8;
       this.group.add(this.trails);
+      for (const c of this.chains) {
+        for (let k = 0; k < c.halves.count; k++) c.halves.setColorAt(k, color);
+        if (c.halves.instanceColor) c.halves.instanceColor.needsUpdate = true;
+        const mid = c.links[Math.floor((c.links.length + Math.round(c.loopS / (c.length / c.links.length))) / 2)];
+        if (mid) this.burst(mid.p, '#ffe7a8', 22, size * 5, 0.6);
+      }
+      this.onClank(this.frame.center, color, false);
     }
-    const tr = this.trails?.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    const tra = this.trails.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const far = size * 42;
+    const at = (l: Link, x: number, side: number, out: THREE.Vector3) => {
+      // 先弹开（drift），再加速往上冲
+      out.copy(l.p).addScaledVector(l.drift, (1 - Math.exp(-x * 7)) * (side ? 1 : -0.6));
+      const y = clamp01((x - crack) / rise);
+      return out.addScaledVector(l.up, far * y * y);
+    };
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
     let idx = 0;
     for (const c of this.chains) {
+      const on = who(c);
       c.mesh.visible = false;
-      c.halves.visible = tb <= 0;
-      c.mat.opacity = 1;
+      c.halves.visible = true;
+      c.mat.opacity = 1 - clamp01((tr / rise - 0.85) / 0.15);
       c.mat.depthWrite = false;
-      // 碎开那一下最亮，飘的时候一直发着金光，往一点飞时越来越白
-      c.mat.emissive.set('#ff9a1f').multiplyScalar(0.7 + 0.8 * Math.exp(-tc * 6) + (tg > 0 ? 0.5 * clamp01(tg / gather) : 0));
-      for (let k = 0; k < c.offsets.length * 2; k++, idx++) {
-        const sh = c.shards![k];
-        const s = c.offsets[k >> 1];
-        const home = c.cross.clone().addScaledVector(c.dir, s);
-        const spun = (x: number) => {
-          this.linkQuat(c, k >> 1, this.q);
-          if (k % 2) this.q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI));
-          return this.q.premultiply(new THREE.Quaternion().setFromAxisAngle(sh.axis, sh.spin * x));
-        };
-        let pos: THREE.Vector3;
-        let scale = 1;
-        if (tg <= 0) pos = drift(sh, home, tc);
-        else {
-          // 3. 拖着光汇到一点：远的晚一点出发，越飞越快
-          const from = drift(sh, home, crack);
-          const at = (u: number) => {
-            const lag = (Math.abs(s) / this.len) * 0.35;
-            const x = clamp01((u - lag) / 0.65);
-            return from.clone().lerp(kc, x * x * x);
-          };
-          const u = tg / gather;
-          pos = at(u);
-          const x = clamp01(u);
-          scale = Math.max(0.001, 1 - 0.85 * x * x);
-          if (tr) {
-            const back = at(u - 0.22);
-            tr.setXYZ(idx * 2, pos.x, pos.y, pos.z);
-            tr.setXYZ(idx * 2 + 1, back.x, back.y, back.z);
-          }
+      c.mat.emissive.copy(color).multiplyScalar(0.9 + 1.2 * Math.exp(-tc * 6) + 0.6 * clamp01(tr / rise));
+      for (let k = 0; k < c.links.length * 2; k++, idx++) {
+        const l = c.links[k >> 1];
+        if (!on[k >> 1]) {
+          this.m.makeScale(0, 0, 0);
+          c.halves.setMatrixAt(k, this.m);
+          tra.setXYZ(idx * 2, 0, 0, 0);
+          tra.setXYZ(idx * 2 + 1, 0, 0, 0);
+          continue;
         }
-        this.m.compose(pos, spun(Math.min(tc, crack + Math.max(0, tg))), this.sc.setScalar(scale));
+        at(l, tc, k % 2, a);
+        this.linkQuat(l, k >> 1, this.q);
+        if (k % 2) this.q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI));
+        const sp = l.spin.length();
+        if (sp > 0) this.q.premultiply(new THREE.Quaternion().setFromAxisAngle(this.tmp.copy(l.spin).divideScalar(sp), sp * tc * 0.3));
+        this.m.compose(a, this.q, this.sc.setScalar(1 - 0.4 * clamp01(tr / rise)));
         c.halves.setMatrixAt(k, this.m);
+        at(l, Math.max(0, tc - 0.09), k % 2, b);
+        tra.setXYZ(idx * 2, a.x, a.y, a.z);
+        tra.setXYZ(idx * 2 + 1, b.x, b.y, b.z);
       }
       c.halves.instanceMatrix.needsUpdate = true;
     }
-    if (tc < 1 / 30 && !this.cracked) {
-      this.cracked = true;
-      for (const c of this.chains) this.burst(c.cross, '#ffd36a', 30, size * 6, 0.7);
-      this.onClank(this.frame.center, '#ffd77a', false);
-    }
-    if (tr && this.trails) {
-      tr.needsUpdate = true;
-      (this.trails.material as THREE.LineBasicMaterial).opacity = tg > 0 && tb <= 0 ? 0.9 : 0;
-    }
-    if (tb <= 0) return;
-    // 4. 汇到一点炸开：白光、放射的光、星光；钥匙从光里出来
-    if (!this.flashed) {
-      this.flashed = true;
-      this.onClank(kc, '#ffd77a', true);
-      this.burst(kc, '#fff1c0', 70, size * 10, 1.1);
-    }
-    const tl = tb;
-    const out = clamp01((tl - burst - hold) / fade);
-    const rays = this.ensureRays();
-    rays.visible = true;
-    rays.position.copy(kc).addScaledVector(this.frame.toward, -size * 0.2);
-    rays.quaternion.copy(this.keyQuat()).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), tl * 0.25));
-    rays.scale.setScalar(this.keyLen() * 1.9 * easeOut(tl / 0.45));
-    (rays.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - out) * (0.85 + 0.15 * Math.sin(tl * 3));
-    this.updateStars(tl, kc, 1 - out);
-    // 5. 钥匙：光炸开一会儿以后从斜着转正
-    const tk = tl - burst * 0.5;
-    if (tk > 0) {
-      const key = this.ensureKey();
-      const pop = backOut(tk / 0.45);
-      key.visible = true;
-      key.position.copy(kc).addScaledVector(this.frame.up, Math.sin(tk * 2.2) * size * 0.12 + out * size * 1.4);
-      key.quaternion.copy(this.keyQuat()).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (1 - easeOut(tk / 0.6)) * 0.9 + 0.12 + Math.sin(tk * 1.4) * 0.03));
-      const L = this.keyLen() * pop * (1 + out * 0.12);
-      key.scale.set(L, (L * KEY_ART.h) / KEY_ART.w, 1);
-      (key.material as THREE.MeshBasicMaterial).opacity = 1 - out;
-    }
-    if (out >= 1) this.done = true;
+    tra.needsUpdate = true;
+    (this.trails.material as THREE.LineBasicMaterial).opacity = tr > 0 ? 0.85 * (1 - clamp01((tr / rise - 0.6) / 0.4)) : 0;
   }
 
-  private ensureKey(): THREE.Mesh {
-    if (this.key) return this.key;
-    const tex = new THREE.CanvasTexture(keyArt(this.n, this.tag || ''));
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
-    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
-    const key = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
-    key.renderOrder = 10;
-    key.frustumCulled = false;
-    this.key = key;
-    this.group.add(key);
-    return key;
-  }
-
-  private ensureRays(): THREE.Mesh {
-    if (this.rays) return this.rays;
-    const mat = new THREE.MeshBasicMaterial({ map: raysTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-    this.rays = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
-    this.rays.renderOrder = 9;
-    this.rays.frustumCulled = false;
-    this.group.add(this.rays);
-    return this.rays;
-  }
-
-  private updateStars(t: number, kc: THREE.Vector3, alpha: number): void {
-    const L = this.keyLen();
-    if (!this.stars.length) {
-      const mat = new THREE.SpriteMaterial({ map: starTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-      for (let i = 0; i < 14; i++) {
-        const sp = new THREE.Sprite(mat.clone());
-        sp.renderOrder = 11;
-        const a = (i / 14) * Math.PI * 2 + i * 0.7;
-        const r = 0.35 + ((i * 37) % 10) / 16;
-        sp.userData = { x: Math.cos(a) * r, y: Math.sin(a) * r * 0.55, ph: i * 1.3, sz: 0.06 + ((i * 13) % 5) * 0.018 };
-        this.stars.push(sp);
-        this.group.add(sp);
-      }
-    }
-    for (const sp of this.stars) {
-      const d = sp.userData as { x: number; y: number; ph: number; sz: number };
-      sp.position.copy(kc).addScaledVector(this.frame.right, d.x * L).addScaledVector(this.frame.up, d.y * L).addScaledVector(this.frame.toward, this.frame.size * 0.3);
-      const tw = Math.max(0, Math.sin(t * 4 + d.ph));
-      sp.scale.setScalar(L * d.sz * (0.3 + tw) * easeOut(t / 0.4));
-      sp.material.opacity = alpha * tw;
-    }
-  }
-
-  // 变金以后碎成的金色碎片：每节两个半环，往四周慢慢飘开
-  private goldReady = false;
-  private cracked = false;
-  private prepareGoldShards(): void {
-    this.goldReady = true;
-    let seed = 3;
-    const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
-    const s = this.frame.size;
-    for (const c of this.chains) {
-      c.shards = [];
-      for (let k = 0; k < c.offsets.length * 2; k++) {
-        const v = c.side
-          .clone()
-          .multiplyScalar((rnd() - 0.5) * 4 * s)
-          .addScaledVector(c.dir, (rnd() - 0.5) * 2 * s)
-          .addScaledVector(this.frame.toward, (rnd() - 0.2) * 2 * s);
-        c.shards.push({ v, axis: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(), spin: (rnd() * 2 - 1) * 5 });
-      }
-      for (let k = 0; k < c.halves.count; k++) c.halves.setColorAt(k, GOLD_C);
-      if (c.halves.instanceColor) c.halves.instanceColor.needsUpdate = true;
-    }
-  }
-
-  // ---------- 崩断 ----------
-
-  private prepareShards(): void {
-    let seed = 1;
-    const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
-    const s = this.frame.size;
-    for (const c of this.chains) {
-      c.shards = [];
-      for (let k = 0; k < c.offsets.length * 2; k++) {
-        const off = c.offsets[k >> 1];
-        // 从压住手牌那一点往两头崩开，再往镜头和四周乱飞
-        const v = c.dir
-          .clone()
-          .multiplyScalar(Math.sign(off || 1) * (2 + rnd() * 5) * s)
-          .addScaledVector(c.side, (rnd() - 0.5) * 7 * s)
-          .addScaledVector(this.frame.toward, (rnd() * 4 - 0.6) * s)
-          .addScaledVector(this.frame.up, (1 + rnd() * 3) * s);
-        const axis = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
-        c.shards.push({ v, axis, spin: (rnd() * 2 - 1) * 14 });
-      }
-    }
-  }
+  // ---------- 崩断：绷紧发白，一节节化成粒子消散，剩下的化成光冲上天 ----------
 
   private updateBroken(t: number, shown: number): void {
-    const { show, crack, scatter } = BREAK;
-    const tc = t - show;
-    const tf = tc - crack;
+    const { show, crack, dissolve, rise, keep } = BREAK;
     const op = shown + (1 - shown) * easeOut(t / show);
+    const tc = t - show;
+    const td = tc - crack;
     const s = this.frame.size;
-    for (const c of this.chains) {
-      if (tf <= 0) {
-        // 绷紧发白，一抖一抖
-        const k0 = clamp01(tc / crack);
-        c.mat.opacity = op;
-        c.mat.depthWrite = op > 0.99;
-        c.mat.emissive.copy(CRACK).multiplyScalar(k0 * 0.8 * (0.6 + 0.4 * Math.sin(t * 90)));
-        const jit = k0 * s * 0.07;
-        for (let k = 0; k < c.offsets.length; k++) this.placeLink(c, k, c.offsets[k], 1, Math.sin(k * 2.3 + t * 70) * jit);
-        c.mesh.instanceMatrix.needsUpdate = true;
-        continue;
+    if (td > 0 && !this.dust) this.makeDust();
+    this.chains.forEach((c, ci) => {
+      if (td > dissolve) return;
+      const k0 = clamp01(tc / crack);
+      c.mat.opacity = op;
+      c.mat.depthWrite = op > 0.99;
+      c.mat.emissive.copy(PALE).multiplyScalar(k0 * 0.5 * (0.7 + 0.3 * Math.sin(t * 80)) + (td > 0 ? 0.4 : 0));
+      for (let k = 0; k < c.links.length; k++) {
+        const l = c.links[k];
+        if (!l.loop) {
+          this.put(c, k, l.p, 0);
+          continue;
+        }
+        const jit = (1 - clamp01(td / 0.3)) * k0 * s * 0.05;
+        const pos = l.p.clone().addScaledVector(l.n, Math.sin(k * 2.3 + t * 70) * jit);
+        // 消散：到了这一节的时间，缩没了，变成一团尘埃
+        const r = dissolveAt(ci, k);
+        let scale = 1;
+        if (r < 1 - keep && td > 0) {
+          const when = (r / (1 - keep)) * dissolve;
+          scale = 1 - clamp01((td - when) / 0.08);
+          if (td >= when && !this.dusted.has(`${ci}-${k}`)) {
+            this.dusted.add(`${ci}-${k}`);
+            this.spawnDust(l.p);
+          }
+        }
+        this.put(c, k, pos, scale);
       }
-      if (!c.halves.visible) {
-        c.halves.visible = true;
-        c.mesh.visible = false;
-        this.onClank(c.cross, '#eef2ff', false);
-        this.burst(c.cross, '#dfe6f5', 40, s * 8, 0.8);
-      }
-      const u = tf / scatter;
-      c.mat.opacity = 1 - clamp01((u - 0.45) / 0.55);
-      c.mat.depthWrite = false;
-      c.mat.emissive.copy(CRACK).multiplyScalar(0.8 * Math.exp(-tf * 8));
-      const grav = 9 * s;
-      for (let k = 0; k < c.offsets.length * 2; k++) {
-        const sh = c.shards![k];
-        const home = c.cross.clone().addScaledVector(c.dir, c.offsets[k >> 1]);
-        const pos = home.addScaledVector(sh.v, tf).addScaledVector(this.frame.up, -0.5 * grav * tf * tf);
-        this.linkQuat(c, k >> 1, this.q);
-        // 两个半环：一个朝上、一个转半圈朝下
-        if (k % 2) this.q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI));
-        this.q.premultiply(new THREE.Quaternion().setFromAxisAngle(sh.axis, sh.spin * tf));
-        this.m.compose(pos, this.q, this.sc.setScalar(1));
-        c.halves.setMatrixAt(k, this.m);
-      }
-      c.halves.instanceMatrix.needsUpdate = true;
+      c.mesh.instanceMatrix.needsUpdate = true;
+    });
+    // 剩下的化成光冲上天
+    if (td > dissolve) this.rise(td - dissolve, 0, rise, s, PALE, '#cfe0ff', (c) => {
+      const ci = this.chains.indexOf(c);
+      return c.links.map((l, k) => l.loop && dissolveAt(ci, k) >= 1 - keep);
+    });
+    if (td > dissolve + rise) this.done = true;
+  }
+
+  private dusted = new Set<string>();
+
+  private makeDust(): void {
+    const total = this.chains.reduce((a, c) => a + c.links.length, 0) * 14;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(total * 3);
+    const alpha = new Float32Array(total);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('alpha', new THREE.BufferAttribute(alpha, 1));
+    const mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uSize: { value: this.frame.size * 0.24 }, uColor: { value: new THREE.Color('#dfe7f5') } },
+      vertexShader: `
+        attribute float alpha;
+        varying float vA;
+        uniform float uSize;
+        void main() {
+          vA = alpha;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = uSize * 900.0 / -mv.z;
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        varying float vA;
+        uniform vec3 uColor;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          float a = smoothstep(0.5, 0.0, d) * vA;
+          if (a < 0.01) discard;
+          gl_FragColor = vec4(uColor * a, a);
+        }`,
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    pts.renderOrder = 9;
+    this.group.add(pts);
+    this.dust = { pts, born: new Float32Array(total).fill(-1), vel: new Float32Array(total * 3), origin: new Float32Array(total * 3), used: 0 };
+  }
+
+  private spawnDust(at: THREE.Vector3): void {
+    const d = this.dust;
+    if (!d) return;
+    const s = this.frame.size;
+    for (let i = 0; i < 14 && d.used < d.born.length; i++, d.used++) {
+      const j = d.used;
+      d.born[j] = this.now;
+      d.origin.set([at.x + (Math.random() - 0.5) * s * 0.4, at.y + (Math.random() - 0.5) * s * 0.4, at.z + (Math.random() - 0.5) * s * 0.4], j * 3);
+      const v = this.frame.up
+        .clone()
+        .multiplyScalar(0.6 + Math.random())
+        .add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(1.6))
+        .multiplyScalar(s * 0.9);
+      d.vel.set([v.x, v.y, v.z], j * 3);
     }
-    if (tf > scatter) this.done = true;
+  }
+
+  private updateDust(): void {
+    const d = this.dust;
+    if (!d) return;
+    const pos = d.pts.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const al = d.pts.geometry.getAttribute('alpha') as THREE.BufferAttribute;
+    const life = 1.1;
+    for (let j = 0; j < d.used; j++) {
+      const age = this.now - d.born[j];
+      const x = (1 - Math.exp(-age * 2.5)) / 2.5;
+      pos.setXYZ(j, d.origin[j * 3] + d.vel[j * 3] * x, d.origin[j * 3 + 1] + d.vel[j * 3 + 1] * x, d.origin[j * 3 + 2] + d.vel[j * 3 + 2] * x);
+      al.setX(j, age < 0 ? 0 : (1 - clamp01(age / life)) * Math.min(1, age * 20));
+    }
+    pos.needsUpdate = true;
+    al.needsUpdate = true;
   }
 
   private updateFade(t: number): void {
@@ -511,7 +485,7 @@ export class ChainFx {
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const mat = new THREE.PointsMaterial({ color, size: this.frame.size * 0.16, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+    const mat = new THREE.PointsMaterial({ color, size: this.frame.size * 0.14, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
     const pts = new THREE.Points(geo, mat);
     pts.renderOrder = 9;
     pts.frustumCulled = false;
@@ -549,74 +523,4 @@ export class ChainFx {
       else mat?.dispose();
     });
   }
-}
-
-function backOut(t: number): number {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
-  const x = clamp01(t);
-  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
-}
-
-// 钥匙后面放射的光：从中间往外一道道淡下去
-let raysTex: THREE.CanvasTexture | null = null;
-function raysTexture(): THREE.CanvasTexture {
-  if (raysTex) return raysTex;
-  const c = document.createElement('canvas');
-  c.width = c.height = 512;
-  const ctx = c.getContext('2d')!;
-  ctx.translate(256, 256);
-  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 256);
-  glow.addColorStop(0, 'rgba(255,246,214,0.9)');
-  glow.addColorStop(0.25, 'rgba(255,214,120,0.35)');
-  glow.addColorStop(1, 'rgba(255,190,80,0)');
-  for (let i = 0; i < 28; i++) {
-    const a = (i / 28) * Math.PI * 2 + (i % 3) * 0.05;
-    const w = 0.025 + (i % 4) * 0.012;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, 256 * (0.7 + (i % 5) * 0.06), a - w, a + w);
-    ctx.closePath();
-    ctx.fillStyle = glow;
-    ctx.fill();
-  }
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.beginPath();
-  ctx.arc(0, 0, 256, 0, Math.PI * 2);
-  const core = ctx.createRadialGradient(0, 0, 0, 0, 0, 180);
-  core.addColorStop(0, 'rgba(255,240,200,0.55)');
-  core.addColorStop(1, 'rgba(255,200,100,0)');
-  ctx.fillStyle = core;
-  ctx.fill();
-  raysTex = new THREE.CanvasTexture(c);
-  raysTex.colorSpace = THREE.SRGBColorSpace;
-  return raysTex;
-}
-
-// 四角的星光
-let starTex: THREE.CanvasTexture | null = null;
-function starTexture(): THREE.CanvasTexture {
-  if (starTex) return starTex;
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const ctx = c.getContext('2d')!;
-  ctx.translate(64, 64);
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 20);
-  g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(1, 'rgba(255,240,200,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(-64, -64, 128, 128);
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  for (const r of [0, Math.PI / 2]) {
-    ctx.save();
-    ctx.rotate(r);
-    ctx.beginPath();
-    ctx.moveTo(-62, 0);
-    ctx.quadraticCurveTo(0, -5, 62, 0);
-    ctx.quadraticCurveTo(0, 5, -62, 0);
-    ctx.fill();
-    ctx.restore();
-  }
-  starTex = new THREE.CanvasTexture(c);
-  return starTex;
 }

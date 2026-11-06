@@ -4,7 +4,7 @@ import { RII, riiBind, riiKeys } from '../src/abilities/rii';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { keyTag } from '../src/ui/keyArt';
-import { GOLD, chainOutcomes, chainPlan, goldTime, linkOffsets, lockTime, outcomeTime } from '../src/ui/riiChainPlan';
+import { BREAK, chainLinks, chainOutcomes, chainPlan, dissolveAt, goldTime, lockTime, outcomeTime, skyStart, skyTime } from '../src/ui/riiChainPlan';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -14,22 +14,42 @@ describe('白水哩番缚的锁链特效', () => {
     expect(chainPlan(9)).toHaveLength(7);
     const all = chainPlan(7);
     expect(new Set(all.map((l) => l.x.toFixed(2))).size).toBe(7);
-    // 从四面八方：有往上斜的也有往下斜的，两头都有射过来的
-    expect(all.some((l) => l.angle > 0) && all.some((l) => l.angle < 0)).toBe(true);
-    expect(all.some((l) => l.from === 1) && all.some((l) => l.from === -1)).toBe(true);
+    // 从四面八方：上下左右都有射过来的
+    expect(all.some((l) => Math.sin(l.angle) > 0.3) && all.some((l) => Math.sin(l.angle) < -0.3)).toBe(true);
+    expect(all.some((l) => Math.cos(l.angle) > 0.3) && all.some((l) => Math.cos(l.angle) < -0.3)).toBe(true);
   });
 
-  it('锁链的节从一头排到另一头', () => {
-    const o = linkOffsets(10, 0.5);
-    expect(o[0]).toBe(-10);
-    expect(o[o.length - 1]).toBeCloseTo(10);
-    expect(o.length).toBeGreaterThan(30);
+  it('锁链从画面外射过来，最后箍在手牌上一圈', () => {
+    const dims = { width: 14, height: 1.4, depth: 0.8, far: 20, pitch: 0.4 };
+    for (const line of chainPlan(7)) {
+      const { links, loopStart, length } = chainLinks(line, dims);
+      // 第一节在很远的地方，箍着的那一圈都贴着手牌
+      expect(Math.hypot(links[0].p[0] - line.x * 14, links[0].p[1])).toBeGreaterThan(15);
+      const loop = links.slice(loopStart);
+      expect(loop.length).toBeGreaterThan(8);
+      for (const l of loop) {
+        expect(l.loop).toBe(true);
+        expect(Math.abs(l.p[1])).toBeLessThanOrEqual(1.4 * 0.62 * 1.05);
+        expect(Math.abs(l.p[2])).toBeLessThanOrEqual(0.8 * 0.9 * 1.05 + 0.05);
+      }
+      // 一圈有前有后（绕到手牌后面）
+      expect(loop.some((l) => l.p[2] > 0.3) && loop.some((l) => l.p[2] < -0.3)).toBe(true);
+      expect(length).toBeGreaterThan(20);
+    }
+  });
+
+  it('崩断时大部分消散，剩下一部分化成光', () => {
+    const r = Array.from({ length: 200 }, (_, k) => dissolveAt(1, k));
+    const kept = r.filter((x) => x >= 1 - BREAK.keep).length / r.length;
+    expect(kept).toBeGreaterThan(0.25);
+    expect(kept).toBeLessThan(0.55);
+    expect(dissolveAt(2, 5)).toBe(dissolveAt(2, 5));
   });
 
   it('锁得越多锁上越久；钥匙那一段最长', () => {
     expect(lockTime(7)).toBeGreaterThan(lockTime(1));
     expect(outcomeTime('key')).toBe(goldTime());
-    expect(goldTime()).toBeGreaterThan(GOLD.hold);
+    expect(goldTime()).toBeCloseTo(skyStart() + skyTime());
     expect(outcomeTime('key')).toBeGreaterThan(outcomeTime('broken'));
     expect(outcomeTime('broken')).toBeGreaterThan(outcomeTime('fade'));
   });

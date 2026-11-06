@@ -1171,8 +1171,11 @@ export class Table3D {
       t.target = target;
       const back = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
       if (back && t.back.material !== back) t.back.material = back;
-      const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
+      // 白水哩番缚选番数：自己的手牌整张盖成牌背（牌面藏起来）
+      const covered = this.ghostAt.has(id);
+      const body = covered ? this.backMat : view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
+      t.face.visible = !covered;
       if (this.faceMat && t.face.material !== this.faceMat) t.face.material = this.faceMat;
       if (t.body.customDepthMaterial) {
         t.body.customDepthMaterial = t.back.customDepthMaterial = undefined;
@@ -1233,9 +1236,9 @@ export class Table3D {
       }
       gr.position.copy(at.pos);
       gr.quaternion.copy(at.quat);
-      // 浮在扣下去的牌上方，往镜头这边挪一点
-      gr.translateY(TILE_H * 0.95 * at.scale);
-      gr.translateZ((TILE_T / 2 + 0.25) * at.scale);
+      // 浮在牌背那一排的正上方，一张对一张
+      gr.translateY(TILE_H * 1.08 * at.scale);
+      gr.translateZ((TILE_T / 2 + 0.05) * at.scale);
       gr.scale.setScalar(at.scale);
       gr.visible = true;
     }
@@ -1248,11 +1251,18 @@ export class Table3D {
     const count = Math.max(1, Math.min(14, p.hand.length || 13 - 3 * p.melds.length));
     const cx = row.x0 + ((count - 1) * row.step) / 2;
     const y = (TILE_H / 2) * row.hs;
-    const center = this.toWorld(s, me, cx, y, row.z, STANDING).pos;
-    const right = this.toWorld(s, me, cx + 1, y, row.z, STANDING).pos.sub(center).normalize();
-    const toward = this.rest.pos.clone().sub(center).normalize();
-    right.addScaledVector(toward, -right.dot(toward)).normalize();
-    const up = new THREE.Vector3().crossVectors(toward, right).normalize();
+    // 照牌本身的朝向：自己的手牌往后仰，别人的立着；锁链绕着牌的上下、前后箍一圈
+    const rot = s === me ? new THREE.Euler(this.handTilt, 0, 0) : STANDING;
+    const at = this.toWorld(s, me, cx, y, row.z, rot);
+    const center = at.pos;
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(at.quat);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(at.quat);
+    const toward = new THREE.Vector3(0, 0, 1).applyQuaternion(at.quat);
+    // 牌面朝着看的人那一边
+    if (toward.dot(this.rest.pos.clone().sub(center)) < 0) {
+      toward.negate();
+      right.negate();
+    }
     return { center, right, up, toward, width: count * row.step, size: row.step };
   }
 
@@ -1280,18 +1290,29 @@ export class Table3D {
     }
   }
 
-  // 结算：哩拿到钥匙 / 破碎的钥匙 / 番数不够。别人的哩这时才现出锁链（缚没缚只有她自己知道）
-  riiOutcome(seat: number, kind: ChainOutcome, n: number, g: Game, me: number, tag: string): void {
+  // 结算：哩拿到钥匙 / 破碎的钥匙 / 番数不够。别人的哩这时才现出锁链（缚没缚只有她自己知道）。
+  // 返回再过多少秒锁链开始变金 / 崩断（天空放晴、钥匙落下由 app 照这个时间排在画面上）
+  riiOutcome(seat: number, kind: ChainOutcome, n: number, g: Game, me: number): number {
     let fx = this.chains[seat];
     const fresh = !fx;
     if (!fx) {
-      if (kind === 'fade') return;
+      if (kind === 'fade') return 0;
       fx = this.newChain(seat, n, g, me);
       fx.lock(true);
     }
-    const delay = Math.max(fresh ? 0.5 : 0, this.busyMs() / 1000);
+    const delay = Math.max(fresh ? 0.6 : 0, this.busyMs() / 1000);
     const target = fx;
-    this.later(delay, outcomeTime(kind), () => target === this.chains[seat] && target.finish(kind, tag));
+    this.later(delay, outcomeTime(kind), () => target === this.chains[seat] && target.finish(kind));
+    return delay / Math.max(0.01, this.timeScale);
+  }
+
+  // 这个座位手牌中间在页面上的位置（钥匙落到这上面）
+  handScreenPoint(seat: number, me: number, g: Game): { x: number; y: number; w: number } | null {
+    const f = this.chainFrame(seat, me, g);
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const p = f.center.clone().project(this.camera);
+    const q = f.center.clone().addScaledVector(f.right, f.width / 2).project(this.camera);
+    return { x: rect.left + ((p.x + 1) / 2) * rect.width, y: rect.top + ((1 - p.y) / 2) * rect.height, w: Math.abs(q.x - p.x) * rect.width };
   }
 
   private timers: { at: number; dur: number; fn: () => void }[] = [];
@@ -1742,9 +1763,9 @@ export class Table3D {
       if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, rot, yaw, hs) };
       if (t !== null && p.hand.includes(t)) {
         if (cover) {
-          // 番缚：牌扣在桌上（往里挪一点），原来的位置留一张投影牌面
+          // 番缚：牌原地不动、盖成牌背的颜色（见 sync），上方浮着一排投影牌面
           this.ghostAt.set(t, this.toWorld(s, me, x, y, hz, rot, yaw, hs));
-          out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * hs, hz - (TILE_H / 2) * hs * 0.9, FACE_DOWN, yaw, hs));
+          out.set(t, this.toWorld(s, me, x, y, hz, rot, yaw, hs));
         } else out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
       }
       x += step;

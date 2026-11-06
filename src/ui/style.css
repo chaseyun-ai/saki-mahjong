@@ -6806,7 +6806,8 @@ html:root .tm-draft .tmd-go {
 /* ---------- 白水哩的番缚 ---------- */
 
 /* 锁链画在一张盖住整个画面的 canvas 上，不挡点击 */
-canvas.rii-chains {
+canvas.rii-chains,
+canvas.rii-sky {
   position: fixed;
   inset: 0;
   width: 100vw;
@@ -6825,8 +6826,6 @@ canvas.rii-chains {
   box-shadow:
     0 2px 0 #1f5577,
     0 2px 3px rgba(0, 0, 0, 0.3);
-  transform: translateY(10px) scaleY(0.82);
-  transition: transform 0.25s ease;
 }
 
 .hand .tile.covered .face {

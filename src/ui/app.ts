@@ -23,7 +23,8 @@ import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneRedHidden } from '../abilities/toyone';
 import { RII, riiBind, riiCanBind, riiKeys } from '../abilities/rii';
 import { Chains2D } from './chains2d';
-import { chainOutcomes } from './riiChainPlan';
+import { chainOutcomes, outcomeTime, skyStart, skyTime } from './riiChainPlan';
+import { SkyKey } from './skyKey';
 import { keyTag } from './keyArt';
 import { saeCanAim, saeAim, snipedBy } from '../abilities/sae';
 import { initLensDrag, lensMarkHtml, lensSlotsHtml, playLensShot } from './lensDrag';
@@ -128,6 +129,7 @@ export class App {
   private riiPicking = false;
   // 2D 牌桌上画锁链的 canvas；结算要等锁链放完再弹（到这个时间）
   private chains2d: Chains2D | null = null;
+  private skyKey: SkyKey | null = null;
   private riiHold = 0;
   private toasts: Toast[] = [];
   private toastSeq = 0;
@@ -677,7 +679,7 @@ export class App {
       this.render();
       const wins = g.roundResult?.wins.length ?? 0;
       const wait =
-        this.mode === '2d' ? Math.max(0, this.riiHold - Date.now()) : this.mode === '25d' && wins ? Math.max(3400, this.busyMs() + 900) : (wins ? 2400 : 1400) + this.busyMs();
+        this.mode === '2d' ? Math.max(0, this.riiHold - Date.now()) : Math.max(this.riiHold - Date.now(), this.mode === '25d' && wins ? Math.max(3400, this.busyMs() + 900) : (wins ? 2400 : 1400) + this.busyMs());
       this.timer = window.setTimeout(() => {
         this.showResult = true;
         this.render();
@@ -852,6 +854,7 @@ export class App {
       this.sketchView = false;
       this.riiPicking = false;
       this.chains2d?.clear();
+      this.skyKey?.clear();
     }
     if (e.type === 'discard') {
       // 隐身的桃子打的牌：看不见也听不见。刚隐身的那一张照常打出去，牌河和手牌慢慢淡掉（不放立直特效）
@@ -984,27 +987,43 @@ export class App {
     this.chains2d?.redraw();
   }
 
-  // 结算：哩番缚了的这一局，锁链变金成钥匙 / 崩断 / 淡掉（淡掉只有她自己看得到）
+  // 结算：哩番缚了的这一局，锁链变金冲上天、天空放晴、钥匙落下 / 崩断消散 / 淡掉（淡掉只有她自己看得到）
   private riiFinish(result: RoundResult): void {
     const g = this.game!;
     const tag = keyTag(g.roundWind, g.roundNumber, g.honba);
     for (const o of chainOutcomes(g, result)) {
       if (o.kind === 'fade' && o.seat !== this.me) continue;
-      if (this.table3d) {
-        this.table3d.riiOutcome(o.seat, o.kind, o.bind, g, this.me, tag);
-        continue;
-      }
-      if (!this.chains2d) {
+      let delay = 0;
+      if (this.table3d) delay = this.table3d.riiOutcome(o.seat, o.kind, o.bind, g, this.me);
+      else {
         const host = document.querySelector<HTMLElement>('.stage');
         if (!host) continue;
-        this.chains2d = new Chains2D(host, () => document.querySelector('.stage .table')?.getBoundingClientRect() ?? null);
+        this.chains2d ??= new Chains2D(host, () => document.querySelector('.stage .table')?.getBoundingClientRect() ?? null);
+        const fresh = !this.chains2d.has(o.seat);
+        if (fresh) this.chains2d.lock(o.seat, o.bind, () => this.handRect(o.seat), 'quick');
+        delay = fresh ? 0.6 : 0.15;
+        this.chains2d.finish(o.seat, o.kind, delay * 1000);
       }
-      const fresh = !this.chains2d.has(o.seat);
-      if (fresh) this.chains2d.lock(o.seat, o.bind, () => this.handRect(o.seat), 'quick');
-      const delay = fresh ? 600 : 150;
-      this.chains2d.finish(o.seat, o.kind, delay, tag);
-      this.riiHold = Math.max(this.riiHold, Date.now() + delay + this.chains2d.remainingMs(o.seat, o.kind) + 200);
+      let total = delay + outcomeTime(o.kind);
+      if (o.kind === 'key') {
+        const at = this.table3d ? this.table3d.handScreenPoint(o.seat, this.me, g) : this.handPoint(o.seat);
+        const root = document.querySelector<HTMLElement>('.stage3d') ?? document.querySelector<HTMLElement>('.stage');
+        if (at && root) {
+          if (!this.skyKey || !root.contains(document.querySelector('canvas.rii-sky'))) {
+            this.skyKey?.destroy();
+            this.skyKey = new SkyKey(root);
+          }
+          this.skyKey.play(at, o.bind, tag, delay + skyStart());
+          total = delay + skyStart() + skyTime();
+        }
+      }
+      this.riiHold = Math.max(this.riiHold, Date.now() + total * 1000 + 200);
     }
+  }
+
+  private handPoint(s: number): { x: number; y: number; w: number } | null {
+    const r = this.handRect(s);
+    return r ? { x: r.x + r.w / 2, y: r.y + r.h / 2, w: Math.max(r.w, r.h) } : null;
   }
 
   // ---------- 爱丽丝的手绘板 ----------
