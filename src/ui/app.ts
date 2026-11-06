@@ -48,6 +48,8 @@ import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 import { MatchSettings, loadSettings, parseTarget, pickOpponents, rulesOf, saveSettings, setOption, setupHtml } from './matchSetup';
 import { ForecastCache } from '../ai/forecast';
+import { himekoKeySeat } from '../abilities/himeko';
+import { Himeko2D } from './himeko2d';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -159,6 +161,9 @@ export class App {
   private netView = false;
   private netFrom: '25d' | '3d' | '2d' | null = null;
   private kimon2d: Kimon2D | null = null; // 2D 牌桌上初美的鬼门法阵
+  // 2D 牌桌上姬子拿到钥匙那一局的光柱和火（哪一局放过了）
+  private himeko2d = new Himeko2D();
+  private himeko2dRound = '';
   private netTimer: number | null = null;
   // 怜“看下一巡”（演算）：玩家操作怜时的体力。
   // 演算中 vision 不是 null：this.game 换成牌局的复制品放到牌桌上演，真的牌局和演算前的表情先存在 vision 里，退出时换回来。
@@ -1319,7 +1324,21 @@ export class App {
 
   // 3D 牌桌在掷骰子、发牌时，先等动画放完
   private busyMs(): number {
-    return this.table3d?.busyMs() ?? 0;
+    return this.table3d?.busyMs() ?? this.himeko2d.busyMs();
+  }
+
+  // 2D：姬子拿到钥匙的那一局，配牌时光柱砸下来、理完牌火从右烧到左（3D、2.5D 在 table3d 里放）
+  private himekoFx2d(g: Game, table: HTMLElement): void {
+    const seat = himekoKeySeat(g);
+    const fresh = g.players.every((p) => p.discards.length === 0 && p.melds.length === 0);
+    const key = `${g.seed}-${g.round}`;
+    if (seat !== null && fresh && this.himeko2dRound !== key && !this.vision) {
+      this.himeko2dRound = key;
+      this.himeko2d.begin();
+    }
+    if (seat === null) return;
+    const sel = seat === this.me ? '.me .hand' : `.opponent.${POS[seat]} .ohand`;
+    this.himeko2d.apply(table, sel, (seat - this.me + 4) % 4);
   }
 
   private onTileClick(tile: TileId): void {
@@ -1374,6 +1393,7 @@ export class App {
     table.dataset.mist = String(this.mistLevel());
     this.gale2d(this.galeView()?.level ?? 0);
     this.water2d(this.waterOn());
+    this.himekoFx2d(g, table.parentElement ?? table);
     setSketchTiles(false);
     table.parentElement?.classList.toggle('sketch', sketch);
     this.freshDiscard = null;

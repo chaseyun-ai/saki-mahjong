@@ -14,6 +14,8 @@ import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
 import { KimonSigil } from './kimonSigil';
 import { StillWater } from './stillWater';
+import { HimekoFx } from './himekoFx';
+import { himekoKeySeat } from '../abilities/himeko';
 import { glowGlyph } from '../ui/tileArt';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
@@ -307,6 +309,9 @@ export class Table3D {
   private loadingEl: HTMLDivElement | null = null;
   private dice: Dice;
   private deal: DealState | null = null;
+  // 鹤田姬子拿到钥匙的那一局：配牌是光柱砸下来的，理完牌火从右烧到左（himekoFx.ts）
+  private himeko = new HimekoFx();
+  private himekoDeal: { seat: number; tiles: Map<TileId, number> | null; fireAt: number; fired: boolean } | null = null;
   private handAnims: HandAnim[] = [];
   // 这一局牌河摆放的随机微变化用哪一套（vary.ts 的 pondJitter）
   private pondSalt = 0;
@@ -399,6 +404,7 @@ export class Table3D {
     this.buildTiles();
     this.scene.add(this.dice.group);
     this.effects = new Effects(this.scene);
+    this.scene.add(this.himeko.group);
     this.scene.add(this.mist.group);
     this.buildRiichiSticks();
     // 牌面画好、仪表盘用的字体下载好以后，仪表盘重画一次
@@ -756,6 +762,7 @@ export class Table3D {
   busyMs(): number {
     let until = this.now;
     if (this.deal) until = Math.max(until, this.deal.start + DEAL_END);
+    if (this.himekoDeal) until = Math.max(until, this.himekoDeal.fireAt, this.himeko.endsAt);
     // 别人打出的牌落到牌河之前先别响应
     for (const a of this.handAnims) if (a.kind === 'tile') until = Math.max(until, this.now - a.t + a.timing.reach + a.timing.carry);
     // 摸到的牌还没从牌山出发
@@ -1131,6 +1138,9 @@ export class Table3D {
       });
     }
     this.deal = { start, dealer: g.dealer, sum: g.dice[0] + g.dice[1], order };
+    this.himeko.stop();
+    const hk = himekoKeySeat(g);
+    this.himekoDeal = hk === null ? null : { seat: hk, tiles: null, fireAt: start + DEAL_END + 0.15, fired: false };
     this.dice.roll(g.dice, DEAL_END + 0.6);
     for (const a of this.handAnims) this.emitMarkers(a, Infinity);
     this.handAnims = [];
@@ -1150,7 +1160,9 @@ export class Table3D {
     for (const [t, slot] of this.wallSlotOf) targets.set(t, this.wallPlacement(slot, view.me));
     // 王牌感知：杠材一直看得见，岭上牌要鼠标移上去
     const seen = new Set<TileId>([...(view.kanSeen ?? []), ...(this.rinshanHover ? view.rinshanSeen ?? [] : [])].filter((t) => this.wallSlotOf.has(t)));
+    this.aimHimeko(g, targets);
     this.applyDeal(g, view.me, targets);
+    this.landHimeko(targets);
     this.placeRiichiSticks(g);
     for (let id = 0; id < TILE_COUNT; id++) {
       const t = this.tiles[id];
@@ -1693,6 +1705,57 @@ export class Table3D {
     // 往画面下方挪：自己坐在世界的 +z 那边
     if (flat && rel === 1) out.pos.z += RIGHT_WALL_DOWN_25D;
     return out;
+  }
+
+  // 姬子的配牌：第一次摆牌时记下她每张牌落在手里哪里、什么时候发到，照着放光柱
+  private aimHimeko(g: Game, hand: Map<TileId, Placement>): void {
+    const hk = this.himekoDeal;
+    const deal = this.deal;
+    if (!hk || hk.tiles || !deal) return;
+    const p = g.players[hk.seat];
+    hk.tiles = new Map();
+    const list: { pos: THREE.Vector3; at: number }[] = [];
+    let scale = 1;
+    for (const t of p.hand) {
+      const at = deal.order.get(t)?.time ?? deal.start + DEAL_END - 0.25;
+      const dest = hand.get(t);
+      if (!dest) continue;
+      hk.tiles.set(t, at);
+      scale = dest.scale;
+      list.push({ pos: dest.pos.clone().setY(dest.pos.y - (TILE_H / 2) * dest.scale), at });
+    }
+    this.himeko.descend(list, this.seatPoint(hk.seat, 1, 0, 0).normalize(), scale);
+  }
+
+  // 光柱砸到的那一刻，牌直接出现在手里（从牌山里消失），稍微浮在上面一点再落稳
+  private landHimeko(out: Map<TileId, Placement>): void {
+    const tiles = this.himekoDeal?.tiles;
+    if (!tiles) return;
+    for (const [t, at] of tiles) {
+      if (this.now < at) continue;
+      tiles.delete(t);
+      const dest = out.get(t);
+      const obj = this.tiles[t];
+      if (!dest || !obj?.shown) continue;
+      obj.group.position.copy(dest.pos).y += 0.7 * dest.scale;
+      obj.group.quaternion.copy(dest.quat);
+      obj.group.scale.setScalar(dest.scale * 0.6);
+    }
+  }
+
+  // 理完牌：火从她右手边那张烧到左手边那张
+  private updateHimeko(): void {
+    const hk = this.himekoDeal;
+    this.himeko.update(this.now);
+    if (!hk || hk.fired || this.now < hk.fireAt || !this.lastSync) return;
+    hk.fired = true;
+    const right = this.seatPoint(hk.seat, 1, 0, 0).normalize();
+    const row = this.lastSync.g.players[hk.seat].hand.map((t) => this.tiles[t]?.target).filter((x): x is Placement => !!x);
+    if (!row.length) return;
+    row.sort((a, b) => b.pos.dot(right) - a.pos.dot(right));
+    const sc = row[0].scale;
+    const foot = (pl: Placement, out: number) => pl.pos.clone().addScaledVector(right, out * (TILE_W / 2) * sc).setY(pl.pos.y - (TILE_H / 2) * sc * 0.6);
+    this.himeko.burn(foot(row[0], 1), foot(row[row.length - 1], -1), this.seatPoint(hk.seat, 0, 0, 1).normalize(), sc, this.now);
   }
 
   // 发牌动画：还没轮到发的牌先留在牌山里
@@ -2432,6 +2495,7 @@ export class Table3D {
     }
     this.animateReveal();
     this.effects.update(dt);
+    this.updateHimeko();
     this.mist.update(dt);
     this.gale?.update(dt);
     this.sigil?.update(dt);
