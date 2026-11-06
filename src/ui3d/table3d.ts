@@ -14,6 +14,8 @@ import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
 import { KimonSigil } from './kimonSigil';
 import { StillWater } from './stillWater';
+import { ChainFx, ChainFrame } from './chains';
+import { ChainOutcome, outcomeTime } from '../ui/riiChainPlan';
 import { glowGlyph } from '../ui/tileArt';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
@@ -243,6 +245,8 @@ export interface SyncView {
   gale?: { seat: number; level: number } | null; // 薄墨初美的里鬼门：紫色的风聚得多浓（0–1），和牌时那张牌上紫光往上冲
   glowTiles?: Set<TileId>; // 初美鸣出来的东、北中间那张：字发紫光，牌上一道淡淡的紫色光柱
   stillWater?: boolean; // 透华的治水：桌布上铺一层平静的水面
+  riiCover?: boolean; // 白水哩番缚选番数时：自己的手牌扣在桌上，原来的位置投影出牌面
+  riiBind?: number | null; // 白水哩这一局缚了几番（只有她自己看得到）：几条锁链压住自己的手牌
 }
 
 export class Table3D {
@@ -348,6 +352,11 @@ export class Table3D {
   private sigil: KimonSigil | null = null;
   // 透华的治水：桌布上的水面（用到时才建，换桌子尺寸时重建）
   private water: StillWater | null = null;
+  // 白水哩的番缚：每个座位的锁链；选番数时手牌原来位置上的投影牌面
+  private chains: (ChainFx | null)[] = [null, null, null, null];
+  private ghosts = new Map<TileId, THREE.Group>();
+  private ghostMats: { back: THREE.MeshBasicMaterial; face: THREE.MeshBasicMaterial } | null = null;
+  private ghostAt = new Map<TileId, Placement>();
   // 初美鸣出来的东、北中间那张牌上的紫光（牌 id → 贴在牌面上的发光字和光柱）
   private glows = new Map<TileId, THREE.Group>();
   private glowMats = new Map<number, THREE.MeshBasicMaterial>();
@@ -761,6 +770,9 @@ export class Table3D {
     // 摸到的牌还没从牌山出发
     if (this.heldDraw) until = Math.max(until, this.heldDraw.at);
     if (this.reveal) until = Math.max(until, this.reveal.fxAt);
+    // 白水哩的锁链在变金、崩断
+    for (const c of this.chains) if (c && !c.locking) until = Math.max(until, this.now + c.remaining());
+    for (const t of this.timers) until = Math.max(until, t.at + t.dur);
     return Math.max(0, (until - this.now) * 1000);
   }
 
@@ -772,6 +784,7 @@ export class Table3D {
     if (e.type === 'roundStart') {
       this.startDeal(g);
       this.reveal = null;
+      this.clearChains();
       this.gone.clear();
       this.vanish.clear();
       // 牌河里每张牌歪多少换一套：同一张牌这一局一直歪成一样，下一局换个样子
@@ -1181,11 +1194,129 @@ export class Table3D {
       }
     }
     this.syncProjections(seen, view.me);
+    this.syncGhosts();
+    this.syncChains(g, view);
     this.showGravity(!!view.gravity);
     this.drawConsole(g, view);
     this.syncMist(g, view);
     this.syncGale(view);
     this.syncWater(view);
+  }
+
+  // ---------- 白水哩的番缚 ----------
+
+  // 选番数时：手牌扣下去，原来的位置上浮着一排半透明的牌面
+  private syncGhosts(): void {
+    for (const [id, gr] of this.ghosts) if (!this.ghostAt.has(id)) gr.visible = false;
+    if (!this.ghostAt.size) return;
+    const map = this.faceMat?.map ?? this.atlas.texture;
+    this.ghostMats ??= {
+      back: new THREE.MeshBasicMaterial({ color: '#8fa8ff', transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending }),
+      face: new THREE.MeshBasicMaterial({ map, transparent: true, opacity: 0.92, depthWrite: false, toneMapped: false }),
+    };
+    if (this.ghostMats.face.map !== map) {
+      this.ghostMats.face.map = map;
+      this.ghostMats.face.needsUpdate = true;
+    }
+    for (const [id, at] of this.ghostAt) {
+      let gr = this.ghosts.get(id);
+      if (!gr) {
+        gr = new THREE.Group();
+        const back = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W, TILE_H), this.ghostMats.back);
+        const face = new THREE.Mesh(this.faceGeoms[faceIndex(id)], this.ghostMats.face);
+        face.position.z = 0.004;
+        back.renderOrder = 5;
+        face.renderOrder = 6;
+        gr.add(back, face);
+        this.scene.add(gr);
+        this.ghosts.set(id, gr);
+      }
+      gr.position.copy(at.pos);
+      gr.quaternion.copy(at.quat);
+      // 浮在扣下去的牌上方，往镜头这边挪一点
+      gr.translateY(TILE_H * 0.95 * at.scale);
+      gr.translateZ((TILE_T / 2 + 0.25) * at.scale);
+      gr.scale.setScalar(at.scale);
+      gr.visible = true;
+    }
+  }
+
+  // 这个座位手牌那一排在画面上的位置（锁链画在这上面）
+  private chainFrame(s: number, me: number, g: Game): ChainFrame {
+    const row = this.handRows[s] ?? { x0: 0, step: TILE_W + GAP, hs: 1, z: this.dim.handZ };
+    const p = g.players[s];
+    const count = Math.max(1, Math.min(14, p.hand.length || 13 - 3 * p.melds.length));
+    const cx = row.x0 + ((count - 1) * row.step) / 2;
+    const y = (TILE_H / 2) * row.hs;
+    const center = this.toWorld(s, me, cx, y, row.z, STANDING).pos;
+    const right = this.toWorld(s, me, cx + 1, y, row.z, STANDING).pos.sub(center).normalize();
+    const toward = this.rest.pos.clone().sub(center).normalize();
+    right.addScaledVector(toward, -right.dot(toward)).normalize();
+    const up = new THREE.Vector3().crossVectors(toward, right).normalize();
+    return { center, right, up, toward, width: count * row.step, size: row.step };
+  }
+
+  private newChain(s: number, n: number, g: Game, me: number): ChainFx {
+    this.chains[s]?.dispose();
+    const fx = new ChainFx(n, this.chainFrame(s, me, g), (at, color, big) => {
+      this.effects.flash(at, color, big ? 9 : 3.5, big ? 0.6 : 0.3);
+      if (big) this.effects.ring(at, color, 7, 0.9);
+    });
+    this.scene.add(fx.group);
+    this.chains[s] = fx;
+    return fx;
+  }
+
+  // 自己是哩：缚了番就锁上（发牌动画、倒牌时不动）
+  private syncChains(g: Game, view: SyncView): void {
+    const me = view.me;
+    const bind = view.riiBind ?? null;
+    const cur = this.chains[me];
+    if (bind !== null && !cur && g.phase === 'turn' && !this.deal) {
+      const fx = this.newChain(me, bind, g, me);
+      // 刚缚上：射过来锁上；接着打的半局（换视角、重画）就直接是锁好的样子
+      if (g.players[me].discards.length === 0) fx.lock();
+      else fx.settle();
+    }
+  }
+
+  // 结算：哩拿到钥匙 / 破碎的钥匙 / 番数不够。别人的哩这时才现出锁链（缚没缚只有她自己知道）
+  riiOutcome(seat: number, kind: ChainOutcome, n: number, g: Game, me: number, tag: string): void {
+    let fx = this.chains[seat];
+    const fresh = !fx;
+    if (!fx) {
+      if (kind === 'fade') return;
+      fx = this.newChain(seat, n, g, me);
+      fx.lock(true);
+    }
+    const delay = Math.max(fresh ? 0.5 : 0, this.busyMs() / 1000);
+    const target = fx;
+    this.later(delay, outcomeTime(kind), () => target === this.chains[seat] && target.finish(kind, tag));
+  }
+
+  private timers: { at: number; dur: number; fn: () => void }[] = [];
+  private later(sec: number, dur: number, fn: () => void): void {
+    this.timers.push({ at: this.now + sec, dur, fn });
+  }
+
+  private updateChains(dt: number): void {
+    const due = this.timers.filter((t) => this.now >= t.at);
+    this.timers = this.timers.filter((t) => this.now < t.at);
+    due.forEach((t) => t.fn());
+    this.chains.forEach((c, s) => {
+      if (!c) return;
+      c.update(dt);
+      if (c.finished) {
+        c.dispose();
+        this.chains[s] = null;
+      }
+    });
+  }
+
+  private clearChains(): void {
+    this.chains.forEach((c) => c?.dispose());
+    this.chains = [null, null, null, null];
+    this.timers = [];
   }
 
   // 透华的治水：水面渐渐铺开，退出时渐渐散掉
@@ -1603,11 +1734,19 @@ export class Table3D {
     if (!tilting && !this.reveal) this.handRows[s] = { x0: x, step, hs, z: hz };
     // 2.5D 时自己的手牌两头往中间转一点
     const fan = mine && this.style === '25d' && !tilting ? this.view25.fan : 0;
+    const cover = mine && !tilting && !!this.lastSync?.view.riiCover;
+    if (mine) this.ghostAt.clear();
     const place = (t: TileId | null) => {
       const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
       const yaw = (fan ? (-fan * (x + shift)) / (width / 2) : 0) + (facing ? Math.PI : 0);
       if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, rot, yaw, hs) };
-      if (t !== null && p.hand.includes(t)) out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
+      if (t !== null && p.hand.includes(t)) {
+        if (cover) {
+          // 番缚：牌扣在桌上（往里挪一点），原来的位置留一张投影牌面
+          this.ghostAt.set(t, this.toWorld(s, me, x, y, hz, rot, yaw, hs));
+          out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * hs, hz - (TILE_H / 2) * hs * 0.9, FACE_DOWN, yaw, hs));
+        } else out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
+      }
       x += step;
     };
     // 对家公开手牌转过来朝我：从我这边看也是从左往右按顺序排，摸到的牌在我的右手边（她的左手边）
@@ -2436,6 +2575,7 @@ export class Table3D {
     this.gale?.update(dt);
     this.sigil?.update(dt);
     this.water?.update(dt);
+    this.updateChains(dt);
     this.updateGlows();
     // 引力圆慢慢转、一胀一缩
     if (this.gravityDisc?.visible) {
