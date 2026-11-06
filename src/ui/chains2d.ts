@@ -1,8 +1,9 @@
 import { BREAK, ChainOutcome, FADE, FAINT, GOLD, LOCK, LinkSpot, QUICK_LOCK, chainLinks, chainPlan, clamp01, dissolveAt, easeIn, easeInOut, easeOut, lockTime, outcomeTime } from './riiChainPlan';
+import { ChainLook, chainLook } from './riiLook';
 
 // 白水哩的番缚（2D 牌桌）：同 3D 一样的锁链画在一张盖住整个画面的 canvas 上（只画在牌桌里，不挡点击）。
-// 布局和时间见 riiChainPlan.ts。平躺的一节画成椭圆环、立着的一节画成一根短杠，交替着看上去扣在一起；
-// 箍到手牌后面的那半圈画得很淡。
+// 布局和时间见 riiChainPlan.ts，锁链的样子见 riiLook.ts。平躺的一节画成椭圆环、立着的一节画成一根短杠，
+// 交替着看上去扣在一起。
 
 interface Rect {
   x: number;
@@ -27,7 +28,7 @@ type Stage = { kind: 'lock'; t0: number; quick: boolean } | { kind: ChainOutcome
 interface Built {
   links: LinkSpot[];
   length: number;
-  loopS: number;
+  contactS: number;
   start: number;
   clanks: number;
 }
@@ -45,6 +46,7 @@ class SeatChains {
     readonly rect: () => Rect | null,
     now: number,
     mode: 'lock' | 'quick' | 'settled',
+    readonly look: ChainLook,
   ) {
     const quick = mode !== 'lock';
     const t0 = mode === 'settled' ? now - 99 : now;
@@ -77,8 +79,12 @@ export class Chains2D {
     return this.seats.has(seat);
   }
 
-  lock(seat: number, n: number, rect: () => Rect | null, mode: 'lock' | 'quick' | 'settled'): void {
-    this.seats.set(seat, new SeatChains(n, rect, this.now, this.reduced && mode === 'lock' ? 'settled' : mode));
+  styleOf(seat: number): string | null {
+    return this.seats.get(seat)?.look.id ?? null;
+  }
+
+  lock(seat: number, n: number, rect: () => Rect | null, mode: 'lock' | 'quick' | 'settled', look = chainLook()): void {
+    this.seats.set(seat, new SeatChains(n, rect, this.now, this.reduced && mode === 'lock' ? 'settled' : mode, look));
     this.kick();
   }
 
@@ -95,6 +101,8 @@ export class Chains2D {
   }
 
   private pending: { at: number; fn: () => void }[] = [];
+  // 正在画的那个座位的锁链样子
+  private look: ChainLook = chainLook();
 
   remainingMs(seat: number, kind: ChainOutcome): number {
     return this.seats.has(seat) ? outcomeTime(kind) * 1000 : 0;
@@ -192,13 +200,14 @@ export class Chains2D {
   private build(sc: SeatChains, r: Rect, W: number, H: number): Built[] {
     const key = `${Math.round(r.w)}x${Math.round(r.h)}`;
     if (sc.built && sc.builtFor === key) return sc.built;
-    const link = r.h * 0.42;
-    const dims = { width: r.w, height: r.h, depth: r.h * 0.5, far: Math.hypot(W, H) * 0.9, pitch: link * 0.72 };
+    const look = sc.look;
+    const link = r.h * 0.42 * look.size;
+    const dims = { width: r.w, depth: r.h * 0.5, far: Math.hypot(W, H) * 0.9, pitch: link * (0.58 * look.stretch - 0.28 * look.thick) };
     const quick = sc.stage.kind === 'lock' && sc.stage.quick;
     const gap = quick ? QUICK_LOCK / Math.max(1, sc.n) / 3 : LOCK.stagger;
     sc.built = chainPlan(sc.n).map((line, i) => {
       const b = chainLinks(line, dims);
-      return { links: b.links, length: b.length, loopS: b.links[b.loopStart]?.s ?? 0, start: i * gap, clanks: quick ? 2 : 0 };
+      return { links: b.links, length: b.length, contactS: b.contactS, start: i * gap, clanks: quick ? 2 : 0 };
     });
     sc.builtFor = key;
     return sc.built;
@@ -208,46 +217,41 @@ export class Chains2D {
     const chains = this.build(sc, r, W, H);
     const cx = r.x + r.w / 2;
     const cy = r.y + r.h / 2;
-    const link = r.h * 0.42;
+    const link = r.h * 0.42 * sc.look.size;
+    this.look = sc.look;
     const sx = (l: LinkSpot) => cx + l.p[0];
     const sy = (l: LinkSpot) => cy - l.p[1];
     const st = sc.stage;
     const t = this.now - st.t0;
-    // 箍到手牌后面的那半圈先画、画得淡
-    const draw = (fn: (l: LinkSpot, k: number, ci: number, back: boolean) => void) => {
-      for (const back of [true, false])
-        chains.forEach((c, ci) =>
-          c.links.forEach((l, k) => {
-            if (l.p[2] < 0 === back) fn(l, k, ci, back);
-          }),
-        );
-    };
+    const draw = (fn: (l: LinkSpot, k: number, ci: number) => void) => chains.forEach((c, ci) => c.links.forEach((l, k) => fn(l, k, ci)));
+    const at = (c: Built) => c.links[Math.round((c.contactS / c.length) * (c.links.length - 1))];
     if (st.kind === 'lock') {
       const op = this.opacity(sc);
       const fly = st.quick ? QUICK_LOCK * 0.6 : LOCK.fly;
-      const retract = st.quick ? QUICK_LOCK * 0.3 : LOCK.retract;
       for (const c of chains) {
         const u = (t - c.start) / fly;
-        if (c.clanks === 0 && easeOut(u) * c.length >= c.loopS) {
+        if (c.clanks === 0 && easeOut(u) * c.length >= c.contactS) {
           c.clanks = 1;
-          const l = c.links.find((x) => x.loop);
+          const l = at(c);
           if (l) this.burst(sx(l), sy(l), '#e8eeff', 16, link * 5, 0.45);
         }
       }
-      draw((l, k, ci, back) => {
+      draw((l, k, ci) => {
         const c = chains[ci];
         const u = (t - c.start) / fly;
         if (u <= 0) return;
         const head = easeOut(u) * c.length;
-        const tail = easeInOut((t - c.start - fly) / retract) * c.loopS;
-        if (l.s > head || l.s < tail - 1e-6) return;
-        this.link(sx(l), sy(l), l.t[0], -l.t[1], link, k, op * (back ? 0.28 : 1), 0, 0);
+        if (l.s > head) return;
+        // 压住时绷一下
+        const since = t - c.start - fly;
+        const j = since > 0 ? Math.exp(-since * 7) * Math.sin(since * 26) * link * 0.12 * Math.exp(-Math.abs(l.s - c.contactS) / (r.w * 0.4)) : 0;
+        this.link(sx(l) + l.t[1] * j, sy(l) + l.t[0] * j, l.t[0], -l.t[1], link, k, op, 0, 0);
       });
       return;
     }
     if (st.kind === 'fade') {
       const op = FAINT * (1 - clamp01(t / FADE));
-      draw((l, k, _ci, back) => l.loop && this.link(sx(l), sy(l), l.t[0], -l.t[1], link, k, op * (back ? 0.28 : 1), 0, 0));
+      draw((l, k) => this.link(sx(l), sy(l), l.t[0], -l.t[1], link, k, op, 0, 0));
       if (t > FADE) sc.done = true;
       return;
     }
@@ -257,20 +261,19 @@ export class Chains2D {
       const ts = t - show;
       const tc = ts - sweep;
       if (tc <= 0) {
-        draw((l, k, ci, back) => {
-          if (!l.loop) return;
+        draw((l, k, ci) => {
           const c = chains[ci];
-          const front = easeInOut(ts / sweep) * (c.length - c.loopS + link * 2);
-          const d = front - (l.s - c.loopS);
+          const front = easeInOut(ts / sweep) * (Math.max(W, H) * 0.7 + link * 2);
+          const d = front - Math.abs(l.s - c.contactS);
           const hot = d > 0 && d < link * 2 ? 1 - d / (link * 2) : 0;
-          this.link(sx(l), sy(l), l.t[0], -l.t[1], link, k, op * (back ? 0.3 : 1), clamp01(d / (link * 1.2)), hot);
+          this.link(sx(l), sy(l), l.t[0], -l.t[1], link, k, op, clamp01(d / (link * 1.2)), hot);
         });
         return;
       }
       if (!sc.rose) {
         sc.rose = true;
         for (const c of chains) {
-          const l = c.links[Math.floor((c.links.length + c.links.findIndex((x) => x.loop)) / 2)];
+          const l = at(c);
           if (l) this.burst(sx(l), sy(l), '#ffe7a8', 20, link * 6, 0.6);
         }
       }
@@ -285,8 +288,7 @@ export class Chains2D {
     const td = tc - crack;
     if (td <= dissolve) {
       const k0 = clamp01(tc / crack);
-      draw((l, k, ci, back) => {
-        if (!l.loop) return;
+      draw((l, k, ci) => {
         const r0 = dissolveAt(ci, k);
         let scale = 1;
         if (r0 < 1 - keep && td > 0) {
@@ -300,7 +302,7 @@ export class Chains2D {
         }
         if (scale <= 0) return;
         const j = Math.sin(k * 2.3 + t * 70) * k0 * link * 0.06 * (1 - clamp01(td / 0.3));
-        this.link(sx(l) + l.t[1] * j, sy(l) + l.t[0] * j, l.t[0], -l.t[1], link * scale, k, op * (back ? 0.3 : 1), 0, 0, k0 * 0.8 + (td > 0 ? 0.3 : 0));
+        this.link(sx(l) + l.t[1] * j, sy(l) + l.t[0] * j, l.t[0], -l.t[1], link * scale, k, op, 0, 0, k0 * 0.8 + (td > 0 ? 0.3 : 0));
       });
       return;
     }
@@ -316,7 +318,7 @@ export class Chains2D {
     const fade = 1 - clamp01((tr / rise - 0.7) / 0.3);
     chains.forEach((c, ci) =>
       c.links.forEach((l, k) => {
-        if (!l.loop || !who(ci, k)) return;
+        if (!who(ci, k)) return;
         for (let side = 0; side < 2; side++) {
           const h = hash(ci * 977 + k * 2 + side);
           const h2 = hash(ci * 313 + k * 5 + side + 7);
@@ -348,24 +350,35 @@ export class Chains2D {
   private link(x: number, y: number, dx: number, dy: number, len: number, k: number, alpha: number, gold: number, hot: number, pale = 0): void {
     if (alpha <= 0.01 || len <= 0.5) return;
     const ctx = this.ctx;
-    const c0 = mix([127, 135, 148], [255, 197, 72], gold);
+    const look = this.look;
+    const spirit = look.glow > 0.5;
+    const c0 = mix(rgb(look.color).map((v) => v * 0.72), [255, 197, 72], gold);
     const c = mix(mix(c0, [255, 246, 220], hot), [235, 242, 255], pale);
-    const dark = c.map((v) => Math.round(v * 0.42));
+    const dark = spirit ? rgb(look.dark).map((v) => Math.round(v * 0.6)) : c.map((v) => Math.round(v * 0.42));
     const light = c.map((v) => Math.round(v + (255 - v) * 0.65));
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(Math.atan2(dy, dx));
     ctx.globalAlpha = alpha;
-    const th = Math.max(2.5, len * 0.22);
+    // 粗细、长短照挑的样子；0.29 是钢链的粗细
+    const th = Math.max(2, len * 0.22 * (look.thick / 0.29));
+    const rx = len * 0.56 * (look.stretch / 1.38) ** 0.5;
+    const ry = (rx * 0.79) / look.stretch;
+    if (spirit && gold < 0.5 && pale < 0.5) {
+      // 光之锁链：一圈柔光衬在后面
+      ctx.shadowColor = look.glowColor;
+      ctx.shadowBlur = len * 0.45;
+    }
     if (k % 2 === 0) {
       // 平躺的一节：椭圆环，外沿一圈暗、上沿一道亮
       ctx.lineWidth = th + 2;
-      ctx.strokeStyle = `rgba(${dark.join(',')},0.95)`;
+      ctx.strokeStyle = `rgba(${dark.join(',')},${spirit ? 0.55 : 0.95})`;
       ctx.beginPath();
-      ctx.ellipse(0, 0, len * 0.56, len * 0.32, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.lineWidth = th;
-      const g = ctx.createLinearGradient(0, -len * 0.32, 0, len * 0.32);
+      ctx.shadowBlur = 0;
+      const g = ctx.createLinearGradient(0, -ry, 0, ry);
       g.addColorStop(0, `rgb(${light.join(',')})`);
       g.addColorStop(0.45, `rgb(${c.join(',')})`);
       g.addColorStop(1, `rgb(${dark.join(',')})`);
@@ -375,26 +388,27 @@ export class Chains2D {
       // 立着的一节：从侧面看是一根两头圆的短杠
       ctx.lineCap = 'round';
       ctx.lineWidth = th * 1.5 + 2;
-      ctx.strokeStyle = `rgba(${dark.join(',')},0.95)`;
+      ctx.strokeStyle = `rgba(${dark.join(',')},${spirit ? 0.55 : 0.95})`;
       ctx.beginPath();
-      ctx.moveTo(-len * 0.5, 0);
-      ctx.lineTo(len * 0.5, 0);
+      ctx.moveTo(-rx * 0.9, 0);
+      ctx.lineTo(rx * 0.9, 0);
       ctx.stroke();
+      ctx.shadowBlur = 0;
       ctx.lineWidth = th * 1.5;
       ctx.strokeStyle = `rgb(${c.join(',')})`;
       ctx.stroke();
       ctx.lineWidth = th * 0.45;
       ctx.strokeStyle = `rgb(${light.join(',')})`;
       ctx.beginPath();
-      ctx.moveTo(-len * 0.42, -th * 0.25);
-      ctx.lineTo(len * 0.42, -th * 0.25);
+      ctx.moveTo(-rx * 0.75, -th * 0.25);
+      ctx.lineTo(rx * 0.75, -th * 0.25);
       ctx.stroke();
     }
-    const glow = Math.max(gold > 0.5 ? gold * 0.25 : 0, pale * 0.3);
+    const glow = Math.max(gold > 0.5 ? gold * 0.25 : 0, pale * 0.3, spirit ? 0.18 : 0);
     if (glow > 0) {
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = alpha * glow;
-      ctx.fillStyle = pale > gold ? '#cfe0ff' : '#ffb83a';
+      ctx.fillStyle = pale > gold && pale > 0 ? '#cfe0ff' : gold > 0.5 ? '#ffb83a' : look.glowColor;
       ctx.beginPath();
       ctx.ellipse(0, 0, len * 0.75, len * 0.45, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -459,6 +473,11 @@ export class Chains2D {
     ctx.globalCompositeOperation = 'source-over';
     this.sparks = this.sparks.filter((s) => s.t < s.life);
   }
+}
+
+function rgb(hex: string): number[] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
 function mix(a: number[], b: number[], t: number): number[] {

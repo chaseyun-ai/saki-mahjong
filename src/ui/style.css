@@ -6928,6 +6928,48 @@ canvas.rii-sky {
   color: #b9c0cf;
 }
 
+/* 投影朝外：牌面朝着桌子中间，从自己这边看是反的 */
+.rii-ghosts.out .tile {
+  transform: scaleX(-1);
+}
+
+/* 试看用：投影朝哪边、锁链什么样子 */
+.rii-looks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #b9c0cf;
+}
+
+.rii-looks span {
+  margin-right: 4px;
+  letter-spacing: 0.1em;
+}
+
+.rii-look {
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(160, 170, 195, 0.5);
+  background: rgba(40, 46, 62, 0.85);
+  color: #dfe5f2;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rii-look.on {
+  border-color: #ffc548;
+  color: #ffe9a8;
+  background: rgba(90, 74, 34, 0.85);
+}
+
+.foresight .rii-looks {
+  margin-top: 6px;
+  justify-content: flex-start;
+}
+
 @media (max-width: 700px), (max-height: 500px) {
   .rii-picker {
     bottom: 34%;

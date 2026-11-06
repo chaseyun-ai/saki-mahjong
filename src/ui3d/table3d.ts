@@ -15,6 +15,7 @@ import { Gale } from './gale';
 import { KimonSigil } from './kimonSigil';
 import { StillWater } from './stillWater';
 import { ChainFx, ChainFrame } from './chains';
+import { riiLook } from '../ui/riiLook';
 import { ChainOutcome, outcomeTime } from '../ui/riiChainPlan';
 import { glowGlyph } from '../ui/tileArt';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
@@ -1171,11 +1172,10 @@ export class Table3D {
       t.target = target;
       const back = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
       if (back && t.back.material !== back) t.back.material = back;
-      // 白水哩番缚选番数：自己的手牌整张盖成牌背（牌面藏起来）
-      const covered = this.ghostAt.has(id);
-      const body = covered ? this.backMat : view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
+      const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
-      t.face.visible = !covered;
+      // 白水哩番缚选番数：自己的手牌牌面朝下扣在桌上
+      t.face.visible = !this.ghostAt.has(id);
       if (this.faceMat && t.face.material !== this.faceMat) t.face.material = this.faceMat;
       if (t.body.customDepthMaterial) {
         t.body.customDepthMaterial = t.back.customDepthMaterial = undefined;
@@ -1208,14 +1208,15 @@ export class Table3D {
 
   // ---------- 白水哩的番缚 ----------
 
-  // 选番数时：手牌扣下去，原来的位置上浮着一排半透明的牌面
+  // 选番数时：手牌牌面朝下扣在桌上，上方浮着一排半透明的牌面。
+  // 投影朝内：牌面朝着自己；朝外：牌面朝着桌子中间（从自己这边看是反的）。试看用，见 ui/riiLook.ts
   private syncGhosts(): void {
     for (const [id, gr] of this.ghosts) if (!this.ghostAt.has(id)) gr.visible = false;
     if (!this.ghostAt.size) return;
     const map = this.faceMat?.map ?? this.atlas.texture;
     this.ghostMats ??= {
-      back: new THREE.MeshBasicMaterial({ color: '#8fa8ff', transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending }),
-      face: new THREE.MeshBasicMaterial({ map, transparent: true, opacity: 0.92, depthWrite: false, toneMapped: false }),
+      back: new THREE.MeshBasicMaterial({ color: '#8fa8ff', transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
+      face: new THREE.MeshBasicMaterial({ map, transparent: true, opacity: 0.92, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }),
     };
     if (this.ghostMats.face.map !== map) {
       this.ghostMats.face.map = map;
@@ -1236,9 +1237,9 @@ export class Table3D {
       }
       gr.position.copy(at.pos);
       gr.quaternion.copy(at.quat);
-      // 浮在牌背那一排的正上方，一张对一张
-      gr.translateY(TILE_H * 1.08 * at.scale);
-      gr.translateZ((TILE_T / 2 + 0.05) * at.scale);
+      // 浮在扣着的那一排的正上方，一张对一张
+      gr.translateY(TILE_H * 1.02 * at.scale);
+      if (riiLook.proj === 'out') gr.rotateY(Math.PI);
       gr.scale.setScalar(at.scale);
       gr.visible = true;
     }
@@ -1281,7 +1282,16 @@ export class Table3D {
   private syncChains(g: Game, view: SyncView): void {
     const me = view.me;
     const bind = view.riiBind ?? null;
-    const cur = this.chains[me];
+    let cur = this.chains[me];
+    // 换了锁链样子（试看）：照新样子重新锁一次
+    if (cur && bind !== null && cur.look.id !== riiLook.chain && g.phase === 'turn') {
+      cur.dispose();
+      this.chains[me] = null;
+      cur = null;
+      const fx = this.newChain(me, bind, g, me);
+      fx.lock();
+      return;
+    }
     if (bind !== null && !cur && g.phase === 'turn' && !this.deal) {
       const fx = this.newChain(me, bind, g, me);
       // 刚缚上：射过来锁上；接着打的半局（换视角、重画）就直接是锁好的样子
@@ -1763,9 +1773,9 @@ export class Table3D {
       if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, rot, yaw, hs) };
       if (t !== null && p.hand.includes(t)) {
         if (cover) {
-          // 番缚：牌原地不动、盖成牌背的颜色（见 sync），上方浮着一排投影牌面
+          // 番缚：牌面朝下整整齐齐扣在原来的位置（不跟着扇形转），上方浮着一排投影牌面
           this.ghostAt.set(t, this.toWorld(s, me, x, y, hz, rot, yaw, hs));
-          out.set(t, this.toWorld(s, me, x, y, hz, rot, yaw, hs));
+          out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * hs, hz + TILE_H * 0.3 * hs, FACE_DOWN, 0, hs));
         } else out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
       }
       x += step;

@@ -2,27 +2,28 @@ import type { Game, RoundResult } from '../engine/game';
 import { riiBind } from '../abilities/rii';
 
 // 白水哩的番缚特效（3D / 2.5D 在 ui3d/chains.ts，2D 在 ui/chains2d.ts，天空放晴、钥匙落下在 ui/skyKey.ts），
-// 这里是共用的布局和时间。
-// 缚几番就有几条锁链从四面八方射过来，一条条缠在手牌上箍一圈；
+// 这里是共用的布局和时间。锁链的样子（几种可以挑）在 ui/riiLook.ts。
+// 缚几番就有几条锁链从四面八方射过来，一条条横七竖八地压在手牌上，两头都伸到画面外；
 // 这一局和出的番数够了：锁链变金，碎成金色碎片冲上天，天空放晴，钥匙缓缓落下来；
 // 没和成：锁链一节节像粒子一样消散，剩下的化成光冲上天；和了但番数不够：锁链悄悄淡掉。
 
-// 一条锁链：箍在手牌的哪里（x：手牌宽度的比例，0 是正中），从哪个方向射过来（和水平线的夹角），箍的那一圈斜多少
+// 一条锁链：压在手牌的哪里（x：手牌宽度的比例，0 是正中），从哪个方向射过来（和水平线的夹角），
+// 离牌面多远（z：牌厚度的比例，几条错开一点不打架）
 export interface ChainLine {
   x: number;
   angle: number;
-  tilt: number;
+  z: number;
 }
 
-// 七条锁链。缚 n 番用前 n 条：先箍中间，再两边，越来越密
+// 七条锁链。缚 n 番用前 n 条：先压中间，再两边，越来越密
 const LINES: ChainLine[] = [
-  { x: 0.0, angle: deg(70), tilt: deg(-14) },
-  { x: -0.3, angle: deg(-130), tilt: deg(16) },
-  { x: 0.3, angle: deg(-50), tilt: deg(-18) },
-  { x: -0.15, angle: deg(150), tilt: deg(10) },
-  { x: 0.42, angle: deg(25), tilt: deg(20) },
-  { x: -0.43, angle: deg(110), tilt: deg(-12) },
-  { x: 0.15, angle: deg(-95), tilt: deg(12) },
+  { x: 0.02, angle: deg(68), z: 0.9 },
+  { x: -0.3, angle: deg(-132), z: 1.05 },
+  { x: 0.31, angle: deg(-48), z: 1.2 },
+  { x: -0.12, angle: deg(164), z: 1.35 },
+  { x: 0.42, angle: deg(104), z: 1.5 },
+  { x: -0.43, angle: deg(-82), z: 1.65 },
+  { x: 0.16, angle: deg(18), z: 1.8 },
 ];
 
 function deg(d: number): number {
@@ -33,82 +34,41 @@ export function chainPlan(n: number): ChainLine[] {
   return LINES.slice(0, Math.max(0, Math.min(LINES.length, Math.round(n))));
 }
 
-// 锁链的一节：在手牌的局部坐标里（x 顺着手牌那一排往右，y 往上，z 朝着看的人），切线方向，
-// 在锁链上走了多远（s），是不是箍在手牌上的那一圈
+// 锁链的一节：在手牌的局部坐标里（x 顺着手牌那一排往右，y 往上，z 朝着看的人），切线方向，在锁链上走了多远（s）
 export interface LinkSpot {
   p: [number, number, number];
   t: [number, number, number];
   s: number;
-  loop: boolean;
 }
 
 export interface ChainDims {
   width: number; // 手牌那一排多宽
-  height: number; // 牌多高
   depth: number; // 牌多厚
-  far: number; // 锁链从多远射过来
+  far: number; // 锁链两头伸出去多远（伸到画面外）
   pitch: number; // 两节之间多远
 }
 
-// 一条锁链：从画面外笔直射到手牌边上，再贴着手牌箍一圈多一点
-export function chainLinks(line: ChainLine, d: ChainDims): { links: LinkSpot[]; length: number; loopStart: number } {
+// 一条锁链：从画面外笔直射过来，压过手牌，另一头伸到画面外。contactS：压在手牌上的那一节走了多远
+export function chainLinks(line: ChainLine, d: ChainDims): { links: LinkSpot[]; length: number; contactS: number } {
   const cx = line.x * d.width;
-  const a = d.height * 0.62;
-  const b = d.depth * 0.9;
-  const st = Math.sin(line.tilt);
-  const ct = Math.cos(line.tilt);
-  const loop = (phi: number): [number, number, number] => [cx + a * Math.cos(phi) * st, a * Math.cos(phi) * ct, b * Math.sin(phi)];
-  // 从上面射过来的从顶上那一点缠起，从下面来的从底下那一点
-  const phi0 = Math.sin(line.angle) >= 0 ? 0 : Math.PI;
-  const entry = loop(phi0);
-  const far: [number, number, number] = [entry[0] + Math.cos(line.angle) * d.far, entry[1] + Math.sin(line.angle) * d.far, d.depth * 1.5];
-  // 先密密地取点，再按弧长每 pitch 放一节
-  const pts: [number, number, number][] = [];
-  const isLoop: boolean[] = [];
-  const NS = 60;
-  for (let i = 0; i < NS; i++) {
-    const k = i / NS;
-    pts.push([far[0] + (entry[0] - far[0]) * k, far[1] + (entry[1] - far[1]) * k, far[2] + (entry[2] - far[2]) * k]);
-    isLoop.push(false);
-  }
-  const turns = 1.12;
-  const NL = 160;
-  for (let i = 0; i <= NL; i++) {
-    pts.push(loop(phi0 + (i / NL) * Math.PI * 2 * turns * (phi0 === 0 ? 1 : -1)));
-    isLoop.push(true);
-  }
-  const cum = [0];
-  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist(pts[i], pts[i - 1]));
-  const length = cum[cum.length - 1];
+  const z = d.depth * line.z;
+  const dx = Math.cos(line.angle);
+  const dy = Math.sin(line.angle);
+  const length = d.far * 2;
+  const t: [number, number, number] = [-dx, -dy, 0];
   const links: LinkSpot[] = [];
-  let loopStart = -1;
-  let j = 0;
-  for (let s = 0; s <= length; s += d.pitch) {
-    while (j < pts.length - 2 && cum[j + 1] < s) j++;
-    const u = (s - cum[j]) / Math.max(1e-6, cum[j + 1] - cum[j]);
-    const p: [number, number, number] = [0, 1, 2].map((q) => pts[j][q] + (pts[j + 1][q] - pts[j][q]) * u) as [number, number, number];
-    const t = norm([0, 1, 2].map((q) => pts[j + 1][q] - pts[j][q]) as [number, number, number]);
-    const lp = isLoop[j + 1];
-    if (lp && loopStart < 0) loopStart = links.length;
-    links.push({ p, t, s, loop: lp });
+  for (let s = 0; s <= length + 1e-6; s += d.pitch) {
+    const k = d.far - s;
+    links.push({ p: [cx + dx * k, dy * k, z], t, s });
   }
-  return { links, length, loopStart: Math.max(0, loopStart) };
+  return { links, length, contactS: d.far };
 }
 
-function dist(a: number[], b: number[]): number {
-  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-}
-
-function norm(v: [number, number, number]): [number, number, number] {
-  const l = Math.hypot(...v) || 1;
-  return [v[0] / l, v[1] / l, v[2] / l];
-}
-
-// 锁上：一条接一条射过来缠上（间隔 stagger 秒，每条 fly 秒），射过来的那一截收进去（retract），绷一下
-export const LOCK = { stagger: 0.16, fly: 0.55, retract: 0.3, tense: 0.35, hold: 0.45, dim: 0.5 };
-// 锁好以后一直箍着，淡成这么透（看得清牌面）
-export const FAINT = 0.42;
-// 钥匙：变金（从箍住的地方扫开）→ 碎成碎片 → 冲上天 → 天空放晴、钥匙缓缓落下（ui/skyKey.ts）
+// 锁上：一条接一条射过来（间隔 stagger 秒，每条 fly 秒），压住时绷一下（tense 秒）
+export const LOCK = { stagger: 0.16, fly: 0.42, tense: 0.4, hold: 0.5, dim: 0.5 };
+// 锁好以后一直压着，淡成这么透（看得清牌面）
+export const FAINT = 0.3;
+// 钥匙：变金（从压住手牌的地方往两头扫开）→ 碎成碎片 → 冲上天 → 天空放晴、钥匙缓缓落下（ui/skyKey.ts）
 export const GOLD = { show: 0.3, sweep: 0.6, crack: 0.3, rise: 0.8 };
 export const SKY = { clear: 0.7, fall: 1.7, hold: 1.1, fade: 0.6 };
 // 天空放晴从碎片快冲出画面的时候开始
@@ -123,7 +83,7 @@ export const FADE = 0.8;
 export const QUICK_LOCK = 0.5;
 
 export function lockTime(n: number): number {
-  return (Math.max(1, n) - 1) * LOCK.stagger + LOCK.fly + LOCK.retract + LOCK.tense;
+  return (Math.max(1, n) - 1) * LOCK.stagger + LOCK.fly + LOCK.tense;
 }
 
 export type ChainOutcome = 'key' | 'broken' | 'fade';

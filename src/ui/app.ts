@@ -24,6 +24,7 @@ import { toyoneRedHidden } from '../abilities/toyone';
 import { RII, riiBind, riiCanBind, riiKeys } from '../abilities/rii';
 import { Chains2D } from './chains2d';
 import { chainOutcomes, outcomeTime, skyStart, skyTime } from './riiChainPlan';
+import { CHAIN_LOOKS, ChainStyleId, RiiProj, riiLook, setRiiLook } from './riiLook';
 import { SkyKey } from './skyKey';
 import { keyTag } from './keyArt';
 import { saeCanAim, saeAim, snipedBy } from '../abilities/sae';
@@ -981,7 +982,10 @@ export class App {
       this.chains2d = new Chains2D(host, () => document.querySelector('.stage .table')?.getBoundingClientRect() ?? null);
     }
     const bind = this.chars[this.me]?.id === 'rii' && !this.vision ? riiBind(g, this.me) : null;
-    if (bind !== null && this.chains2d && !this.chains2d.has(this.me) && g.phase === 'turn') {
+    // 换了锁链样子（试看）：照新样子重新锁一次
+    if (bind !== null && this.chains2d && this.chains2d.has(this.me) && this.chains2d.styleOf(this.me) !== riiLook.chain && g.phase === 'turn') {
+      this.chains2d.lock(this.me, bind, () => this.handRect(this.me), 'lock');
+    } else if (bind !== null && this.chains2d && !this.chains2d.has(this.me) && g.phase === 'turn') {
       this.chains2d.lock(this.me, bind, () => this.handRect(this.me), g.players[this.me].discards.length === 0 ? 'lock' : 'settled');
     }
     this.chains2d?.redraw();
@@ -1371,6 +1375,13 @@ export class App {
       return;
     }
     // 白水哩的番缚：先把手牌扣下去再选番数；不缚就翻回来
+    // 番缚的样子（试看）：投影朝内 / 朝外，几种锁链
+    if (el.dataset.ui === 'rii-look') {
+      if (el.dataset.proj) setRiiLook({ proj: el.dataset.proj as RiiProj });
+      if (el.dataset.chain) setRiiLook({ chain: el.dataset.chain as ChainStyleId });
+      this.render();
+      return;
+    }
     if (el.dataset.ui === 'rii-bind' || el.dataset.ui === 'rii-cancel') {
       this.riiPicking = el.dataset.ui === 'rii-bind' && !!this.game && riiCanBind(this.game, this.me);
       this.render();
@@ -2095,7 +2106,17 @@ export class App {
   private riiPickerHtml(): string {
     if (!this.riiPicking || !this.game || !riiCanBind(this.game, this.me)) return '';
     const n = Array.from({ length: RII.maxBind }, (_, i) => `<button class="rii-han" data-ui="skill" data-choice="${i + 1}">${'一二三四五六七'[i]}<small>番</small></button>`).join('');
-    return `<div class="rii-picker"><div class="rii-title">番缚 · 缚几番</div><div class="rii-row">${n}<button class="rii-han no" data-ui="rii-cancel">不缚</button></div></div>`;
+    return `<div class="rii-picker"><div class="rii-title">番缚 · 缚几番</div><div class="rii-row">${n}<button class="rii-han no" data-ui="rii-cancel">不缚</button></div>${this.riiLookHtml(true)}</div>`;
+  }
+
+  // 试看用：挑投影朝哪边、锁链什么样子（挑好以后留一种，这一排就拿掉）
+  private riiLookHtml(proj: boolean): string {
+    const btn = (on: boolean, attr: string, label: string) => `<button class="rii-look${on ? ' on' : ''}" data-ui="rii-look" ${attr}>${label}</button>`;
+    const projRow = proj
+      ? `<div class="rii-looks"><span>投影</span>${btn(riiLook.proj === 'in', 'data-proj="in"', '朝内')}${btn(riiLook.proj === 'out', 'data-proj="out"', '朝外')}</div>`
+      : '';
+    const chainRow = `<div class="rii-looks"><span>锁链</span>${CHAIN_LOOKS.map((c) => btn(riiLook.chain === c.id, `data-chain="${c.id}"`, c.name)).join('')}</div>`;
+    return projRow + chainRow;
   }
 
   private myAreaHtml(withHand = true, withPlate = true): string {
@@ -2116,7 +2137,7 @@ export class App {
     const hand = sorted.map((t) => tileHtml(t, { classes: covered(t), data: { tile: t } })).join('');
     const drawn =
       p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn, { classes: covered(p.drawn), data: { tile: p.drawn } })}</div>` : '';
-    const ghosts = cover && withHand ? `<div class="rii-ghosts">${sorted.map((t) => tileHtml(t)).join('')}${p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn)}</div>` : ''}</div>` : '';
+    const ghosts = cover && withHand ? `<div class="rii-ghosts${riiLook.proj === 'out' ? ' out' : ''}">${sorted.map((t) => tileHtml(t)).join('')}${p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn)}</div>` : ''}</div>` : '';
 
     const buttons: string[] = [];
     // 3D 牌桌上别人打的牌还在半空时先不弹鸣牌按钮，落桌后 step 会再画一次
@@ -2236,7 +2257,9 @@ export class App {
       : ab!.pressSkill
         ? `<button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button>`
         : `<div class="fs-note skill-state">${b.note}</div>`;
-    return `<div class="foresight skill"><div class="fs-title">${ab!.name}${b.active ? '<span class="skill-on">发动中</span>' : ''}${meter}</div>${body}</div>`;
+    // 白水哩缚上以后：换个锁链样子，照新样子重新锁一次看看
+    const looks = ab?.id === 'rii' && riiBind(g, this.me) !== null && g.phase === 'turn' ? this.riiLookHtml(false) : '';
+    return `<div class="foresight skill"><div class="fs-title">${ab!.name}${b.active ? '<span class="skill-on">发动中</span>' : ''}${meter}</div>${body}${looks}</div>`;
   }
 
   // ---------- 发牌前选技能（淡、霞） ----------
