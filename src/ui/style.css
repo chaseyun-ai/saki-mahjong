@@ -2480,7 +2480,8 @@ button {
   animation: fx-slam 0.42s cubic-bezier(0.2, 1.6, 0.4, 1) both, fx-out 0.4s ease-in 1s forwards;
 }
 
-/* 字后面一圈扩散的光环 */
+/* 字后面推出去的一圈冲击波（照 ultra-elements 的 Shockwaves）：外沿锐利、透出一道白芯，里面拖一片柔和的尾迹；
+   一开始冲得快、越往外越慢（爆炸波 r ~ t^0.4），越扩越暗 */
 .toast.fx span::before {
   content: '';
   position: absolute;
@@ -2490,10 +2491,63 @@ button {
   height: 160px;
   margin: -80px 0 0 -80px;
   border-radius: 50%;
-  border: 4px solid var(--fx);
-  box-shadow: 0 0 30px var(--fx), inset 0 0 30px var(--fx);
-  animation: fx-ring 0.7s ease-out both;
+  background: radial-gradient(
+    circle closest-side,
+    transparent 58%,
+    color-mix(in srgb, var(--fx) 12%, transparent) 72%,
+    color-mix(in srgb, var(--fx) 45%, transparent) 84%,
+    var(--fx) 91%,
+    #fff 94%,
+    color-mix(in srgb, var(--fx) 50%, transparent) 96.5%,
+    transparent 100%
+  );
+  filter: drop-shadow(0 0 10px var(--fx));
+  animation: fx-ring 0.75s cubic-bezier(0.1, 0.8, 0.25, 1) both;
   z-index: -1;
+}
+
+/* 字后面一下子亮起来的一团光：一下亮到顶，前面暗得快、后面拖一点余光 */
+.toast.fx span::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 220px;
+  height: 220px;
+  margin: -110px 0 0 -110px;
+  border-radius: 50%;
+  background: radial-gradient(circle closest-side, #fff 0, color-mix(in srgb, var(--fx) 70%, #fff) 18%, color-mix(in srgb, var(--fx) 30%, transparent) 45%, transparent 100%);
+  mix-blend-mode: screen;
+  animation: fx-burst 0.55s ease-out both;
+  pointer-events: none;
+  z-index: -2;
+}
+
+/* 字后面迸出去的火星：每颗是一道拉长的流光，头白热、尾巴是本色，越飞越慢、越短、越淡（app.ts 的 fxSparksHtml） */
+.toast.fx .fx-sparks {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.toast.fx .fx-sparks i {
+  position: absolute;
+  left: 0;
+  top: -1.5px;
+  width: var(--l);
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fx) 80%, transparent) 55%, #fff);
+  transform-origin: 0 50%;
+  filter: drop-shadow(0 0 3px var(--fx));
+  animation: fx-spark var(--t) cubic-bezier(0.12, 0.75, 0.3, 1) var(--w) both;
+}
+.toast.fx-win .fx-sparks i {
+  height: 4px;
+  top: -2px;
 }
 
 .toast.fx-call {
@@ -2543,13 +2597,20 @@ button {
   animation-duration: 1s;
 }
 
+.toast.fx-win span::after {
+  width: 420px;
+  height: 420px;
+  margin: -210px 0 0 -210px;
+  animation-duration: 0.8s;
+}
+
 /* 和牌时整个画面闪一下 */
 .toast.fx-win::after {
   content: '';
   position: fixed;
   inset: 0;
   background: radial-gradient(circle at 50% 40%, rgba(255, 240, 200, 0.75), rgba(255, 200, 80, 0) 60%);
-  animation: fx-flash 0.8s ease-out both;
+  animation: fx-flash 0.9s linear both;
   pointer-events: none;
   z-index: -2;
 }
@@ -2575,30 +2636,82 @@ button {
 }
 
 @keyframes fx-ring {
-  from {
-    opacity: 1;
-    scale: 0.2;
-  }
-  to {
+  0% {
     opacity: 0;
-    scale: 2.2;
+    scale: 0.15;
+  }
+  4% {
+    opacity: 1;
+  }
+  30% {
+    opacity: 0.46;
+  }
+  60% {
+    opacity: 0.13;
+  }
+  100% {
+    opacity: 0;
+    scale: 2.4;
   }
 }
 
+/* 闪光的亮度：一下亮到顶，前一小段很快暗下去，后面拖一点余光 */
 @keyframes fx-flash {
+  0% {
+    opacity: 1;
+  }
+  8% {
+    opacity: 0.72;
+  }
+  25% {
+    opacity: 0.36;
+  }
+  60% {
+    opacity: 0.1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes fx-burst {
+  0% {
+    opacity: 0;
+    scale: 0.4;
+  }
+  6% {
+    opacity: 1;
+    scale: 0.75;
+  }
+  30% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0;
+    scale: 1.15;
+  }
+}
+
+@keyframes fx-spark {
   from {
     opacity: 1;
+    transform: rotate(var(--a)) translateX(24px) scaleX(1.5);
   }
   to {
     opacity: 0;
+    transform: rotate(var(--a)) translateX(var(--d)) scaleX(0.25);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .toast.fx span,
   .toast.fx span::before,
+  .toast.fx span::after,
   .toast.fx-win::after {
     animation-duration: 0.01s;
+  }
+  .toast.fx .fx-sparks {
+    display: none;
   }
 }
 

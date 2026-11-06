@@ -9,7 +9,7 @@ import { sketchFaceSvg } from '../ui/sketchArt';
 import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
-import { Effects } from './effects';
+import { BOLT_LEADER, Effects, SHAFT_DROP } from './effects';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
 import { StillWater } from './stillWater';
@@ -88,9 +88,10 @@ const DEAL_END = DEAL_SORT + SORT_TILT + 0.15;
 const REVEAL_DELAY = 0.7;
 const TOPPLE_TIME = 0.24;
 const TOPPLE_STAGGER = 0.07;
-// 2.5D 照雀魂的节奏：“荣和/自摸”的切入放完，1.2 秒闪电打在和的那张牌上，1.4 秒倒牌，倒得也快一些
+// 2.5D 照雀魂的节奏：“荣和/自摸”的切入放完，1.2 秒闪电打在和的那张牌上，1.4 秒倒牌，倒得也快一些。
+// 闪电的先导要先摸下来一会儿，所以早 BOLT_LEADER 秒开始劈
 const REVEAL_DELAY_25D = 1.4;
-const BOLT_LEAD = 0.2;
+const BOLT_LEAD = 0.2 + BOLT_LEADER;
 const TOPPLE_STAGGER_25D = 0.03;
 // 初美鸣出来的东、北中间那张牌面上的紫色墨
 const KIMON_INK = '#8a3cf2';
@@ -937,14 +938,20 @@ export class Table3D {
     this.stickState[seat] = 'placed';
   }
 
-  // 鸣牌、立直的特效：在这家前面的桌上放冲击波，角色举手示意
+  // 鸣牌、立直的特效：在这家前面的桌上放冲击波、迸一把火星，四周被照亮一下，角色举手示意。
+  // 杠再从天上劈一道光柱下来，冲击波等光柱落地才推出去
   private callFx(seat: number, kind: 'call' | 'kan' | 'riichi'): void {
     const color = kind === 'riichi' ? FX_RED : kind === 'kan' ? '#9fd8ff' : FX_GOLD;
     const at = this.seatPoint(seat, 0, 0.1, kind === 'riichi' ? this.dim.pondZ : this.dim.handZ - 2);
-    this.effects.ring(at, color, kind === 'kan' ? 9 : 6);
-    this.effects.flash(at.clone().setY(1.5), color, kind === 'riichi' ? 10 : 7);
-    if (kind !== 'call') this.effects.ring(at, color, 12, 1.1);
     if (kind === 'kan') this.effects.beam(at, color, 10, 1);
+    this.effects.later(kind === 'kan' ? SHAFT_DROP : 0, () => {
+      this.effects.ring(at, color, kind === 'kan' ? 9 : 6);
+      this.effects.ring(at, '#ffffff', kind === 'kan' ? 4.5 : 3.5, 0.4, 0.7);
+      this.effects.flash(at.clone().setY(1.5), color, kind === 'riichi' ? 9 : 6, 0.5);
+      if (kind !== 'call') this.effects.ring(at, color, 12, 1.1, 0.6);
+      this.effects.burst(at.clone().setY(0.4), color, kind === 'call' ? 30 : 50, kind === 'call' ? 8 : 11, 0.7);
+      this.effects.pulse(at.clone().setY(2.2), color, kind === 'call' ? 40 : 65, kind === 'call' ? 0.18 : 0.28);
+    });
     this.shake = Math.max(this.shake, kind === 'call' ? 0.25 : 0.45);
     // 举起右手亮一下（立直时手要去拿立直棒，不举手）
     const av = this.characterAt(seat)?.avatar;
@@ -971,12 +978,17 @@ export class Table3D {
       return;
     }
     const at = this.seatPoint(seat, 0, 0.1, this.dim.handZ - 2.5);
+    // 光柱先劈下来，落地那一下冲击波推开、白光一闪带一道横的光痕、金色光点往上冲
     this.effects.beam(at, color, 14, 2.2);
-    this.effects.ring(at, color, 14, 1.2);
-    this.effects.ring(at, '#ffffff', 8, 0.8);
-    this.effects.sparkles(at, color, 70, 5, 2.2);
-    this.effects.flash(at.clone().setY(3), '#fff2c4', 18, 0.6);
-    this.shake = 0.6;
+    this.effects.later(SHAFT_DROP, () => {
+      this.effects.ring(at, color, 14, 1.2);
+      this.effects.ring(at, '#ffffff', 8, 0.8, 0.8);
+      this.effects.sparkles(at, color, 80, 5, 2.2);
+      this.effects.burst(at.clone().setY(0.5), color, 60, 12, 0.9);
+      this.effects.flash(at.clone().setY(3), '#fff2c4', 16, 0.7, true);
+      this.effects.pulse(at.clone().setY(3), color, 110, 0.45);
+      this.shake = Math.max(this.shake, 0.6);
+    });
     if (seat !== this.lastSync?.view.me) this.zoom = { t: 0, target: this.seatPoint(seat, 0, 4, this.dim.seatZ - 2) };
     // 自摸的人举手，荣和的人身体前倾
     if (tsumo) this.callFx(seat, 'call');
@@ -2448,7 +2460,7 @@ export class Table3D {
         const top = new THREE.Vector3(p.x * 0.3, 1.08, p.z).unproject(this.camera);
         this.effects.bolt(top, at, FX_GOLD, this.camera.position);
       }
-      this.shake = 0.5;
+      this.effects.later(BOLT_LEADER, () => (this.shake = Math.max(this.shake, 0.5)));
     }
     if (!rv.fxDone && this.now >= rv.fxAt) {
       rv.fxDone = true;

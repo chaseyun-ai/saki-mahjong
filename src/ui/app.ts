@@ -1800,7 +1800,7 @@ export class App {
       if (box.querySelector(`[data-id="${t.id}"]`)) continue;
       box.insertAdjacentHTML(
         'beforeend',
-        `<div data-id="${t.id}" class="toast ${POS[t.seat]} ${t.big ? 'big' : ''} ${t.kind ? `fx fx-${t.kind}` : ''}" style="--c:${this.chars[t.seat].color}"><span>${t.text}</span></div>`,
+        `<div data-id="${t.id}" class="toast ${POS[t.seat]} ${t.big ? 'big' : ''} ${t.kind ? `fx fx-${t.kind}` : ''}" style="--c:${this.chars[t.seat].color}">${t.kind ? fxSparksHtml(t.kind) : ''}<span>${t.text}</span></div>`,
       );
     }
   }
@@ -2499,6 +2499,23 @@ function brushSvg(broken: boolean): string {
     ? '<g transform="rotate(-8 20 34)"><rect x="17.5" y="30" width="5" height="17" rx="2" fill="#7a7a80"/></g><g transform="rotate(14 20 20)"><rect x="17.5" y="11" width="5" height="16" rx="1.5" fill="#8a8a90"/><rect x="16.8" y="8" width="6.4" height="4" fill="#a0a0a6"/><path d="M17 8 Q20 -1 23 8 Z" fill="#9a9aa0"/></g>'
     : '<rect x="17.5" y="20" width="5" height="27" rx="2" fill="#c98a4a" stroke="#7a4e22" stroke-width="0.8"/><rect x="16.8" y="14" width="6.4" height="7" rx="1" fill="#d8dbe2" stroke="#7d828c" stroke-width="0.7"/><path d="M17 14 Q20 1 23 14 Z" fill="#2b2b33"/><path d="M18.6 13 Q20 5 21.4 13 Z" fill="var(--paint, #d8463c)"/>';
   return `<svg viewBox="0 0 40 50" width="100%" height="100%" aria-hidden="true">${body}</svg>`;
+}
+
+// 立直、鸣牌、和牌的大字后面迸出去的火星：方向、飞多远、拖多长、几时迸都随机一点（style.css 的 .fx-sparks）
+function fxSparksHtml(kind: string): string {
+  const win = kind === 'win';
+  const n = win ? 24 : kind === 'call' ? 10 : 14;
+  const reach = win ? 260 : 150;
+  let html = '';
+  for (let i = 0; i < n; i++) {
+    const a = (360 * (i + Math.random() * 0.8)) / n;
+    const d = Math.round(reach * (0.55 + 0.45 * Math.random()));
+    const l = Math.round((win ? 46 : 30) * (0.6 + 0.6 * Math.random()));
+    const t = (0.45 + 0.35 * Math.random() + (win ? 0.2 : 0)).toFixed(2);
+    const w = (Math.random() * 0.06).toFixed(2);
+    html += `<i style="--a:${a.toFixed(0)}deg;--d:${d}px;--l:${l}px;--t:${t}s;--w:${w}s"></i>`;
+  }
+  return `<b class="fx-sparks" aria-hidden="true">${html}</b>`;
 }
 
 // 2D 初美砸牌的节奏（秒，从结算出来算起）：手牌一张隔 0.035 秒倒下（每张 0.22 秒），倒完和了牌举起来、停一下、砸下去（共 0.55 秒）。
