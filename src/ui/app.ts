@@ -48,6 +48,8 @@ import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 import { MatchSettings, loadSettings, parseTarget, pickOpponents, rulesOf, saveSettings, setOption, setupHtml } from './matchSetup';
 import { ForecastCache } from '../ai/forecast';
+import { himekoKeySeat } from '../abilities/himeko';
+import { Himeko2D } from './himeko2d';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -1318,8 +1320,26 @@ export class App {
   }
 
   // 3D 牌桌在掷骰子、发牌时，先等动画放完
+  // 2D 牌桌上姬子拿到钥匙那一局的光柱和火（哪一局放过了）
+  private himeko2d = new Himeko2D();
+  private himeko2dRound = '';
+
   private busyMs(): number {
-    return this.table3d?.busyMs() ?? 0;
+    return this.table3d?.busyMs() ?? this.himeko2d.busyMs();
+  }
+
+  // 2D：姬子拿到钥匙的那一局，配牌时光柱砸下来、理完牌火从右烧到左（3D、2.5D 在 table3d 里放）
+  private himekoFx2d(g: Game, table: HTMLElement): void {
+    const seat = himekoKeySeat(g);
+    const fresh = g.players.every((p) => p.discards.length === 0 && p.melds.length === 0);
+    const key = `${g.seed}-${g.round}`;
+    if (seat !== null && fresh && this.himeko2dRound !== key && !this.vision) {
+      this.himeko2dRound = key;
+      this.himeko2d.begin();
+    }
+    if (seat === null) return;
+    const sel = seat === this.me ? '.me .hand' : `.opponent.${POS[seat]} .ohand`;
+    this.himeko2d.apply(table, sel, (seat - this.me + 4) % 4);
   }
 
   private onTileClick(tile: TileId): void {
@@ -1370,6 +1390,7 @@ export class App {
       ${this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
       ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
+    this.himekoFx2d(g, table.parentElement ?? table);
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     table.dataset.mist = String(this.mistLevel());
     this.gale2d(this.galeView()?.level ?? 0);
