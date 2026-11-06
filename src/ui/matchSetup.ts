@@ -2,8 +2,10 @@ import { CHARACTERS, type Character } from '../abilities/characters';
 import type { Rules } from '../engine/game';
 import type { Rng } from '../engine/rng';
 import { SCHOOLS, membersOf } from './schools';
+import { THEMES, type ThemeId, tableColors } from './theme';
 
-// 单人对局开局前的设置弹窗：点了角色以后弹出来，选好规则再开局。上次选的记在浏览器里，下次照着弹
+// 选人页右上角的两个设置面板：对局设置（规则、对手）和视觉设置（皮肤、牌桌视角、动画）。
+// 改了马上记在浏览器里，点头像、按出场都照这里的设置开局
 
 export interface MatchSettings {
   length: 'one' | 'east' | 'south';
@@ -51,7 +53,8 @@ export function loadSettings(): MatchSettings {
   } catch {
     // 无痕模式之类读不到：用默认的
   }
-  return { ...DEFAULT_SETTINGS };
+  // 对手名单要另拷一份：改对手时不能连默认设置一起改掉
+  return { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents] };
 }
 
 export function saveSettings(s: MatchSettings): void {
@@ -71,6 +74,8 @@ interface Row {
   key: keyof MatchSettings;
   name: string;
   options: Option[];
+  // 名字下面的一行小字说明
+  note?: string;
 }
 
 const onOff: Option[] = [
@@ -114,18 +119,23 @@ const ROWS: Row[] = [
       { label: '四番缚', value: '4' },
     ],
   },
-  { key: 'open', name: '公开手牌', options: onOff },
+  { key: 'open', name: '公开手牌', options: onOff, note: '别人的手牌亮着打，电脑照旧不看' },
   {
     key: 'drawPath',
     name: '摸牌路径',
+    note: '3D、2.5D 牌桌：牌从牌山飞进手里',
     options: [
       { label: '开启', value: 'on' },
       { label: '关闭', value: 'off' },
       { label: '仅自己', value: 'self' },
     ],
   },
-  { key: 'vary', name: '微变化', options: onOff },
+  { key: 'vary', name: '微变化', options: onOff, note: '落桌声、出牌动作、牌河每次差一点点' },
 ];
+
+// 两个面板各管哪几项（存在同一份设置里）
+const MATCH_KEYS: (keyof MatchSettings)[] = ['length', 'start', 'target', 'tobi', 'red', 'kuitan', 'minHan', 'open'];
+const VISUAL_KEYS: (keyof MatchSettings)[] = ['drawPath', 'vary'];
 
 // 按钮上写的值换回设置里的值
 export function setOption(s: MatchSettings, key: string, value: string): void {
@@ -180,31 +190,100 @@ export function rulesOf(s: MatchSettings): Partial<Rules> {
   return { target: s.target, tobi: s.tobi, red: s.red, kuitan: s.kuitan, minHan: s.minHan };
 }
 
-// 弹窗：name 是选的角色
-export function setupHtml(s: MatchSettings, name: string, color: string): string {
-  const rows = ROWS.map((r) => {
-    const body =
-      r.key === 'target'
-        ? `<input class="setup-input" id="setup-target" type="text" inputmode="numeric" value="${s.target}" aria-label="一位必要点数" />`
-        : r.options
-            .map((o) => {
-              const on = String(s[r.key]) === o.value;
-              return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="setup-opt" data-k="${r.key}" data-v="${o.value}">${o.label}</button>`;
-            })
-            .join('');
-    return `<div class="setup-row"><span class="setup-name">${r.name}</span><div class="setup-opts">${body}</div></div>`;
-  }).join('');
-  const opponents = `<div class="setup-row"><span class="setup-name">对手</span><div class="setup-opts setup-seats">${opponentsHtml(s)}</div></div>`;
+// 一排选项按钮：on 的那个亮着
+function optsHtml(ui: string, key: string, options: Option[], current: string): string {
+  return options
+    .map((o) => {
+      const on = current === o.value;
+      return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="${ui}" data-k="${key}" data-v="${o.value}">${o.label}</button>`;
+    })
+    .join('');
+}
+
+function rowHtml(name: string, body: string, note?: string, cls = ''): string {
+  return `<div class="setup-row${cls ? ` ${cls}` : ''}"><span class="setup-name">${name}${note ? `<small>${note}</small>` : ''}</span><div class="setup-opts">${body}</div></div>`;
+}
+
+function settingRows(s: MatchSettings, keys: (keyof MatchSettings)[]): string {
+  return keys
+    .map((k) => {
+      const r = ROWS.find((x) => x.key === k)!;
+      const body =
+        r.key === 'target'
+          ? `<input class="setup-input" id="setup-target" type="text" inputmode="numeric" value="${s.target}" aria-label="一位必要点数" /><span class="setup-unit">点</span>`
+          : optsHtml('setup-opt', r.key, r.options, String(s[r.key]));
+      return rowHtml(r.name, body, r.note);
+    })
+    .join('');
+}
+
+function panelHtml(kind: string, title: string, sub: string, body: string, actions: string): string {
   return `
-    <div class="modal setup-modal" role="dialog" aria-modal="true" aria-label="对局设置">
-      <div class="setup" style="--c:${color}">
-        <h2>对局设置<small>${name}</small></h2>
-        ${opponents}
-        ${rows}
-        <div class="setup-actions">
-          <button data-ui="setup-cancel">返回</button>
-          <button class="primary" data-ui="setup-go">开始对战</button>
-        </div>
+    <div class="modal setup-modal set-modal" role="dialog" aria-modal="true" aria-label="${title}">
+      <div class="setup set-panel set-${kind}">
+        <h2>${title}<small>${sub}</small><button class="set-x" data-ui="panel-close" aria-label="关闭">×</button></h2>
+        ${body}
+        <div class="setup-actions">${actions}<button class="primary" data-ui="panel-close">完成</button></div>
       </div>
     </div>`;
+}
+
+const section = (name: string) => `<h3 class="set-sec">${name}</h3>`;
+
+// 个人对局用的规则：一句话说清楚，显示在出场按钮旁边。窄的地方只放前半句（局数、点数）
+export function ruleSummary(s: MatchSettings): { main: string; opp: string } {
+  const len = { one: '一局', east: '东风', south: '半庄' }[s.length];
+  const picked = s.opponents.filter(Boolean).length;
+  return { main: `${len} · ${s.start / 10000} 万点`, opp: picked ? `指定 ${picked} 位对手` : '对手随机' };
+}
+
+// 对局设置：对手、规则、公开手牌
+export function matchPanelHtml(s: MatchSettings): string {
+  const opponents = `<div class="setup-row"><span class="setup-name">对手<small>空着的从其余角色里随机抽</small></span><div class="setup-opts setup-seats">${opponentsHtml(s)}</div></div>`;
+  const body = section('对手') + opponents + section('规则') + settingRows(s, MATCH_KEYS.slice(0, -1)) + section('显示') + settingRows(s, MATCH_KEYS.slice(-1));
+  return panelHtml('match', '对局设置', '个人对局照这里开局，团体赛按比赛规则', body, '<button data-ui="match-reset">恢复默认</button>');
+}
+
+export type TableMode = '25d' | '3d' | '2d';
+export const TABLE_MODES: { id: TableMode; name: string; note: string }[] = [
+  { id: '25d', name: '2.5D', note: '从上往下看的 3D 牌桌' },
+  { id: '3d', name: '3D 实验', note: '坐着人物，要先下载模型' },
+  { id: '2d', name: '2D', note: '平面牌桌，最省电' },
+];
+
+const MODE_KEY = 'saki-table-mode';
+
+export function loadTableMode(): TableMode {
+  try {
+    const v = localStorage.getItem(MODE_KEY);
+    if (TABLE_MODES.some((m) => m.id === v)) return v as TableMode;
+  } catch {
+    // 读不到就用默认的
+  }
+  return '25d';
+}
+
+export function saveTableMode(m: TableMode): void {
+  try {
+    localStorage.setItem(MODE_KEY, m);
+  } catch {
+    // 存不了就只管这一次
+  }
+}
+
+// 视觉设置：界面皮肤（带桌布和牌背的小色样）、牌桌视角、摸牌路径和微变化；页面主人多一行素材
+export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMode, skins: boolean): string {
+  const themes = THEMES.map((t) => {
+    const c = tableColors(t.id);
+    const on = t.id === theme;
+    return `<button class="set-theme${on ? ' on' : ''}" aria-pressed="${on}" data-ui="vis-theme" data-v="${t.id}" style="--f:${c.felt[1]};--b:${c.back};--a:${c.console.accent}"><i aria-hidden="true"></i>${t.name}</button>`;
+  }).join('');
+  const modeNote = TABLE_MODES.find((m) => m.id === mode)?.note;
+  const modes = TABLE_MODES.map((m) => {
+    const on = m.id === mode;
+    return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="vis-mode" data-v="${m.id}">${m.name}</button>`;
+  }).join('');
+  const art = skins ? section('素材') + rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图 ›</button>', '只有页面主人看得到') : '';
+  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
+  return panelHtml('visual', '视觉设置', '改了马上生效', body, '');
 }
