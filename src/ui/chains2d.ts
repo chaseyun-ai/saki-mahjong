@@ -374,7 +374,8 @@ export class Chains2D {
       ctx.lineWidth = th + 2;
       ctx.strokeStyle = `rgba(${dark.join(',')},${spirit ? 0.55 : 0.95})`;
       ctx.beginPath();
-      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      if (look.square) ctx.roundRect(-rx, -ry, rx * 2, ry * 2, ry * 0.42);
+      else ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.lineWidth = th;
       ctx.shadowBlur = 0;
@@ -430,7 +431,15 @@ export class Chains2D {
     ctx.shadowColor = gold ? 'rgba(255,170,40,0.9)' : 'rgba(170,200,255,0.9)';
     ctx.shadowBlur = len * 0.5;
     ctx.beginPath();
-    ctx.ellipse(0, 0, len * 0.56, len * 0.32, 0, Math.PI * 1.05, Math.PI * 1.95);
+    if (this.look.square) {
+      // 方形链环的半片：一个「冂」
+      const w = len * 0.5;
+      const h = len * 0.32;
+      ctx.moveTo(-w, 0);
+      ctx.lineTo(-w, -h);
+      ctx.lineTo(w, -h);
+      ctx.lineTo(w, 0);
+    } else ctx.ellipse(0, 0, len * 0.56, len * 0.32, 0, Math.PI * 1.05, Math.PI * 1.95);
     ctx.stroke();
     ctx.restore();
   }

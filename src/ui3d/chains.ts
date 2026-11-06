@@ -68,10 +68,8 @@ export class ChainFx {
     const r = 0.26 * s * look.size;
     const tube = r * look.thick;
     const pitch = r * 2 * look.stretch - tube * 2.2;
-    const linkGeo = new THREE.TorusGeometry(r, tube, 12, 28);
-    linkGeo.scale(look.stretch, 1, 1);
-    const halfGeo = new THREE.TorusGeometry(r, tube, 10, 14, Math.PI);
-    halfGeo.scale(look.stretch, 1, 1);
+    const linkGeo = look.square ? squareLink(r * look.stretch, r, tube, false) : new THREE.TorusGeometry(r, tube, 12, 28).scale(look.stretch, 1, 1);
+    const halfGeo = look.square ? squareLink(r * look.stretch, r, tube, true) : new THREE.TorusGeometry(r, tube, 10, 14, Math.PI).scale(look.stretch, 1, 1);
     const iron = new THREE.Color(look.color);
     const ironDark = new THREE.Color(look.dark);
     this.iron = iron;
@@ -520,4 +518,29 @@ export class ChainFx {
       else mat?.dispose();
     });
   }
+}
+
+// 方形的链环：一圈圆角方框（w、h 是半宽、半高，长轴顺着 x）。half：只要上面那一半（碎开的半片）
+function squareLink(w: number, h: number, tube: number, half: boolean): THREE.BufferGeometry {
+  const c = Math.min(w, h) * 0.42; // 圆角
+  const pts: THREE.Vector3[] = [];
+  // 从右边正中开始逆时针走一圈：右边 → 右上角 → 上边 → 左上角 → 左边 → ...
+  const corner = (cx: number, cy: number, a0: number) => {
+    for (let i = 0; i <= 6; i++) {
+      const a = a0 + (i / 6) * (Math.PI / 2);
+      pts.push(new THREE.Vector3(cx + Math.cos(a) * c, cy + Math.sin(a) * c, 0));
+    }
+  };
+  pts.push(new THREE.Vector3(w, 0, 0));
+  corner(w - c, h - c, 0);
+  corner(-w + c, h - c, Math.PI / 2);
+  pts.push(new THREE.Vector3(-w, 0, 0));
+  if (!half) {
+    corner(-w + c, -h + c, Math.PI);
+    corner(w - c, -h + c, Math.PI * 1.5);
+  }
+  const path = new THREE.CurvePath<THREE.Vector3>();
+  const all = half ? pts : [...pts, pts[0]];
+  for (let i = 0; i < all.length - 1; i++) path.add(new THREE.LineCurve3(all[i], all[i + 1]));
+  return new THREE.TubeGeometry(path, half ? 48 : 96, tube, 8, !half);
 }
