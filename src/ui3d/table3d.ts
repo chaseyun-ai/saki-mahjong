@@ -14,6 +14,7 @@ import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
 import { StillWater } from './stillWater';
 import { glowGlyph } from '../ui/tileArt';
+import { GlyphBeam } from './glyphBeam';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
@@ -1250,7 +1251,7 @@ export class Table3D {
     }
   }
 
-  // 贴在牌面上的紫色发光字（和牌面同样大小、同样的位置），加一道从牌面往上的淡紫光柱（牌躺着时就是朝天）
+  // 贴在牌面上的紫色发光字（和牌面同样大小、同样的位置），加一道从牌面往上投的字形光柱（牌躺着时就是朝天，见 glyphBeam.ts）
   private makeGlow(id: TileId): THREE.Group {
     const kind = kindOf(id);
     let mat = this.glowMats.get(kind);
@@ -1283,51 +1284,19 @@ export class Table3D {
     const face = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W * 0.9, TILE_H * 0.9), mat);
     face.position.z = TILE_T / 2 + 0.006;
     face.renderOrder = 3;
-    const beamMat = new THREE.SpriteMaterial({ map: this.beamTexture(), color: '#a060ff', transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-    const beam = new THREE.Sprite(beamMat);
-    beam.center.set(0.5, 0);
-    beam.scale.set(TILE_W * 1.1, 4.5, 1);
-    beam.position.z = TILE_T / 2;
-    beam.renderOrder = 4;
-    group.add(face, beam);
-    group.userData.beamMat = beamMat;
+    const beam = new GlyphBeam(kind, TILE_W * 0.9, TILE_H * 0.9, TILE_T / 2);
+    group.add(face, beam.mesh);
+    group.userData.beam = beam;
     group.userData.faceMat = mat;
     return group;
   }
 
-  // 光柱：底下亮、往上淡，两边柔和
-  private beamTex: THREE.CanvasTexture | null = null;
-  private beamTexture(): THREE.CanvasTexture {
-    if (this.beamTex) return this.beamTex;
-    const c = document.createElement('canvas');
-    c.width = 64;
-    c.height = 256;
-    const ctx = c.getContext('2d')!;
-    const v = ctx.createLinearGradient(0, 256, 0, 0);
-    v.addColorStop(0, 'rgba(255,255,255,0.95)');
-    v.addColorStop(0.25, 'rgba(255,255,255,0.45)');
-    v.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = v;
-    ctx.fillRect(0, 0, 64, 256);
-    ctx.globalCompositeOperation = 'destination-in';
-    const h = ctx.createLinearGradient(0, 0, 64, 0);
-    h.addColorStop(0, 'rgba(0,0,0,0)');
-    h.addColorStop(0.5, 'rgba(0,0,0,1)');
-    h.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = h;
-    ctx.fillRect(0, 0, 64, 256);
-    this.beamTex = new THREE.CanvasTexture(c);
-    this.beamTex.colorSpace = THREE.SRGBColorSpace;
-    return this.beamTex;
-  }
-
-  // 紫光一明一暗；光柱只在牌躺着（牌面朝天）时有
+  // 紫光一明一暗；光柱只在牌躺着（牌面朝天）时有，牌立起来、倒下去的半路慢慢收放
   private updateGlows(): void {
     for (const [id, g] of this.glows) {
       const up = new THREE.Vector3(0, 0, 1).applyQuaternion(this.tiles[id].group.quaternion).y;
       const pulse = 0.75 + 0.25 * Math.sin(this.now * 2.6 + id);
-      (g.userData.beamMat as THREE.SpriteMaterial).opacity = up > 0.8 ? 0.45 * pulse : 0;
-      g.children[1].visible = up > 0.8;
+      (g.userData.beam as GlyphBeam).update(this.now, THREE.MathUtils.smoothstep(up, 0.75, 0.95) * pulse);
       g.children[0].scale.setScalar(1);
       ((g.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.8 + 0.2 * pulse;
     }

@@ -6518,6 +6518,59 @@ html:root .tm-draft .tmd-go {
   50% { filter: drop-shadow(0 0 3px #d090ff) drop-shadow(0 0 9px #9a4cff); }
 }
 
+/* 字形光柱：一叠越往上越淡、越糊的字连成一道光，三个亮的字从牌面浮起来往上走（app.ts 的 kimonBeamHtml）。
+   光柱朝牌自己的“上”：横着的那张转了 -90°，它的上是本地的 +x */
+.kimon-beam {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  --bx: 0;
+  --by: -1;
+}
+.tile.sideways .kimon-beam {
+  --bx: 1;
+  --by: 0;
+}
+.kimon-beam > i {
+  position: absolute;
+  inset: 0;
+  padding: 8% 6%;
+}
+.kimon-beam > i svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.kimon-beam > .trail {
+  transform: translate(calc(var(--bx) * var(--k) * 5px), calc(var(--by) * var(--k) * 5px)) scale(calc(1 + var(--k) * 0.015));
+  opacity: calc(0.36 - var(--k) * 0.045);
+  filter: blur(calc(var(--k) * 0.3px)) drop-shadow(0 0 2px #9a4cff);
+}
+.kimon-beam > .rise {
+  opacity: 0;
+  filter: drop-shadow(0 0 2px #c27aff) drop-shadow(0 0 5px #8a3cff);
+  animation: kimon-rise 2.4s linear infinite;
+}
+@keyframes kimon-rise {
+  0% {
+    transform: none;
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate(calc(var(--bx) * 46px), calc(var(--by) * 46px)) scale(1.12);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kimon-beam > .rise {
+    animation: none;
+  }
+}
+
 /* 2D 牌桌：初美的紫色旋风（gale2d.ts 画在 canvas 上），和牌时整层盖到结算上面 */
 .gale {
   position: absolute;
