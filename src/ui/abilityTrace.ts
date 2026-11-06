@@ -210,6 +210,9 @@ const NOTE_TEXT: Record<string, (who: string) => string> = {
   'hatsumi-鬼门·杠': (who) => `${who}配牌的风牌暗刻，摸到了第四张。`,
   'toka-治水': (who) => `场上的点数已经动了 ${TOKA.threshold / 10000} 万点以上，${who}进入治水：牌局平静如水，别人只摸得到谁也鸣不了的牌。`,
   'jun-错开流向': (who) => `${who}鸣牌错开了流向：到她下一次摸牌之前，别人摸牌不进张。`,
+  'kana-背水': (who) => `${who}的点数不到一万点：背水一战，配牌、进张变顺。`,
+  'kaori-新手运': (who) => `${who}的新手运：配牌直接是役满的听牌。`,
+  'kinue-一筒': (who) => `${who}手里有一筒：又摸到一筒。`,
   'haru-快和': (who) => `有人立直了，${who}只想快点结束：摸到一张小和了牌。`,
   'kasumi-请神': (who) => `${who}落后了，请神上身。之后整场都不会退。`,
   ...Object.fromEntries(

@@ -3106,6 +3106,15 @@ button {
   display: block;
 }
 
+/* 船久保浩子的资料本：和照魔镜一样的位置，画成一本小笔记本 */
+.mirror.notebook {
+  border-radius: 4px;
+  border-color: #d9c9a0;
+  background: linear-gradient(90deg, #7a5aa8 0 4px, #fbf6e8 4px) ;
+  color: #4a3a6a;
+  box-shadow: 0 0 6px rgba(122, 90, 168, 0.6);
+}
+
 /* 右边两家贴着画面右边：往左弹；下面的往上弹 */
 .seat-frame.right .mirror-pop,
 .seat-frame.top .mirror-pop,
