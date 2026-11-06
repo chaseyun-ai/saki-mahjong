@@ -161,9 +161,6 @@ export class App {
   private netView = false;
   private netFrom: '25d' | '3d' | '2d' | null = null;
   private kimon2d: Kimon2D | null = null; // 2D 牌桌上初美的鬼门法阵
-  // 2D 牌桌上姬子拿到钥匙那一局的光柱和火（哪一局放过了）
-  private himeko2d = new Himeko2D();
-  private himeko2dRound = '';
   private netTimer: number | null = null;
   // 怜“看下一巡”（演算）：玩家操作怜时的体力。
   // 演算中 vision 不是 null：this.game 换成牌局的复制品放到牌桌上演，真的牌局和演算前的表情先存在 vision 里，退出时换回来。
@@ -1323,6 +1320,10 @@ export class App {
   }
 
   // 3D 牌桌在掷骰子、发牌时，先等动画放完
+  // 2D 牌桌上姬子拿到钥匙那一局的光柱和火（哪一局放过了）
+  private himeko2d = new Himeko2D();
+  private himeko2dRound = '';
+
   private busyMs(): number {
     return this.table3d?.busyMs() ?? this.himeko2d.busyMs();
   }
@@ -1389,11 +1390,11 @@ export class App {
       ${this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
       ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
+    this.himekoFx2d(g, table.parentElement ?? table);
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     table.dataset.mist = String(this.mistLevel());
     this.gale2d(this.galeView()?.level ?? 0);
     this.water2d(this.waterOn());
-    this.himekoFx2d(g, table.parentElement ?? table);
     setSketchTiles(false);
     table.parentElement?.classList.toggle('sketch', sketch);
     this.freshDiscard = null;

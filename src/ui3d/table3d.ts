@@ -14,8 +14,6 @@ import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
 import { KimonSigil } from './kimonSigil';
 import { StillWater } from './stillWater';
-import { HimekoFx } from './himekoFx';
-import { himekoKeySeat } from '../abilities/himeko';
 import { glowGlyph } from '../ui/tileArt';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
@@ -23,6 +21,8 @@ import { TableMaterials, buildTableModel } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 import { TableColors, tableColors } from '../ui/theme';
 import { pondJitter, varyDiscard, vary } from '../ui/vary';
+import { HimekoFx } from './himekoFx';
+import { himekoKeySeat } from '../abilities/himeko';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -2486,6 +2486,7 @@ export class Table3D {
     const thawed = [...this.frozen.values()].some((f) => this.now >= f.until);
     if ((this.deal || thawed) && this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
     this.dice.update(dt);
+    this.updateHimeko();
     this.animateHands(dt);
     this.animateFlights(dt);
     this.animateVanish();
@@ -2495,7 +2496,6 @@ export class Table3D {
     }
     this.animateReveal();
     this.effects.update(dt);
-    this.updateHimeko();
     this.mist.update(dt);
     this.gale?.update(dt);
     this.sigil?.update(dt);
