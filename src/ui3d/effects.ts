@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 
-// 牌桌上的通用特效：冲击波、光柱、火花、闪光、闪电，外加一盏跟着特效亮一下的灯（桌面、牌、人都被照到）。
+// 牌桌上的通用特效：冲击波、火花、闪光、闪电，外加一盏跟着特效亮一下的灯（桌面、牌、人都被照到）。
 // 手法参考 Humpalumps/ultra-elements（MIT）：
 //   冲击波照 Shockwaves.js：半径按爆炸波 r0 + (r1 - r0) x^0.4 走，前沿锐利、后面拖一道柔和的尾迹，越扩越暗
 //   火花照 Particles.js 的 glow 粒子：每颗按自己的速度拉成一道流光，头亮尾淡，刚迸出来白热、慢慢变成本色；
 //     阻力加重力的轨迹直接在顶点着色器里按时间算，细到不足 1.5 个像素时变暗不变细
 //   闪电照 Bolts.js：分形折线（Reed & Wyvill 1994，一层噪声就是一层中点位移，两头钉住），
 //     先导一步步摸下来、回击一下打亮、复击时主干不变只换分叉，最后余辉冷却、断成一串珠子；芯里一根游动的白丝
-//   光柱照 light.js 的 Judgment：一道细光先劈下来，再猛地张开成粗光柱
+// （和牌原来的光柱撤掉了，换成 winSpots.ts 的聚光灯）
 // 代码是照这些思路为牌桌重写的。都是加法混合，播完自己移除
 
 interface Effect {
@@ -27,8 +27,6 @@ interface Pulse {
 
 // 闪电先导摸下来要多久：调用的人要早这么久叫 bolt，打中的时刻才对得上
 export const BOLT_LEADER = 0.16;
-// 光柱先劈下一道细光，这么久以后才张开、落地
-export const SHAFT_DROP = 0.1;
 
 function glowTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -260,52 +258,6 @@ void main() {
 }
 `;
 
-// ---------- 光柱 ----------
-
-// 只看横截面上的夹角（视线去掉顺着光柱的分量）：正对视线的地方浓、侧边淡，俯视也一样
-const SHAFT_VERT = /* glsl */ `
-varying vec2 vUv;
-varying float vFacing;
-void main() {
-  vUv = uv;
-  vec4 world = modelMatrix * vec4(position, 1.0);
-  vec3 n = normalize(mat3(modelMatrix) * normal);
-  vec3 axis = normalize(mat3(modelMatrix) * vec3(0.0, 1.0, 0.0));
-  vec3 v = cameraPosition - world.xyz;
-  v -= axis * dot(v, axis);
-  vFacing = abs(dot(n, normalize(v + 1e-5)));
-  gl_Position = projectionMatrix * viewMatrix * world;
-}
-`;
-
-// 底下亮、往上淡；一道道竖着的光纹慢慢转；还在往下劈的时候，劈到的最前头最亮
-const SHAFT_FRAG = /* glsl */ `
-uniform vec3 uColor;
-uniform float uA;
-uniform float uTime;
-uniform float uDrop;
-uniform float uPow;
-uniform float uWhite;
-uniform float uBase;
-varying vec2 vUv;
-varying float vFacing;
-void main() {
-  float v = vUv.y;
-  float front = 1.0 - uDrop;
-  if (v < front) discard;
-  float edge = pow(vFacing, uPow);
-  float rise = (0.3 + 0.7 * exp(-v * 2.6)) * (1.0 - smoothstep(0.55, 1.0, v));
-  float ang = vUv.x * 6.2831853;
-  float rays = 0.7 + 0.3 * sin(ang * 9.0 + v * 4.0 - uTime * 1.5) * sin(ang * 4.0 - uTime * 0.7 + 1.3);
-  float head = uDrop < 0.999 ? 1.0 + 2.5 * exp(-(v - front) * 10.0) : 1.0;
-  // 底边柔一点，接上桌面那摊光，不留一圈硬边
-  float a = edge * rise * rays * head * uA * smoothstep(0.0, uBase, v);
-  vec3 c = mix(uColor, vec3(1.0), uWhite * edge) * a;
-  gl_FragColor = vec4(c, 1.0);
-  #include <colorspace_fragment>
-}
-`;
-
 // ---------- 火花 ----------
 
 // 每颗火花：起点 aP0、初速 aVel、aLook = (寿命秒, 粗细, 种子, -)。阻力 k、重力 g 下的位置有解析解：
@@ -448,85 +400,6 @@ export class Effects {
       u.uR.value = r0 + (radius - r0) * Math.pow(k, 0.4);
       u.uTh.value = th0 * (0.5 + 0.5 * k);
       u.uE.value = intensity * Math.pow(1 - k, 2.2) * Math.min(1, k / 0.04);
-    });
-  }
-
-  // 光柱：先从天上劈下一道细光，落地那一下猛地张开成粗光柱（外面一层宽的柔光、里面一根白亮的芯），
-  // 落地处一圈冲击波、四周亮一下，一串光点顺着光柱往上冲；然后慢慢变宽、变淡
-  beam(at: THREE.Vector3, color: THREE.ColorRepresentation, height = 14, duration = 1.4): void {
-    const geo = new THREE.CylinderGeometry(1.12, 1, 1, 40, 1, true);
-    geo.translate(0, 0.5, 0);
-    const mk = (pow: number, white: number, base: number) => ({
-      uColor: { value: col(color) },
-      uA: { value: 0 },
-      uTime: { value: 0 },
-      uDrop: { value: 0 },
-      uPow: { value: pow },
-      uWhite: { value: white },
-      uBase: { value: base },
-    });
-    const su = mk(1.4, 0.15, 0.02);
-    const cu = mk(3.2, 0.5, 0.05);
-    const sheath = new THREE.Mesh(geo, glowMat(SHAFT_FRAG, su, SHAFT_VERT));
-    const core = new THREE.Mesh(geo, glowMat(SHAFT_FRAG, cu, SHAFT_VERT));
-    const R = 1.6;
-    // 落地处桌面上一摊光，光柱的底不是一圈硬边
-    const pu = {
-      uR: { value: 0 },
-      uTh: { value: R * 3.2 },
-      uE: { value: 0 },
-      uWhite: { value: 0.35 },
-      uSeed: { value: Math.random() * 10 },
-      uColor: { value: col(color) },
-    };
-    const pool = new THREE.Mesh(new THREE.PlaneGeometry(R * 5, R * 5), glowMat(RING_FRAG, pu, RING_VERT));
-    pool.rotation.x = -Math.PI / 2;
-    pool.position.y = 0.04;
-    const group = new THREE.Group();
-    group.add(pool, sheath, core);
-    group.position.copy(at);
-    let opened = false;
-    this.add(group, duration, (k) => {
-      const s = k * duration;
-      const drop = Math.min(1, s / SHAFT_DROP);
-      const after = Math.max(0, s - SHAFT_DROP);
-      // 张开的那一下冲过头一点再回来
-      const open = Math.min(1, after / 0.09);
-      const back = 1 + 0.25 * Math.sin(Math.PI * open) * (1 - open * 0.5);
-      const fadeOut = 1 - THREE.MathUtils.smoothstep(k, 0.6, 1);
-      const coreR = 0.12 + (R * 0.42 - 0.12) * open * back;
-      core.scale.set(coreR, height, coreR);
-      const sheathR = Math.max(0.01, R * open * back * (1 + 0.3 * k));
-      sheath.scale.set(sheathR, height, sheathR);
-      sheath.visible = open > 0;
-      for (const u of [su, cu]) {
-        u.uDrop.value = drop;
-        u.uTime.value = s;
-      }
-      cu.uA.value = (s < SHAFT_DROP ? 1.1 : 0.2 + 0.8 * Math.exp(-after / (0.3 * duration))) * fadeOut;
-      su.uA.value = (0.25 + 0.6 * Math.exp(-after / (0.45 * duration))) * open * fadeOut;
-      pu.uE.value = (0.35 + 0.65 * Math.exp(-after / (0.3 * duration))) * open * fadeOut;
-      pu.uTh.value = R * 3.2 * (0.8 + 0.4 * k);
-      if (!opened && s >= SHAFT_DROP) {
-        opened = true;
-        this.ring(at, color, R * 2.6, 0.5);
-        this.pulse(at.clone().setY(at.y + 2), color, 60, 0.3);
-        const c = col(color);
-        this.sparks(at, c, {
-          count: 36,
-          life: [0.5, 1.1],
-          vel: (v) => {
-            const a = Math.random() * Math.PI * 2;
-            const r = rand(0, R * 0.6);
-            v.set(Math.cos(a) * r, rand(8, 18), Math.sin(a) * r);
-          },
-          gravity: 2,
-          drag: 1.2,
-          size: [0.05, 0.1],
-          stretch: 0.06,
-          jitter: R * 0.5,
-        });
-      }
     });
   }
 

@@ -9,7 +9,8 @@ import { sketchFaceSvg } from '../ui/sketchArt';
 import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
-import { BOLT_LEADER, Effects, SHAFT_DROP } from './effects';
+import { BOLT_LEADER, Effects } from './effects';
+import { type SpotRow, WinSpots } from './winSpots';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
 import { StillWater } from './stillWater';
@@ -88,6 +89,11 @@ const DEAL_END = DEAL_SORT + SORT_TILT + 0.15;
 const REVEAL_DELAY = 0.7;
 const TOPPLE_TIME = 0.24;
 const TOPPLE_STAGGER = 0.07;
+// 平时的环境光、主光有多亮；和牌聚光灯亮起来时四周按 STAGE_DIM 暗下去一点，聚光灯本身最亮 STAGE_LIGHT
+const HEMI_BASE = 1.1;
+const KEY_BASE = 2.2;
+const STAGE_DIM = 0.45;
+const STAGE_LIGHT = 1000;
 // 2.5D 照雀魂的节奏：“荣和/自摸”的切入放完，1.2 秒闪电打在和的那张牌上，1.4 秒倒牌，倒得也快一些。
 // 闪电的先导要先摸下来一会儿，所以早 BOLT_LEADER 秒开始劈
 const REVEAL_DELAY_25D = 1.4;
@@ -170,6 +176,7 @@ interface RevealState {
   slams: Map<TileId, { seat: number; at: number; from: Placement | null; hit: boolean }>;
   // 砸下去那一下：桌上的牌从这里往外震一下
   hops: { at: number; x: THREE.Vector3 }[];
+  spotsOn: boolean; // 聚光灯打开了没有
 }
 
 interface Flight {
@@ -385,6 +392,10 @@ export class Table3D {
   private tableMats: TableMaterials | null = null;
   private feltMat: THREE.Material | null = null;
   private keyLight: THREE.DirectionalLight | null = null;
+  private hemi: THREE.HemisphereLight | null = null;
+  // 和牌时照在和了那副牌上的舞台聚光灯：一直在场景里（中途加灯会让所有材质重新编译），平时是 0
+  private stageLight: THREE.SpotLight | null = null;
+  private spots: WinSpots | null = null;
   // 桌布、牌背、桌框的颜色跟着界面皮肤走，建牌桌时定下来
   private colors: TableColors = tableColors();
 
@@ -453,8 +464,11 @@ export class Table3D {
     this.scene.background = new THREE.Color(this.colors.room);
     this.scene.fog = new THREE.Fog(this.colors.room, 40, 80);
 
-    this.scene.add(new THREE.HemisphereLight('#dfefff', '#1b2a2c', 1.1));
-    const key = new THREE.DirectionalLight('#fff4e0', 2.2);
+    this.hemi = new THREE.HemisphereLight('#dfefff', '#1b2a2c', HEMI_BASE);
+    this.scene.add(this.hemi);
+    this.stageLight = new THREE.SpotLight('#fff1d8', 0, 0, 0.5, 0.55, 2);
+    this.scene.add(this.stageLight, this.stageLight.target);
+    const key = new THREE.DirectionalLight('#fff4e0', KEY_BASE);
     key.position.set(-6, 22, 10);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -938,24 +952,25 @@ export class Table3D {
     this.stickState[seat] = 'placed';
   }
 
-  // 鸣牌、立直的特效：在这家前面的桌上放冲击波、迸一把火星，四周被照亮一下，角色举手示意。
-  // 杠再从天上劈一道光柱下来，冲击波等光柱落地才推出去
+  // 鸣牌、立直的特效：在这家前面的桌上放冲击波、迸一把火星，四周被照亮一下，角色举手示意
   private callFx(seat: number, kind: 'call' | 'kan' | 'riichi'): void {
     const color = kind === 'riichi' ? FX_RED : kind === 'kan' ? '#9fd8ff' : FX_GOLD;
     const at = this.seatPoint(seat, 0, 0.1, kind === 'riichi' ? this.dim.pondZ : this.dim.handZ - 2);
-    if (kind === 'kan') this.effects.beam(at, color, 10, 1);
-    this.effects.later(kind === 'kan' ? SHAFT_DROP : 0, () => {
-      this.effects.ring(at, color, kind === 'kan' ? 9 : 6);
-      this.effects.ring(at, '#ffffff', kind === 'kan' ? 4.5 : 3.5, 0.4, 0.7);
-      this.effects.flash(at.clone().setY(1.5), color, kind === 'riichi' ? 9 : 6, 0.5);
-      if (kind !== 'call') this.effects.ring(at, color, 12, 1.1, 0.6);
-      this.effects.burst(at.clone().setY(0.4), color, kind === 'call' ? 30 : 50, kind === 'call' ? 8 : 11, 0.7);
-      this.effects.pulse(at.clone().setY(2.2), color, kind === 'call' ? 40 : 65, kind === 'call' ? 0.18 : 0.28);
-    });
+    this.effects.ring(at, color, kind === 'kan' ? 9 : 6);
+    this.effects.ring(at, '#ffffff', kind === 'kan' ? 4.5 : 3.5, 0.4, 0.7);
+    this.effects.flash(at.clone().setY(1.5), color, kind === 'riichi' ? 9 : 6, 0.5);
+    if (kind !== 'call') this.effects.ring(at, color, 12, 1.1, 0.6);
+    this.effects.burst(at.clone().setY(0.4), color, kind === 'call' ? 30 : 50, kind === 'call' ? 8 : 11, 0.7);
+    this.effects.pulse(at.clone().setY(2.2), color, kind === 'call' ? 40 : 65, kind === 'call' ? 0.18 : 0.28);
     this.shake = Math.max(this.shake, kind === 'call' ? 0.25 : 0.45);
-    // 举起右手亮一下（立直时手要去拿立直棒，不举手）
+    // 立直时手要去拿立直棒，不举手
+    if (kind !== 'riichi') this.raiseHand(seat);
+  }
+
+  // 举起右手亮一下（鸣牌、自摸）
+  private raiseHand(seat: number): void {
     const av = this.characterAt(seat)?.avatar;
-    if (av && kind !== 'riichi' && seat !== this.lastSync?.view.me) {
+    if (av && seat !== this.lastSync?.view.me) {
       this.cancelHandAnims(seat);
       this.handAnims.push({
         seat,
@@ -969,29 +984,69 @@ export class Table3D {
     }
   }
 
-  // 和牌：金色光柱、闪光粒子，镜头往和牌的人那边推一点。
-  // 初美砸牌的和牌（slam）光已经从那张牌上炸过了，这里只撒一把紫色的光点，人照样举手、前倾
+  // 倒完牌：镜头往和牌的人那边推一点，自摸的人举手（荣和的人身体前倾）。
+  // 和牌的光是倒牌时打开的聚光灯（startSpots），这里不再放别的；
+  // 初美砸牌的和牌（slam）光已经从那张牌上炸过了，这里撒一把紫色的光点
   private winFx(seat: number, tsumo: boolean, color: string = FX_GOLD, slam: THREE.Vector3 | null = null): void {
     if (slam) {
       this.effects.sparkles(slam.clone().setY(0.6), color, 60, 4, 2);
       if (tsumo) this.callFx(seat, 'call');
       return;
     }
-    const at = this.seatPoint(seat, 0, 0.1, this.dim.handZ - 2.5);
-    // 光柱先劈下来，落地那一下冲击波推开、白光一闪带一道横的光痕、金色光点往上冲
-    this.effects.beam(at, color, 14, 2.2);
-    this.effects.later(SHAFT_DROP, () => {
-      this.effects.ring(at, color, 14, 1.2);
-      this.effects.ring(at, '#ffffff', 8, 0.8, 0.8);
-      this.effects.sparkles(at, color, 80, 5, 2.2);
-      this.effects.burst(at.clone().setY(0.5), color, 60, 12, 0.9);
-      this.effects.flash(at.clone().setY(3), '#fff2c4', 16, 0.7, true);
-      this.effects.pulse(at.clone().setY(3), color, 110, 0.45);
-      this.shake = Math.max(this.shake, 0.6);
-    });
     if (seat !== this.lastSync?.view.me) this.zoom = { t: 0, target: this.seatPoint(seat, 0, 4, this.dim.seatZ - 2) };
-    // 自摸的人举手，荣和的人身体前倾
-    if (tsumo) this.callFx(seat, 'call');
+    if (tsumo) this.raiseHand(seat);
+  }
+
+  // 手牌一倒，上方几盏聚光灯一盏接一盏打开，均匀照在和了的那副牌上；一直亮到这一局收掉（初美砸牌的不打）
+  private startSpots(rv: RevealState): void {
+    const g = this.lastSync?.g;
+    if (!g) return;
+    const rows: SpotRow[] = [];
+    for (const w of rv.wins) {
+      if (rv.slams.has(w.tile)) continue;
+      const ids = [...g.players[w.seat].hand];
+      if (!ids.includes(w.tile)) ids.push(w.tile);
+      const pts = ids.map((id) => this.tiles[id].target?.pos).filter((p): p is THREE.Vector3 => !!p);
+      if (!pts.length) continue;
+      const o = this.seatPoint(w.seat, 0, 0, 0);
+      const side = this.seatPoint(w.seat, 1, 0, 0).sub(o).normalize();
+      const inward = this.seatPoint(w.seat, 0, 0, -1).sub(o).normalize();
+      const center = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(pts.length);
+      const half = Math.max(...pts.map((p) => Math.abs(p.clone().sub(center).dot(side)))) + 0.7;
+      rows.push({ center: center.setY(0), side, inward, half });
+    }
+    this.spots?.dispose();
+    this.spots = null;
+    if (!rows.length) return;
+    this.spots = new WinSpots(rows);
+    this.scene.add(this.spots.group);
+  }
+
+  // 聚光灯亮着时：真的灯照在第一副牌上，四周暗下去一点；关掉后慢慢回到平时
+  private updateSpots(dt: number): void {
+    const sp = this.spots;
+    if (sp) {
+      if (!this.reveal) sp.stop();
+      sp.update(dt);
+    }
+    const lvl = sp?.level ?? 0;
+    if (this.hemi) this.hemi.intensity = HEMI_BASE * (1 - STAGE_DIM * lvl);
+    if (this.keyLight) this.keyLight.intensity = KEY_BASE * (1 - STAGE_DIM * 1.15 * lvl);
+    const light = this.stageLight;
+    if (light) {
+      light.intensity = STAGE_LIGHT * lvl;
+      const row = sp?.rows[0];
+      if (row) {
+        light.position.copy(row.center).addScaledVector(row.inward, 2).setY(12);
+        light.target.position.copy(row.center);
+        light.target.updateMatrixWorld();
+        light.angle = Math.min(1.2, Math.atan((row.half * 1.15) / light.position.distanceTo(row.center)));
+      }
+    }
+    if (sp?.done) {
+      sp.dispose();
+      this.spots = null;
+    }
   }
 
   private startFlight(tile: TileId, seat: number): void {
@@ -1137,6 +1192,7 @@ export class Table3D {
       topple: new Map(),
       slams,
       hops: [],
+      spotsOn: false,
     };
     for (const w of r.wins) {
       if (w.from === null) continue;
@@ -2462,6 +2518,10 @@ export class Table3D {
       }
       this.effects.later(BOLT_LEADER, () => (this.shake = Math.max(this.shake, 0.5)));
     }
+    if (!rv.spotsOn && this.now >= rv.at && rv.wins.length) {
+      rv.spotsOn = true;
+      this.startSpots(rv);
+    }
     if (!rv.fxDone && this.now >= rv.fxAt) {
       rv.fxDone = true;
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
@@ -2535,6 +2595,7 @@ export class Table3D {
     }
     this.animateReveal();
     this.effects.update(dt);
+    this.updateSpots(dt);
     this.mist.update(dt);
     if (this.gale) {
       this.gale.update(dt, this.camera, this.renderer);
