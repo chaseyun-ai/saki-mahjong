@@ -13,7 +13,7 @@ import { Effects } from './effects';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
 import { StillWater } from './stillWater';
-import { glowGlyph } from '../ui/tileArt';
+import { faceSvg, glowGlyph } from '../ui/tileArt';
 import { TileBeam } from './tileBeam';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
@@ -92,6 +92,8 @@ const TOPPLE_STAGGER = 0.07;
 const REVEAL_DELAY_25D = 1.4;
 const BOLT_LEAD = 0.2;
 const TOPPLE_STAGGER_25D = 0.03;
+// 初美鸣出来的东、北中间那张牌面上的紫色墨
+const KIMON_INK = '#8a3cf2';
 // 初美聚着风和牌：手牌倒完，和了牌举起来、停一下、往桌上砸（秒）。砸到桌面那一下从这张牌炸开
 const SLAM_LIFT = 0.34;
 const SLAM_HANG = 0.14;
@@ -361,7 +363,7 @@ export class Table3D {
   private water: StillWater | null = null;
   // 初美鸣出来的东、北中间那张牌上的紫光（牌 id → 贴在牌面上的发光字和光柱）
   private glows = new Map<TileId, THREE.Group>();
-  private glowMats = new Map<number, THREE.MeshBasicMaterial>();
+  private kimonFaceMat: THREE.MeshStandardMaterial | null = null;
   private overlayGroup: THREE.Group | null = null;
   private zoom = { t: -1, target: new THREE.Vector3() };
   private held = new Set<TileId>();
@@ -1192,7 +1194,8 @@ export class Table3D {
       if (back && t.back.material !== back) t.back.material = back;
       const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
-      if (this.faceMat && t.face.material !== this.faceMat) t.face.material = this.faceMat;
+      const faceMat = view.glowTiles?.has(id) ? this.kimonFace() : this.faceMat;
+      if (faceMat && t.face.material !== faceMat) t.face.material = faceMat;
       if (t.body.customDepthMaterial) {
         t.body.customDepthMaterial = t.back.customDepthMaterial = undefined;
         t.body.renderOrder = t.back.renderOrder = t.face.renderOrder = 0;
@@ -1251,54 +1254,40 @@ export class Table3D {
     }
   }
 
-  // 贴在牌面上的紫色发光字（和牌面同样大小、同样的位置），加一道从牌面直直往上的紫色光柱（牌躺着时就是朝天，见 tileBeam.ts）
-  private makeGlow(id: TileId): THREE.Group {
-    const kind = kindOf(id);
-    let mat = this.glowMats.get(kind);
-    if (!mat) {
-      const c = document.createElement('canvas');
-      c.width = 160;
-      c.height = 224;
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false });
-      this.glowMats.set(kind, mat);
-      const ctx = c.getContext('2d')!;
-      const img = new Image();
-      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(glowGlyph(kind).replace('width="100%" height="100%"', 'width="160" height="224"'))}`;
-      // 牌面贴图也缩进 6% 画，对齐
-      void img.decode().then(() => {
-        const draw = (blur: number, alpha: number) => {
-          ctx.filter = blur ? `blur(${blur}px)` : 'none';
-          ctx.globalAlpha = alpha;
-          ctx.drawImage(img, 160 * 0.06, 224 * 0.06, 160 * 0.88, 224 * 0.88);
-        };
-        draw(10, 0.7);
-        draw(4, 0.9);
-        draw(0, 1);
-        draw(0, 1);
-        tex.needsUpdate = true;
-      });
-    }
+  // 初美鸣出来的东、北中间那张：牌面本身就是紫色的字（换一套东南西北是紫字的牌面，见 kimonFace），
+  // 牌上一道从牌面直直往上的紫色光柱（牌躺着时就是朝天，见 tileBeam.ts）
+  private makeGlow(_id: TileId): THREE.Group {
     const group = new THREE.Group();
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W * 0.9, TILE_H * 0.9), mat);
-    face.position.z = TILE_T / 2 + 0.006;
-    face.renderOrder = 3;
     const beam = new TileBeam(TILE_W * 0.96, TILE_H * 0.96, TILE_T / 2);
-    group.add(face, beam.group);
+    group.add(beam.group);
     group.userData.beam = beam;
-    group.userData.faceMat = mat;
     return group;
+  }
+
+  // 紫字的牌面：东南西北的字用紫色墨印（微微自己发光，星空里也看得清），别的牌照常。用到时才画
+  private kimonFace(): THREE.MeshStandardMaterial {
+    if (this.kimonFaceMat) return this.kimonFaceMat;
+    const atlas = new FaceAtlas((kind, red) => (kind >= 27 && kind <= 30 ? glowGlyph(kind, KIMON_INK) : faceSvg(kind, red)));
+    void atlas.draw();
+    this.kimonFaceMat = new THREE.MeshStandardMaterial({
+      map: atlas.texture,
+      transparent: true,
+      roughness: this.faceMat?.roughness ?? 0.35,
+      emissive: '#ffffff',
+      emissiveMap: atlas.texture,
+      emissiveIntensity: 0.35,
+    });
+    return this.kimonFaceMat;
   }
 
   // 紫光一明一暗；光柱只在牌躺着（牌面朝天）时有，牌立起来、倒下去的半路慢慢收放
   private updateGlows(): void {
+    // 风把四周压暗时紫字自己亮一些，暗处也认得出是紫色
+    if (this.kimonFaceMat) this.kimonFaceMat.emissiveIntensity = 0.35 + 0.75 * this.roomDark;
     for (const [id, g] of this.glows) {
       const up = new THREE.Vector3(0, 0, 1).applyQuaternion(this.tiles[id].group.quaternion).y;
       const pulse = 0.75 + 0.25 * Math.sin(this.now * 2.6 + id);
       (g.userData.beam as TileBeam).update(this.now, THREE.MathUtils.smoothstep(up, 0.75, 0.95) * pulse);
-      g.children[0].scale.setScalar(1);
-      ((g.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.8 + 0.2 * pulse;
     }
   }
 
