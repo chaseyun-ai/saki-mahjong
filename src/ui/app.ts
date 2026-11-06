@@ -21,7 +21,12 @@ import { tokaChisui } from '../abilities/toka';
 import { ryuukaDanger, ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
 import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneRedHidden } from '../abilities/toyone';
-import { riiKeys } from '../abilities/rii';
+import { RII, riiBind, riiCanBind, riiKeys } from '../abilities/rii';
+import { Chains2D } from './chains2d';
+import { chainOutcomes, outcomeTime, skyStart, skyTime } from './riiChainPlan';
+import { CHAIN_LOOKS, ChainStyleId, RiiProj, riiLook, setRiiLook } from './riiLook';
+import { SkyKey } from './skyKey';
+import { keyTag } from './keyArt';
 import { saeCanAim, saeAim, snipedBy } from '../abilities/sae';
 import { initLensDrag, lensMarkHtml, lensSlotsHtml, playLensShot } from './lensDrag';
 import type { PreDealOption } from '../abilities/types';
@@ -121,6 +126,12 @@ export class App {
   private chars: Character[] = [];
   private readonly me = 0;
   private riichiMode = false;
+  // 白水哩：按了“番缚”，手牌扣下去、正在选缚几番
+  private riiPicking = false;
+  // 2D 牌桌上画锁链的 canvas；结算要等锁链放完再弹（到这个时间）
+  private chains2d: Chains2D | null = null;
+  private skyKey: SkyKey | null = null;
+  private riiHold = 0;
   private toasts: Toast[] = [];
   private toastSeq = 0;
   private timer: number | null = null;
@@ -669,7 +680,7 @@ export class App {
       this.render();
       const wins = g.roundResult?.wins.length ?? 0;
       const wait =
-        this.mode === '2d' ? 0 : this.mode === '25d' && wins ? Math.max(3400, this.busyMs() + 900) : (wins ? 2400 : 1400) + this.busyMs();
+        this.mode === '2d' ? Math.max(0, this.riiHold - Date.now()) : Math.max(this.riiHold - Date.now(), this.mode === '25d' && wins ? Math.max(3400, this.busyMs() + 900) : (wins ? 2400 : 1400) + this.busyMs());
       this.timer = window.setTimeout(() => {
         this.showResult = true;
         this.render();
@@ -842,6 +853,9 @@ export class App {
       this.gone.clear();
       this.vanishAt.clear();
       this.sketchView = false;
+      this.riiPicking = false;
+      this.chains2d?.clear();
+      this.skyKey?.clear();
     }
     if (e.type === 'discard') {
       // 隐身的桃子打的牌：看不见也听不见。刚隐身的那一张照常打出去，牌河和手牌慢慢淡掉（不放立直特效）
@@ -880,6 +894,8 @@ export class App {
         if (e.text !== '宝牌聚集') this.toast(e.seat, e.text, false);
         return;
       }
+      // 白水哩的钥匙：锁链变金汇成钥匙 / 崩断，在结算时放（见 roundEnd），这里不放切入
+      if (e.ability === 'rii') return;
       playChime();
       // 臼泽塞的镜片：狙击镜落到被盯上的人的头像上（等这一下重画完再找头像）
       if (e.ability === 'sae') {
@@ -896,6 +912,8 @@ export class App {
       this.cutinSeen.add(key);
     } else if (e.type === 'roundEnd') {
       if (e.result.wins.length) playWin();
+      this.riiPicking = false;
+      this.riiFinish(e.result);
       // 2D：初美聚着风和牌，紫光往上冲（3D、2.5D 在牌桌上放）
       const gale = this.galeView();
       if (!this.table3d && gale && e.result.wins.some((w) => w.seat === gale.seat)) requestAnimationFrame(() => this.galeBurst2d());
@@ -942,6 +960,74 @@ export class App {
       host.prepend(el);
     }
     el?.classList.toggle('on', on);
+  }
+
+  // ---------- 白水哩的番缚 ----------
+
+  // 2D：这个座位手牌在画面上的位置（锁链画在这上面）
+  private handRect(s: number): { x: number; y: number; w: number; h: number } | null {
+    const el = s === this.me ? document.querySelector('.me .hand') : document.querySelector(`.opponent.${POS[s]} .ohand`);
+    const r = el?.getBoundingClientRect();
+    return r && r.width > 0 ? { x: r.x, y: r.y, w: r.width, h: r.height } : null;
+  }
+
+  // 2D：自己是哩，缚了番就锁上
+  private syncChains2d(): void {
+    const g = this.game;
+    if (!g) return;
+    const host = document.querySelector<HTMLElement>('.stage');
+    if (this.chars[this.me]?.id !== 'rii' && !this.chains2d) return;
+    if (host && (!this.chains2d || !host.contains(document.querySelector('canvas.rii-chains')))) {
+      this.chains2d?.destroy();
+      this.chains2d = new Chains2D(host, () => document.querySelector('.stage .table')?.getBoundingClientRect() ?? null);
+    }
+    const bind = this.chars[this.me]?.id === 'rii' && !this.vision ? riiBind(g, this.me) : null;
+    // 换了锁链样子（试看）：照新样子重新锁一次
+    if (bind !== null && this.chains2d && this.chains2d.has(this.me) && this.chains2d.styleOf(this.me) !== riiLook.chain && g.phase === 'turn') {
+      this.chains2d.lock(this.me, bind, () => this.handRect(this.me), 'lock');
+    } else if (bind !== null && this.chains2d && !this.chains2d.has(this.me) && g.phase === 'turn') {
+      this.chains2d.lock(this.me, bind, () => this.handRect(this.me), g.players[this.me].discards.length === 0 ? 'lock' : 'settled');
+    }
+    this.chains2d?.redraw();
+  }
+
+  // 结算：哩番缚了的这一局，锁链变金冲上天、天空放晴、钥匙落下 / 崩断消散 / 淡掉（淡掉只有她自己看得到）
+  private riiFinish(result: RoundResult): void {
+    const g = this.game!;
+    const tag = keyTag(g.roundWind, g.roundNumber, g.honba);
+    for (const o of chainOutcomes(g, result)) {
+      if (o.kind === 'fade' && o.seat !== this.me) continue;
+      let delay = 0;
+      if (this.table3d) delay = this.table3d.riiOutcome(o.seat, o.kind, o.bind, g, this.me);
+      else {
+        const host = document.querySelector<HTMLElement>('.stage');
+        if (!host) continue;
+        this.chains2d ??= new Chains2D(host, () => document.querySelector('.stage .table')?.getBoundingClientRect() ?? null);
+        const fresh = !this.chains2d.has(o.seat);
+        if (fresh) this.chains2d.lock(o.seat, o.bind, () => this.handRect(o.seat), 'quick');
+        delay = fresh ? 0.6 : 0.15;
+        this.chains2d.finish(o.seat, o.kind, delay * 1000);
+      }
+      let total = delay + outcomeTime(o.kind);
+      if (o.kind === 'key') {
+        const at = this.table3d ? this.table3d.handScreenPoint(o.seat, this.me, g) : this.handPoint(o.seat);
+        const root = document.querySelector<HTMLElement>('.stage3d') ?? document.querySelector<HTMLElement>('.stage');
+        if (at && root) {
+          if (!this.skyKey || !root.contains(document.querySelector('canvas.rii-sky'))) {
+            this.skyKey?.destroy();
+            this.skyKey = new SkyKey(root);
+          }
+          this.skyKey.play(at, o.bind, tag, delay + skyStart());
+          total = delay + skyStart() + skyTime();
+        }
+      }
+      this.riiHold = Math.max(this.riiHold, Date.now() + total * 1000 + 200);
+    }
+  }
+
+  private handPoint(s: number): { x: number; y: number; w: number } | null {
+    const r = this.handRect(s);
+    return r ? { x: r.x + r.w / 2, y: r.y + r.h / 2, w: Math.max(r.w, r.h) } : null;
   }
 
   // ---------- 爱丽丝的手绘板 ----------
@@ -1284,6 +1370,20 @@ export class App {
     }
     if (el.dataset.ui === 'skill') {
       if (this.game && !this.vision) this.chars[this.me].ability?.pressSkill?.(this.game, this.me, el.dataset.choice);
+      this.riiPicking = false;
+      this.render();
+      return;
+    }
+    // 白水哩的番缚：先把手牌扣下去再选番数；不缚就翻回来
+    // 番缚的样子（试看）：投影朝内 / 朝外，几种锁链
+    if (el.dataset.ui === 'rii-look') {
+      if (el.dataset.proj) setRiiLook({ proj: el.dataset.proj as RiiProj });
+      if (el.dataset.chain) setRiiLook({ chain: el.dataset.chain as ChainStyleId });
+      this.render();
+      return;
+    }
+    if (el.dataset.ui === 'rii-bind' || el.dataset.ui === 'rii-cancel') {
+      this.riiPicking = el.dataset.ui === 'rii-bind' && !!this.game && riiCanBind(this.game, this.me);
       this.render();
       return;
     }
@@ -1332,7 +1432,7 @@ export class App {
   }
 
   private discardable(): Set<TileId> {
-    if (this.auto) return new Set();
+    if (this.auto || this.riiPicking) return new Set();
     const legal = this.game!.legalActions(this.me);
     return new Set(
       legal.filter((a) => a.type === 'discard' && !!a.riichi === this.riichiMode).map((a) => (a as { tile: TileId }).tile),
@@ -1374,6 +1474,7 @@ export class App {
     table.dataset.mist = String(this.mistLevel());
     this.gale2d(this.galeView()?.level ?? 0);
     this.water2d(this.waterOn());
+    this.syncChains2d();
     setSketchTiles(false);
     table.parentElement?.classList.toggle('sketch', sketch);
     this.freshDiscard = null;
@@ -1426,6 +1527,8 @@ export class App {
       gale: this.galeView(),
       glowTiles: this.glowTiles(),
       stillWater: this.waterOn(),
+      riiCover: this.riiPicking,
+      riiBind: this.chars[this.me]?.id === 'rii' && !this.vision ? riiBind(g, this.me) : null,
     });
     hud.parentElement?.classList.toggle('sketch', this.sketchShown());
   }
@@ -1999,6 +2102,23 @@ export class App {
     return ` style="animation-delay:-${t}ms"`;
   }
 
+  // 白水哩选番数：手牌上方一排“几番”的牌子，和“不缚”
+  private riiPickerHtml(): string {
+    if (!this.riiPicking || !this.game || !riiCanBind(this.game, this.me)) return '';
+    const n = Array.from({ length: RII.maxBind }, (_, i) => `<button class="rii-han" data-ui="skill" data-choice="${i + 1}">${'一二三四五六七'[i]}<small>番</small></button>`).join('');
+    return `<div class="rii-picker"><div class="rii-title">番缚 · 缚几番</div><div class="rii-row">${n}<button class="rii-han no" data-ui="rii-cancel">不缚</button></div>${this.riiLookHtml(true)}</div>`;
+  }
+
+  // 试看用：挑投影朝哪边、锁链什么样子（挑好以后留一种，这一排就拿掉）
+  private riiLookHtml(proj: boolean): string {
+    const btn = (on: boolean, attr: string, label: string) => `<button class="rii-look${on ? ' on' : ''}" data-ui="rii-look" ${attr}>${label}</button>`;
+    const projRow = proj
+      ? `<div class="rii-looks"><span>投影</span>${btn(riiLook.proj === 'in', 'data-proj="in"', '朝内')}${btn(riiLook.proj === 'out', 'data-proj="out"', '朝外')}</div>`
+      : '';
+    const chainRow = `<div class="rii-looks"><span>锁链</span>${CHAIN_LOOKS.map((c) => btn(riiLook.chain === c.id, `data-chain="${c.id}"`, c.name)).join('')}</div>`;
+    return projRow + chainRow;
+  }
+
   private myAreaHtml(withHand = true, withPlate = true): string {
     const g = this.game!;
     const p = g.players[this.me];
@@ -2011,9 +2131,13 @@ export class App {
     const deadly = this.deadlyTiles();
     const ripple = this.rippleTile();
     const classes = (t: TileId) => [discardable.has(t) ? 'can' : 'dim', ...(this.preview.has(t) ? ['tenpai'] : []), ...(deadly.has(t) ? ['deadly'] : []), ...(t === ripple ? ['ripple'] : [])];
-    const hand = sorted.map((t) => tileHtml(t, { classes: classes(t), data: { tile: t } })).join('');
+    // 白水哩选番数：手牌扣下去（牌背），上面浮着一排投影的牌面
+    const cover = this.riiPicking;
+    const covered = (t: TileId) => (cover ? [...classes(t), 'covered'] : classes(t));
+    const hand = sorted.map((t) => tileHtml(t, { classes: covered(t), data: { tile: t } })).join('');
     const drawn =
-      p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn, { classes: classes(p.drawn), data: { tile: p.drawn } })}</div>` : '';
+      p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn, { classes: covered(p.drawn), data: { tile: p.drawn } })}</div>` : '';
+    const ghosts = cover && withHand ? `<div class="rii-ghosts${riiLook.proj === 'out' ? ' out' : ''}">${sorted.map((t) => tileHtml(t)).join('')}${p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn)}</div>` : ''}</div>` : '';
 
     const buttons: string[] = [];
     // 3D 牌桌上别人打的牌还在半空时先不弹鸣牌按钮，落桌后 step 会再画一次
@@ -2058,11 +2182,11 @@ export class App {
       <div class="me" style="--c:${c.color}">
         <div class="actions">${buttons.join('')}</div>
         ${this.autoBtnHtml()}${this.assistHtml()}
-        ${this.sketchPlanHtml()}${waitHtml}${hint}
+        ${this.sketchPlanHtml()}${waitHtml}${hint}${this.riiPickerHtml()}
         ${
           withHand
             ? `<div class="hand-row">
-          <div class="hand">${hand}${drawn}</div>
+          <div class="hand${cover ? ' rii-cover' : ''}">${ghosts}${hand}${drawn}</div>
           <div class="melds${[0, 1, 2, 3].some((o) => o !== this.me && g.stealthed(this.me, o)) ? ' stealth' : ''}">${this.meldsHtml(p.melds, this.me)}</div>
         </div>`
             : ''
@@ -2108,6 +2232,10 @@ export class App {
     if (ab && g.isSealed(this.me)) return `<div class="foresight skill"><div class="fs-title">${ab.name}<span class="skill-on sealed">被封印</span></div><div class="fs-note skill-state">${this.sealText()}</div></div>`;
     const b = !this.vision && ab?.skill?.(g, this.me);
     if (!b) return '';
+    if (ab?.id === 'rii' && !b.active && b.enabled) {
+      if (!this.riiPicking) return `<div class="foresight skill"><div class="fs-title">${ab.name}</div><button class="deep-btn rii-go" data-ui="rii-bind">番缚<small>手牌扣下去，缚上几番</small></button></div>`;
+      return `<div class="foresight skill"><div class="fs-title">${ab.name}</div><div class="fs-note skill-state">缚几番？缚上了这一局要和出这么多番才拿得到钥匙。</div><button class="deep-btn" data-ui="rii-cancel">不缚</button></div>`;
+    }
     const meter = b.meter
       ? `<span class="stamina energy" title="${b.meter.label ?? '能量'}"><i style="width:${(b.meter.value / b.meter.max) * 100}%"></i></span><span class="st-num">${b.meter.value}</span>`
       : '';
@@ -2129,7 +2257,9 @@ export class App {
       : ab!.pressSkill
         ? `<button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button>`
         : `<div class="fs-note skill-state">${b.note}</div>`;
-    return `<div class="foresight skill"><div class="fs-title">${ab!.name}${b.active ? '<span class="skill-on">发动中</span>' : ''}${meter}</div>${body}</div>`;
+    // 白水哩缚上以后：换个锁链样子，照新样子重新锁一次看看
+    const looks = ab?.id === 'rii' && riiBind(g, this.me) !== null && g.phase === 'turn' ? this.riiLookHtml(false) : '';
+    return `<div class="foresight skill"><div class="fs-title">${ab!.name}${b.active ? '<span class="skill-on">发动中</span>' : ''}${meter}</div>${body}${looks}</div>`;
   }
 
   // ---------- 发牌前选技能（淡、霞） ----------
