@@ -245,7 +245,7 @@ describe('狮子原爽', () => {
     let draws = 0;
     let hits = 0;
     let used = 0;
-    for (let seed = 1; seed <= 16; seed++) {
+    for (let seed = 1; seed <= 24; seed++) {
       play(
         seed,
         LINEUPS[seed % 4],
@@ -281,6 +281,7 @@ describe('狮子原爽', () => {
       );
     }
     expect(used).toBeGreaterThan(5);
+    console.log({ used, draws, hits });
     expect(draws).toBeGreaterThan(10);
     expect(hits / draws).toBeGreaterThan(0.85);
   }, 120000);
