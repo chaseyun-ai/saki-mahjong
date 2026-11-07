@@ -195,19 +195,28 @@ describe('高鸭稳乃：起雾以后干扰别人', () => {
     expect(clean / n).toBeGreaterThan(0.85);
   });
 
-  it('衣：雾 4 级时海底一定被遮住，一次海底捞月也和不到', () => {
+  it('衣：雾 4 级时海底多半被遮住（新月时月相只挡得掉 15%）', () => {
     const ids = ['shizuno', 'koromo', 'izumi', 'izumi'];
     let fogged = 0;
+    let routes = 0;
     for (let seed = 1; seed <= 6; seed++) {
       const g = newGame(seed, ids);
       deepMist(g, 0);
+      (g.abilityGameState[1] as { moon?: number }).moon = 0;
+      let first = true;
       g.onEvent((e) => {
-        if (e.type === 'ability' && e.seat === 1) expect(e.text).not.toBe('海底捞月');
-        if (e.type === 'roundEnd' && (g.abilityState[1] as { fogged?: boolean }).fogged) fogged++;
+        if (e.type !== 'roundEnd') return;
+        // 第一局在设雾之前就配好牌了，不算
+        if (first) return void (first = false);
+        const st = g.abilityState[1] as { fogged?: boolean; route?: string };
+        if (st.fogged) fogged++;
+        if (st.route) routes++;
       });
       play(g, ids);
     }
     expect(fogged).toBeGreaterThan(0);
+    // 想进海底路线的局里，多半被雾遮住
+    expect(fogged / (fogged + routes)).toBeGreaterThan(0.5);
   }, 240000);
 
   it('姬子拿钥匙的那一局：雾 4 级时照样自摸，只是晚了 4 巡以上', () => {

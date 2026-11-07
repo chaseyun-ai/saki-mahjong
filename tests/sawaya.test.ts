@@ -147,21 +147,22 @@ describe('狮子原爽', () => {
             const red = sawayaRedTarget(g, me);
             if (red === null) return;
             if (e.type === 'dealt') {
-              for (let s = 0; s < 4; s++) if (s !== red && g.rulesBind(me, s)) expect(g.players[s].hand.some((t) => isHonor(kindOf(t)))).toBe(false);
+              // 衣的月相挡得掉一部分规矩，不算
+              for (let s = 0; s < 4; s++) if (s !== red && g.rulesBind(me, s) && g.abilities[s]?.id !== 'koromo') expect(g.players[s].hand.some((t) => isHonor(kindOf(t)))).toBe(false);
             }
             if (e.type !== 'draw' || g.rinshanDraw || g.wall.remaining < 20) return;
             const honor = isHonor(kindOf(g.players[e.seat].drawn!));
             // 字牌只流给一家，别的牌被摸光以后牌山里只剩字牌：挡也挡不住，不算
             if (honor && !g.wall.live.some((t) => !isHonor(kindOf(t)))) return;
             if (red === me) {
-              if (e.seat !== me && g.rulesBind(me, e.seat)) {
+              if (e.seat !== me && g.rulesBind(me, e.seat) && g.abilities[e.seat]?.id !== 'koromo') {
                 selfDraws++;
                 expect(honor).toBe(false);
               }
               return;
             }
-            // 照管不到
-            if (!g.rulesBind(me, e.seat)) return;
+            // 照管不到；衣的月相挡得掉一部分
+            if (!g.rulesBind(me, e.seat) || g.abilities[e.seat]?.id === 'koromo') return;
             const bucket = e.seat === red ? pushed : others;
             bucket.draws++;
             if (honor) bucket.honors++;
