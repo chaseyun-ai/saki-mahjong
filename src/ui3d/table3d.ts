@@ -21,6 +21,9 @@ import { TableMaterials, buildTableModel } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 import { TableColors, tableColors } from '../ui/theme';
 import { pondJitter, varyDiscard, vary } from '../ui/vary';
+import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
+import { himekoKeySeat } from '../abilities/himeko';
+import { BeatHit, beatFinal, beatHit, beatLength } from '../ui/himekoBeat';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -146,6 +149,7 @@ interface DealState {
   dealer: number;
   sum: number;
   order: Map<TileId, { d: number; time: number }>;
+  extra: number; // 理牌往后推多久（姬子拿钥匙那一局，等她的光柱落完再理牌）
 }
 
 // 一局结束时的倒牌
@@ -307,6 +311,12 @@ export class Table3D {
   private loadingEl: HTMLDivElement | null = null;
   private dice: Dice;
   private deal: DealState | null = null;
+  // 鹤田姬子拿到钥匙的那一局：配牌时她的牌裹着火像流星一样一张接一张砸下来，理完牌火从右烧到左（himekoFx.ts）
+  private himeko = new HimekoFx();
+  // land：她每张牌什么时候被光柱砸进手里；pending：还没砸到的；open：大光柱开始落下的时刻
+  private himekoDeal: { seat: number; land: Map<TileId, BeatHit>; pending: Set<TileId>; axes: Map<TileId, THREE.Vector3>; open: number; aimed: boolean; final: number; shook: boolean; fireAt: number; fired: boolean } | null = null;
+  // 烧着往下砸的牌换上的材质（烧得发橙、自己发光）；用到时才建，换皮肤后下一次重建
+  private burnMats: { body: THREE.MeshStandardMaterial; back: THREE.MeshStandardMaterial; face: THREE.MeshStandardMaterial } | null = null;
   private handAnims: HandAnim[] = [];
   // 这一局牌河摆放的随机微变化用哪一套（vary.ts 的 pondJitter）
   private pondSalt = 0;
@@ -399,6 +409,7 @@ export class Table3D {
     this.buildTiles();
     this.scene.add(this.dice.group);
     this.effects = new Effects(this.scene);
+    this.scene.add(this.himeko.group);
     this.scene.add(this.mist.group);
     this.buildRiichiSticks();
     // 牌面画好、仪表盘用的字体下载好以后，仪表盘重画一次
@@ -755,7 +766,8 @@ export class Table3D {
   // 发牌或骰子动画还要多久（毫秒），这段时间里电脑先不出牌
   busyMs(): number {
     let until = this.now;
-    if (this.deal) until = Math.max(until, this.deal.start + DEAL_END);
+    if (this.deal) until = Math.max(until, this.deal.start + this.deal.extra + DEAL_END);
+    if (this.himekoDeal) until = Math.max(until, this.himekoDeal.fireAt, this.himeko.endsAt);
     // 别人打出的牌落到牌河之前先别响应
     for (const a of this.handAnims) if (a.kind === 'tile') until = Math.max(until, this.now - a.t + a.timing.reach + a.timing.carry);
     // 摸到的牌还没从牌山出发
@@ -1130,7 +1142,22 @@ export class Table3D {
         order.set(t, { d, time: start + DEAL_START + batch * DEAL_BATCH });
       });
     }
-    this.deal = { start, dealer: g.dealer, sum: g.dice[0] + g.dice[1], order };
+    this.deal = { start, dealer: g.dealer, sum: g.dice[0] + g.dice[1], order, extra: 0 };
+    this.himeko.stop();
+    this.himekoDeal = null;
+    const hk = himekoKeySeat(g);
+    if (hk !== null) {
+      // 姬子的牌照常从牌山里拿走（往天上飞走），等别人发完，再一张接一张裹着火像流星一样砸进手里（himekoBeat.ts）
+      const p = g.players[hk];
+      const open = start + DEAL_START + 16 * DEAL_BATCH + 0.2;
+      if (p.drawn !== null) order.set(p.drawn, { d: 52, time: open - 0.2 });
+      const mine = [...p.hand].sort((a, b) => (order.get(a)?.d ?? 99) - (order.get(b)?.d ?? 99));
+      const n = mine.length;
+      const land = new Map(mine.map((t, i) => [t, { ...beatHit(i, n), at: open + beatHit(i, n).at }] as [TileId, BeatHit]));
+      this.deal.extra = Math.max(0, open + beatLength(n) - (start + DEAL_SORT));
+      const fireAt = start + this.deal.extra + DEAL_END + 0.15;
+      this.himekoDeal = { seat: hk, land, pending: new Set(mine), axes: new Map(), open, aimed: false, final: open + beatFinal(n), shook: false, fireAt, fired: false };
+    }
     this.dice.roll(g.dice, DEAL_END + 0.6);
     for (const a of this.handAnims) this.emitMarkers(a, Infinity);
     this.handAnims = [];
@@ -1150,6 +1177,7 @@ export class Table3D {
     for (const [t, slot] of this.wallSlotOf) targets.set(t, this.wallPlacement(slot, view.me));
     // 王牌感知：杠材一直看得见，岭上牌要鼠标移上去
     const seen = new Set<TileId>([...(view.kanSeen ?? []), ...(this.rinshanHover ? view.rinshanSeen ?? [] : [])].filter((t) => this.wallSlotOf.has(t)));
+    this.aimHimeko(g, targets);
     this.applyDeal(g, view.me, targets);
     this.placeRiichiSticks(g);
     for (let id = 0; id < TILE_COUNT; id++) {
@@ -1572,8 +1600,8 @@ export class Table3D {
     }
     // 发牌时先按发到的顺序摆，理牌那一下所有牌往后倒，再按顺序立起来
     const deal = this.deal;
-    const dealing = !!deal && this.now < deal.start + DEAL_SORT;
-    const tilting = !!deal && !dealing && this.now < deal.start + DEAL_SORT + SORT_TILT;
+    const dealing = !!deal && this.now < deal.start + deal.extra + DEAL_SORT;
+    const tilting = !!deal && !dealing && this.now < deal.start + deal.extra + DEAL_SORT + SORT_TILT;
     if (dealing || tilting) hand.sort((a, b) => (deal!.order.get(a!)?.d ?? 99) - (deal!.order.get(b!)?.d ?? 99));
     if (!this.frozen.has(s)) this.layouts[s] = { hand: hand as TileId[], drawn };
     // 自己的手牌放大一些，看得清也好点
@@ -1695,22 +1723,119 @@ export class Table3D {
     return out;
   }
 
+  // 姬子的配牌：第一次摆牌时记下她每张牌落在手里哪里，定好每颗流星从哪个方向砸下来
+  private aimHimeko(g: Game, hand: Map<TileId, Placement>): void {
+    const hk = this.himekoDeal;
+    if (!hk || hk.aimed || !this.deal) return;
+    hk.aimed = true;
+    // 流星都从她右手边、牌桌中间那一侧的天上斜着砸下来（2D 也是从画面右上方来）
+    const up = new THREE.Vector3(0, 1, 0);
+    const inward = this.seatPoint(hk.seat, 0, 0, -1).normalize();
+    const right = this.seatPoint(hk.seat, 1, 0, 0).normalize();
+    const list: DescentTile[] = [];
+    let scale = 1;
+    for (const t of g.players[hk.seat].hand) {
+      const hit = hk.land.get(t);
+      const dest = hand.get(t);
+      if (!hit || !dest) continue;
+      scale = dest.scale;
+      // 每颗稍微错开一点，火尾不叠成一条
+      const wob = ((t * 37) % 11) / 10 - 0.5;
+      const axis = up.clone().addScaledVector(inward, 0.42 + 0.08 * wob).addScaledVector(right, 0.5 + 0.12 * wob).normalize();
+      hk.axes.set(t, axis);
+      list.push({ pos: dest.pos.clone(), floor: dest.pos.y - (TILE_H / 2) * dest.scale, axis, at: hit.at, accent: hit.accent });
+    }
+    this.himeko.descend(list, scale);
+    if (this.faceMat) {
+      if (this.burnMats) for (const m of Object.values(this.burnMats)) m.dispose();
+      const glow = (m: THREE.MeshStandardMaterial, k: number) => {
+        m.emissive.set('#ff6a12');
+        m.emissiveIntensity = k;
+        return m;
+      };
+      this.burnMats = {
+        body: glow(new THREE.MeshStandardMaterial({ color: '#ffd8a6', roughness: 0.5 }), 0.85),
+        back: glow(new THREE.MeshStandardMaterial({ color: '#ff9a48', roughness: 0.5 }), 1),
+        face: glow(this.faceMat.clone(), 0.3),
+      };
+    }
+  }
+
+  // 每帧：流星还在天上的牌照着轨迹摆（越落越快、翻着跟头），砸到手里那一下落定；最后一张砸下来画面一震；
+  // 理完牌火从她右手边那张烧到左手边那张。要在 animateHands（会清空 held）之后、牌往目标靠拢之前调用
+  private updateHimeko(): void {
+    const hk = this.himekoDeal;
+    this.himeko.update(this.now);
+    if (!hk) return;
+    for (const t of hk.pending) {
+      const hit = hk.land.get(t);
+      const axis = hk.axes.get(t);
+      const obj = this.tiles[t];
+      const dest = obj?.target;
+      if (!hit || !axis || !dest) continue;
+      const s = (this.now - (hit.at - HIMEKO_FX.drop)) / HIMEKO_FX.drop;
+      if (s < 0) continue;
+      obj.group.visible = true;
+      obj.shown = true;
+      if (s >= 1) {
+        // 砸到了：落定，桌子跟着一顿
+        hk.pending.delete(t);
+        // 换回平常的材质（标红之类的特殊材质下一次 sync 会再换上）
+        if (this.bodyMat && this.backMat && this.faceMat) [obj.body.material, obj.back.material, obj.face.material] = [this.bodyMat, this.backMat, this.faceMat];
+        obj.group.position.copy(dest.pos);
+        obj.group.quaternion.copy(dest.quat);
+        obj.group.scale.setScalar(dest.scale);
+        this.shake = Math.max(this.shake, hit.accent ? 0.5 : 0.2);
+        continue;
+      }
+      this.held.add(t);
+      if (this.burnMats) [obj.body.material, obj.back.material, obj.face.material] = [this.burnMats.body, this.burnMats.back, this.burnMats.face];
+      obj.group.position.copy(HimekoFx.meteorAt({ pos: dest.pos, axis }, s));
+      const spin = (1 - s) * (1 - s) * (t % 2 ? 2.6 : -2.2);
+      obj.group.quaternion.copy(dest.quat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0.8, 0.25, 0.55).normalize(), spin));
+      obj.group.scale.setScalar(dest.scale * (1 + 0.25 * (1 - s)));
+    }
+    if (!hk.shook && this.now >= hk.final) {
+      hk.shook = true;
+      this.shake = Math.max(this.shake, 0.5);
+    }
+    if (hk.fired || this.now < hk.fireAt || !this.lastSync) return;
+    hk.fired = true;
+    const right = this.seatPoint(hk.seat, 1, 0, 0).normalize();
+    const row = this.lastSync.g.players[hk.seat].hand.map((t) => this.tiles[t]?.target).filter((x): x is Placement => !!x);
+    if (!row.length) return;
+    row.sort((a, b) => b.pos.dot(right) - a.pos.dot(right));
+    const sc = row[0].scale;
+    const foot = (pl: Placement, out: number) => pl.pos.clone().addScaledVector(right, out * (TILE_W / 2) * sc).setY(pl.pos.y - (TILE_H / 2) * sc * 0.6);
+    this.himeko.burn(foot(row[0], 1), foot(row[row.length - 1], -1), this.seatPoint(hk.seat, 0, 0, 1).normalize(), sc, this.now);
+  }
+
   // 发牌动画：还没轮到发的牌先留在牌山里
   private applyDeal(g: Game, me: number, out: Map<TileId, Placement>): void {
     const deal = this.deal;
     if (!deal) return;
     const now = this.now;
-    if (now > deal.start + DEAL_END) {
+    if (now > deal.start + deal.extra + DEAL_END) {
       this.deal = null;
       return;
     }
     // 庄家的第 14 张最后再摸
     const drawn = g.players[deal.dealer].drawn;
     if (drawn !== null && !deal.order.has(drawn)) {
-      deal.order.set(drawn, { d: 52, time: deal.start + DEAL_END - 0.25 });
+      deal.order.set(drawn, { d: 52, time: deal.start + deal.extra + DEAL_END - 0.25 });
     }
+    const hk = this.himekoDeal;
     for (const [t, o] of deal.order) {
-      if (now < o.time && out.has(t)) out.set(t, this.wallPlacement(drawSlot(deal.dealer, deal.sum, o.d), me));
+      if (!out.has(t)) continue;
+      if (now < o.time) out.set(t, this.wallPlacement(drawSlot(deal.dealer, deal.sum, o.d), me));
+      else if (hk?.pending.has(t) && now < (hk.land.get(t)?.at ?? -Infinity) - HIMEKO_FX.drop) {
+        // 姬子的牌：从牌山里往天上飞走，变成流星砸下来之前看不见
+        if (now < o.time + 0.3) {
+          const up = this.wallPlacement(drawSlot(deal.dealer, deal.sum, o.d), me);
+          up.pos.y += 8;
+          out.set(t, up);
+        } else out.delete(t);
+      }
     }
   }
 
@@ -2425,6 +2550,7 @@ export class Table3D {
     this.dice.update(dt);
     this.animateHands(dt);
     this.animateFlights(dt);
+    this.updateHimeko();
     this.animateVanish();
     // 到了倒牌的时间重新摆一次
     if (this.reveal && this.lastSync && this.reveal.topple.size === 0 && this.now >= this.reveal.at && !this.reveal.fxDone) {

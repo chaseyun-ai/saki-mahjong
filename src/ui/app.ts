@@ -48,6 +48,9 @@ import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 import { DEFAULT_SETTINGS, MatchSettings, TABLE_MODES, TableMode, loadSettings, loadTableMode, matchPanelHtml, parseTarget, pickOpponents, ruleSummary, rulesOf, saveSettings, saveTableMode, setOption, visualPanelHtml } from './matchSetup';
 import { ForecastCache } from '../ai/forecast';
+import { himekoKeySeat } from '../abilities/himeko';
+import type { BindKey } from '../abilities/types';
+import { Himeko2D } from './himeko2d';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -308,6 +311,8 @@ export class App {
         <div class="char-tip" hidden></div>
         <div id="setup"></div>
       </div>`;
+    // 「更多」菜单里加一个姬子配牌特效的试玩入口
+    this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="himeko-demo">姬子特效试玩</button>');
     // 换了皮肤的选人页：介绍不再是浮窗，固定在左边当大立绘面板，先放这一页的第一位
     if (hero) this.pickCard(this.root.querySelector<HTMLElement>('.char-card'));
     // 能换素材的人（页面主人）在视觉设置里多一行“角色素材”
@@ -545,6 +550,21 @@ export class App {
     const input = this.root.querySelector<HTMLInputElement>('#setup-target');
     if (input) this.settings.target = parseTarget(input.value);
     this.root.querySelectorAll<HTMLSelectElement>('.setup-select').forEach((el) => (this.settings.opponents[Number(el.dataset.seat)] = el.value));
+  }
+
+  // 试玩姬子的配牌特效：自己是姬子，每一局（东南两场、0–9 本场）都当作哩拿到了钥匙，开局就是钥匙那一局
+  private startHimekoDemo(): void {
+    const mine = CHARACTERS.find((c) => c.id === 'himeko')!;
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    const others = pickOpponents(this.settings, 'himeko', new Rng(seed ^ 0x5a17));
+    const keys: BindKey[] = [];
+    let round = 1;
+    for (const wind of ['东', '南']) for (let n = 1; n <= 4; n++, round++) for (let h = 0; h < 10; h++) keys.push({ label: `${wind}${n}局 ${h}本场`, round, bind: 3, broken: false });
+    this.team = null;
+    this.auto = false;
+    const st = this.settings;
+    const players = [mine, ...others];
+    this.beginGame(players, new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer: Math.floor(Math.random() * 4), keys: [0, 1, 2, 3].map((i) => (i === this.me ? keys : [])), players: players.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
   }
 
   private startGame(charId: string): void {
@@ -1255,6 +1275,10 @@ export class App {
       this.openLab();
       return;
     }
+    if (el.dataset.ui === 'himeko-demo') {
+      this.startHimekoDemo();
+      return;
+    }
     if (el.dataset.ui === 'team') {
       this.teamFlow = new TeamFlow(this.root, {
         play: (run, seats, auto) => this.startTeamMatch(run, seats, auto),
@@ -1364,8 +1388,26 @@ export class App {
   }
 
   // 3D 牌桌在掷骰子、发牌时，先等动画放完
+  // 2D 牌桌上姬子拿到钥匙那一局的光柱和火（哪一局放过了）
+  private himeko2d = new Himeko2D();
+  private himeko2dRound = '';
+
   private busyMs(): number {
-    return this.table3d?.busyMs() ?? 0;
+    return this.table3d?.busyMs() ?? this.himeko2d.busyMs();
+  }
+
+  // 2D：姬子拿到钥匙的那一局，配牌时光柱砸下来、理完牌火从右烧到左（3D、2.5D 在 table3d 里放）
+  private himekoFx2d(g: Game, table: HTMLElement): void {
+    const seat = himekoKeySeat(g);
+    const fresh = g.players.every((p) => p.discards.length === 0 && p.melds.length === 0);
+    const key = `${g.seed}-${g.round}`;
+    if (seat !== null && fresh && this.himeko2dRound !== key && !this.vision) {
+      this.himeko2dRound = key;
+      this.himeko2d.begin();
+    }
+    if (seat === null) return;
+    const sel = seat === this.me ? '.me .hand' : `.opponent.${POS[seat]} .ohand`;
+    this.himeko2d.apply(table, sel, (seat - this.me + 4) % 4);
   }
 
   private onTileClick(tile: TileId): void {
@@ -1416,6 +1458,7 @@ export class App {
       ${this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
       ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
+    this.himekoFx2d(g, table.parentElement ?? table);
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     table.dataset.mist = String(this.mistLevel());
     this.gale2d(this.galeView()?.level ?? 0);

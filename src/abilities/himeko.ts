@@ -50,6 +50,12 @@ export function himekoKey(g: Game, seat: number, broken = false): BindKey | null
   return null;
 }
 
+// 这一局拿着钥匙的姬子坐哪（配牌时放光柱、火焰特效用），没有是 null
+export function himekoKeySeat(g: Game): number | null {
+  for (let s = 0; s < 4; s++) if (g.abilities[s]?.id === 'himeko' && himekoKey(g, s)) return s;
+  return null;
+}
+
 // 这一局用的是破碎的钥匙（有完整的钥匙时不算）
 export function himekoBroken(g: Game, seat: number): boolean {
   return !himekoKey(g, seat) && himekoKey(g, seat, true) !== null;
