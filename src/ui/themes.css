@@ -383,6 +383,8 @@
 }
 
 .hero-go {
+  flex: none;
+  white-space: nowrap;
   padding: 10px 38px;
   border: none;
   font-size: 18px;
@@ -390,13 +392,34 @@
   color: #fff;
 }
 
+/* 出场旁边：这次照什么规则开局，点了打开对局设置 */
 .hero-rules {
-  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 14px;
   border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
   border-radius: 3px;
   background: none;
   color: var(--gold);
   font-size: 13px;
+  white-space: nowrap;
+}
+
+.hero-rules svg {
+  flex: none;
+}
+
+.hero-rules > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 480px) {
+  .hero-opp {
+    display: none;
+  }
 }
 
 .hero-rules:hover {
@@ -432,7 +455,6 @@
     font-size: 26px;
   }
 
-  .sel-tool > span,
   .sel-modes small {
     display: none;
   }
@@ -470,19 +492,16 @@
     letter-spacing: 2px;
   }
 
-  .sel-tool {
+  .sel-set {
     height: 26px;
-    padding-left: 8px;
+    padding: 0 9px;
+    gap: 5px;
     font-size: 12px;
   }
 
-  .sel-tool > span {
-    display: none;
-  }
-
-  .sel-tool select {
-    padding-right: 22px;
-    background-position: right 8px center;
+  .sel-set svg {
+    width: 13px;
+    height: 13px;
   }
 
   .sel-more summary {
@@ -615,6 +634,10 @@
   .hero-rules {
     padding: 4px 10px;
     font-size: 12px;
+  }
+
+  .hero-opp {
+    display: none;
   }
 
   :root:not([data-theme='classic']) .char-grid {
@@ -876,7 +899,7 @@
   }
 }
 
-:root[data-theme='washi'] .sel-tool,
+:root[data-theme='washi'] .sel-set,
 :root[data-theme='washi'] .sel-more summary,
 :root[data-theme='washi'] .school-pager button {
   border-color: var(--t-wood-line);
@@ -889,9 +912,6 @@
   background: var(--t-wood);
 }
 
-:root[data-theme='washi'] .sel-tool select option {
-  background: var(--t-wood);
-}
 
 :root[data-theme='washi'] .sel-modes > button.on {
   border-bottom-color: var(--t-hot);
@@ -1236,7 +1256,7 @@
 }
 
 /* 觉醒风：圆角、紫色描边 */
-:root[data-theme='awaken'] .sel-tool,
+:root[data-theme='awaken'] .sel-set,
 :root[data-theme='awaken'] .sel-more summary,
 :root[data-theme='awaken'] .school-pager button,
 :root[data-theme='awaken'] .sel-modes > .sel-random,
@@ -1244,14 +1264,14 @@
   border-radius: 999px;
 }
 
-:root[data-theme='awaken'] .sel-tool,
+:root[data-theme='awaken'] .sel-set,
 :root[data-theme='awaken'] .sel-more summary,
 :root[data-theme='awaken'] .school-pager button {
   border-color: rgba(169, 139, 255, 0.45);
 }
 
-:root[data-theme='awaken'] .sel-tool {
-  padding-left: 14px;
+:root[data-theme='awaken'] .sel-set {
+  padding: 0 14px;
 }
 
 :root[data-theme='awaken'] .sel-more-menu {
@@ -1260,9 +1280,6 @@
   background: #1f1048;
 }
 
-:root[data-theme='awaken'] .sel-tool select option {
-  background: #1f1048;
-}
 
 :root[data-theme='awaken'] .sel-modes > button.on {
   border-image: linear-gradient(90deg, var(--t-hot), var(--t-glow)) 1;
@@ -1723,4 +1740,119 @@
 
 :root[data-theme='awaken'] .rbn-sub {
   color: #c9b8ff;
+}
+
+/* ---------- 选人页的设置面板（对局设置、视觉设置）：跟着皮肤换 ---------- */
+
+/* 大赛转播：深蓝底、顶上金条、直角，分组标题是左边一道金线 */
+:root[data-theme='broadcast'] .setup {
+  border: 1px solid var(--t-line);
+  border-top: 4px solid var(--gold);
+  border-radius: 6px;
+  background: linear-gradient(#111e3a, #0a1226);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  --set-quiet: #9fb0d0;
+  --set-field: #0a1226;
+}
+
+:root[data-theme='broadcast'] .setup h2 {
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+
+:root[data-theme='broadcast'] .set-sec {
+  padding: 3px 8px;
+  border-bottom: none;
+  border-left: 3px solid var(--gold);
+  background: linear-gradient(90deg, rgba(255, 211, 77, 0.14), transparent 70%);
+}
+
+:root[data-theme='broadcast'] .setup-opts button,
+:root[data-theme='broadcast'] .setup-select,
+:root[data-theme='broadcast'] .setup-input {
+  border-radius: 3px;
+}
+
+:root[data-theme='broadcast'] .setup-actions button {
+  border-radius: 3px;
+}
+
+:root[data-theme='broadcast'] .setup-actions .primary {
+  transform: skewX(-10deg);
+}
+
+/* 和风雀庄：米黄纸、木框，选中是朱红，标题用毛笔字 */
+:root[data-theme='washi'] .setup {
+  border: none;
+  border-radius: 2px;
+  color: var(--t-paper-ink);
+  background: var(--t-paper);
+  box-shadow: 0 0 0 3px var(--t-wood-line), 0 0 0 8px var(--t-wood), 0 20px 50px rgba(0, 0, 0, 0.7);
+  font-family: var(--t-body);
+  --gold: var(--t-hot);
+  --set-name: var(--t-paper-ink);
+  --set-quiet: #7a5a3c;
+  --set-line: rgba(163, 48, 31, 0.4);
+  --set-row: rgba(138, 90, 43, 0.22);
+  --set-btn: rgba(255, 255, 255, 0.45);
+  --set-btn-line: rgba(138, 90, 43, 0.45);
+  --set-field: #fffaf0;
+}
+
+:root[data-theme='washi'] .setup h2 {
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 28px;
+}
+
+:root[data-theme='washi'] .setup h2 small {
+  font-family: var(--t-body);
+}
+
+:root[data-theme='washi'] .setup-opts button,
+:root[data-theme='washi'] .setup-select,
+:root[data-theme='washi'] .setup-input,
+:root[data-theme='washi'] .setup-actions button {
+  border-radius: 2px;
+  font-family: inherit;
+}
+
+:root[data-theme='washi'] .setup-opts button.on,
+:root[data-theme='washi'] .setup-actions .primary {
+  color: var(--t-paper);
+}
+
+:root[data-theme='washi'] .set-x:hover {
+  background: rgba(138, 90, 43, 0.12);
+}
+
+/* 能力觉醒：紫色渐变、圆角、发光，选中是粉紫渐变 */
+:root[data-theme='awaken'] .setup {
+  border: 1px solid var(--t-line);
+  border-radius: 18px;
+  background: linear-gradient(160deg, #22104a, #140a2e);
+  box-shadow: 0 0 40px rgba(107, 75, 214, 0.45);
+  --set-quiet: #c9b8ff;
+  --set-line: rgba(169, 139, 255, 0.35);
+  --set-row: rgba(169, 139, 255, 0.14);
+  --set-btn-line: rgba(169, 139, 255, 0.4);
+  --set-field: #1a0c3c;
+}
+
+:root[data-theme='awaken'] .set-sec {
+  color: var(--t-glow);
+}
+
+:root[data-theme='awaken'] .setup-opts button,
+:root[data-theme='awaken'] .setup-select,
+:root[data-theme='awaken'] .setup-input {
+  border-radius: 999px;
+}
+
+:root[data-theme='awaken'] .setup-opts button.on,
+:root[data-theme='awaken'] .setup-actions .primary {
+  border-color: transparent;
+  background: linear-gradient(90deg, var(--t-hot), var(--t-glow));
+  color: #fff;
+  box-shadow: 0 0 12px rgba(255, 79, 163, 0.45);
 }
