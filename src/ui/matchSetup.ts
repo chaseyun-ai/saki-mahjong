@@ -27,6 +27,8 @@ export interface MatchSettings {
   chisui: boolean;
   // 2.5D 牌桌的布局：classic 是原版；improved 是参考雀魂的试做版（只在改良里改，原版不动，试砸了就换回原版）
   layout: 'classic' | 'improved';
+  // 改良布局里自己手牌的画法：B 没有透视、单独一层（雀魂那样）；C 同 B，牌往前倾、牌顶露得多
+  hand: 'B' | 'C';
 }
 
 export const SEAT_NAMES = ['下家', '对家', '上家'];
@@ -45,6 +47,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   opponents: ['', '', ''],
   chisui: false,
   layout: 'classic',
+  hand: 'B',
 };
 
 const KEY = 'saki-match-settings';
@@ -141,6 +144,15 @@ const ROWS: Row[] = [
     options: [
       { label: '原版', value: 'classic' },
       { label: '改良（试做）', value: 'improved' },
+    ],
+  },
+  {
+    key: 'hand',
+    name: '改良布局的手牌',
+    note: 'B 张张一样、牌顶露一条；C 牌往前倾、牌顶露得多',
+    options: [
+      { label: 'B 正对', value: 'B' },
+      { label: 'C 前倾', value: 'C' },
     ],
   },
 ];
@@ -296,6 +308,6 @@ export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMod
     return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="vis-mode" data-v="${m.id}">${m.name}</button>`;
   }).join('');
   const art = skins ? section('素材') + rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图 ›</button>', '只有页面主人看得到') : '';
-  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, ['layout']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
+  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand'] : ['layout']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
   return panelHtml('visual', '视觉设置', '改了马上生效', body, '');
 }

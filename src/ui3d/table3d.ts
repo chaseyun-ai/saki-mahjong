@@ -67,7 +67,7 @@ export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 
 // 改良布局（试做，参考雀魂）：镜头更俯视、视野窄一点，桌子不那么往后倒；自己的手牌大一点。
 // 手牌往后仰的角度跟着镜头俯角（tilt 不用，看 lean）：lean 0 时每张牌面都和画面平行，
 // 再每张转过来正对镜头（face），像雀魂那样张张正对着人，两头的牌不会因为透视往里歪、一排牌像一道弧
-export const DEFAULT_VIEW_25D_V2: View25 = { pitch: 0.84, portraitPitch: 1.2, fov: 28, lookZ: 1.5, hand: 1.4, tilt: 48, fan: 0, lean: 0, face: 1, clip: 0.12, out: 0.9 };
+export const DEFAULT_VIEW_25D_V2: View25 = { pitch: 0.84, portraitPitch: 1.2, fov: 28, lookZ: 1.5, hand: 1.4, tilt: 48, fan: 0, lean: 8, face: 0, clip: 0.12, out: 0.9, ortho: true };
 // 改良布局：自己手牌的几种画法（试做，给玩家挑）：网址后面加 ?hand=B 之类就换成那一种。
 // A 每张转过来正对镜头；B 雀魂那样单独一层、没有透视；C 同 B 牌顶露得多；D 同 B 小一号、整张露出来；
 // E 不转、牌面和画面平行；F 往后仰一点的真 3D

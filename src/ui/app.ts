@@ -665,8 +665,8 @@ export class App {
       this.cutins = new Cutins(document.getElementById('cutins')!);
       this.cutinSeen.clear();
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d', v2);
-      // 改良布局的手牌画法（试做）：网址后面加 ?hand=A 到 F 换着看
-      const handStyle = HAND_STYLES_V2[new URLSearchParams(location.search).get('hand')?.toUpperCase() ?? ''];
+      // 改良布局的手牌画法：照视觉设置（B / C）；网址后面加 ?hand=A 到 F 可以临时换成别的几种看
+      const handStyle = HAND_STYLES_V2[new URLSearchParams(location.search).get('hand')?.toUpperCase() ?? ''] ?? HAND_STYLES_V2[this.settings.hand];
       if (v2 && handStyle) this.table3d.setView25(handStyle);
       this.table3d.onHover = (id) => this.hoverTile(id);
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
@@ -1349,8 +1349,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、动画开关是别处的设置，留着
-      const { chisui, drawPath, vary, layout } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary, layout };
+      const { chisui, drawPath, vary, layout, hand } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary, layout, hand };
       saveSettings(this.settings);
       this.renderPanel();
       return;

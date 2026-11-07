@@ -7575,7 +7575,7 @@ canvas.rii-sky {
    理和鸣切竖着放在左边一条。牌山保留（有的能力要看牌山）；镜头、手牌在 table3d 里改 */
 
 .stage3d.flat.v2 {
-  --pw: clamp(60px, 14vh, 120px);
+  --pw: clamp(72px, 18vh, 150px);
 }
 
 .stage3d.flat.v2 .seat-frame.left {
@@ -7608,21 +7608,28 @@ canvas.rii-sky {
   color: #e9edf2;
 }
 
-/* 理和鸣切：竖着一条放在左边（雀魂那样），挂机按钮在它上面 */
+/* 理和鸣切：竖着一条放在左边（雀魂那样），挂机按钮在它上面。方框比原版小一圈，字照原来大 */
 .stage3d.flat.v2 .assist-bar {
   left: 12px;
   right: auto;
   top: auto;
-  bottom: calc(14px + var(--pw) * 1.2 + 44px);
-  grid-template-columns: 38px;
+  bottom: calc(14px + var(--pw) * 1.2 + 40px);
+  grid-template-columns: 30px;
+  gap: 5px;
+}
+
+.stage3d.flat.v2 .assist-bar button {
+  width: 30px;
+  height: 30px;
+  border-radius: 5px;
 }
 
 .stage3d.flat.v2 .auto-btn {
-  left: 8px;
+  left: 6px;
   right: auto;
   top: auto;
-  bottom: calc(14px + var(--pw) * 1.2 + 44px + 4 * 44px + 6px);
-  padding: 5px 10px;
+  bottom: calc(14px + var(--pw) * 1.2 + 40px + 4 * 35px + 6px);
+  padding: 4px 9px;
   font-size: 14px;
 }
 
@@ -7664,20 +7671,20 @@ canvas.rii-sky {
     left: auto;
     right: 6px;
     bottom: 6px;
-    grid-template-columns: repeat(2, 30px);
+    grid-template-columns: repeat(2, 26px);
     gap: 4px;
   }
 
   .stage3d.flat.v2 .assist-bar button {
-    width: 30px;
-    height: 30px;
-    font-size: 17px;
+    width: 26px;
+    height: 26px;
+    font-size: 20px;
   }
 
   .stage3d.flat.v2 .auto-btn {
     left: auto;
     right: 6px;
-    bottom: 82px;
+    bottom: 74px;
     padding: 3px 8px;
     font-size: 12px;
   }
@@ -7691,7 +7698,7 @@ canvas.rii-sky {
 /* 竖着的手机：桌子只占中间一条，上面那块放三家头像（上家、对家、下家从左到右），自己在左下角 */
 @media (orientation: portrait) and (max-width: 600px) {
   .stage3d.flat.v2 {
-    --pw: 60px;
+    --pw: 72px;
   }
 
   .stage3d.flat.v2 .seat-frame.left,
@@ -7729,12 +7736,12 @@ canvas.rii-sky {
     left: auto;
     right: 8px;
     bottom: 8px;
-    grid-template-columns: repeat(2, 38px);
+    grid-template-columns: repeat(2, 30px);
   }
 
   .stage3d.flat.v2 .auto-btn {
     left: auto;
     right: 8px;
-    bottom: calc(8px + 2 * 38px + 6px + 8px);
+    bottom: calc(8px + 2 * 30px + 5px + 8px);
   }
 }
