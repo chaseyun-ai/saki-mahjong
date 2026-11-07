@@ -121,6 +121,10 @@ const DEAL_END = DEAL_SORT + SORT_TILT + 0.15;
 // 倒牌：宣言后停一下，手牌依次（或一起）往前倒，倒完再放和牌特效
 const REVEAL_DELAY = 0.7;
 const TOPPLE_TIME = 0.24;
+// 改良布局：自己的手牌倒回桌上——从眼前那一层（大、正对着人）倒到桌面上手牌那条线，变回桌上牌的大小。
+// 倒得比别人慢一点，看得出是“倒回桌上”
+const V2_TOPPLE_TIME = 0.36;
+const V2_TOPPLE_STAGGER = 0.022;
 const TOPPLE_STAGGER = 0.07;
 // 平时的环境光、主光有多亮；和牌聚光灯亮起来时四周按 STAGE_DIM 暗下去一点，聚光灯本身最亮 STAGE_LIGHT
 const HEMI_BASE = 1.1;
@@ -205,7 +209,7 @@ interface RevealState {
   boltAt: number | null; // 闪电打在和的那张牌上的时间（3D 不放闪电），放过了就是 null
   stagger: number; // 一张张往下倒，相邻两张隔多久
   wins: { seat: number; tsumo: boolean; tile: TileId }[];
-  topple: Map<TileId, { at: number; from: Placement | null }>;
+  topple: Map<TileId, { at: number; from: Placement | null; time: number }>;
   // 要砸的和了牌：不跟着手牌倒，at 时举起来往下砸（自摸是手里那张，荣和是从牌河拿过来）
   slams: Map<TileId, { seat: number; at: number; from: Placement | null; hit: boolean }>;
   // 砸下去那一下：桌上的牌从这里往外震一下
@@ -430,6 +434,8 @@ export class Table3D {
   private layouts: { hand: TileId[]; drawn: TileId | null }[] = [];
   // 每家手牌这一排上一次摆在哪：第一张的中心、每张隔多远、放大多少、离中心多远。倒牌时照着摆，牌原地倒下
   private handRows: { x0: number; step: number; hs: number; z: number }[] = [];
+  // 每家手牌右边最远到哪（座位本地 x，有副露时是第一组副露左边一点）：改良布局里自己倒牌时照这个摆
+  private handEdges: number[] = [];
   private frozen = new Map<number, { hand: TileId[]; drawn: TileId | null; until: number }>();
   private consoleKey = '';
   private resizer = new ResizeObserver(() => this.resize());
@@ -1236,7 +1242,8 @@ export class Table3D {
     for (const [s, win] of shown) {
       const n = g.players[s].hand.length + (win !== null && !g.players[s].hand.includes(win) ? 1 : 0);
       const wave = (LOOKS[this.lastSync?.view.ids[s] ?? '']?.reveal ?? 'wave') === 'wave';
-      fxAt = Math.max(fxAt, at + (wave ? (n - 1) * stagger : 0) + TOPPLE_TIME + 0.1);
+      const back = this.fallsBack(s);
+      fxAt = Math.max(fxAt, at + (wave ? (n - 1) * (back ? V2_TOPPLE_STAGGER : stagger) : 0) + (back ? V2_TOPPLE_TIME : TOPPLE_TIME) + 0.1);
     }
     // 初美聚着风和牌：手牌先倒，倒完那张和了牌举起来往桌上砸，砸到的时候才放特效
     const slams: RevealState['slams'] = new Map();
@@ -1994,6 +2001,7 @@ export class Table3D {
     // 副露多了手牌往左让，和副露之间留一点缝。自己的手牌离镜头近、看起来更往外，
     // 按画面上对齐：手牌右沿在画面上正好落在第一组副露左边一点
     const edge = mx - this.meldSpacing.hand;
+    if (!tilting && !this.reveal) this.handEdges[s] = edge;
     const handEdge = mine ? this.sameScreenX(s, me, edge, this.dim.meldZ, this.myHandZ(hs)) : edge;
     const shift = p.melds.length ? Math.max(0, width / 2 - handEdge) : 0;
     let x = -width / 2 - shift + TILE_W / 2;
@@ -2077,16 +2085,19 @@ export class Table3D {
     for (const [s, win] of this.revealSeats(g)) {
       const wave = (LOOKS[this.lastSync?.view.ids[s] ?? '']?.reveal ?? 'wave') === 'wave';
       const tiles = g.players[s].hand.filter((t) => t !== win).sort((a, b) => a - b);
-      // 照着站着时的位置摆，每张牌原地往下倒，不左右挪（自摸的那张本来就在最右边隔开一点的地方）
-      const row = this.handRows[s] ?? { x0: 0, step: TILE_W + GAP, hs: 1, z: this.dim.handZ };
+      // 照着站着时的位置摆，每张牌原地往下倒，不左右挪（自摸的那张本来就在最右边隔开一点的地方）。
+      // 改良布局的自己：手牌是放大、挪到眼前的，倒的时候倒回桌面上手牌那条线、变回桌上牌的大小（雀魂那样）
+      const back = this.fallsBack(s);
+      const row = back ? this.tableRow(s, tiles.length + 1) : this.handRows[s] ?? { x0: 0, step: TILE_W + GAP, hs: 1, z: this.dim.handZ };
       let x = row.x0;
       const z = row.z + 0.3 * row.hs;
+      const stagger = back ? V2_TOPPLE_STAGGER : rv.stagger;
       // 对家倒牌照常往桌子中间倒（字冲她自己）。只有公开手牌时她的牌本来就转过来朝我，
       // 这时接着朝我摆：从我这边看从左往右排，和的那张在我的右手边，不在倒牌时掉头
       const facing = (s - me + 4) % 4 === 2 && !!this.lastSync?.view.openHands;
       const yaw = facing ? Math.PI : 0;
       const topple = (t: TileId, i: number) => {
-        if (!rv.topple.has(t)) rv.topple.set(t, { at: rv.at + (wave ? i * rv.stagger : 0), from: null });
+        if (!rv.topple.has(t)) rv.topple.set(t, { at: rv.at + (wave ? i * stagger : 0), from: null, time: back ? V2_TOPPLE_TIME : TOPPLE_TIME });
       };
       const n = tiles.length;
       tiles.forEach((t, i) => {
@@ -2911,7 +2922,7 @@ export class Table3D {
     for (const [id, e] of rv.topple) {
       const tile = this.tiles[id];
       const to = tile.target;
-      if (!to || this.now >= e.at + TOPPLE_TIME) {
+      if (!to || this.now >= e.at + e.time) {
         rv.topple.delete(id);
         continue;
       }
@@ -2919,8 +2930,9 @@ export class Table3D {
       if (this.now < e.at) continue;
       const g = tile.group;
       e.from ??= { pos: g.position.clone(), quat: g.quaternion.clone(), scale: g.scale.x };
-      const k = (this.now - e.at) / TOPPLE_TIME;
-      const f = k * k;
+      const k = (this.now - e.at) / e.time;
+      // 改良布局倒回桌上：先慢后快、落到桌面前收一点（不是直直砸下去）
+      const f = e.time === V2_TOPPLE_TIME ? k * k * (3 - 2 * k) : k * k;
       const from = e.from;
       const scale = THREE.MathUtils.lerp(from.scale, to.scale, f);
       const quat = from.quat.clone().slerp(to.quat, f);
@@ -2976,19 +2988,40 @@ export class Table3D {
   }
 
   // 改良布局（ortho）：现在要单独画的自己的手牌：在手牌那一排上的（理牌时左右挪也算）；
-  // 从牌山飞过来的、打出去正在飞的、配牌时还在牌山上的、倒牌时都不算，照常用主镜头画
+  // 从牌山飞过来的、打出去正在飞的、配牌时还在牌山上的都不算，照常用主镜头画。
+  // 倒牌时还没开始倒的留在这一层，开始倒的那一刻换回主镜头，从眼前倒回桌上
   private orthoHand(): TileId[] {
-    if (!this.v2 || !this.view25.ortho || !this.lastSync || this.reveal) return [];
+    if (!this.v2 || !this.view25.ortho || !this.lastSync) return [];
     const me = this.lastSync.view.me;
     const row = this.handRows[me];
     if (!row) return [];
+    const rv = this.reveal;
     const flying = new Set(this.flights.map((f) => f.tile));
     return this.lastSync.g.players[me].hand.filter((id) => {
       const t = this.tiles[id];
       if (!t.group.visible || !t.target || flying.has(id)) return false;
+      if (rv && this.now >= rv.at) {
+        const e = rv.topple.get(id);
+        return !!e && this.now < e.at && Math.abs(t.group.position.z - row.z) < 0.6;
+      }
       // 自己坐在 +z 那边，手牌那一排的 z 是 row.z：目标和现在的位置都在这一排上才算
       return Math.abs(t.target.pos.z - row.z) < 0.6 && Math.abs(t.group.position.z - row.z) < 0.6;
     });
+  }
+
+  // 改良布局里自己倒牌是“倒回桌上”（手牌平时放大、挪到眼前）
+  private fallsBack(s: number): boolean {
+    return this.v2 && s === (this.lastSync?.view.me ?? 0);
+  }
+
+  // 改良布局：自己倒在桌上的那一排：桌上牌的大小，站在桌面上手牌那条线（和别家一样），
+  // 左右居中；有副露时右边不超过副露左边那条线。n 是要摆的张数（算上和的那张）
+  private tableRow(s: number, n: number): { x0: number; step: number; hs: number; z: number } {
+    const step = TILE_W + GAP;
+    const width = n * step + 0.5;
+    const edge = this.handEdges[s];
+    const shift = this.lastSync?.g.players[s].melds.length && edge !== undefined ? Math.max(0, width / 2 - edge) : 0;
+    return { x0: -width / 2 - shift + TILE_W / 2, step, hs: 1, z: this.dim.handZ };
   }
 
   private syncOrtho(): void {
