@@ -37,7 +37,8 @@ import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playLockSlam, playRiichi, playWin } from './sound';
+import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
+import { playLockSlam, playRiiLock, playRiiOutcome } from './riiSound';
 import { paceOf, vary } from './vary';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
@@ -1071,6 +1072,7 @@ export class App {
     if (!g || bind === null) return;
     this.riiLockN = bind;
     this.riiPadlockStop?.();
+    playRiiLock(bind);
     const at = this.table3d ? this.table3d.handScreenPoint(this.me, this.me, g) : this.handPoint(this.me);
     if (!at) return;
     const seat = this.me;
@@ -1132,14 +1134,18 @@ export class App {
         window.setTimeout(() => this.render(), 30);
       };
       let delay = 0;
-      if (this.table3d) delay = this.table3d.riiOutcome(o.seat, o.kind, o.bind, g, this.me);
-      else {
+      let fresh = false;
+      if (this.table3d) {
+        fresh = this.table3d.riiFresh(o.seat);
+        delay = this.table3d.riiOutcome(o.seat, o.kind, o.bind, g, this.me);
+      } else {
         const host = document.querySelector<HTMLElement>('.stage');
         if (!host) continue;
         this.chains2d ??= new Chains2D(host, () => document.querySelector('.stage .table')?.getBoundingClientRect() ?? null);
-        const fresh = !this.chains2d.has(o.seat) || this.chains2d.vanished(o.seat);
+        fresh = !this.chains2d.has(o.seat) || this.chains2d.vanished(o.seat);
         if (fresh && o.kind === 'fade') {
           lockEnd(0);
+          playRiiOutcome('fade', o.bind, 0, true);
           continue;
         }
         if (fresh) this.chains2d.lock(o.seat, o.bind, () => this.handRect(o.seat), 'quick');
@@ -1147,6 +1153,7 @@ export class App {
         this.chains2d.finish(o.seat, o.kind, delay * 1000);
       }
       lockEnd(o.kind === 'fade' ? 0 : delay + 0.3);
+      playRiiOutcome(o.kind, o.bind, o.kind === 'fade' && fresh ? 0 : delay, fresh);
       let total = delay + outcomeTime(o.kind);
       if (o.kind === 'key') {
         const at = this.table3d ? this.table3d.handScreenPoint(o.seat, this.me, g) : this.handPoint(o.seat);

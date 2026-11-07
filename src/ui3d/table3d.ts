@@ -1476,6 +1476,11 @@ export class Table3D {
     return delay / Math.max(0.01, this.timeScale);
   }
 
+  // 结算时这个座位的锁链要不要重新射出来（锁好以后消散了，或者是别人的哩、之前没画出来）
+  riiFresh(seat: number): boolean {
+    return !this.chains[seat] || !!this.chains[seat]?.vanished;
+  }
+
   // 这个座位手牌中间在页面上的位置（钥匙落到这上面）
   handScreenPoint(seat: number, me: number, g: Game): { x: number; y: number; w: number } | null {
     const f = this.chainFrame(seat, me, g);
