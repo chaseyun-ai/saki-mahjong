@@ -818,6 +818,14 @@ export class Table3D {
     return Math.max(0, (until - this.now) * 1000);
   }
 
+  // 上一局的倒牌、哩的锁链、隐身淡掉的牌收掉：新的一局开始时，以及发牌前选技能时（这时桌上的牌已经收走，下一次 sync 全部藏起来）
+  clearRound(): void {
+    this.reveal = null;
+    this.clearChains();
+    this.gone.clear();
+    this.vanish.clear();
+  }
+
   // 牌局事件驱动骰子、发牌，以及角色的视线、表情和动作
   onEvent(e: GameEvent, g: Game): void {
     const all = this.characters;
@@ -825,10 +833,7 @@ export class Table3D {
     if (e.type !== 'ability') this.releaseDraw();
     if (e.type === 'roundStart') {
       this.startDeal(g);
-      this.reveal = null;
-      this.clearChains();
-      this.gone.clear();
-      this.vanish.clear();
+      this.clearRound();
       // 牌河里每张牌歪多少换一套：同一张牌这一局一直歪成一样，下一局换个样子
       this.pondSalt = Math.floor(vary.next() * 2 ** 31);
     }
@@ -2186,6 +2191,7 @@ export class Table3D {
       g.wall.doraIndicators,
       g.players.map((_, s) => [g.shownScore(s, view.me), g.seesRiichi(s, view.me), g.seatWind(s)]),
       g.phase === 'turn' ? g.turn : -1,
+      g.phase === 'predeal',
       view.me,
       view.colors,
     ]);
@@ -2247,22 +2253,25 @@ export class Table3D {
     c.textAlign = 'right';
     c.fillText(`${g.honba} 本场`, M - 12, M + 4);
     c.textAlign = 'left';
-    c.fillText(`余 ${g.wall.remaining}`, M + 12, M + 4);
+    // 发牌前选技能时牌山还没码，余牌写成一横
+    c.fillText(`余 ${g.phase === 'predeal' ? '—' : g.wall.remaining}`, M + 12, M + 4);
     c.textAlign = 'center';
     c.fillStyle = k.line;
     c.fillRect(M - 1, M - 10, 2, 28);
-    // 宝牌指示牌：翻开的画牌面，没翻的画牌背
+    // 宝牌指示牌：翻开的画牌面，没翻的（还有发牌前牌山没码时）画牌背
     const w = 36;
     const h = 48;
-    g.wall.doraIndicators.forEach((t, i) => {
+    for (let i = 0; i < 5; i++) {
+      const t = g.wall.doraIndicators[i];
+      const open = i < g.wall.doraRevealed && t !== undefined;
       const x = M + (i - 2.5) * (w + 5) + 2.5;
       const y = M + 28;
-      c.fillStyle = i < g.wall.doraRevealed ? '#f6f1e3' : this.colors.back;
+      c.fillStyle = open ? '#f6f1e3' : this.colors.back;
       c.beginPath();
       c.roundRect(x, y, w, h, 5);
       c.fill();
-      if (i < g.wall.doraRevealed) this.atlas.drawFace(c, faceIndex(t), x, y, w, h);
-    });
+      if (open) this.atlas.drawFace(c, faceIndex(t), x, y, w, h);
+    }
     // 供托：场上有几根立直棒
     const sticks = g.shownSticks(view.me);
     if (sticks) {

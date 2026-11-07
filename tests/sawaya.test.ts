@@ -82,6 +82,52 @@ describe('狮子原爽', () => {
     expect(sawayaOn(g, 0, 'yellow', g.round + 2)).toBe(false);
   });
 
+  it('玩家操作：第二局起发牌前，上一局的牌都收走（桌上空着），选好五色云再码牌山发牌', () => {
+    const g = new Game({ seed: 3, players: LINEUPS[0].map((id, i) => ({ name: id, ability: byId(id).ability, manual: i === 0 })) });
+    const ab = g.abilities[0]!;
+    // 第一局什么都不叫，打完
+    ab.setPreDeal!(g, 0, []);
+    g.deal();
+    if (g.phase === 'postdeal') {
+      ab.setPostDeal!(g, 0, []);
+      g.deal();
+    }
+    while (g.phase === 'turn' || g.phase === 'calls') {
+      const s = g.waitingSeats()[0];
+      g.act(s, chooseAction(g, s, byId(LINEUPS[0][s]).ai));
+    }
+    expect(g.phase).toBe('roundEnd');
+    expect(g.players.some((p) => p.discards.length > 0)).toBe(true);
+    const rng = JSON.stringify(g.rng);
+    const label = g.roundLabel();
+    g.nextRound();
+    expect(g.phase).toBe('predeal');
+    expect(g.roundLabel()).not.toBe(label);
+    // 桌上什么都没有：手牌、副露、牌河、立直，牌山和宝牌指示牌也收掉了
+    for (const p of g.players) {
+      expect(p.hand).toEqual([]);
+      expect(p.melds).toEqual([]);
+      expect(p.discards).toEqual([]);
+      expect(p.drawn).toBeNull();
+      expect(p.riichi).toBe(false);
+    }
+    expect(g.lastDiscard).toBeNull();
+    expect(g.roundResult).toBeNull();
+    expect(g.wall.remaining).toBe(0);
+    expect(g.wall.rinshan).toEqual([]);
+    expect(g.wall.visibleDoraIndicators()).toEqual([]);
+    // 收拾牌桌不掷随机数：发出来的牌和不停下来时一样
+    expect(JSON.stringify(g.rng)).toBe(rng);
+    // 发牌前照样选五色云，选好才码牌山、发牌
+    expect(ab.preDeal!(g, 0).find((o) => o.id === 'blue')!.enabled).toBe(true);
+    ab.setPreDeal!(g, 0, ['blue']);
+    g.deal();
+    expect(['postdeal', 'turn']).toContain(g.phase);
+    expect(sawayaOn(g, 0, 'blue')).toBe(true);
+    expect(g.players.reduce((n, p) => n + p.hand.length, 0) + g.wall.remaining).toBe(52 + 70);
+    expect(g.wall.visibleDoraIndicators()).toHaveLength(1);
+  });
+
   it('蛇神威：封印 3 局（包括叫的这一局），封印中别人的能力一下都不动，过了就恢复', () => {
     let sealedRounds = 0;
     let afterSeal = 0;

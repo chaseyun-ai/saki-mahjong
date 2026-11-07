@@ -877,6 +877,11 @@ export class App {
     this.timer = null;
     this.showResult = false;
     g.nextRound();
+    // 下一局发牌前要选技能（爽的五色云等）：引擎已经把上一局的牌收走了，桌上的倒牌、锁链这些也收掉，停在空牌桌上选
+    if ((g.phase as string) === 'predeal') {
+      this.clearRoundFx();
+      this.table3d?.clearRound();
+    }
     // 终局：没拿到第一的都“懵逼”
     if ((g.phase as string) === 'gameEnd') {
       const rank = g.ranking();
@@ -892,6 +897,16 @@ export class App {
     this.step();
   }
 
+  // 上一局留在桌上的东西收掉（隐身淡掉的牌河、手绘板、哩的锁链和钥匙）：新的一局开始，或者发牌前选技能时
+  private clearRoundFx(): void {
+    this.gone.clear();
+    this.vanishAt.clear();
+    this.sketchView = false;
+    this.riiPicking = false;
+    this.chains2d?.clear();
+    this.skyKey?.clear();
+  }
+
   private onGameEvent(e: GameEvent): void {
     this.table3d?.onEvent(e, this.game!);
     this.updateFaces(e);
@@ -903,12 +918,7 @@ export class App {
       this.stamina = Math.min(STAMINA_MAX, this.stamina + STAMINA_REGEN);
       this.blocked = this.penaltyNext;
       this.penaltyNext = false;
-      this.gone.clear();
-      this.vanishAt.clear();
-      this.sketchView = false;
-      this.riiPicking = false;
-      this.chains2d?.clear();
-      this.skyKey?.clear();
+      this.clearRoundFx();
     }
     if (e.type === 'discard') {
       // 隐身的桃子打的牌：看不见也听不见。刚隐身的那一张照常打出去，牌河和手牌慢慢淡掉（不放立直特效）
@@ -1503,6 +1513,8 @@ export class App {
 
   // 2D：姬子拿到钥匙的那一局，配牌时光柱砸下来、理完牌火从右烧到左（3D、2.5D 在 table3d 里放）
   private himekoFx2d(g: Game, table: HTMLElement): void {
+    // 发牌前选技能时桌上是空的，等真的配牌再放
+    if (g.phase === 'predeal') return;
     const seat = himekoKeySeat(g);
     const fresh = g.players.every((p) => p.discards.length === 0 && p.melds.length === 0);
     const key = `${g.seed}-${g.round}`;
@@ -2036,7 +2048,7 @@ export class App {
       .join('');
     return `
       <div class="round">${g.roundLabel()}</div>
-      <div class="remain">余 ${g.wall.remaining}</div>
+      <div class="remain">余 ${g.phase === 'predeal' ? '—' : g.wall.remaining}</div>
       <div class="sticks">立直棒 ×${g.shownSticks(this.me)}</div>
       <div class="dora">${dora}</div>
       ${this.sakiPeekHtml()}
