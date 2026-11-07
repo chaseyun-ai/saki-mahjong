@@ -2270,7 +2270,7 @@ export class App {
     const waitHtml = `<div data-r="waits">${this.waitsSlotHtml()}</div>`;
     const hint =
       g.phase === 'turn' && g.turn === this.me && discardable.size > 0
-        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹封住，这一局和不了）' : ''}${this.sniper(this.me) !== null ? '（被镜片盯上，这一局和不了）' : ''}${this.bustBlocked() ? '（灰掉的牌放铳会被击飞，打不出去）' : ''}</div>`
+        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹封住，这一局和不了）' : ''}${this.sniper(this.me) !== null ? '（被镜片盯上，这一局摸不到和了牌）' : ''}${this.bustBlocked() ? '（灰掉的牌放铳会被击飞，打不出去）' : ''}</div>`
         : '';
     const c = this.chars[this.me];
     return `
