@@ -7571,21 +7571,21 @@ canvas.rii-sky {
 
 /* ---------- 2.5D 改良布局（试做，参考雀魂）----------
    视觉设置里「2.5D 布局」选了改良才有 .v2；这里只改 .v2，原版一点不动，试砸了换回原版就行。
-   学雀魂的几处：头像小一点、挨着各家的手牌（上家左边偏上、下家右边偏上、对家右上、自己左下）；
-   宝牌、本场、供托放左上角单独一栏；理和鸣切竖着放在左边一条；牌山保留（有的能力要看牌山），在 table3d 里压暗 */
+   学雀魂的几处：头像挨着各家的手牌（上家左边偏上、下家右边、对家右上、自己左下）；
+   理和鸣切竖着放在左边一条。牌山保留（有的能力要看牌山）；镜头、手牌在 table3d 里改 */
 
 .stage3d.flat.v2 {
-  --pw: clamp(52px, 10.5vh, 92px);
+  --pw: clamp(60px, 14vh, 120px);
 }
 
 .stage3d.flat.v2 .seat-frame.left {
   left: 16px;
-  top: 27%;
+  top: 26%;
 }
 
 .stage3d.flat.v2 .seat-frame.right {
   right: 16px;
-  top: 27%;
+  top: 40%;
   bottom: auto;
 }
 
@@ -7599,35 +7599,6 @@ canvas.rii-sky {
   bottom: 14px;
 }
 
-/* 左上角的宝牌栏：宝牌指示牌一排，下面本场棒、立直棒的根数 */
-.stage3d.flat.v2 .dora-panel {
-  position: absolute;
-  left: 16px;
-  top: 12px;
-  padding: 8px 10px 6px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(8, 14, 24, 0.72);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-}
-
-.stage3d.flat.v2 .dp-tiles {
-  display: flex;
-  gap: 4px;
-}
-
-.stage3d.flat.v2 .dora-panel .tile.t-pond {
-  width: 34px;
-  height: 46px;
-}
-
-.stage3d.flat.v2 .dora-panel .tile.back {
-  background: linear-gradient(160deg, color-mix(in srgb, var(--dp-back) 70%, #fff), var(--dp-back));
-  box-shadow:
-    0 2px 0 color-mix(in srgb, var(--dp-back) 60%, #000),
-    0 2px 3px rgba(0, 0, 0, 0.3);
-}
-
 /* 改良布局的手牌贴着画面底边，“点击一张牌打出”挪到手牌上面 */
 .stage3d.flat.v2 .hud .hint {
   bottom: 19%;
@@ -7635,37 +7606,6 @@ canvas.rii-sky {
   border-radius: 999px;
   background: rgba(8, 14, 24, 0.72);
   color: #e9edf2;
-}
-
-.stage3d.flat.v2 .dp-sticks {
-  display: flex;
-  justify-content: space-around;
-  margin-top: 6px;
-  font: 700 17px/1.2 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  color: #f2ead6;
-}
-
-.stage3d.flat.v2 .dp-sticks span {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.stage3d.flat.v2 .dp-sticks i {
-  width: 6px;
-  height: 20px;
-  border-radius: 3px;
-  background: #f4f1e8;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-
-/* 本场棒（百点棒）：上下两排小黑点；立直棒（千点棒）：中间一个红点 */
-.stage3d.flat.v2 .dp-sticks .dp-honba {
-  background: radial-gradient(circle, #222 0 1px, transparent 1.5px) 50% 0 / 6px 4px repeat-y, #f4f1e8;
-}
-
-.stage3d.flat.v2 .dp-sticks .dp-riichi {
-  background: radial-gradient(circle, #e0413a 0 2.2px, transparent 2.7px), #f4f1e8;
 }
 
 /* 理和鸣切：竖着一条放在左边（雀魂那样），挂机按钮在它上面 */
@@ -7686,13 +7626,13 @@ canvas.rii-sky {
   font-size: 14px;
 }
 
-/* 怜的一巡先见、淡和霞的技能按钮：放在宝牌栏右边 */
+/* 怜的一巡先见、淡和霞的技能按钮：左上角空着，放那里 */
 .stage3d.flat.v2 .hud .ability-panel.foresight-only {
-  left: 230px;
+  left: 16px;
   top: 12px;
 }
 
-/* 横过来的手机：东西都缩小 */
+/* 横过来的手机：东西都缩小；理和鸣切、挂机左边放不下，还是放右下角 */
 @media (max-height: 500px) {
   .stage3d.flat.v2 .seat-frame.left,
   .stage3d.flat.v2 .seat-frame.bottom {
@@ -7712,37 +7652,14 @@ canvas.rii-sky {
     bottom: 6px;
   }
 
-  .stage3d.flat.v2 .seat-frame.left,
+  .stage3d.flat.v2 .seat-frame.left {
+    top: 28%;
+  }
+
   .stage3d.flat.v2 .seat-frame.right {
-    top: 30%;
+    top: 38%;
   }
 
-  .stage3d.flat.v2 .dora-panel {
-    left: 8px;
-    top: 6px;
-    padding: 4px 6px 3px;
-  }
-
-  .stage3d.flat.v2 .dora-panel .tile.t-pond {
-    width: 18px;
-    height: 25px;
-  }
-
-  .stage3d.flat.v2 .dp-tiles {
-    gap: 2px;
-  }
-
-  .stage3d.flat.v2 .dp-sticks {
-    margin-top: 2px;
-    font-size: 11px;
-  }
-
-  .stage3d.flat.v2 .dp-sticks i {
-    width: 4px;
-    height: 13px;
-  }
-
-  /* 手机上左边放不下：理和鸣切、挂机还是放右下角 */
   .stage3d.flat.v2 .assist-bar {
     left: auto;
     right: 6px;
@@ -7766,12 +7683,12 @@ canvas.rii-sky {
   }
 
   .stage3d.flat.v2 .hud .ability-panel.foresight-only {
-    left: 128px;
+    left: 8px;
     top: 6px;
   }
 }
 
-/* 竖着的手机：桌子只占中间一条，上面那块放宝牌栏和三家头像（上家、对家、下家从左到右），自己在左下角 */
+/* 竖着的手机：桌子只占中间一条，上面那块放三家头像（上家、对家、下家从左到右），自己在左下角 */
 @media (orientation: portrait) and (max-width: 600px) {
   .stage3d.flat.v2 {
     --pw: 60px;
@@ -7780,7 +7697,7 @@ canvas.rii-sky {
   .stage3d.flat.v2 .seat-frame.left,
   .stage3d.flat.v2 .seat-frame.top,
   .stage3d.flat.v2 .seat-frame.right {
-    top: 70px;
+    top: 24px;
     bottom: auto;
   }
 
@@ -7806,35 +7723,6 @@ canvas.rii-sky {
   .stage3d.flat.v2 .seat-info {
     padding: 2px;
     font-size: 11px;
-  }
-
-  .stage3d.flat.v2 .dora-panel {
-    left: 8px;
-    top: 8px;
-    padding: 4px 6px 3px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .stage3d.flat.v2 .dora-panel .tile.t-pond {
-    width: 22px;
-    height: 30px;
-  }
-
-  .stage3d.flat.v2 .dp-tiles {
-    gap: 2px;
-  }
-
-  .stage3d.flat.v2 .dp-sticks {
-    margin-top: 0;
-    gap: 8px;
-    font-size: 13px;
-  }
-
-  .stage3d.flat.v2 .dp-sticks i {
-    width: 4px;
-    height: 14px;
   }
 
   .stage3d.flat.v2 .assist-bar {

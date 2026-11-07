@@ -56,8 +56,10 @@ export interface View25 {
   fan: number;
 }
 export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 34, lookZ: 1.5, hand: 1.15, tilt: 15, fan: 0 };
-// 改良布局（试做，参考雀魂）：镜头更俯视、视野窄一点，桌子不那么往后倒；自己的手牌大一点、仰到差不多正对镜头
-export const DEFAULT_VIEW_25D_V2: View25 = { pitch: 0.84, portraitPitch: 1.2, fov: 28, lookZ: 1.5, hand: 1.4, tilt: 40, fan: 0 };
+// 改良布局（试做，参考雀魂）：镜头更俯视、视野窄一点，桌子不那么往后倒；自己的手牌大一点。
+// 手牌往后仰的角度和镜头俯角一样（tilt 不用）：每张牌的牌面都和画面平行，像雀魂那样张张正对着人，
+// 两头的牌不会因为透视往里歪、看起来一排牌像一道弧
+export const DEFAULT_VIEW_25D_V2: View25 = { pitch: 0.84, portraitPitch: 1.2, fov: 28, lookZ: 1.5, hand: 1.4, tilt: 48, fan: 0 };
 // 改良布局：自己的手牌往外（往镜头这边）挪多少，仰得多了牌顶不会碰到自己面前的牌山
 const V2_HAND_OUT = 0.9;
 // 改良布局：自己的手牌下沿可以出画面多少（牌高的几分之几），像雀魂那样手牌贴着画面底边
@@ -373,8 +375,6 @@ export class Table3D {
   // 2.5D：每家（按相对座位，0 是自己）第一组副露最远能摆到哪，画面大小变了重新算
   private meldLimit: number[] | null = null;
   private view25: View25 = { ...DEFAULT_VIEW_25D };
-  // 改良布局里牌山的牌背：桌布色压暗一点，不和牌河、手牌抢眼（能力上色的牌背照旧）
-  private wallBackMat: THREE.Material | null = null;
   // 出牌动作经过标记（出发、抓住、落桌、松手、收回）时通知外面，比如落桌时放声音。
   // 每张打出的牌每个标记都恰好报一次，动作被打断也会补报
   onMarker: ((seat: number, tile: TileId, name: MarkerName) => void) | null = null;
@@ -596,10 +596,6 @@ export class Table3D {
     this.deadlyMat = new THREE.MeshStandardMaterial({ color: '#f08a80', emissive: '#d23a2e', emissiveIntensity: 0.35, roughness: matte || 0.35 });
     const backMat = new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: matte || 0.4 });
     this.backMat = backMat;
-    if (this.v2) {
-      const c = new THREE.Color(this.colors.felt[1]).lerp(new THREE.Color('#9098a0'), 0.25);
-      this.wallBackMat = new THREE.MeshStandardMaterial({ color: c, roughness: 0.62 });
-    }
     // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
     this.tintMats = ['#e0453a', '#3a6df0', '#2fb25a', '#f4f4f0'].map(
       (c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.35, roughness: matte || 0.4 }),
@@ -1325,7 +1321,7 @@ export class Table3D {
       const t = this.tiles[id];
       const target = targets.get(id) ?? null;
       t.target = target;
-      const back = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.wallBackMat && !view.sketch && this.wallSlotOf.has(id) ? this.wallBackMat : this.backMat;
+      const back = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
       if (back && t.back.material !== back) t.back.material = back;
       const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
@@ -1872,6 +1868,21 @@ export class Table3D {
     this.gravityDisc.visible = true;
   }
 
+  // 改良布局：自己手牌里的一张牌绕画面的竖直方向转过来正对镜头，返回转好的朝向和放大倍数。
+  // 镜头是透视的：两头的牌离镜头远、又是斜着看的，看得到朝里的侧面，一排牌像一道弧。
+  // 转过来正对镜头就看不到侧面了；离得远的按距离放大一点，张张一样大（雀魂的手牌是单独一层，没有透视）
+  private faceOn(s: number, me: number, x: number, y: number, z: number, rot: THREE.Euler): [THREE.Euler, number] {
+    const at = this.toWorld(s, me, x, y, z, rot).pos;
+    const fwd = this.rest.look.clone().sub(this.rest.pos).normalize();
+    const right = fwd.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+    const up = right.clone().cross(fwd);
+    const v = at.sub(this.rest.pos);
+    const xc = v.dot(right);
+    const yc = v.dot(up);
+    const zc = v.dot(fwd);
+    return [new THREE.Euler(rot.x, -Math.atan2(xc, zc), 0), v.length() / Math.hypot(yc, zc)];
+  }
+
   private toWorld(seat: number, me: number, x: number, y: number, z: number, rot: THREE.Euler, extraY = 0, scale = 1): Placement {
     const angle = this.seatAngle(seat, me);
     const axis = new THREE.Vector3(0, 1, 0);
@@ -1983,13 +1994,15 @@ export class Table3D {
     const place = (t: TileId | null) => {
       const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
       const yaw = (fan ? (-fan * (x + shift)) / (width / 2) : 0) + (facing ? Math.PI : 0);
-      if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, rot, yaw, hs) };
+      // 改良布局：自己的手牌每张转过来正对镜头
+      const [r, k] = mine && this.v2 && !tilting ? this.faceOn(s, me, x, y, hz, rot) : [rot, 1];
+      if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, r, yaw, hs * k) };
       if (t !== null && p.hand.includes(t)) {
         if (cover) {
           // 番缚：牌面朝下整整齐齐扣在原来的位置（不跟着扇形转），上方浮着一排投影牌面
-          this.ghostAt.set(t, this.toWorld(s, me, x, y, hz, rot, yaw, hs));
+          this.ghostAt.set(t, this.toWorld(s, me, x, y, hz, r, yaw, hs * k));
           out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * hs, hz + TILE_H * 0.3 * hs, FACE_DOWN, 0, hs));
-        } else out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
+        } else out.set(t, this.toWorld(s, me, x, y + lift, hz, r, yaw, hs * k));
       }
       x += step;
     };
@@ -2259,9 +2272,8 @@ export class Table3D {
       c.stroke();
       c.restore();
     }
-    // 中间的方屏里：局数、余牌（原版还有本场、宝牌指示牌、供托）
-    if (this.v2) this.consoleCenterV2(c, g, M, num, title);
-    else this.consoleCenter(c, g, view, M, num, title);
+    // 中间的方屏里：局数、本场、余牌、宝牌指示牌、供托
+    this.consoleCenter(c, g, view, M, num, title);
 
     // 四边：风位、点数，各朝各的人
     for (let s = 0; s < 4; s++) {
@@ -2348,20 +2360,6 @@ export class Table3D {
     }
   }
 
-  // 改良布局的仪表盘中间：只放局数和余牌，字放大（宝牌、本场、供托挪到左上角的宝牌栏）
-  private consoleCenterV2(c: CanvasRenderingContext2D, g: Game, M: number, num: (px: number) => string, title: (px: number) => string): void {
-    const k = this.colors.console;
-    c.fillStyle = k.accent;
-    c.shadowColor = k.accent;
-    c.shadowBlur = 12;
-    c.font = title(84);
-    c.fillText(`${WIND_CN[g.roundWind]}${'一二三四'[g.roundNumber]}局`, M, M - 38);
-    c.shadowBlur = 0;
-    c.font = num(50);
-    c.fillStyle = k.ink;
-    c.fillText(`余 ${g.wall.remaining}`, M, M + 50);
-  }
-
   // ---------- 交互和动画 ----------
 
   private resize = (): void => {
@@ -2410,7 +2408,7 @@ export class Table3D {
       // 自己的手牌，下沿（改良布局让下沿出画面一点：取牌身上靠下的一条线）
       ...[-myHalf, myHalf].map((x) => {
         if (!this.v2) return new THREE.Vector3(x, 0, myZ + TILE_T);
-        const t = THREE.MathUtils.degToRad(v.tilt);
+        const t = pitch;
         const up = TILE_H * v.hand * V2_HAND_CLIP;
         return new THREE.Vector3(x, up * Math.cos(t), myZ + TILE_T / 2 - up * Math.sin(t));
       }),
@@ -2461,7 +2459,7 @@ export class Table3D {
       this.scene.fog.near = dist + 8;
       this.scene.fog.far = dist + 48;
     }
-    this.handTilt = -THREE.MathUtils.degToRad(v.tilt);
+    this.handTilt = this.v2 ? -pitch : -THREE.MathUtils.degToRad(v.tilt);
     if (this.debugCamera) return;
     cam.position.copy(this.rest.pos);
     cam.lookAt(this.rest.look);

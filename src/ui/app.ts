@@ -47,7 +47,7 @@ import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { TeamFlow } from './teamFlow';
-import { THEMES, ThemeId, currentTheme, setTheme, tableColors } from './theme';
+import { THEMES, ThemeId, currentTheme, setTheme } from './theme';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
@@ -668,7 +668,7 @@ export class App {
       this.table3d.onHover = (id) => this.hoverTile(id);
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
       if (this.mode === '25d') {
-        this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel, .dora-panel')].map((el) => el.getBoundingClientRect());
+        this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel')].map((el) => el.getBoundingClientRect());
       }
       // 3D 牌桌上牌真正落到牌河时才响
       this.table3d.onMarker = (seat, _tile, name) => {
@@ -1593,7 +1593,6 @@ export class App {
           .join('');
     hud.innerHTML = `
       ${plates}
-      ${flat && this.table3d.improved ? this.doraPanelHtml() : ''}
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
@@ -1672,13 +1671,6 @@ export class App {
     if (this.settings.drawPath === 'off') return null;
     if (g.phase !== 'turn' || g.turn !== this.me || !p.riichi || this.showResult) return null;
     return g.legalActions(this.me).length === 1 ? p.drawn : null;
-  }
-
-  // 2.5D 改良布局：左上角的宝牌栏（雀魂那样）：宝牌指示牌一排（没翻的画牌桌上的牌背色），下面本场、供托
-  private doraPanelHtml(): string {
-    const g = this.game!;
-    const dora = [0, 1, 2, 3, 4].map((i) => (i < g.wall.doraRevealed ? tileHtml(g.wall.doraIndicators[i], { size: 'pond' }) : backHtml('pond'))).join('');
-    return `<div class="dora-panel" style="--dp-back:${tableColors().back}"><div class="dp-tiles">${dora}</div><div class="dp-sticks"><span title="本场"><i class="dp-honba"></i>×${g.honba}</span><span title="供托"><i class="dp-riichi"></i>×${g.shownSticks(this.me)}</span></div></div>`;
   }
 
   // 2.5D 的头像框：只放头像和名字（风位、点数、立直看中间的仪表盘，技能看左上角的能力说明）；轮到谁谁亮
