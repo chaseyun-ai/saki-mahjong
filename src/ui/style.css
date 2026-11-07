@@ -2479,6 +2479,7 @@ button {
 
 .hud .actions,
 .hud .ability-panel,
+.hud .rii-picker,
 .hud .modal,
 .hud .pd-dock,
 .hud .auto-btn {
@@ -7309,4 +7310,184 @@ html:root .tm-draft .tmd-go {
   color: #ffc2d4;
   max-width: 200px;
   text-align: center;
+}
+
+/* ---------- 白水哩的番缚 ---------- */
+
+/* 锁链画在一张盖住整个画面的 canvas 上，不挡点击 */
+canvas.rii-chains,
+canvas.rii-sky {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 30;
+}
+
+/* 选番数时手牌扣下去：牌面换成牌背 */
+.hand.rii-cover {
+  position: relative;
+}
+
+.hand .tile.covered {
+  background: linear-gradient(160deg, #4a96c6, var(--tile-back));
+  box-shadow:
+    0 2px 0 #1f5577,
+    0 2px 3px rgba(0, 0, 0, 0.3);
+}
+
+.hand .tile.covered .face {
+  visibility: hidden;
+}
+
+/* 原来的位置浮着一排半透明的投影牌面 */
+.rii-ghosts {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% - 4px);
+  display: flex;
+  align-items: flex-end;
+  pointer-events: none;
+  opacity: 0.82;
+  filter: drop-shadow(0 0 6px rgba(170, 190, 255, 0.85)) saturate(0.85);
+  animation: rii-ghost-in 0.35s ease-out both;
+}
+
+.rii-ghosts .tile {
+  background: rgba(220, 230, 255, 0.35);
+  box-shadow: none;
+}
+
+@keyframes rii-ghost-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+/* 选几番：手牌上方一排牌子 */
+.rii-picker {
+  position: absolute;
+  left: 50%;
+  bottom: 230px;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-radius: 12px;
+  background: rgba(14, 18, 34, 0.82);
+  border: 1px solid rgba(190, 200, 230, 0.35);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  animation: rii-ghost-in 0.3s ease-out both;
+}
+
+.hud .rii-picker {
+  bottom: 40%;
+}
+
+.rii-title {
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: #d7deef;
+}
+
+.rii-row {
+  display: flex;
+  gap: 6px;
+}
+
+.rii-han {
+  min-width: 46px;
+  height: 52px;
+  border-radius: 8px;
+  border: 1px solid #8e97a6;
+  background: linear-gradient(180deg, #4b5263, #262a35);
+  color: #eef2fb;
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.rii-han small {
+  font-size: 11px;
+  font-weight: 400;
+  margin-top: 3px;
+  opacity: 0.8;
+}
+
+.rii-han:hover {
+  border-color: #ffc548;
+  background: linear-gradient(180deg, #6a5a2e, #2e2818);
+  color: #ffe9a8;
+}
+
+.rii-han.no {
+  font-size: 14px;
+  min-width: 56px;
+  color: #b9c0cf;
+}
+
+/* 投影朝外：牌面朝着桌子中间，从自己这边看是反的 */
+.rii-ghosts.out .tile {
+  transform: scaleX(-1);
+}
+
+/* 试看用：投影朝哪边、锁链什么样子 */
+.rii-looks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #b9c0cf;
+}
+
+.rii-looks span {
+  margin-right: 4px;
+  letter-spacing: 0.1em;
+}
+
+.rii-look {
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(160, 170, 195, 0.5);
+  background: rgba(40, 46, 62, 0.85);
+  color: #dfe5f2;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rii-look.on {
+  border-color: #ffc548;
+  color: #ffe9a8;
+  background: rgba(90, 74, 34, 0.85);
+}
+
+.foresight .rii-looks {
+  margin-top: 6px;
+  justify-content: flex-start;
+}
+
+@media (max-width: 700px), (max-height: 500px) {
+  .rii-picker {
+    bottom: 34%;
+    padding: 6px 8px 8px;
+  }
+
+  .rii-han {
+    min-width: 34px;
+    height: 40px;
+    font-size: 17px;
+  }
 }
