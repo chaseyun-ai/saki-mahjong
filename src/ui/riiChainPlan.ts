@@ -64,10 +64,17 @@ export function chainLinks(line: ChainLine, d: ChainDims): { links: LinkSpot[]; 
   return { links, length, contactS: d.far };
 }
 
-// 锁上：一条接一条射过来（间隔 stagger 秒，每条 fly 秒），压住时绷一下（tense 秒）
-export const LOCK = { stagger: 0.16, fly: 0.42, tense: 0.4, hold: 0.5, dim: 0.5 };
-// 锁好以后一直压着，淡成这么透（看得清牌面）
-export const FAINT = 0.3;
+// 锁上：一条接一条飞快地射过来（间隔 stagger 秒，每条 fly 秒），压住时绷一下（tense 秒）；
+// 最后一条压上去时一把大锁砸下来锁死（PADLOCK），停 hold 秒，锁链消散（dim 秒），大锁飞到头像上
+export const LOCK = { stagger: 0.07, fly: 0.26, tense: 0.3, hold: 0.55, dim: 0.3 };
+// 锁好以后锁链消失（不挡牌），结算时再射出来
+export const FAINT = 0;
+// 大锁：最后一条锁链压上去前一点开始砸下来（drop 秒），砸下去那一下锁扣合上；锁链消散时飞到头像上（fly 秒）
+export const PADLOCK = { lead: 0.06, drop: 0.16, fly: 0.5 };
+// 最后一条锁链压上手牌的时候
+export const landTime = (n: number) => (Math.max(1, n) - 1) * LOCK.stagger + LOCK.fly;
+// 锁链开始消散、大锁飞走的时候
+export const vanishTime = (n: number) => lockTime(n) + LOCK.hold;
 // 钥匙：变金（从压住手牌的地方往两头扫开）→ 碎成碎片 → 冲上天 → 天空放晴、钥匙缓缓落下（ui/skyKey.ts）
 export const GOLD = { show: 0.3, sweep: 0.6, crack: 0.3, rise: 0.8 };
 export const SKY = { clear: 0.7, fall: 1.7, hold: 1.1, fade: 0.6 };

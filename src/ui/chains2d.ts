@@ -79,6 +79,12 @@ export class Chains2D {
     return this.seats.has(seat);
   }
 
+  // 锁好以后锁链已经消散了（结算时要重新射出来）
+  vanished(seat: number): boolean {
+    const sc = this.seats.get(seat);
+    return !!sc && sc.stage.kind === 'lock' && this.opacity(sc) < 0.02;
+  }
+
   styleOf(seat: number): string | null {
     return this.seats.get(seat)?.look.id ?? null;
   }

@@ -7568,3 +7568,254 @@ canvas.rii-sky {
     font-size: 17px;
   }
 }
+
+/* ---------- 白水哩番缚：大锁砸下来锁死、飞到头像上（ui/riiPadlock.ts） ---------- */
+
+.rii-lock-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.55));
+}
+
+.rii-lock-svg .s1 {
+  stop-color: #eef2f7;
+}
+
+.rii-lock-svg .s2 {
+  stop-color: #9ba4b1;
+}
+
+.rii-lock-svg .s3 {
+  stop-color: #575f6b;
+}
+
+.rii-lock-svg .hole {
+  fill: #161a22;
+}
+
+.rii-lock-svg .shackle {
+  transform-box: view-box;
+}
+
+.rii-padlock {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.rii-padlock .rpl-flash,
+.rii-padlock .rpl-ring {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  width: 260%;
+  aspect-ratio: 1;
+  margin: -130% 0 0 -130%;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rii-padlock .rpl-flash {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(220, 232, 255, 0.6) 30%, rgba(160, 190, 255, 0) 70%);
+  mix-blend-mode: screen;
+}
+
+.rii-padlock .rpl-ring {
+  border: 4px solid rgba(235, 242, 255, 0.9);
+  box-shadow: 0 0 18px rgba(190, 210, 255, 0.9), inset 0 0 12px rgba(190, 210, 255, 0.7);
+}
+
+/* 头像右下角挂着的锁，和横过头像的两道锁链。--d：锁飞到的时候（从现在算，秒）；--e：结算开始 */
+.rii-plock {
+  position: absolute;
+  right: 3%;
+  bottom: 3%;
+  width: 44%;
+  aspect-ratio: 100 / 120;
+  z-index: 4;
+  pointer-events: none;
+  animation: rii-plock-in 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d, 0s) both;
+}
+
+.nameplate .rii-plock {
+  right: -18%;
+  bottom: -14%;
+  width: 62%;
+}
+
+.rii-plock .rpl-chain {
+  position: absolute;
+  height: 19%;
+  width: 260%;
+  right: 30%;
+  border-top: 2px solid #4d545e;
+  border-bottom: 2px solid #4d545e;
+  background: repeating-linear-gradient(90deg, #c9d0da 0 8px, #4f5661 8px 11px, #8d95a1 11px 19px, #4f5661 19px 22px);
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  transform-origin: right center;
+  opacity: 0.92;
+  animation: rii-plock-chain 0.3s ease-out var(--d, 0s) both;
+}
+
+.rii-plock .rpl-chain.a {
+  top: 38%;
+  --r: -24deg;
+}
+
+.rii-plock .rpl-chain.b {
+  top: 60%;
+  --r: 14deg;
+}
+
+.nameplate .rii-plock .rpl-chain {
+  display: none;
+}
+
+@keyframes rii-plock-in {
+  from {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rii-plock-chain {
+  from {
+    transform: rotate(var(--r)) scaleX(0);
+  }
+  to {
+    transform: rotate(var(--r)) scaleX(1);
+  }
+}
+
+/* 拿到钥匙：锁变金、锁扣弹开，亮一下，再淡掉 */
+.rii-plock.key {
+  animation:
+    rii-plock-in 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d, 0s) both,
+    rii-plock-gold 2.6s ease-out var(--e) both;
+}
+
+.rii-plock.key .shackle {
+  transform-origin: 71px 58px;
+  animation: rii-plock-open 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) calc(var(--e) + 0.55s) both;
+}
+
+.rii-plock.key .rpl-chain {
+  animation:
+    rii-plock-chain 0.3s ease-out var(--d, 0s) both,
+    rii-plock-chain-off 0.6s ease-in calc(var(--e) + 0.4s) both;
+}
+
+@keyframes rii-plock-gold {
+  0% {
+    filter: none;
+    opacity: 1;
+  }
+  22% {
+    filter: sepia(1) saturate(5) hue-rotate(-10deg) brightness(1.25) drop-shadow(0 0 6px #ffc548);
+    opacity: 1;
+  }
+  75% {
+    filter: sepia(1) saturate(5) hue-rotate(-10deg) brightness(1.4) drop-shadow(0 0 12px #ffd76a);
+    opacity: 1;
+  }
+  100% {
+    filter: sepia(1) saturate(5) hue-rotate(-10deg) brightness(1.4) drop-shadow(0 0 12px #ffd76a);
+    opacity: 0;
+  }
+}
+
+@keyframes rii-plock-open {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateY(-14px) rotate(28deg);
+  }
+}
+
+@keyframes rii-plock-chain-off {
+  to {
+    transform: rotate(var(--r)) scaleX(0);
+    opacity: 0;
+  }
+}
+
+/* 没和成：锁抖一下发白，裂开掉下去 */
+.rii-plock.broken {
+  animation:
+    rii-plock-in 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d, 0s) both,
+    rii-plock-break 1.3s ease-in var(--e) both;
+}
+
+.rii-plock.broken .rpl-chain {
+  animation:
+    rii-plock-chain 0.3s ease-out var(--d, 0s) both,
+    rii-plock-chain-snap 0.5s ease-in calc(var(--e) + 0.3s) both;
+}
+
+@keyframes rii-plock-break {
+  0% {
+    transform: none;
+    filter: none;
+    opacity: 1;
+  }
+  8% {
+    transform: translateX(-3px) rotate(-4deg);
+    filter: brightness(1.8);
+  }
+  16% {
+    transform: translateX(3px) rotate(4deg);
+  }
+  24% {
+    transform: translateX(-2px) rotate(-2deg);
+    filter: brightness(2.2) drop-shadow(0 0 6px #cfe0ff);
+  }
+  34% {
+    transform: none;
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(46px) rotate(38deg) scale(0.85);
+    filter: brightness(1.4) blur(1px);
+    opacity: 0;
+  }
+}
+
+@keyframes rii-plock-chain-snap {
+  40% {
+    opacity: 1;
+    filter: brightness(2);
+  }
+  to {
+    transform: rotate(calc(var(--r) * 2.2)) scaleX(0.4) translateY(18px);
+    opacity: 0;
+  }
+}
+
+/* 番数不够：悄悄淡掉 */
+.rii-plock.fade {
+  animation:
+    rii-plock-in 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d, 0s) both,
+    rii-plock-fade 0.8s ease-in var(--e) both;
+}
+
+@keyframes rii-plock-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rii-plock,
+  .rii-plock .rpl-chain {
+    animation-duration: 0.01s !important;
+  }
+}

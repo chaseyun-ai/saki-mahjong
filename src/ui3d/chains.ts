@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BREAK, ChainOutcome, FADE, FAINT, GOLD, LOCK, LinkSpot, QUICK_LOCK, chainLinks, chainPlan, clamp01, dissolveAt, easeInOut, easeOut, lockTime, outcomeTime } from '../ui/riiChainPlan';
+import { BREAK, ChainOutcome, FADE, FAINT, GOLD, LOCK, LinkSpot, PADLOCK, QUICK_LOCK, chainLinks, chainPlan, clamp01, dissolveAt, easeInOut, easeOut, lockTime, outcomeTime } from '../ui/riiChainPlan';
 import { ChainLook, chainLook } from '../ui/riiLook';
 
 // 白水哩的番缚（3D / 2.5D）：锁链从四面八方射过来压住手牌；结算时变金碎成碎片冲上天（天空放晴、钥匙落下在
@@ -213,6 +213,13 @@ export class ChainFx {
     const op = this.opacityNow();
     const fly = quick ? QUICK_LOCK * 0.7 : LOCK.fly;
     const s = this.frame.size;
+    // 大锁砸下去锁死：砸一下（大闪光、震屏）
+    if (!quick && !this.slammed && this.chains.length && this.chains.every((c) => t - c.start >= fly + PADLOCK.drop - PADLOCK.lead)) {
+      // 和大锁砸下去（ui/riiPadlock.ts）同一刻
+      this.slammed = true;
+      this.onClank(this.frame.center, '#fff4dc', true);
+      this.burst(this.frame.center, '#fff2cf', 40, s * 9, 0.6);
+    }
     for (const c of this.chains) {
       const u = (t - c.start) / fly;
       const head = easeOut(u) * c.length;
@@ -244,6 +251,12 @@ export class ChainFx {
   }
 
   private tmp2 = new THREE.Vector3();
+  private slammed = false;
+
+  // 锁好以后锁链已经消散了（结算时要重新射出来）
+  get vanished(): boolean {
+    return this.stage.kind === 'lock' && this.opacityNow() < 0.02;
+  }
 
   // ---------- 钥匙：变金 → 碎成金色碎片 → 冲上天（天空放晴、钥匙落下在 skyKey.ts）----------
 

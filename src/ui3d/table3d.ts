@@ -1401,8 +1401,12 @@ export class Table3D {
   private newChain(s: number, n: number, g: Game, me: number): ChainFx {
     this.chains[s]?.dispose();
     const fx = new ChainFx(n, this.chainFrame(s, me, g), (at, color, big) => {
-      this.effects.flash(at, color, big ? 9 : 3.5, big ? 0.6 : 0.3);
-      if (big) this.effects.ring(at, color, 7, 0.9);
+      this.effects.flash(at, color, big ? 12 : 3.5, big ? 0.7 : 0.3);
+      if (big) {
+        // 锁死的那一下：大闪光、一圈冲击波、震屏
+        this.effects.ring(at, color, 9, 0.8);
+        this.shake = Math.max(this.shake, 0.8);
+      }
     });
     this.scene.add(fx.group);
     this.chains[s] = fx;
@@ -1435,6 +1439,11 @@ export class Table3D {
   // 返回再过多少秒锁链开始变金 / 崩断（天空放晴、钥匙落下由 app 照这个时间排在画面上）
   riiOutcome(seat: number, kind: ChainOutcome, n: number, g: Game, me: number): number {
     let fx = this.chains[seat];
+    // 自己的锁链锁好以后消散了：结算时重新射出来
+    if (fx?.vanished) {
+      fx.dispose();
+      this.chains[seat] = fx = null;
+    }
     const fresh = !fx;
     if (!fx) {
       if (kind === 'fade') return 0;
