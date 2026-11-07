@@ -47,7 +47,7 @@ import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { TeamFlow } from './teamFlow';
-import { THEMES, ThemeId, currentTheme, setTheme } from './theme';
+import { THEMES, ThemeId, currentTheme, setTheme, tableColors } from './theme';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
@@ -658,15 +658,17 @@ export class App {
     if (this.mode !== '2d') {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
       const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
-      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div>${tip}</div>`;
+      // 2.5D 改良布局（试做）：牌桌上加 v2，样式和镜头都只在 v2 里改，原版不动
+      const v2 = this.mode === '25d' && this.settings.layout === 'improved';
+      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}${v2 ? ' v2' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div>${tip}</div>`;
       // 切入演出只在 2.5D 放；3D、2D 只放素材页换上的技能动画
       this.cutins = new Cutins(document.getElementById('cutins')!);
       this.cutinSeen.clear();
-      this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d');
+      this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d', v2);
       this.table3d.onHover = (id) => this.hoverTile(id);
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
       if (this.mode === '25d') {
-        this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel')].map((el) => el.getBoundingClientRect());
+        this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel, .dora-panel')].map((el) => el.getBoundingClientRect());
       }
       // 3D 牌桌上牌真正落到牌河时才响
       this.table3d.onMarker = (seat, _tile, name) => {
@@ -1344,8 +1346,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、动画开关是别处的设置，留着
-      const { chisui, drawPath, vary } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary };
+      const { chisui, drawPath, vary, layout } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary, layout };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -1591,6 +1593,7 @@ export class App {
           .join('');
     hud.innerHTML = `
       ${plates}
+      ${flat && this.table3d.improved ? this.doraPanelHtml() : ''}
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
@@ -1669,6 +1672,13 @@ export class App {
     if (this.settings.drawPath === 'off') return null;
     if (g.phase !== 'turn' || g.turn !== this.me || !p.riichi || this.showResult) return null;
     return g.legalActions(this.me).length === 1 ? p.drawn : null;
+  }
+
+  // 2.5D 改良布局：左上角的宝牌栏（雀魂那样）：宝牌指示牌一排（没翻的画牌桌上的牌背色），下面本场、供托
+  private doraPanelHtml(): string {
+    const g = this.game!;
+    const dora = [0, 1, 2, 3, 4].map((i) => (i < g.wall.doraRevealed ? tileHtml(g.wall.doraIndicators[i], { size: 'pond' }) : backHtml('pond'))).join('');
+    return `<div class="dora-panel" style="--dp-back:${tableColors().back}"><div class="dp-tiles">${dora}</div><div class="dp-sticks"><span title="本场"><i class="dp-honba"></i>×${g.honba}</span><span title="供托"><i class="dp-riichi"></i>×${g.shownSticks(this.me)}</span></div></div>`;
   }
 
   // 2.5D 的头像框：只放头像和名字（风位、点数、立直看中间的仪表盘，技能看左上角的能力说明）；轮到谁谁亮

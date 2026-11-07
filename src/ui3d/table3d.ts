@@ -56,6 +56,12 @@ export interface View25 {
   fan: number;
 }
 export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 34, lookZ: 1.5, hand: 1.15, tilt: 15, fan: 0 };
+// 改良布局（试做，参考雀魂）：镜头更俯视、视野窄一点，桌子不那么往后倒；自己的手牌大一点、仰到差不多正对镜头
+export const DEFAULT_VIEW_25D_V2: View25 = { pitch: 0.84, portraitPitch: 1.2, fov: 28, lookZ: 1.5, hand: 1.4, tilt: 40, fan: 0 };
+// 改良布局：自己的手牌往外（往镜头这边）挪多少，仰得多了牌顶不会碰到自己面前的牌山
+const V2_HAND_OUT = 0.9;
+// 改良布局：自己的手牌下沿可以出画面多少（牌高的几分之几），像雀魂那样手牌贴着画面底边
+const V2_HAND_CLIP = 0.12;
 const WALL_PITCH = TILE_W + 0.02;
 // 2.5D 时别家的第一组副露至少能摆到这里（座位本地 x，牌山末端附近），镜头取景按这个算
 const MELD_MIN_25D = 8 * (TILE_W + GAP) + 0.5;
@@ -367,6 +373,8 @@ export class Table3D {
   // 2.5D：每家（按相对座位，0 是自己）第一组副露最远能摆到哪，画面大小变了重新算
   private meldLimit: number[] | null = null;
   private view25: View25 = { ...DEFAULT_VIEW_25D };
+  // 改良布局里牌山的牌背：桌布色压暗一点，不和牌河、手牌抢眼（能力上色的牌背照旧）
+  private wallBackMat: THREE.Material | null = null;
   // 出牌动作经过标记（出发、抓住、落桌、松手、收回）时通知外面，比如落桌时放声音。
   // 每张打出的牌每个标记都恰好报一次，动作被打断也会补报
   onMarker: ((seat: number, tile: TileId, name: MarkerName) => void) | null = null;
@@ -423,7 +431,10 @@ export class Table3D {
     private container: HTMLElement,
     private onTileClick: (id: TileId) => void,
     readonly style: TableStyle = '3d',
+    // 2.5D 的改良布局（试做）：只在 style 是 25d 时有用
+    readonly improved = false,
   ) {
+    if (this.v2) this.view25 = { ...DEFAULT_VIEW_25D_V2 };
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
@@ -513,7 +524,7 @@ export class Table3D {
       (m as THREE.MeshStandardMaterial).envMap = room;
       (m as THREE.MeshStandardMaterial).envMapIntensity = k;
     }
-    this.feltMat = new THREE.MeshStandardMaterial({ map: feltTexture(this.colors), roughness: 0.95 });
+    this.feltMat = new THREE.MeshStandardMaterial({ map: feltTexture(this.colors, this.v2 ? this.dim.tableHalf : 0), roughness: 0.95 });
     this.keyLight = key;
     this.buildTable();
 
@@ -585,6 +596,10 @@ export class Table3D {
     this.deadlyMat = new THREE.MeshStandardMaterial({ color: '#f08a80', emissive: '#d23a2e', emissiveIntensity: 0.35, roughness: matte || 0.35 });
     const backMat = new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: matte || 0.4 });
     this.backMat = backMat;
+    if (this.v2) {
+      const c = new THREE.Color(this.colors.felt[1]).lerp(new THREE.Color('#9098a0'), 0.25);
+      this.wallBackMat = new THREE.MeshStandardMaterial({ color: c, roughness: 0.62 });
+    }
     // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
     this.tintMats = ['#e0453a', '#3a6df0', '#2fb25a', '#f4f4f0'].map(
       (c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.35, roughness: matte || 0.4 }),
@@ -921,6 +936,16 @@ export class Table3D {
     }
     const out = this.style === '25d' && (seat - me + 4) % 4 === 2 ? TOP_STICK_OUT_25D : 0;
     return this.toWorld(seat, me, 0, 0.09, this.dim.pondZ - 0.35 + out, STANDING);
+  }
+
+  // 2.5D 改良布局（试做）
+  private get v2(): boolean {
+    return this.style === '25d' && this.improved;
+  }
+
+  // 自己的手牌离桌子中心多远（中线）：放大了往外让一点；改良布局再往外挪
+  private myHandZ(hs: number): number {
+    return this.dim.handZ + (hs - 1) * 1.2 + (this.v2 ? V2_HAND_OUT : 0);
   }
 
   private get consoleH(): number {
@@ -1300,7 +1325,7 @@ export class Table3D {
       const t = this.tiles[id];
       const target = targets.get(id) ?? null;
       t.target = target;
-      const back = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
+      const back = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.wallBackMat && !view.sketch && this.wallSlotOf.has(id) ? this.wallBackMat : this.backMat;
       if (back && t.back.material !== back) t.back.material = back;
       const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
@@ -1935,7 +1960,7 @@ export class Table3D {
     // 副露多了手牌往左让，和副露之间留一点缝。自己的手牌离镜头近、看起来更往外，
     // 按画面上对齐：手牌右沿在画面上正好落在第一组副露左边一点
     const edge = mx - this.meldSpacing.hand;
-    const handEdge = mine ? this.sameScreenX(s, me, edge, this.dim.meldZ, this.dim.handZ + (hs - 1) * 1.2) : edge;
+    const handEdge = mine ? this.sameScreenX(s, me, edge, this.dim.meldZ, this.myHandZ(hs)) : edge;
     const shift = p.melds.length ? Math.max(0, width / 2 - handEdge) : 0;
     let x = -width / 2 - shift + TILE_W / 2;
     // 公开手牌：上家、下家的手牌像倒牌那样摊开；对家的摊开会被牌山挡住，改成转过来牌面朝桌子中间、往后仰
@@ -1948,7 +1973,7 @@ export class Table3D {
     // 2.5D 时上家、下家的手牌斜着看过去离牌山很近，往桌边推一点
     const top = this.style === '25d' && (s - me + 4) % 4 === 2;
     const side = this.style === '25d' && (s - me + 4) % 2 === 1 ? SIDE_HAND_PUSH_25D : top ? TOP_HAND_PUSH_25D : 0;
-    const hz = this.dim.handZ + side + (hs - 1) * 1.2 + (tilting ? (TILE_H / 2) * hs : 0);
+    const hz = (mine ? this.myHandZ(hs) : this.dim.handZ + side + (hs - 1) * 1.2) + (tilting ? (TILE_H / 2) * hs : 0);
     // 倒牌开始后不再更新：和牌以后手牌张数可能变了，倒牌要照着和牌前那一刻的位置
     if (!tilting && !this.reveal) this.handRows[s] = { x0: x, step, hs, z: hz };
     // 2.5D 时自己的手牌两头往中间转一点
@@ -2234,45 +2259,9 @@ export class Table3D {
       c.stroke();
       c.restore();
     }
-    // 局数：东一局
-    c.fillStyle = k.accent;
-    c.shadowColor = k.accent;
-    c.shadowBlur = 12;
-    c.font = title(80);
-    c.fillText(`${WIND_CN[g.roundWind]}${'一二三四'[g.roundNumber]}局`, M, M - 56);
-    c.shadowBlur = 0;
-    // 本场、余牌
-    c.font = num(30);
-    c.fillStyle = k.dim;
-    c.textAlign = 'right';
-    c.fillText(`${g.honba} 本场`, M - 12, M + 4);
-    c.textAlign = 'left';
-    c.fillText(`余 ${g.wall.remaining}`, M + 12, M + 4);
-    c.textAlign = 'center';
-    c.fillStyle = k.line;
-    c.fillRect(M - 1, M - 10, 2, 28);
-    // 宝牌指示牌：翻开的画牌面，没翻的画牌背
-    const w = 36;
-    const h = 48;
-    g.wall.doraIndicators.forEach((t, i) => {
-      const x = M + (i - 2.5) * (w + 5) + 2.5;
-      const y = M + 28;
-      c.fillStyle = i < g.wall.doraRevealed ? '#f6f1e3' : this.colors.back;
-      c.beginPath();
-      c.roundRect(x, y, w, h, 5);
-      c.fill();
-      if (i < g.wall.doraRevealed) this.atlas.drawFace(c, faceIndex(t), x, y, w, h);
-    });
-    // 供托：场上有几根立直棒
-    const sticks = g.shownSticks(view.me);
-    if (sticks) {
-      drawStick(c, M - 24, M + 102, 64, 9);
-      c.font = num(28);
-      c.fillStyle = k.ink;
-      c.textAlign = 'left';
-      c.fillText(`×${sticks}`, M + 16, M + 102);
-      c.textAlign = 'center';
-    }
+    // 中间的方屏里：局数、余牌（原版还有本场、宝牌指示牌、供托）
+    if (this.v2) this.consoleCenterV2(c, g, M, num, title);
+    else this.consoleCenter(c, g, view, M, num, title);
 
     // 四边：风位、点数，各朝各的人
     for (let s = 0; s < 4; s++) {
@@ -2315,6 +2304,64 @@ export class Table3D {
     this.consoleTex.needsUpdate = true;
   }
 
+  // 原版仪表盘中间：局数，下面一行本场、余牌，再下面宝牌指示牌和供托
+  private consoleCenter(c: CanvasRenderingContext2D, g: Game, view: SyncView, M: number, num: (px: number) => string, title: (px: number) => string): void {
+    const k = this.colors.console;
+    // 局数：东一局
+    c.fillStyle = k.accent;
+    c.shadowColor = k.accent;
+    c.shadowBlur = 12;
+    c.font = title(80);
+    c.fillText(`${WIND_CN[g.roundWind]}${'一二三四'[g.roundNumber]}局`, M, M - 56);
+    c.shadowBlur = 0;
+    // 本场、余牌
+    c.font = num(30);
+    c.fillStyle = k.dim;
+    c.textAlign = 'right';
+    c.fillText(`${g.honba} 本场`, M - 12, M + 4);
+    c.textAlign = 'left';
+    c.fillText(`余 ${g.wall.remaining}`, M + 12, M + 4);
+    c.textAlign = 'center';
+    c.fillStyle = k.line;
+    c.fillRect(M - 1, M - 10, 2, 28);
+    // 宝牌指示牌：翻开的画牌面，没翻的画牌背
+    const w = 36;
+    const h = 48;
+    g.wall.doraIndicators.forEach((t, i) => {
+      const x = M + (i - 2.5) * (w + 5) + 2.5;
+      const y = M + 28;
+      c.fillStyle = i < g.wall.doraRevealed ? '#f6f1e3' : this.colors.back;
+      c.beginPath();
+      c.roundRect(x, y, w, h, 5);
+      c.fill();
+      if (i < g.wall.doraRevealed) this.atlas.drawFace(c, faceIndex(t), x, y, w, h);
+    });
+    // 供托：场上有几根立直棒
+    const sticks = g.shownSticks(view.me);
+    if (sticks) {
+      drawStick(c, M - 24, M + 102, 64, 9);
+      c.font = num(28);
+      c.fillStyle = k.ink;
+      c.textAlign = 'left';
+      c.fillText(`×${sticks}`, M + 16, M + 102);
+      c.textAlign = 'center';
+    }
+  }
+
+  // 改良布局的仪表盘中间：只放局数和余牌，字放大（宝牌、本场、供托挪到左上角的宝牌栏）
+  private consoleCenterV2(c: CanvasRenderingContext2D, g: Game, M: number, num: (px: number) => string, title: (px: number) => string): void {
+    const k = this.colors.console;
+    c.fillStyle = k.accent;
+    c.shadowColor = k.accent;
+    c.shadowBlur = 12;
+    c.font = title(84);
+    c.fillText(`${WIND_CN[g.roundWind]}${'一二三四'[g.roundNumber]}局`, M, M - 38);
+    c.shadowBlur = 0;
+    c.font = num(50);
+    c.fillStyle = k.ink;
+    c.fillText(`余 ${g.wall.remaining}`, M, M + 50);
+  }
+
   // ---------- 交互和动画 ----------
 
   private resize = (): void => {
@@ -2347,7 +2394,7 @@ export class Table3D {
     cam.updateProjectionMatrix();
     const pitch = cam.aspect < 1 ? v.portraitPitch : v.pitch;
     const dir = new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch));
-    const myZ = d.handZ + (v.hand - 1) * 1.2;
+    const myZ = this.myHandZ(v.hand);
     const myHalf = this.myHandHalf();
     const far = d.handZ + TILE_T + TOP_HAND_PUSH_25D;
     const side = WALL_Z + TILE_H;
@@ -2360,9 +2407,13 @@ export class Table3D {
       new THREE.Vector3(far, TILE_H, -side),
       new THREE.Vector3(-far, 0, side),
       new THREE.Vector3(far, 0, side),
-      // 自己的手牌，下沿
-      new THREE.Vector3(-myHalf, 0, myZ + TILE_T),
-      new THREE.Vector3(myHalf, 0, myZ + TILE_T),
+      // 自己的手牌，下沿（改良布局让下沿出画面一点：取牌身上靠下的一条线）
+      ...[-myHalf, myHalf].map((x) => {
+        if (!this.v2) return new THREE.Vector3(x, 0, myZ + TILE_T);
+        const t = THREE.MathUtils.degToRad(v.tilt);
+        const up = TILE_H * v.hand * V2_HAND_CLIP;
+        return new THREE.Vector3(x, up * Math.cos(t), myZ + TILE_T / 2 - up * Math.sin(t));
+      }),
       // 自己的副露（摆在手牌右边，横着的牌伸得最远）
       new THREE.Vector3(myHalf, 0, d.meldZ + TILE_H),
       // 别家的副露：左右两家的在桌子两侧靠前靠后，对家的在上面
@@ -3208,7 +3259,8 @@ function hatchTexture(): THREE.CanvasTexture {
   return t;
 }
 
-function feltTexture(colors: TableColors): THREE.CanvasTexture {
+// zones：改良布局时桌子的半宽，从控制台四角往桌角画四条细线，把桌面分成四家的地盘（雀魂那样）；0 是原版的一圈方框
+function feltTexture(colors: TableColors, zones = 0): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 1024;
   c.height = 1024;
@@ -3230,7 +3282,18 @@ function feltTexture(colors: TableColors): THREE.CanvasTexture {
   ctx.putImageData(img, 0, 0);
   ctx.strokeStyle = colors.feltLine;
   ctx.lineWidth = 3;
-  ctx.strokeRect(150, 150, 724, 724);
+  if (zones) {
+    const px = 512 / zones;
+    const a = (CONSOLE_HALF + 0.25) * px;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      ctx.beginPath();
+      ctx.moveTo(512 + sx * a, 512 + sy * a);
+      ctx.lineTo(512 + sx * 512, 512 + sy * 512);
+      ctx.stroke();
+    }
+  } else {
+    ctx.strokeRect(150, 150, 724, 724);
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;

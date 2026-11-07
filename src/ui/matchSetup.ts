@@ -25,6 +25,8 @@ export interface MatchSettings {
   opponents: string[];
   // 自己用龙门渊透华时开局就是治水（不用等点数变动 10 万）：选人页透华头像旁边的“常态 / 治水”切换
   chisui: boolean;
+  // 2.5D 牌桌的布局：classic 是原版；improved 是参考雀魂的试做版（只在改良里改，原版不动，试砸了就换回原版）
+  layout: 'classic' | 'improved';
 }
 
 export const SEAT_NAMES = ['下家', '对家', '上家'];
@@ -42,6 +44,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   vary: true,
   opponents: ['', '', ''],
   chisui: false,
+  layout: 'classic',
 };
 
 const KEY = 'saki-match-settings';
@@ -131,6 +134,15 @@ const ROWS: Row[] = [
     ],
   },
   { key: 'vary', name: '微变化', options: onOff, note: '落桌声、出牌动作、牌河每次差一点点' },
+  {
+    key: 'layout',
+    name: '2.5D 布局',
+    note: '改良是参考雀魂的试做版，随时可以换回原版',
+    options: [
+      { label: '原版', value: 'classic' },
+      { label: '改良（试做）', value: 'improved' },
+    ],
+  },
 ];
 
 // 两个面板各管哪几项（存在同一份设置里）
@@ -284,6 +296,6 @@ export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMod
     return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="vis-mode" data-v="${m.id}">${m.name}</button>`;
   }).join('');
   const art = skins ? section('素材') + rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图 ›</button>', '只有页面主人看得到') : '';
-  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
+  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, ['layout']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
   return panelHtml('visual', '视觉设置', '改了马上生效', body, '');
 }
