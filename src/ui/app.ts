@@ -24,8 +24,9 @@ import { toyoneRedHidden } from '../abilities/toyone';
 import { RII, riiBind, riiCanBind, riiKeys } from '../abilities/rii';
 import { Chains2D } from './chains2d';
 import { chainOutcomes, outcomeTime, skyStart, skyTime } from './riiChainPlan';
-import { CHAIN_LOOKS, ChainStyleId, RiiProj, riiLook, setRiiLook } from './riiLook';
-import { padlockArrive, padlockSvg, playPadlock } from './riiPadlock';
+import { CHAIN_LOOKS, ChainStyleId, PLOCK_LOOKS, PlockStyleId, RiiProj, riiLook, setRiiLook } from './riiLook';
+import { padlockArrive, playPadlock } from './riiPadlock';
+import { PlockEnd, PlockPlace, plockHtml } from './riiPlock';
 import { SkyKey } from './skyKey';
 import { keyTag } from './keyArt';
 import { saeCanAim, saeAim, snipedBy } from '../abilities/sae';
@@ -127,6 +128,8 @@ export class App {
   private riichiMode = false;
   // 白水哩：按了“番缚”，手牌扣下去、正在选缚几番
   private riiPicking = false;
+  // 手牌扣下去 / 翻回来是什么时候（2D 的翻牌动画按这个时间接着放，重画不会从头再翻）
+  private riiFlipAt = 0;
   // 2D 牌桌上画锁链的 canvas；结算要等锁链放完再弹（到这个时间）
   private chains2d: Chains2D | null = null;
   private skyKey: SkyKey | null = null;
@@ -134,7 +137,9 @@ export class App {
   // 番缚锁死的动画：什么时候按下的（Date.now），缚几番；结算时每个哩头像上的锁怎么样（开锁 / 碎掉 / 淡掉）、从什么时候开始
   private riiLockAt = 0;
   private riiLockN = 0;
-  private riiLockEnd = new Map<number, { kind: 'key' | 'broken' | 'fade'; at: number }>();
+  private riiLockEnd = new Map<number, { kind: PlockEnd; at: number; n: number }>();
+  // 换了头像锁的样子：新样子从这时候挂上去
+  private riiPlockSwapAt = 0;
   private riiPadlockStop: (() => void) | null = null;
   private toasts: Toast[] = [];
   private toastSeq = 0;
@@ -918,6 +923,7 @@ export class App {
       this.riiPadlockStop?.();
       this.riiPadlockStop = null;
       this.riiLockAt = 0;
+      this.riiPlockSwapAt = 0;
       this.riiLockEnd.clear();
     }
     if (e.type === 'discard') {
@@ -1071,7 +1077,7 @@ export class App {
     this.riiPadlockStop = playPadlock({
       from: at,
       n: bind,
-      to: () => this.portraitRect(seat),
+      to: () => this.plockTarget(seat),
       onSlam: () => {
         playLockSlam();
         // 2D 牌桌没有镜头可以震：整张牌桌抖一下
@@ -1086,25 +1092,32 @@ export class App {
     window.setTimeout(() => this.game === g && this.render(), padlockArrive(bind) + 30);
   }
 
-  private portraitRect(s: number): DOMRect | null {
-    const el = document.querySelector(`.seat-frame[data-seat="${s}"] .portrait, .net-card[data-seat="${s}"] .portrait, .nameplate[data-seat="${s}"] .avatar`);
-    const r = el?.getBoundingClientRect();
-    return r && r.width > 0 ? r : null;
+  // 大锁飞到哪：头像上那把锁（还没出来，透明地占着位置）；找不到就头像右下角
+  private plockTarget(s: number): DOMRect | null {
+    const q = (frame: string, plate: string) =>
+      document.querySelector(`.seat-frame[data-seat="${s}"] ${frame}, .net-card[data-seat="${s}"] ${frame}, .nameplate[data-seat="${s}"] ${plate}`)?.getBoundingClientRect();
+    const spot = q('.rpl-lock', '.rpl-lock');
+    if (spot && spot.width > 0) return spot;
+    const r = q('.portrait', '.avatar');
+    if (!r || r.width <= 0) return null;
+    const w = r.width * 0.44;
+    return new DOMRect(r.right - r.width * 0.03 - w, r.bottom - r.height * 0.03 - w * 1.2, w, w * 1.2);
   }
 
-  // 头像角上挂的锁：自己缚上以后一直挂着（别人看不见）；结算时开锁变金 / 碎掉 / 淡掉（别人的哩这时才现出来）。
-  // 动画按时间对齐（负的 animation-delay），重画也不会从头播
-  private riiLockHtml(s: number): string {
+  // 头像上挂的锁：自己缚上以后一直挂着（别人看不见）；结算时开锁变金 / 碎掉 / 淡掉（别人的哩这时才现出来）。
+  // 动画按时间对齐（负的 animation-delay），重画也不会从头播。几种样子见 riiPlock.ts
+  private riiLockHtml(s: number, place: PlockPlace): string {
     const g = this.game;
     if (!g || this.chars[s]?.id !== 'rii') return '';
     const end = this.riiLockEnd.get(s);
     const mine = s === this.me && !this.vision && riiBind(g, s) !== null;
     if (!mine && !end) return '';
     const now = Date.now();
-    const arrive = mine && this.riiLockAt ? this.riiLockAt + padlockArrive(riiBind(g, s) ?? this.riiLockN) : 0;
+    const n = riiBind(g, s) ?? end?.n ?? this.riiLockN;
+    const arrive = Math.max(mine && this.riiLockAt ? this.riiLockAt + padlockArrive(n) : 0, this.riiPlockSwapAt);
     const d = arrive ? (arrive - now) / 1000 : -9;
     const e = end ? (end.at - now) / 1000 : 0;
-    return `<span class="rii-plock${end ? ` ${end.kind}` : ''}" style="--d:${d.toFixed(3)}s;--e:${e.toFixed(3)}s"><i class="rpl-chain a"></i><i class="rpl-chain b"></i>${padlockSvg()}</span>`;
+    return plockHtml(riiLook.plock, place, n, end?.kind ?? null, d, e);
   }
 
   // 结算：哩番缚了的这一局，锁链变金冲上天、天空放晴、钥匙落下 / 崩断消散 / 淡掉（淡掉只有她自己看得到）
@@ -1115,7 +1128,7 @@ export class App {
       if (o.kind === 'fade' && o.seat !== this.me) continue;
       // 头像上的锁和锁链一起出结果（锁链开始变金 / 崩断的时候）
       const lockEnd = (sec: number) => {
-        this.riiLockEnd.set(o.seat, { kind: o.kind, at: Date.now() + sec * 1000 });
+        this.riiLockEnd.set(o.seat, { kind: o.kind, at: Date.now() + sec * 1000, n: o.bind });
         window.setTimeout(() => this.render(), 30);
       };
       let delay = 0;
@@ -1260,7 +1273,7 @@ export class App {
     return `
       <div class="net-card ${POS[s]}${active}${mine ? ' mine' : ''}" data-seat="${s}">
         <div class="net-name">${mine ? 'のどっち' : c.name}</div>
-        <div class="portrait">${face}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s)}</div>
+        <div class="portrait">${face}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'net')}</div>
         ${this.towerHtml(s)}
       </div>`;
   }
@@ -1516,6 +1529,7 @@ export class App {
       const picking = this.riiPicking;
       if (this.game && !this.vision) this.chars[this.me].ability?.pressSkill?.(this.game, this.me, el.dataset.choice);
       this.riiPicking = false;
+      if (picking) this.riiFlipAt = Date.now();
       // 先记下时间，这一次重画头像上的锁就按这个时间等大锁飞过来
       if (picking) this.riiLockAt = Date.now();
       this.render();
@@ -1528,6 +1542,11 @@ export class App {
       if (el.dataset.proj) setRiiLook({ proj: el.dataset.proj as RiiProj });
       const relock = !!el.dataset.chain && el.dataset.chain !== riiLook.chain && !this.riiPicking;
       if (el.dataset.chain) setRiiLook({ chain: el.dataset.chain as ChainStyleId });
+      // 换头像锁：新样子马上挂上去（锁还在飞的时候换就照旧等它飞到）
+      if (el.dataset.plock && el.dataset.plock !== riiLook.plock) {
+        setRiiLook({ plock: el.dataset.plock as PlockStyleId });
+        this.riiPlockSwapAt = Date.now();
+      }
       if (relock) this.riiLockAt = Date.now();
       this.render();
       // 缚上以后换锁链样子：照新样子重新锁一次，大锁也再砸一次
@@ -1535,7 +1554,9 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'rii-bind' || el.dataset.ui === 'rii-cancel') {
+      const was = this.riiPicking;
       this.riiPicking = el.dataset.ui === 'rii-bind' && !!this.game && riiCanBind(this.game, this.me);
+      if (was !== this.riiPicking) this.riiFlipAt = Date.now();
       this.render();
       return;
     }
@@ -1663,7 +1684,7 @@ export class App {
       : [1, 2, 3]
           .map((s) => {
             const c = this.chars[s];
-            return `<div class="nameplate float ${POS[s]}" data-seat="${s}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s)}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>${this.towerHtml(s)}</div>`;
+            return `<div class="nameplate float ${POS[s]}" data-seat="${s}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'plate')}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>${this.towerHtml(s)}</div>`;
           })
           .join('');
     hud.innerHTML = `
@@ -1762,7 +1783,7 @@ export class App {
     return `
       <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s)}</div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'seat')}</div>
         ${this.towerHtml(s)}
         <div class="seat-info">${c.name}</div>
       </div>`;
@@ -2276,7 +2297,8 @@ export class App {
       ? `<div class="rii-looks"><span>投影</span>${btn(riiLook.proj === 'in', 'data-proj="in"', '朝内')}${btn(riiLook.proj === 'out', 'data-proj="out"', '朝外')}</div>`
       : '';
     const chainRow = `<div class="rii-looks"><span>锁链</span>${CHAIN_LOOKS.map((c) => btn(riiLook.chain === c.id, `data-chain="${c.id}"`, c.name)).join('')}</div>`;
-    return projRow + chainRow;
+    const plockRow = `<div class="rii-looks"><span>头像锁</span>${PLOCK_LOOKS.map((c) => btn(riiLook.plock === c.id, `data-plock="${c.id}"`, c.name)).join('')}</div>`;
+    return projRow + chainRow + plockRow;
   }
 
   private myAreaHtml(withHand = true, withPlate = true): string {
@@ -2293,6 +2315,11 @@ export class App {
     const classes = (t: TileId) => [discardable.has(t) ? 'can' : 'dim', ...(this.preview.has(t) ? ['tenpai'] : []), ...(deadly.has(t) ? ['deadly'] : []), ...(t === ripple ? ['ripple'] : [])];
     // 白水哩选番数：手牌扣下去（牌背），上面浮着一排投影的牌面
     const cover = this.riiPicking;
+    // 2D：扣下去、翻回来各翻一下（照着按下去的时间接着放）
+    const flipAge = (Date.now() - this.riiFlipAt) / 1000;
+    const uncover = !cover && flipAge < 0.34;
+    const flip = cover ? ' rii-cover' : uncover ? ' rii-uncover' : '';
+    const flipStyle = cover || uncover ? ` style="--rcd:${(-flipAge).toFixed(3)}s"` : '';
     const covered = (t: TileId) => (cover ? [...classes(t), 'covered'] : classes(t));
     const hand = sorted.map((t) => tileHtml(t, { classes: covered(t), data: { tile: t } })).join('');
     const drawn =
@@ -2346,12 +2373,12 @@ export class App {
         ${
           withHand
             ? `<div class="hand-row">
-          <div class="hand${cover ? ' rii-cover' : ''}">${ghosts}${hand}${drawn}</div>
+          <div class="hand${flip}"${flipStyle}>${ghosts}${hand}${drawn}</div>
           <div class="melds${[0, 1, 2, 3].some((o) => o !== this.me && g.stealthed(this.me, o)) ? ' stealth' : ''}">${this.meldsHtml(p.melds, this.me)}</div>
         </div>`
             : ''
         }
-        ${withPlate && !this.netView ? `<div class="nameplate mine"><div class="avatar">${c.name.slice(-1)}</div><div class="pname">${this.seatLabel(this.me)}</div></div>` : ''}
+        ${withPlate && !this.netView ? `<div class="nameplate mine" data-seat="${this.me}"><div class="avatar">${c.name.slice(-1)}${this.riiLockHtml(this.me, 'plate')}</div><div class="pname">${this.seatLabel(this.me)}</div></div>` : ''}
       </div>`;
   }
 
@@ -2392,7 +2419,9 @@ export class App {
     if (ab && g.isSealed(this.me)) return `<div class="foresight skill"><div class="fs-title">${ab.name}<span class="skill-on sealed">被封印</span></div><div class="fs-note skill-state">${this.sealText()}</div></div>`;
     const b = !this.vision && ab?.skill?.(g, this.me);
     if (!b) return '';
-    if (ab?.id === 'rii' && !b.active && b.enabled) {
+    // 白水哩没缚的时候：能缚就一个“番缚”按钮（点了在手牌上方挑几番），不能缚只写一句状态，不放 1～7 番那一排
+    if (ab?.id === 'rii' && !b.active) {
+      if (!b.enabled) return `<div class="foresight skill"><div class="fs-title">${ab.name}</div><div class="fs-note skill-state">${b.note}</div></div>`;
       if (!this.riiPicking) return `<div class="foresight skill"><div class="fs-title">${ab.name}</div><button class="deep-btn rii-go" data-ui="rii-bind">番缚<small>手牌扣下去，缚上几番</small></button></div>`;
       return `<div class="foresight skill"><div class="fs-title">${ab.name}</div><div class="fs-note skill-state">缚几番？缚上了这一局要和出这么多番才拿得到钥匙。</div><button class="deep-btn" data-ui="rii-cancel">不缚</button></div>`;
     }

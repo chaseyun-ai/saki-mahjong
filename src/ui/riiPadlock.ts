@@ -2,7 +2,7 @@ import { PADLOCK, landTime, vanishTime } from './riiChainPlan';
 
 // 白水哩番缚锁死的那一下：最后一条锁链压上手牌时，一把大锁从上面砸下来，锁扣“咔”地合上
 // （闪光、冲击波、震屏、撞击声由 onSlam 做），停一会儿；锁链消散时大锁缩小飞到她的头像上，
-// 之后头像角上一直挂着这把锁（app.ts 的 riiLockHtml），结算时开锁变金 / 碎掉。
+// 之后头像上一直挂着锁（几种样子见 riiPlock.ts），结算时开锁变金 / 碎掉。
 // 用网页动画（Web Animations）画在页面最上面，三种视角都一样。
 
 let uid = 0;
@@ -26,7 +26,7 @@ export function padlockSvg(): string {
 export interface PadlockPlay {
   from: { x: number; y: number; w: number }; // 手牌中间（页面坐标）、手牌多宽
   n: number; // 缚几番（几条锁链，决定什么时候砸下来）
-  to: () => DOMRect | null; // 头像（飞过去的时候再量）
+  to: () => DOMRect | null; // 头像上锁的位置（飞过去的时候再量）
   onSlam?: () => void;
 }
 
@@ -91,7 +91,7 @@ export function playPadlock(p: PadlockPlay): () => void {
     });
   }
   timers.push(window.setTimeout(() => p.onSlam?.(), ms(reduced ? 0 : slamAt)));
-  // 锁链消散的时候，大锁缩小、划一道弧飞到头像右下角
+  // 锁链消散的时候，大锁缩小、划一道弧飞到头像上锁的位置
   timers.push(
     window.setTimeout(() => {
       const r = p.to();
@@ -99,11 +99,9 @@ export function playPadlock(p: PadlockPlay): () => void {
         el.remove();
         return;
       }
-      // 头像右下角（和 style.css 的 .rii-plock 一样：离边 3%，宽 44%）
-      const w = r.width * 0.44;
-      const tx = r.right - r.width * 0.03 - w / 2 - p.from.x;
-      const ty = r.bottom - r.height * 0.03 - (w * 1.2) / 2 - p.from.y;
-      const k = Math.max(0.2, w / size);
+      const tx = r.left + r.width / 2 - p.from.x;
+      const ty = r.top + r.height / 2 - p.from.y;
+      const k = Math.max(0.15, r.width / size);
       const fly = el.animate(
         [
           { transform: `${base}` },

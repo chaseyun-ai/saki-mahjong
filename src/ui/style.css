@@ -7418,6 +7418,88 @@ canvas.rii-sky {
   visibility: hidden;
 }
 
+/* 扣下去：和 3D 理牌那一下一样往前一倒——牌面转到侧边、换成牌背落回来，轻轻一磕；翻回来反着放一遍 */
+.hand.rii-cover .tile.covered {
+  animation: rii-cover-down 0.3s var(--rcd, 0s) backwards;
+}
+
+.hand.rii-cover .tile.covered .face {
+  animation: rii-face-hide 0.3s var(--rcd, 0s) backwards;
+}
+
+.hand.rii-uncover .tile {
+  animation: rii-cover-up 0.3s var(--rcd, 0s) backwards;
+}
+
+.hand.rii-uncover .tile .face {
+  animation: rii-face-show 0.3s var(--rcd, 0s) backwards;
+}
+
+@keyframes rii-cover-down {
+  0% {
+    transform: perspective(240px) rotateX(0deg);
+    background: var(--tile-face);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
+  }
+  49.9% {
+    transform: perspective(240px) rotateX(-86deg);
+    background: var(--tile-face);
+  }
+  50% {
+    transform: perspective(240px) rotateX(86deg);
+    background: linear-gradient(160deg, #4a96c6, var(--tile-back));
+    animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1);
+  }
+  86% {
+    transform: perspective(240px) rotateX(-7deg) translateY(1px);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes rii-cover-up {
+  0% {
+    transform: perspective(240px) rotateX(0deg);
+    background: linear-gradient(160deg, #4a96c6, var(--tile-back));
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
+  }
+  49.9% {
+    transform: perspective(240px) rotateX(86deg);
+    background: linear-gradient(160deg, #4a96c6, var(--tile-back));
+  }
+  50% {
+    transform: perspective(240px) rotateX(-86deg);
+    background: var(--tile-face);
+    animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes rii-face-hide {
+  0%,
+  49.9% {
+    visibility: visible;
+  }
+  50%,
+  100% {
+    visibility: hidden;
+  }
+}
+
+@keyframes rii-face-show {
+  0%,
+  49.9% {
+    visibility: hidden;
+  }
+  50%,
+  100% {
+    visibility: visible;
+  }
+}
+
 /* 原来的位置浮着一排半透明的投影牌面 */
 .rii-ghosts {
   position: absolute;
@@ -7429,7 +7511,7 @@ canvas.rii-sky {
   pointer-events: none;
   opacity: 0.82;
   filter: drop-shadow(0 0 6px rgba(170, 190, 255, 0.85)) saturate(0.85);
-  animation: rii-ghost-in 0.35s ease-out both;
+  animation: rii-ghost-in 0.35s ease-out calc(var(--rcd, 0s) + 0.12s) both;
 }
 
 .rii-ghosts .tile {
@@ -7628,51 +7710,39 @@ canvas.rii-sky {
   box-shadow: 0 0 18px rgba(190, 210, 255, 0.9), inset 0 0 12px rgba(190, 210, 255, 0.7);
 }
 
-/* 头像右下角挂着的锁，和横过头像的两道锁链。--d：锁飞到的时候（从现在算，秒）；--e：结算开始 */
+/* 头像上挂的锁，几种样子（ui/riiPlock.ts 画）。盖满头像，锁在 .rpl-lock（大锁飞到这里）。
+   --d：锁飞到的时候（从现在算，秒）；--e：结算开始 */
 .rii-plock {
   position: absolute;
-  right: 3%;
-  bottom: 3%;
-  width: 44%;
-  aspect-ratio: 100 / 120;
+  inset: 0;
   z-index: 4;
   pointer-events: none;
-  animation: rii-plock-in 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d, 0s) both;
+  border-radius: inherit;
 }
 
-.nameplate .rii-plock {
-  right: -18%;
-  bottom: -14%;
-  width: 62%;
-}
-
-.rii-plock .rpl-chain {
+.rii-plock .rpl-deco {
   position: absolute;
-  height: 19%;
-  width: 260%;
-  right: 30%;
-  border-top: 2px solid #4d545e;
-  border-bottom: 2px solid #4d545e;
-  background: repeating-linear-gradient(90deg, #c9d0da 0 8px, #4f5661 8px 11px, #8d95a1 11px 19px, #4f5661 19px 22px);
-  border-radius: 3px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-  transform-origin: right center;
-  opacity: 0.92;
-  animation: rii-plock-chain 0.3s ease-out var(--d, 0s) both;
+  inset: 0;
+  border-radius: inherit;
 }
 
-.rii-plock .rpl-chain.a {
-  top: 38%;
-  --r: -24deg;
+.rii-plock .rpl-deco svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.rii-plock .rpl-chain.b {
-  top: 60%;
-  --r: 14deg;
+.rii-plock .rpl-lock {
+  position: absolute;
+  aspect-ratio: 100 / 120;
 }
 
-.nameplate .rii-plock .rpl-chain {
-  display: none;
+.rii-plock .rpl-in {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: rii-plock-in 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d, 0s) both;
 }
 
 @keyframes rii-plock-in {
@@ -7686,20 +7756,257 @@ canvas.rii-sky {
   }
 }
 
-@keyframes rii-plock-chain {
+/* 方链（和牌桌上的方链一个颜色） */
+.rpl-links .ck-shade {
+  stroke: rgba(0, 0, 0, 0.45);
+}
+
+.rpl-links .ck-out {
+  stroke: #262a32;
+}
+
+.rpl-links .ck-face {
+  stroke: #8a93a0;
+}
+
+.rpl-links .ck-lit {
+  stroke: #d8dee7;
+}
+
+.rpl-links .ck-hole {
+  stroke: #161a21;
+}
+
+.rpl-links .ck-edge {
+  stroke: #a3abb7;
+}
+
+/* 锁徽：右上角一枚圆章 */
+.rii-plock.pl-badge .rpl-lock {
+  top: -12%;
+  right: -16%;
+  width: 50%;
+  aspect-ratio: 100 / 124;
+}
+
+.rii-plock.pl-badge.at-plate .rpl-lock {
+  top: -26%;
+  right: -30%;
+  width: 66%;
+}
+
+.badge-svg .tag {
+  fill: #11161f;
+  stroke: #c9a550;
+  stroke-width: 2;
+}
+
+.badge-svg .tag-text {
+  fill: #ffd977;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+/* 锁链框：方链绕头像一圈，右边扣一把锁 */
+.rii-plock.pl-frame .rpl-deco {
+  animation: rii-frame-in 0.5s ease-out var(--d, 0s) both;
+}
+
+@keyframes rii-frame-in {
   from {
-    transform: rotate(var(--r)) scaleX(0);
+    opacity: 0;
+    transform: scale(1.14);
+    filter: brightness(2.4);
+  }
+  55% {
+    opacity: 1;
   }
   to {
-    transform: rotate(var(--r)) scaleX(1);
+    opacity: 1;
+    transform: none;
+    filter: none;
   }
+}
+
+.rii-plock.pl-frame .rpl-lock {
+  right: -19%;
+  top: 34%;
+  width: 40%;
+}
+
+.rii-plock.pl-frame.at-plate .rpl-lock {
+  right: -30%;
+  top: 26%;
+  width: 58%;
+}
+
+/* 交叉锁链：两道方链斜着交叉，交叉处一把锁 */
+.rii-plock.pl-cross .rpl-deco {
+  overflow: hidden;
+}
+
+.rii-plock.pl-cross .rpl-x {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: rii-cross-in 0.34s cubic-bezier(0.2, 0.8, 0.3, 1) var(--d, 0s) both;
+}
+
+.rii-plock.pl-cross .rpl-x.b {
+  animation-delay: calc(var(--d, 0s) + 0.07s);
+}
+
+@keyframes rii-cross-in {
+  from {
+    opacity: 0;
+    transform: scale(0.1);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 锁身正好盖住交叉的地方，锁扣露在上面 */
+.rii-plock.pl-cross .rpl-lock {
+  left: 28%;
+  top: 21%;
+  width: 44%;
+}
+
+.rii-plock.pl-cross.at-plate .rpl-lock {
+  left: 20%;
+  top: 2%;
+  width: 60%;
+}
+
+/* 缚印：右上角盖一枚朱红方印 */
+.rii-plock.pl-seal .rpl-lock {
+  top: -9%;
+  right: -15%;
+  width: 54%;
+  aspect-ratio: 1;
+}
+
+.rii-plock.pl-seal.at-plate .rpl-lock {
+  top: -24%;
+  right: -28%;
+  width: 62%;
+}
+
+.rii-plock.pl-seal .rpl-in {
+  animation: rii-seal-in 0.36s cubic-bezier(0.55, 0, 0.6, 1) var(--d, 0s) both;
+}
+
+@keyframes rii-seal-in {
+  0% {
+    opacity: 0;
+    transform: scale(2.3) rotate(10deg);
+  }
+  68% {
+    opacity: 1;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rii-lock-svg.seal-svg {
+  transform: rotate(-9deg);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+}
+
+.seal-svg .seal {
+  fill: #c8302a;
+}
+
+.seal-svg .seal-line {
+  fill: none;
+  stroke: #fbeee2;
+}
+
+.seal-svg .seal-ink {
+  fill: #fbeee2;
+  font-family: 'Ma Shan Zheng', 'Noto Serif SC', 'STKaiti', 'KaiTi', serif;
+  font-weight: 700;
+}
+
+.seal-svg .seal-big {
+  font-size: 50px;
+}
+
+.seal-svg .seal-small {
+  font-size: 17px;
+  letter-spacing: 2px;
+}
+
+.seal-svg .crack {
+  stroke: #fff6ea;
+  opacity: 0;
+}
+
+/* 光锁：头像一圈淡蓝的光，上边挂一把光做的锁 */
+.rii-plock.pl-glow .rpl-glow {
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 2px solid rgba(220, 234, 255, 0.95);
+  box-shadow:
+    0 0 10px 2px rgba(111, 157, 255, 0.85),
+    inset 0 0 14px rgba(111, 157, 255, 0.6);
+  animation:
+    rii-glow-in 0.5s ease-out var(--d, 0s) both,
+    rii-glow-pulse 2.4s ease-in-out calc(var(--d, 0s) + 0.5s) infinite;
+}
+
+@keyframes rii-glow-in {
+  from {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes rii-glow-pulse {
+  50% {
+    box-shadow:
+      0 0 16px 4px rgba(111, 157, 255, 0.95),
+      inset 0 0 20px rgba(111, 157, 255, 0.75);
+  }
+}
+
+.rii-plock.pl-glow .rpl-lock {
+  left: 31%;
+  top: -21%;
+  width: 38%;
+}
+
+.rii-plock.pl-glow.at-plate .rpl-lock {
+  left: 22%;
+  top: -46%;
+  width: 56%;
+}
+
+.rii-lock-svg.glow-svg {
+  filter: drop-shadow(0 0 3px #a9c4ff) drop-shadow(0 0 8px #6f9dff);
+}
+
+.glow-svg .gl-line {
+  stroke: #e6efff;
+}
+
+.glow-svg .gl-body {
+  fill: rgba(111, 157, 255, 0.28);
+}
+
+.glow-svg .gl-dot {
+  fill: #e6efff;
 }
 
 /* 拿到钥匙：锁变金、锁扣弹开，亮一下，再淡掉 */
 .rii-plock.key {
-  animation:
-    rii-plock-in 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d, 0s) both,
-    rii-plock-gold 2.6s ease-out var(--e) both;
+  animation: rii-plock-gold 2.6s ease-out var(--e) both;
 }
 
 .rii-plock.key .shackle {
@@ -7707,10 +8014,9 @@ canvas.rii-sky {
   animation: rii-plock-open 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) calc(var(--e) + 0.55s) both;
 }
 
-.rii-plock.key .rpl-chain {
-  animation:
-    rii-plock-chain 0.3s ease-out var(--d, 0s) both,
-    rii-plock-chain-off 0.6s ease-in calc(var(--e) + 0.4s) both;
+.rii-plock.key .badge-svg .shackle {
+  transform-origin: 61px 50px;
+  animation-name: rii-badge-open;
 }
 
 @keyframes rii-plock-gold {
@@ -7741,24 +8047,33 @@ canvas.rii-sky {
   }
 }
 
-@keyframes rii-plock-chain-off {
+@keyframes rii-badge-open {
+  from {
+    transform: none;
+  }
   to {
-    transform: rotate(var(--r)) scaleX(0);
-    opacity: 0;
+    transform: translateY(-7px) rotate(26deg);
   }
 }
 
 /* 没和成：锁抖一下发白，裂开掉下去 */
 .rii-plock.broken {
-  animation:
-    rii-plock-in 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d, 0s) both,
-    rii-plock-break 1.3s ease-in var(--e) both;
+  animation: rii-plock-break 1.3s ease-in var(--e) both;
 }
 
-.rii-plock.broken .rpl-chain {
-  animation:
-    rii-plock-chain 0.3s ease-out var(--d, 0s) both,
-    rii-plock-chain-snap 0.5s ease-in calc(var(--e) + 0.3s) both;
+.rii-plock.broken .crack {
+  animation: rii-seal-crack 0.18s ease-out calc(var(--e) + 0.3s) both;
+}
+
+@keyframes rii-seal-crack {
+  from {
+    opacity: 0;
+    stroke-dasharray: 0 200;
+  }
+  to {
+    opacity: 1;
+    stroke-dasharray: 200 0;
+  }
 }
 
 @keyframes rii-plock-break {
@@ -7783,28 +8098,15 @@ canvas.rii-sky {
     opacity: 1;
   }
   100% {
-    transform: translateY(46px) rotate(38deg) scale(0.85);
+    transform: translateY(46px) rotate(18deg) scale(0.85);
     filter: brightness(1.4) blur(1px);
-    opacity: 0;
-  }
-}
-
-@keyframes rii-plock-chain-snap {
-  40% {
-    opacity: 1;
-    filter: brightness(2);
-  }
-  to {
-    transform: rotate(calc(var(--r) * 2.2)) scaleX(0.4) translateY(18px);
     opacity: 0;
   }
 }
 
 /* 番数不够：悄悄淡掉 */
 .rii-plock.fade {
-  animation:
-    rii-plock-in 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d, 0s) both,
-    rii-plock-fade 0.8s ease-in var(--e) both;
+  animation: rii-plock-fade 0.8s ease-in var(--e) both;
 }
 
 @keyframes rii-plock-fade {
@@ -7815,7 +8117,9 @@ canvas.rii-sky {
 
 @media (prefers-reduced-motion: reduce) {
   .rii-plock,
-  .rii-plock .rpl-chain {
+  .rii-plock *,
+  .rii-plock .rpl-glow {
     animation-duration: 0.01s !important;
+    animation-iteration-count: 1 !important;
   }
 }

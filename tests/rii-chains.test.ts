@@ -4,7 +4,8 @@ import { RII, riiBind, riiKeys } from '../src/abilities/rii';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { keyTag } from '../src/ui/keyArt';
-import { CHAIN_LOOKS, chainLook } from '../src/ui/riiLook';
+import { CHAIN_LOOKS, PLOCK_LOOKS, chainLook } from '../src/ui/riiLook';
+import { plockHtml } from '../src/ui/riiPlock';
 import { BREAK, chainLinks, chainOutcomes, chainPlan, dissolveAt, goldTime, lockTime, outcomeTime, skyStart, skyTime } from '../src/ui/riiChainPlan';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
@@ -42,6 +43,23 @@ describe('白水哩番缚的锁链特效', () => {
     expect(new Set(CHAIN_LOOKS.map((c) => c.id)).size).toBe(CHAIN_LOOKS.length);
     expect(CHAIN_LOOKS.length).toBeGreaterThanOrEqual(3);
     expect(chainLook('silver').id).toBe('silver');
+  });
+
+  it('头像上的锁几种样子都画得出来，都有大锁飞过去落的位置', () => {
+    expect(new Set(PLOCK_LOOKS.map((c) => c.id)).size).toBe(PLOCK_LOOKS.length);
+    expect(PLOCK_LOOKS.length).toBeGreaterThanOrEqual(3);
+    for (const c of PLOCK_LOOKS)
+      for (const place of ['seat', 'net', 'plate'] as const) {
+        const html = plockHtml(c.id, place, 3, null, -9, 0);
+        expect(html).toContain(`rii-plock pl-${c.id} at-${place}`);
+        expect(html).toContain('class="rpl-lock"');
+        expect(html).not.toContain('NaN');
+      }
+    // 锁徽、缚印在头像框上写缚几番，小名牌上不写
+    expect(plockHtml('badge', 'seat', 3, null, 0, 0)).toContain('缚三');
+    expect(plockHtml('seal', 'seat', 5, null, 0, 0)).toContain('五番');
+    expect(plockHtml('seal', 'plate', 5, null, 0, 0)).not.toContain('五番');
+    expect(plockHtml('frame', 'seat', 2, 'broken', -1, -0.5)).toContain('pl-frame at-seat broken');
   });
 
   it('崩断时大部分消散，剩下一部分化成光', () => {

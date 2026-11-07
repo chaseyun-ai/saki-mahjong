@@ -218,6 +218,8 @@ const STACKS_HALF = 9;
 const STANDING = new THREE.Euler(0, 0, 0);
 const FACE_UP = new THREE.Euler(-Math.PI / 2, 0, 0);
 const FACE_DOWN = new THREE.Euler(Math.PI / 2, 0, Math.PI);
+// 理牌时、白水哩番缚时手牌往前倒扣的样子
+const COVER_TILT = new THREE.Euler(Math.PI / 2, 0, 0);
 // 公开手牌：立着往后仰（再整个转半圈，牌面朝桌子中间）
 const OPEN_HAND = new THREE.Euler(0.5, 0, 0);
 
@@ -388,6 +390,8 @@ export class Table3D {
   private chains: (ChainFx | null)[] = [null, null, null, null];
   private ghosts = new Map<TileId, THREE.Group>();
   private ghostMats: { back: THREE.MeshBasicMaterial; face: THREE.MeshBasicMaterial } | null = null;
+  // 投影什么时候开始浮起来（牌扣下去的同时）
+  private ghostSince = -1;
   private ghostAt = new Map<TileId, Placement>();
   // 初美鸣出来的东、北中间那张牌上的紫光（牌 id → 贴在牌面上的发光字和光柱）
   private glows = new Map<TileId, THREE.Group>();
@@ -1304,8 +1308,6 @@ export class Table3D {
       if (back && t.back.material !== back) t.back.material = back;
       const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
-      // 白水哩番缚选番数：自己的手牌牌面朝下扣在桌上
-      t.face.visible = !this.ghostAt.has(id);
       const faceMat = view.glowTiles?.has(id) ? this.kimonFace() : this.faceMat;
       if (faceMat && t.face.material !== faceMat) t.face.material = faceMat;
       if (t.body.customDepthMaterial) {
@@ -1343,7 +1345,11 @@ export class Table3D {
   // 投影朝内：牌面朝着自己；朝外：牌面朝着桌子中间（从自己这边看是反的）。试看用，见 ui/riiLook.ts
   private syncGhosts(): void {
     for (const [id, gr] of this.ghosts) if (!this.ghostAt.has(id)) gr.visible = false;
-    if (!this.ghostAt.size) return;
+    if (!this.ghostAt.size) {
+      this.ghostSince = -1;
+      return;
+    }
+    if (this.ghostSince < 0) this.ghostSince = this.now;
     const map = this.faceMat?.map ?? this.atlas.texture;
     this.ghostMats ??= {
       back: new THREE.MeshBasicMaterial({ color: '#8fa8ff', transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
@@ -1353,7 +1359,7 @@ export class Table3D {
       this.ghostMats.face.map = map;
       this.ghostMats.face.needsUpdate = true;
     }
-    for (const [id, at] of this.ghostAt) {
+    for (const id of this.ghostAt.keys()) {
       let gr = this.ghosts.get(id);
       if (!gr) {
         gr = new THREE.Group();
@@ -1366,13 +1372,27 @@ export class Table3D {
         this.scene.add(gr);
         this.ghosts.set(id, gr);
       }
+      gr.visible = true;
+    }
+    this.updateGhosts();
+  }
+
+  // 每一帧：牌往下扣的时候投影从牌的位置淡出来、往上浮到那一排的正上方
+  private updateGhosts(): void {
+    if (this.ghostSince < 0 || !this.ghostMats) return;
+    const f = Math.min(1, Math.max(0, (this.now - this.ghostSince - 0.08) / 0.34));
+    const e = 1 - (1 - f) ** 3;
+    this.ghostMats.back.opacity = 0.55 * e;
+    this.ghostMats.face.opacity = 0.92 * e;
+    for (const [id, at] of this.ghostAt) {
+      const gr = this.ghosts.get(id);
+      if (!gr) continue;
       gr.position.copy(at.pos);
       gr.quaternion.copy(at.quat);
       // 浮在扣着的那一排的正上方，一张对一张
-      gr.translateY(TILE_H * 1.02 * at.scale);
+      gr.translateY(TILE_H * (0.35 + 0.67 * e) * at.scale);
       if (riiLook.proj === 'out') gr.rotateY(Math.PI);
       gr.scale.setScalar(at.scale);
-      gr.visible = true;
     }
   }
 
@@ -1952,7 +1972,7 @@ export class Table3D {
     const facing = open && (s - me + 4) % 4 === 2;
     // 2.5D 镜头高，对家立着的牌下半截被牌山挡住：改成平躺、牌面朝上、字冲我（3D 镜头低，躺下反而全被挡，还是立着往后仰）
     const lie = facing && this.style === '25d';
-    const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : lie ? FACE_UP : facing ? OPEN_HAND : open ? FACE_UP : STANDING;
+    const rot = tilting ? COVER_TILT : mine ? new THREE.Euler(this.handTilt, 0, 0) : lie ? FACE_UP : facing ? OPEN_HAND : open ? FACE_UP : STANDING;
     const y = tilting || (open && !facing) || lie ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
     // 2.5D 时上家、下家的手牌斜着看过去离牌山很近，往桌边推一点
     const top = this.style === '25d' && (s - me + 4) % 4 === 2;
@@ -1970,9 +1990,9 @@ export class Table3D {
       if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, rot, yaw, hs) };
       if (t !== null && p.hand.includes(t)) {
         if (cover) {
-          // 番缚：牌面朝下整整齐齐扣在原来的位置（不跟着扇形转），上方浮着一排投影牌面
+          // 番缚：和配牌理牌那一下一样，整排牌往前一倒扣下去（只绕着横轴转，不翻面不打转），上方浮起一排投影牌面
           this.ghostAt.set(t, this.toWorld(s, me, x, y, hz, rot, yaw, hs));
-          out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * hs, hz + TILE_H * 0.3 * hs, FACE_DOWN, 0, hs));
+          out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * hs, hz + (TILE_H / 2) * hs, COVER_TILT, 0, hs));
         } else out.set(t, this.toWorld(s, me, x, y + lift, hz, rot, yaw, hs));
       }
       x += step;
@@ -2917,6 +2937,7 @@ export class Table3D {
     }
     this.water?.update(dt);
     this.updateChains(dt);
+    this.updateGhosts();
     this.updateGlows();
     // 引力圆慢慢转、一胀一缩
     if (this.gravityDisc?.visible) {

@@ -96,7 +96,9 @@ export const riiAbility: Ability = {
     if (bind !== null) return { label: '番缚', note: `这一局缚了 ${bind} 番，和出 ${bind} 番以上得到钥匙。${list}`, enabled: false, active: true };
     const ready = riiCanBind(g, seat);
     const choices = Array.from({ length: RII.maxBind }, (_, i) => ({ id: String(i + 1), label: `${i + 1}番`, enabled: ready }));
-    return { label: '番缚', note: ready ? `第一次出牌前可以缚上几番（只有照看得穿）。${list}` : `这一局没缚，第一次出牌前才能缚。${list}`, enabled: ready, choices };
+    const waiting = !ready && g.players[seat].discards.length === 0;
+    const note = ready ? `第一次出牌前可以缚上几番（只有照看得穿）。${list}` : waiting ? `轮到自己第一次出牌时可以缚上几番。${list}` : `这一局没缚，第一次出牌前才能缚。${list}`;
+    return { label: '番缚', note, enabled: ready, choices };
   },
 
   pressSkill(g, seat, choice) {

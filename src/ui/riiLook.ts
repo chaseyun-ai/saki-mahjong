@@ -1,7 +1,17 @@
-// 白水哩番缚的几种样子（试看用，挑好以后留一种）：投影朝内 / 朝外，几种锁链。记在浏览器里。
+// 白水哩番缚的几种样子（试看用，挑好以后留一种）：投影朝内 / 朝外，几种锁链，头像上的锁。记在浏览器里。
 
 export type RiiProj = 'in' | 'out';
 export type ChainStyleId = 'square' | 'steel' | 'heavy' | 'silver' | 'spirit';
+export type PlockStyleId = 'badge' | 'frame' | 'cross' | 'seal' | 'glow';
+
+// 头像上的锁（app.ts 的 riiLockHtml 画，样子在 style.css 的 .rii-plock.<id>）
+export const PLOCK_LOOKS: { id: PlockStyleId; name: string }[] = [
+  { id: 'badge', name: '锁徽' },
+  { id: 'frame', name: '锁链框' },
+  { id: 'cross', name: '交叉锁链' },
+  { id: 'seal', name: '缚印' },
+  { id: 'glow', name: '光锁' },
+];
 
 export interface ChainLook {
   id: ChainStyleId;
@@ -31,6 +41,7 @@ const KEY = 'saki.riiLook';
 interface Saved {
   proj: RiiProj;
   chain: ChainStyleId;
+  plock: PlockStyleId;
 }
 
 function load(): Saved {
@@ -39,9 +50,10 @@ function load(): Saved {
     return {
       proj: s?.proj === 'out' ? 'out' : 'in',
       chain: CHAIN_LOOKS.some((c) => c.id === s?.chain) ? s.chain : 'square',
+      plock: PLOCK_LOOKS.some((c) => c.id === s?.plock) ? s.plock : 'badge',
     };
   } catch {
-    return { proj: 'in', chain: 'square' };
+    return { proj: 'in', chain: 'square', plock: 'badge' };
   }
 }
 
