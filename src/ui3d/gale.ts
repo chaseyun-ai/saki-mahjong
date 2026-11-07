@@ -1,225 +1,445 @@
 import * as THREE from 'three';
 
-// 薄墨初美的里鬼门：东风、北风都鸣出来以后，紫色的风绕着牌桌打转、一圈圈往桌上聚。
-// level 0–1：照她小四喜的进度，越接近听牌风越多，听牌时最多。浓淡渐变，不是一下子出现。
-// 每一缕风是一条弯弯的光带（头亮尾淡），沿螺旋往里卷，卷到桌子中间附近散掉，再从外圈生出来。
-// release()：和牌时风一下子散掉（往上冲的那一下由 Effects.galeBurst 放）
-// 桌子中间画着鬼门法阵（kimonSigil.ts），风只留少少几缕细丝，卷到法阵外圈就散掉：
-// 风本身看不见，靠少数几道细线带出方向，比一大团粗光带干净
+// 薄墨初美的里鬼门（3D、2.5D），照动画原作：东风、北风都鸣出来以后，紫色的风绕着牌桌打转、一圈圈往里卷，
+// 四周暗下来、出现星点；和牌时那张和了牌上炸开一团白光，紫色的风像喷泉一样往上、往外张开。
+// - 每一缕风是一条笔触：两头细、中间粗，中心一道白芯、外面一层紫晕，沿着走向带一点毛糙的抖动
+// - 风丝的位置全在顶点着色器里按时间算（每条只存几个随机数），一帧不用在 CPU 上改顶点
+// - 宽度朝着镜头展开；线细到不足 1.5 个像素时不再变细而是变暗，远处的风丝不会断成虚线
+// level 0–1：照小四喜的进度，越接近听牌风越多、转得越急、四周越暗。
+// release()：和牌时风被往外、往上甩散；burst() 放和牌的喷泉。
+// 风丝的画法参考了 Humpalumps/ultra-elements（MIT）Ribbons.js 的解析式条带和“细线变暗不变细”，
+// 地上冲击波的半径照它 Shockwaves.js 的 t^0.4 爆炸波曲线。见 THIRD_PARTY_NOTICES.md
 
-const STREAKS = 44; // 最多几缕
-const SEG = 14; // 每缕分几段
-const PALETTE = ['#c23cff', '#e04cff', '#9b3cff', '#ff5ae6', '#b45cff', '#f0a8ff'];
+const STREAKS = 260;
+const SEG = 20;
+const RAYS = 200;
+const RAY_SEG = 14;
+const STARS = 420;
+const PALETTE = ['#d93cff', '#e255ff', '#b83cff', '#ff4fd8', '#c94cff', '#ef6bff'];
 
-// 横向中间亮、两边透明的光带贴图
-function stripTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 64;
-  c.height = 4;
-  const ctx = c.getContext('2d')!;
-  const g = ctx.createLinearGradient(0, 0, 64, 0);
-  g.addColorStop(0, 'rgba(255,255,255,0)');
-  g.addColorStop(0.35, 'rgba(255,255,255,0.55)');
-  g.addColorStop(0.5, 'rgba(255,255,255,1)');
-  g.addColorStop(0.65, 'rgba(255,255,255,0.55)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 64, 4);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+const NOISE = /* glsl */ `
+float hash11(float p) { p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+float n1(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(hash11(i), hash11(i + 1.0), f); }
+`;
+
+// 条带的公共部分：给定中线上一点 P 和下一点 P2，朝镜头展开 halfW；返回偏移后的位置，aa 是变暗的系数
+const STRIP = /* glsl */ `
+uniform float uResY;
+vec3 expand(vec3 P, vec3 P2, float halfW, float side, out float aa) {
+  vec3 T = normalize(P2 - P + vec3(1e-5, 0.0, 0.0));
+  vec3 V = cameraPosition - P;
+  vec3 S = normalize(cross(T, V));
+  float viewZ = max(-(viewMatrix * vec4(P, 1.0)).z, 0.1);
+  float px = 2.0 * halfW * 0.5 * uResY * projectionMatrix[1][1] / viewZ;
+  float c = max(px, 1.5);
+  aa = px / c;
+  return P + S * side * halfW * c / max(px, 1e-5);
+}
+`;
+
+const STREAK_VERT = /* glsl */ `
+#define PI 3.14159265
+attribute vec2 aUS;     // u：0 头 1 尾；side：-1 / 1
+attribute vec4 iA;      // seed, rank, theta0, omega
+attribute vec4 iB;      // phase, y, span, width
+attribute vec4 iC;      // inward, wobble, -, -
+attribute vec3 iCol;
+uniform float uTime;
+uniform float uLevel;
+uniform float uOuter;
+uniform float uInner;
+uniform float uRelease;
+uniform float uFade;
+varying float vSide;
+varying float vU;
+varying float vAlpha;
+varying vec3 vCol;
+${NOISE}
+${STRIP}
+vec3 at(float u, float life, float th) {
+  float r = mix(uOuter, uInner, pow(life, 0.8));
+  float a = th - u * iB.z;
+  float rr = r * (1.0 + u * iB.z * 0.2);
+  float seed = iA.x * 97.0;
+  // 笔触不是死板的圆弧：顺着走向慢慢弯一两下
+  float wig = (n1(u * 2.6 + seed + uTime * 0.35) - 0.5) * iC.y + (n1(u * 5.5 + seed * 1.7) - 0.5) * iC.y * 0.25;
+  rr += wig;
+  float y = iB.y + sin(u * 3.0 + seed + uTime * 1.3) * 0.25 + wig * 0.5;
+  // 和牌：往外甩、往上掀
+  float rel = uRelease * uRelease;
+  rr *= 1.0 + rel * (1.2 + 2.0 * iA.x);
+  y += rel * (5.0 + 12.0 * iA.x);
+  return vec3(sin(a) * rr, y, -cos(a) * rr);
+}
+void main() {
+  float u = aUS.x;
+  float span = uOuter - uInner;
+  float life = fract(iB.x + uTime * iC.x / span);
+  float r = mix(uOuter, uInner, pow(life, 0.8));
+  // 越往里转得越快
+  float th = iA.z + uTime * iA.w * (0.6 + 0.9 * uOuter / max(r, 1.0) * 0.35);
+  vec3 P = at(u, life, th);
+  vec3 P2 = at(u + 0.02, life, th);
+  float taper = pow(sin(PI * clamp(u, 0.0, 1.0)), 0.55) * (1.0 - 0.45 * u);
+  float aa;
+  vec3 pos = expand(P, P2, iB.w * taper, aUS.y, aa);
+  float on = clamp((uLevel - iA.y) * 6.0, 0.0, 1.0);
+  float lifeA = smoothstep(0.0, 0.12, life) * (1.0 - smoothstep(0.82, 1.0, life));
+  vAlpha = on * lifeA * aa * uFade;
+  vSide = aUS.y;
+  vU = u;
+  vCol = iCol;
+  gl_Position = projectionMatrix * viewMatrix * vec4(pos, 1.0);
+}
+`;
+
+// 横截面：中心一道白芯，外面一层紫晕；顺着走向头亮尾淡
+const STRIP_FRAG = /* glsl */ `
+varying float vSide;
+varying float vU;
+varying float vAlpha;
+varying vec3 vCol;
+uniform float uBright;
+void main() {
+  float s2 = vSide * vSide;
+  float core = exp(-s2 * 18.0);
+  float halo = max(0.0, 1.0 - s2) * exp(-s2 * 2.0);
+  float along = mix(1.25, 0.35, vU);
+  vec3 col = vCol * halo * 0.95 + vec3(1.0, 0.9, 1.0) * core * 0.55;
+  gl_FragColor = vec4(col * along * vAlpha * uBright, 1.0);
+}
+`;
+
+// 和牌的喷泉：从那张和了牌往上、往外张开的风丝
+const RAY_VERT = /* glsl */ `
+attribute vec2 aUS;
+attribute vec4 iA; // angle, lean, speed, delay
+attribute vec4 iB; // len, width, curl, seed
+attribute vec3 iCol;
+uniform float uT;
+uniform vec3 uOrigin;
+uniform float uScale;
+uniform vec2 uDir; // 往哪边张开（水平方向，长度 0 就四面八方）
+varying float vSide;
+varying float vU;
+varying float vAlpha;
+varying vec3 vCol;
+${STRIP}
+vec3 at(float d) {
+  float a = iA.x + d * iB.z * 0.03;
+  vec2 h = normalize(vec2(sin(a), -cos(a)) + uDir + vec2(1e-4, 0.0));
+  float rad = 0.4 + d * iA.y * (1.0 + d * 0.035);
+  float y = d * (1.0 - iA.y * 0.35);
+  return vec3(h.x * rad, y, h.y * rad);
+}
+void main() {
+  float t = max(0.0, uT - iA.w);
+  float head = iA.z * (1.0 - exp(-t * 2.2)) / 2.2 * 2.2;
+  float tail = max(0.0, head - iB.x);
+  float d = mix(head, tail, aUS.x);
+  vec3 P = uOrigin + at(d) * uScale;
+  vec3 P2 = uOrigin + at(d + 0.2) * uScale;
+  float taper = pow(sin(3.14159 * clamp(aUS.x, 0.0, 1.0)), 0.5) * (1.0 - 0.3 * aUS.x);
+  float aa;
+  vec3 pos = expand(P, P2, iB.y * taper * (1.0 + d * 0.03) * uScale, aUS.y, aa);
+  float fade = (uT > iA.w ? 1.0 : 0.0) * pow(max(0.0, 1.0 - uT / 2.4), 1.4);
+  vAlpha = fade * aa * (1.0 + 2.0 * exp(-d * 0.25));
+  vSide = aUS.y;
+  vU = aUS.x;
+  vCol = iCol;
+  gl_Position = projectionMatrix * viewMatrix * vec4(pos, 1.0);
+}
+`;
+
+// 和了牌上那一团白光（竖着拉长、朝着镜头）
+const CORE_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+`;
+const CORE_FRAG = /* glsl */ `
+varying vec2 vUv;
+uniform float uA;
+void main() {
+  vec2 p = vUv * 2.0 - 1.0;
+  float d = length(p * vec2(1.0, 0.55));
+  float core = exp(-d * d * 9.0);
+  float glow = exp(-d * 3.0);
+  vec3 col = vec3(1.0, 0.95, 1.0) * core * 1.6 + vec3(0.85, 0.3, 1.0) * glow * 0.8;
+  gl_FragColor = vec4(col * uA, 1.0);
+}
+`;
+// 地上推开的一圈：前沿清楚、后面软尾，半径 ∝ t^0.4
+const SHOCK_FRAG = /* glsl */ `
+varying vec2 vUv;
+uniform float uX;
+void main() {
+  vec2 q = (vUv * 2.0 - 1.0) * 2.6;
+  float r = length(q);
+  float rr = mix(0.1, 2.4, pow(uX, 0.4));
+  float d = r - rr;
+  float prof = d > 0.0 ? exp(-d / 0.015) : exp(d / 0.18);
+  float e = pow(1.0 - uX, 2.2);
+  vec3 col = mix(vec3(0.85, 0.3, 1.0), vec3(1.0, 0.9, 1.0), exp(-abs(d) / 0.02)) * prof * e * 1.3;
+  col *= smoothstep(2.6, 2.4, r);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+const STAR_VERT = /* glsl */ `
+attribute float aSeed;
+uniform float uTime;
+uniform float uA;
+varying float vA;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float tw = 0.55 + 0.45 * sin(uTime * (1.0 + aSeed * 2.0) + aSeed * 40.0);
+  vA = uA * tw;
+  gl_PointSize = (1.2 + aSeed * 2.4);
+}
+`;
+const STAR_FRAG = /* glsl */ `
+varying float vA;
+void main() {
+  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  float a = exp(-dot(p, p) * 3.0);
+  gl_FragColor = vec4(vec3(0.85, 0.85, 1.0) * a * vA, 1.0);
+}
+`;
+
+const additive = (u: Record<string, THREE.IUniform>, vert: string, frag: string) =>
+  new THREE.ShaderMaterial({ uniforms: u, vertexShader: vert, fragmentShader: frag, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+
+// 一条条带的底板：(SEG+1)×2 个顶点，aUS = (u, side)
+function stripBase(seg: number): THREE.InstancedBufferGeometry {
+  const g = new THREE.InstancedBufferGeometry();
+  const us: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i <= seg; i++) {
+    us.push(i / seg, -1, i / seg, 1);
+    if (i > 0) {
+      const v = i * 2;
+      idx.push(v - 2, v - 1, v, v - 1, v + 1, v);
+    }
+  }
+  g.setAttribute('aUS', new THREE.Float32BufferAttribute(us, 2));
+  // three 要一个 position 才肯画（值不用，位置在着色器里算）
+  g.setAttribute('position', new THREE.Float32BufferAttribute(new Array(((seg + 1) * 2) * 3).fill(0), 3));
+  g.setIndex(idx);
+  return g;
 }
 
-// 桌面中间一团柔和的紫光
-function glowTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const ctx = c.getContext('2d')!;
-  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  g.addColorStop(0, 'rgba(255,255,255,0.9)');
-  g.addColorStop(0.4, 'rgba(255,255,255,0.35)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 128, 128);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+function inst(g: THREE.InstancedBufferGeometry, name: string, data: number[], size: number): void {
+  g.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(data), size));
 }
 
-interface Streak {
-  rank: number; // 0–1：level 比它大才出现
-  theta: number; // 头所在的角度
-  r: number; // 头离中心多远
-  y: number;
-  span: number; // 拖多长（弧度）
-  width: number;
-  omega: number; // 转多快（弧度/秒）
-  inward: number; // 往里卷多快（单位/秒）
-  tilt: number; // 光带的宽往上翘多少（0 平铺在桌面上方，1 竖着）
-  wobble: number;
-  color: THREE.Color;
-  on: number; // 0–1 渐显
+class GaleBurst {
+  readonly group = new THREE.Group();
+  private rayMat: THREE.ShaderMaterial;
+  private core: THREE.Mesh;
+  private coreMat: THREE.ShaderMaterial;
+  private shock: THREE.Mesh;
+  private shockMat: THREE.ShaderMaterial;
+  private origin = new THREE.Vector3();
+  private scale = 1;
+  private t = -1;
+
+  constructor(res: THREE.IUniform, size: number) {
+    const g = stripBase(RAY_SEG);
+    const a: number[] = [];
+    const b: number[] = [];
+    const c: number[] = [];
+    const col = new THREE.Color();
+    for (let i = 0; i < RAYS; i++) {
+      // 大多往上直冲，越靠外越斜（喷泉往外张开）
+      const lean = 0.08 + Math.pow(Math.random(), 1.4) * 0.75;
+      a.push(Math.random() * Math.PI * 2, lean, 14 + Math.random() * 22, Math.random() * 0.3);
+      b.push(4 + Math.random() * 10, 0.12 + Math.random() * 0.45, (Math.random() - 0.5) * 2, Math.random());
+      col.set(PALETTE[i % PALETTE.length]);
+      c.push(col.r, col.g, col.b);
+    }
+    inst(g, 'iA', a, 4);
+    inst(g, 'iB', b, 4);
+    inst(g, 'iCol', c, 3);
+    g.instanceCount = RAYS;
+    this.rayMat = additive({ uT: { value: 0 }, uResY: res, uBright: { value: 1.3 }, uOrigin: { value: this.origin }, uScale: { value: 1 }, uDir: { value: new THREE.Vector2() } }, RAY_VERT, STRIP_FRAG);
+    const rays = new THREE.Mesh(g, this.rayMat);
+    rays.frustumCulled = false;
+    rays.renderOrder = 9;
+    this.coreMat = additive({ uA: { value: 0 } }, CORE_VERT, CORE_FRAG);
+    this.core = new THREE.Mesh(new THREE.PlaneGeometry(7, 13), this.coreMat);
+    this.core.position.y = 4;
+    this.core.renderOrder = 10;
+    this.shockMat = additive({ uX: { value: 0 } }, CORE_VERT, SHOCK_FRAG);
+    this.shock = new THREE.Mesh(new THREE.PlaneGeometry(size * 2.6, size * 2.6), this.shockMat);
+    this.shock.rotation.x = -Math.PI / 2;
+    this.shock.position.y = 0.08;
+    this.shock.renderOrder = 8;
+    this.group.add(this.shock, rays, this.core);
+    this.group.visible = false;
+  }
+
+  // at：喷泉从哪里冒出来（桌面上那张和了牌）；scale：整团放大缩小；lean：往哪边张开（水平，x/z）
+  play(at: THREE.Vector3, scale: number, lean: THREE.Vector2): void {
+    this.t = 0;
+    this.origin.copy(at);
+    this.scale = scale;
+    this.rayMat.uniforms.uScale.value = scale;
+    this.rayMat.uniforms.uDir.value.copy(lean);
+    this.shock.position.set(at.x, 0.08, at.z);
+    this.shock.scale.setScalar(scale);
+    this.group.visible = true;
+  }
+
+  update(dt: number, camera: THREE.Camera): void {
+    if (this.t < 0) return;
+    this.t += dt;
+    const t = this.t;
+    this.rayMat.uniforms.uT.value = t;
+    // 白光：一下子亮起来，慢慢收掉
+    this.coreMat.uniforms.uA.value = Math.min(1, t * 10) * Math.pow(Math.max(0, 1 - t / 1.6), 1.5) * 1.4;
+    // 竖着的光团只绕竖轴转向镜头
+    const cam = new THREE.Vector3();
+    camera.getWorldPosition(cam);
+    const s = this.scale;
+    this.core.position.set(this.origin.x, this.origin.y + 4 * s, this.origin.z);
+    this.core.rotation.set(0, Math.atan2(cam.x - this.origin.x, cam.z - this.origin.z), 0);
+    this.core.scale.set(s * (1 + t * 0.6), s * (1 + t * 0.3), 1);
+    this.shockMat.uniforms.uX.value = Math.min(1, t / 1.4);
+    if (t > 2.6) {
+      this.t = -1;
+      this.group.visible = false;
+    }
+  }
 }
 
 export class Gale {
   readonly group = new THREE.Group();
-  private streaks: Streak[] = [];
-  private geo = new THREE.BufferGeometry();
-  private pos: Float32Array;
-  private col: Float32Array;
-  private mat: THREE.MeshBasicMaterial;
-  private glow: THREE.Mesh;
+  private mat: THREE.ShaderMaterial;
+  private starMat: THREE.ShaderMaterial;
+  private burstFx: GaleBurst;
+  private res = { value: 800 };
   private level = 0;
   private shown = 0;
-  private fade = 1; // release 以后往 0 掉
+  private release = 0; // 和牌以后 0→1
+  private releasing = false;
   private t = 0;
+  private clock = 0; // 风的时间：越接近听牌走得越快
 
   // outer：从多远卷进来；inner：卷到多近散掉
-  constructor(
-    private outer = 22,
-    private inner = 3,
-  ) {
-    const n = STREAKS * (SEG + 1) * 2;
-    this.pos = new Float32Array(n * 3);
-    this.col = new Float32Array(n * 3);
-    const uv = new Float32Array(n * 2);
-    const index: number[] = [];
+  constructor(outer = 26, inner = 4) {
+    const g = stripBase(SEG);
+    const a: number[] = [];
+    const b: number[] = [];
+    const c: number[] = [];
+    const cl: number[] = [];
+    const col = new THREE.Color();
     for (let s = 0; s < STREAKS; s++) {
-      for (let i = 0; i <= SEG; i++) {
-        const v = (s * (SEG + 1) + i) * 2;
-        uv.set([0, i / SEG, 1, i / SEG], v * 2);
-        if (i > 0) index.push(v - 2, v - 1, v, v - 1, v + 1, v);
-      }
+      const rank = (s * 0.61803) % 1;
+      // 大多贴着牌桌转，一些飘得高，一些在桌面以下（从桌边外面看得见）
+      const k = Math.random();
+      const y = k < 0.6 ? 0.4 + Math.random() * 2.2 : k < 0.85 ? 2.6 + Math.random() * 6 : -1 - Math.random() * 6;
+      a.push(Math.random(), rank, Math.random() * Math.PI * 2, 0.5 + Math.random() * 0.7);
+      b.push(Math.random(), y, 0.3 + Math.random() * 0.9, 0.14 + Math.pow(Math.random(), 1.5) * 0.5);
+      c.push(1.0 + Math.random() * 2.2, 0.1 + Math.random() * 0.6, 0, 0);
+      col.set(PALETTE[Math.floor(Math.random() * PALETTE.length)]);
+      cl.push(col.r, col.g, col.b);
     }
-    this.geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
-    this.geo.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
-    this.geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    this.geo.setIndex(index);
-    this.mat = new THREE.MeshBasicMaterial({
-      map: stripTexture(),
-      vertexColors: true,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      toneMapped: false,
-    });
-    const mesh = new THREE.Mesh(this.geo, this.mat);
+    inst(g, 'iA', a, 4);
+    inst(g, 'iB', b, 4);
+    inst(g, 'iC', c, 4);
+    inst(g, 'iCol', cl, 3);
+    g.instanceCount = STREAKS;
+    this.mat = additive(
+      {
+        uTime: { value: 0 },
+        uLevel: { value: 0 },
+        uOuter: { value: outer },
+        uInner: { value: inner },
+        uRelease: { value: 0 },
+        uFade: { value: 1 },
+        uResY: this.res,
+        uBright: { value: 1 },
+      },
+      STREAK_VERT,
+      STRIP_FRAG,
+    );
+    const mesh = new THREE.Mesh(g, this.mat);
     mesh.frustumCulled = false;
     mesh.renderOrder = 6;
-    this.glow = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({ map: glowTexture(), color: '#a83cff', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
-    );
-    this.glow.rotation.x = -Math.PI / 2;
-    this.glow.position.y = 0.05;
-    this.glow.renderOrder = 1;
-    this.group.add(this.glow, mesh);
-    this.group.visible = false;
-    for (let s = 0; s < STREAKS; s++) {
-      const st: Streak = {
-        rank: (s * 0.61803) % 1,
-        theta: 0,
-        r: 0,
-        y: 0,
-        span: 0,
-        width: 0,
-        omega: 0,
-        inward: 0,
-        tilt: 0,
-        wobble: 0,
-        color: new THREE.Color(),
-        on: 0,
-      };
-      this.respawn(st, true);
-      this.streaks.push(st);
+
+    // 星点：散在牌桌四周的空中（地板以上、桌子挡住的看不见）
+    const sp: number[] = [];
+    const ss: number[] = [];
+    for (let i = 0; i < STARS; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = outer * 0.6 + Math.random() * outer * 1.4;
+      sp.push(Math.sin(a) * r, -6 + Math.random() * 16, -Math.cos(a) * r);
+      ss.push(Math.random());
     }
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+    sg.setAttribute('aSeed', new THREE.Float32BufferAttribute(ss, 1));
+    this.starMat = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 }, uA: { value: 0 } }, vertexShader: STAR_VERT, fragmentShader: STAR_FRAG, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const stars = new THREE.Points(sg, this.starMat);
+    stars.frustumCulled = false;
+
+    this.burstFx = new GaleBurst(this.res, outer);
+    this.group.add(stars, mesh);
+    this.group.visible = false;
   }
 
-  // 从外圈重新生出来（first：开头那一次撒在整个螺旋上，不是全挤在外圈）
-  private respawn(s: Streak, first = false): void {
-    s.theta = Math.random() * Math.PI * 2;
-    s.r = first ? this.inner + Math.random() * (this.outer - this.inner) : this.outer * (0.85 + Math.random() * 0.2);
-    // 大多贴着牌桌转，少数飘得高一点
-    s.y = 0.3 + Math.pow(Math.random(), 2) * 2.6;
-    s.span = 0.5 + Math.random() * 0.9;
-    s.width = 0.04 + Math.random() * 0.08;
-    s.omega = 0.9 + Math.random() * 1.1;
-    s.inward = 1.2 + Math.random() * 2.2;
-    s.tilt = 0.25 + Math.random() * 0.6;
-    s.wobble = Math.random() * Math.PI * 2;
-    s.color.set(PALETTE[Math.floor(Math.random() * PALETTE.length)]);
-    s.on = 0;
+  // 和牌的喷泉另外放（风散掉以后还在放）
+  get burstGroup(): THREE.Group {
+    return this.burstFx.group;
+  }
+
+  // 四周压暗多少（0–1），牌桌拿去调房间的颜色
+  get dark(): number {
+    return this.shown * (1 - this.release) * 0.85;
+  }
+
+  // 盖在画面上的星空暗角：和牌一炸很快撤掉（不然压在画面边上的白光会发灰）
+  get veil(): number {
+    return this.shown * Math.max(0, 1 - this.release * 12) * 0.85;
   }
 
   setLevel(level: number): void {
     const v = Math.max(0, Math.min(1, level));
     // 新的一局又聚起来：撤掉散掉的状态
-    if (v > 0 && this.level === 0) this.fade = 1;
+    if (v > 0 && this.level === 0) {
+      this.releasing = false;
+      this.release = 0;
+    }
     this.level = v;
   }
 
-  // 和牌那一下：风一下子散掉
-  release(): void {
-    this.fade = Math.min(this.fade, 0.999);
+  // 和牌那一下：风被甩散，从那张和了牌（at，桌面上）炸开喷泉，往 lean 那边张开（一般朝着桌子中间）
+  burst(at: THREE.Vector3 = new THREE.Vector3(), scale = 1, lean = new THREE.Vector2()): void {
+    if (this.shown > 0.01 && !this.releasing) {
+      this.releasing = true;
+      this.release = 0.001;
+    }
+    this.burstFx.play(at, scale, lean);
   }
 
-  update(dt: number): void {
+  update(dt: number, camera: THREE.Camera, renderer: THREE.WebGLRenderer): void {
     this.t += dt;
+    this.res.value = renderer.domElement.height || 800;
+    this.burstFx.update(dt, camera);
     this.shown += (this.level - this.shown) * (1 - Math.exp(-dt * 1.2));
     if (this.level === 0 && this.shown < 0.01) this.shown = 0;
-    if (this.fade < 1) this.fade = Math.max(0, this.fade - dt * 1.6);
-    const amount = this.shown * this.fade;
-    this.group.visible = amount > 0.005;
+    if (this.releasing) this.release = Math.min(1, this.release + dt / 1.6);
+    const amount = this.shown * (1 - this.release);
+    this.group.visible = amount > 0.005 || (this.releasing && this.release < 1);
     if (!this.group.visible) return;
-    // 越接近听牌转得越急
-    const speed = 0.7 + 0.6 * this.shown;
-    const up = new THREE.Vector3(0, 1, 0);
-    const radial = new THREE.Vector3();
-    const p = new THREE.Vector3();
-    const side = new THREE.Vector3();
-    for (let i = 0; i < STREAKS; i++) {
-      const s = this.streaks[i];
-      s.theta += s.omega * speed * dt;
-      // 越往里卷越快
-      s.r -= s.inward * speed * dt * (0.6 + (this.outer / Math.max(s.r, 1)) * 0.2);
-      if (s.r < this.inner) this.respawn(s);
-      const want = s.rank < this.shown ? 1 : 0;
-      s.on += (want - s.on) * (1 - Math.exp(-dt * 2.5));
-      // 外圈渐显、卷到中间渐隐
-      const life = Math.min(1, (this.outer * 1.05 - s.r) / 3) * Math.min(1, (s.r - this.inner) / 2.5);
-      const alpha = Math.max(0, life) * s.on * this.fade;
-      const yy = s.y + Math.sin(this.t * 1.3 + s.wobble) * 0.35;
-      for (let k = 0; k <= SEG; k++) {
-        const u = k / SEG; // 0 是头，1 是尾
-        const a = s.theta - u * s.span;
-        // 尾巴在外面一点：螺旋
-        const r = s.r + u * s.span * 2.2;
-        radial.set(Math.cos(a), 0, Math.sin(a));
-        p.set(radial.x * r, yy + Math.sin(u * 3 + s.wobble) * 0.25, radial.z * r);
-        side.copy(up).multiplyScalar(s.tilt).addScaledVector(radial, 1 - s.tilt).normalize();
-        const w = s.width * (1 - u * 0.6) * (0.6 + 0.4 * Math.min(1, r / 8));
-        const v = (i * (SEG + 1) + k) * 2;
-        this.pos[v * 3] = p.x - side.x * w;
-        this.pos[v * 3 + 1] = p.y - side.y * w;
-        this.pos[v * 3 + 2] = p.z - side.z * w;
-        this.pos[v * 3 + 3] = p.x + side.x * w;
-        this.pos[v * 3 + 4] = p.y + side.y * w;
-        this.pos[v * 3 + 5] = p.z + side.z * w;
-        // 头亮尾淡（加法混合：颜色越暗越透明）
-        const b = alpha * Math.pow(1 - u, 1.4) * (u < 0.08 ? 1.6 : 1.1);
-        for (const o of [0, 3]) {
-          this.col[v * 3 + o] = s.color.r * b;
-          this.col[v * 3 + o + 1] = s.color.g * b;
-          this.col[v * 3 + o + 2] = s.color.b * b;
-        }
-      }
-    }
-    this.geo.attributes.position.needsUpdate = true;
-    this.geo.attributes.color.needsUpdate = true;
-    // 桌面中间的紫光：聚得越多越亮，轻轻一明一暗
-    const gm = this.glow.material as THREE.MeshBasicMaterial;
-    gm.opacity = amount * (0.1 + 0.03 * Math.sin(this.t * 2.4));
-    this.glow.scale.setScalar(this.inner * 3 + amount * 10);
+    const u = this.mat.uniforms;
+    this.clock += dt * (0.7 + 0.6 * this.shown);
+    u.uTime.value = this.clock;
+    u.uLevel.value = this.shown;
+    u.uRelease.value = this.release;
+    u.uFade.value = Math.min(1, this.shown * 3) * (1 - this.release);
+    this.starMat.uniforms.uTime.value = this.t;
+    this.starMat.uniforms.uA.value = this.dark;
   }
 }

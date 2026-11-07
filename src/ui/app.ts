@@ -11,7 +11,7 @@ import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
-import { Kimon2D } from './kimon2d';
+import { Gale2D } from './gale2d';
 import { aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
 import { playRebuild, playShatter } from './sketchFx';
 import { playNetWipe } from './netFx';
@@ -67,7 +67,6 @@ const NET_CATCHUP = 400;
 const NET_BAR = 26;
 const NET_WIND = '東南西北';
 // 2D 牌桌上里鬼门的风最多几道弧线
-const GALE_ARCS = 12;
 // 3D、2.5D 牌桌：上一张牌落桌、这家摸完牌以后再想这么久才出（毫秒）。
 // 算上出牌动作，电脑一回合（落桌到落桌）约 1.1 秒，和雀魂差不多。3D 的角色伸手要 0.3 秒，所以想得短一点
 const AI_TURN_DELAY_3D = 360;
@@ -170,7 +169,9 @@ export class App {
   // netFrom 是换过去之前的视角（2.5D、3D 时临时把 mode 改成 2d，变回来或离开牌桌时还原）
   private netView = false;
   private netFrom: '25d' | '3d' | '2d' | null = null;
-  private kimon2d: Kimon2D | null = null; // 2D 牌桌上初美的鬼门法阵
+  private gale2dFx: Gale2D | null = null; // 2D 牌桌上初美的紫色旋风
+  // 2D：初美聚着风和牌，结算里手牌先倒、和了牌往下砸（哪一家、什么时候开始；结算重画时动画接着放）
+  private galeSlam: { seat: number; t0: number } | null = null;
   private netTimer: number | null = null;
   // 怜“看下一巡”（演算）：玩家操作怜时的体力。
   // 演算中 vision 不是 null：this.game 换成牌局的复制品放到牌桌上演，真的牌局和演算前的表情先存在 vision 里，退出时换回来。
@@ -968,7 +969,11 @@ export class App {
       this.riiFinish(e.result);
       // 2D：初美聚着风和牌，紫光往上冲（3D、2.5D 在牌桌上放）
       const gale = this.galeView();
-      if (!this.table3d && gale && e.result.wins.some((w) => w.seat === gale.seat)) requestAnimationFrame(() => this.galeBurst2d());
+      const slam = !this.table3d && gale ? e.result.wins.find((w) => w.seat === gale.seat) : undefined;
+      if (slam) {
+        this.galeSlam = { seat: slam.seat, t0: performance.now() };
+        window.setTimeout(() => this.galeBurst2d(), slamImpact2d(slam.hand.filter((t) => t !== slam.tile).length) * 1000);
+      }
       for (const w of e.result.wins) {
         // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
         const c = this.chars[w.seat];
@@ -1999,7 +2004,7 @@ export class App {
       if (box.querySelector(`[data-id="${t.id}"]`)) continue;
       box.insertAdjacentHTML(
         'beforeend',
-        `<div data-id="${t.id}" class="toast ${POS[t.seat]} ${t.big ? 'big' : ''} ${t.kind ? `fx fx-${t.kind}` : ''}" style="--c:${this.chars[t.seat].color}"><span>${t.text}</span></div>`,
+        `<div data-id="${t.id}" class="toast ${POS[t.seat]} ${t.big ? 'big' : ''} ${t.kind ? `fx fx-${t.kind}` : ''}" style="--c:${this.chars[t.seat].color}">${t.kind ? fxSparksHtml(t.kind) : ''}<span>${t.text}</span></div>`,
       );
     }
   }
@@ -2089,8 +2094,7 @@ export class App {
     return out;
   }
 
-  // 2D 牌桌：桌心画鬼门法阵（和 3D 同一个图案），外面几道细细的紫色风弧往里卷；都在一层盖在牌桌上的 div 里
-  // （不跟着牌桌重画，动画不会断）。和牌时法阵爆亮、推开一圈冲击波，一阵紫光往上冲
+  // 2D 牌桌：初美的紫色旋风画在一层盖在牌桌上的 canvas 里（不跟着牌桌重画，动画不会断）
   private gale2d(level: number): void {
     const host = document.querySelector('.stage .table');
     if (!host) return;
@@ -2098,37 +2102,22 @@ export class App {
     if (!el) {
       el = document.createElement('div');
       el.className = 'gale';
-      const colors = ['#c23cff', '#e04cff', '#9b3cff', '#ff5ae6', '#b45cff', '#f0a8ff'];
-      const arcs = Array.from({ length: GALE_ARCS }, (_, k) => {
-        const s = 560 + Math.random() * 420;
-        const d = 3.4 + Math.random() * 3;
-        return `<i style="--k:${k}"><b style="--s:${s.toFixed(0)}px;--e:${(0.75 + Math.random() * 0.25).toFixed(2)};--d:${d.toFixed(2)}s;--w:${(1 + Math.random() * 0.8).toFixed(1)}px;--c:${colors[k % colors.length]};animation-delay:${(-Math.random() * d).toFixed(2)}s"></b></i>`;
-      }).join('');
-      const rays = Array.from({ length: 72 }, () => {
-        const a = (Math.random() - 0.5) * 70;
-        return `<u style="--a:${a.toFixed(1)}deg;--len:${(120 + Math.random() * 260).toFixed(0)}px;--x:${((Math.random() - 0.5) * 50).toFixed(0)}px;--c:${colors[Math.floor(Math.random() * colors.length)]};animation-delay:${(Math.random() * 0.35).toFixed(2)}s"></u>`;
-      }).join('');
-      el.innerHTML = `${arcs}<span class="gale-shock"></span><span class="gale-burst">${rays}</span>`;
-      this.kimon2d = new Kimon2D();
-      el.prepend(this.kimon2d.el);
+      this.gale2dFx = new Gale2D();
+      el.append(this.gale2dFx.el);
       host.prepend(el);
     }
-    el.style.setProperty('--lv', level.toFixed(3));
-    el.style.setProperty('--n', String(GALE_ARCS));
-    const view = this.galeView();
-    // 艮卦（鬼门）朝着初美和她下家（东家）中间那个角
-    if (view) this.kimon2d?.setGen(180 - 90 * ((view.seat - this.me + 4) % 4) - 45);
-    this.kimon2d?.setLevel(level);
+    this.gale2dFx?.setLevel(level);
   }
 
-  // 2D：和牌那一下紫光往上冲（盖在结算上面，冲完自己收起来）
+  // 2D：和了牌砸到结算上那一下，从这张牌炸开，紫色的风往上喷（这时盖在结算上面，放完自己收起来）
   private galeBurst2d(): void {
     const el = document.querySelector<HTMLElement>('.stage .table > .gale');
     if (!el) return;
-    el.classList.remove('burst');
-    void el.offsetWidth;
+    const tile = document.querySelector<HTMLElement>('.win.slam .win-tile');
+    const box = el.getBoundingClientRect();
+    const r = tile?.getBoundingClientRect();
     el.classList.add('burst');
-    this.kimon2d?.burst();
+    this.gale2dFx?.burst(r ? { x: r.left + r.width / 2 - box.left, y: r.top + r.height / 2 - box.top } : undefined);
     window.setTimeout(() => el.classList.remove('burst'), 2600);
   }
 
@@ -2584,10 +2573,13 @@ export class App {
   private winHtml(w: WinInfo): string {
     const r = w.result;
     const how = w.from === null ? '自摸' : `荣和（${this.chars[w.from].name} 放铳）`;
+    // 2D 初美砸牌：结算重画时用负的 animation-delay 接着放，不从头再来
+    const since = this.galeSlam?.seat === w.seat && !this.table3d ? (performance.now() - this.galeSlam.t0) / 1000 : Infinity;
+    const slam = since < 4;
     const hand = w.hand
       .filter((t) => t !== w.tile)
       .sort((a, b) => a - b)
-      .map((t) => tileHtml(t, { size: 'pond' }))
+      .map((t, i) => tileHtml(t, { size: 'pond', style: slam ? `--i:${i}` : undefined }))
       .join('');
     const yaku = r.yaku.map((y) => `<div class="yaku"><span>${y.name}</span><span>${r.yakuman ? '役满' : `${y.han} 番`}</span></div>`);
     if (r.dora) yaku.push(`<div class="yaku"><span>宝牌</span><span>${r.dora} 番</span></div>`);
@@ -2604,7 +2596,7 @@ export class App {
         ? `<div class="win-art">${url ? `<img src="${url}" alt="" onerror="this.remove()" />` : `<span class="win-glyph">${this.chars[w.seat].name.slice(-1)}</span>`}</div>`
         : '';
     return `
-      <div class="win" style="--c:${this.chars[w.seat].color}">
+      <div class="win${slam ? ' slam' : ''}" style="--c:${this.chars[w.seat].color}${slam ? `;--t:${(-since).toFixed(3)}s;--slam:${slamStart2d(w.hand.filter((t) => t !== w.tile).length).toFixed(3)}s` : ''}">
         ${art}<div class="win-body">
         <h2>${this.chars[w.seat].name} ${how}</h2>
         <div class="win-hand">${hand}<span class="gap"></span>${tileHtml(w.tile, { size: 'pond', classes: ['win-tile'] })}<span class="gap"></span>${this.meldsHtml(w.melds, w.seat)}</div>
@@ -2699,7 +2691,8 @@ function meldTilesHtml(m: Meld, seat: number, size: 'pond' | 'mini', glow?: Set<
   return meldLayout(m, seat)
     .map((sl) => {
       if (sl.hidden) return backHtml(size);
-      const tile = tileHtml(sl.tile, { size, sideways: sl.sideways, classes: glow?.has(sl.tile) ? ['kimon-glow'] : [] });
+      const lit = glow?.has(sl.tile);
+      const tile = tileHtml(sl.tile, { size, sideways: sl.sideways, classes: lit ? ['kimon-glow'] : [], after: lit ? kimonBeamHtml() : undefined });
       if (sl.stacked === undefined) return tile;
       return `<div class="meld-stack">${tileHtml(sl.stacked, { size, sideways: true })}${tile}</div>`;
     })
@@ -2737,4 +2730,38 @@ function brushSvg(broken: boolean): string {
     ? '<g transform="rotate(-8 20 34)"><rect x="17.5" y="30" width="5" height="17" rx="2" fill="#7a7a80"/></g><g transform="rotate(14 20 20)"><rect x="17.5" y="11" width="5" height="16" rx="1.5" fill="#8a8a90"/><rect x="16.8" y="8" width="6.4" height="4" fill="#a0a0a6"/><path d="M17 8 Q20 -1 23 8 Z" fill="#9a9aa0"/></g>'
     : '<rect x="17.5" y="20" width="5" height="27" rx="2" fill="#c98a4a" stroke="#7a4e22" stroke-width="0.8"/><rect x="16.8" y="14" width="6.4" height="7" rx="1" fill="#d8dbe2" stroke="#7d828c" stroke-width="0.7"/><path d="M17 14 Q20 1 23 14 Z" fill="#2b2b33"/><path d="M18.6 13 Q20 5 21.4 13 Z" fill="var(--paint, #d8463c)"/>';
   return `<svg viewBox="0 0 40 50" width="100%" height="100%" aria-hidden="true">${body}</svg>`;
+}
+
+// 立直、鸣牌、和牌的大字后面迸出去的火星：方向、飞多远、拖多长、几时迸都随机一点（style.css 的 .fx-sparks）
+function fxSparksHtml(kind: string): string {
+  const win = kind === 'win';
+  const n = win ? 24 : kind === 'call' ? 10 : 14;
+  const reach = win ? 260 : 150;
+  let html = '';
+  for (let i = 0; i < n; i++) {
+    const a = (360 * (i + Math.random() * 0.8)) / n;
+    const d = Math.round(reach * (0.55 + 0.45 * Math.random()));
+    const l = Math.round((win ? 46 : 30) * (0.6 + 0.6 * Math.random()));
+    const t = (0.45 + 0.35 * Math.random() + (win ? 0.2 : 0)).toFixed(2);
+    const w = (Math.random() * 0.06).toFixed(2);
+    html += `<i style="--a:${a.toFixed(0)}deg;--d:${d}px;--l:${l}px;--t:${t}s;--w:${w}s"></i>`;
+  }
+  return `<b class="fx-sparks" aria-hidden="true">${html}</b>`;
+}
+
+// 2D 初美砸牌的节奏（秒，从结算出来算起）：手牌一张隔 0.035 秒倒下（每张 0.22 秒），倒完和了牌举起来、停一下、砸下去（共 0.55 秒）。
+// 和 style.css 里 .win.slam 的动画对得上
+function slamStart2d(handTiles: number): number {
+  return Math.max(0, handTiles - 1) * 0.035 + 0.22 + 0.05;
+}
+function slamImpact2d(handTiles: number): number {
+  return slamStart2d(handTiles) + 0.55;
+}
+
+// 2D：初美鸣出来的东、北中间那张上的紫色光柱（照原作：和牌一样宽，底下亮往上淡）。
+// 明暗的动画按现在的时间接着放，牌桌重画时不会从头跳
+const KIMON_PULSE = 2.4;
+function kimonBeamHtml(): string {
+  const delay = -((performance.now() / 1000) % KIMON_PULSE);
+  return `<span class="kimon-beam" aria-hidden="true" style="animation-delay:${delay.toFixed(2)}s"></span>`;
 }

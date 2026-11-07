@@ -1589,6 +1589,73 @@ button {
   outline: 2px solid var(--gold);
 }
 
+/* 2D：初美聚着风和牌，结算里手牌一张张倒下，倒完和了牌举起来、停一下、狠狠砸下去；
+   砸到那一下整块晃一下，紫光从这张牌炸开（gale2d.ts）。--t 是已经放了多久（重画时接着放），--slam 是开始举牌的时间，
+   和 app.ts 的 slamStart2d / slamImpact2d 对得上 */
+.win.slam .win-hand > .tile {
+  transform-origin: 50% 100%;
+  animation: slam-topple 0.22s cubic-bezier(0.5, 0, 0.9, 0.5) both;
+  animation-delay: calc(var(--t, 0s) + var(--i, 0) * 0.035s);
+}
+.win.slam .win-hand > .win-tile {
+  position: relative;
+  z-index: 2;
+  transform-origin: 50% 50%;
+  animation: slam-drop 0.55s linear both;
+  animation-delay: calc(var(--t, 0s) + var(--slam, 0.7s));
+}
+.win.slam {
+  animation: slam-shake 0.4s linear both;
+  animation-delay: calc(var(--t, 0s) + var(--slam, 0.7s) + 0.55s);
+}
+@keyframes slam-topple {
+  from {
+    transform: perspective(240px) rotateX(78deg);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes slam-drop {
+  0% {
+    transform: translateY(6px) scale(1);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+  12% {
+    opacity: 1;
+  }
+  55% {
+    transform: translate(-6px, -54px) scale(2.2) rotate(-8deg);
+    animation-timing-function: ease-in-out;
+  }
+  84% {
+    transform: translate(-10px, -60px) scale(2.3) rotate(-13deg);
+    animation-timing-function: cubic-bezier(0.7, 0, 1, 0.6);
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes slam-shake {
+  0%, 100% { transform: none; }
+  15% { transform: translate(-4px, 3px); }
+  35% { transform: translate(4px, -2px); }
+  55% { transform: translate(-2px, 1px); }
+  75% { transform: translate(1px, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .win.slam,
+  .win.slam .win-hand > .tile {
+    animation: none;
+  }
+}
+
 .ura {
   display: flex;
   gap: 4px;
@@ -2781,7 +2848,8 @@ button {
   animation: fx-slam 0.42s cubic-bezier(0.2, 1.6, 0.4, 1) both, fx-out 0.4s ease-in 1s forwards;
 }
 
-/* 字后面一圈扩散的光环 */
+/* 字后面推出去的一圈冲击波（照 ultra-elements 的 Shockwaves）：外沿锐利、透出一道白芯，里面拖一片柔和的尾迹；
+   一开始冲得快、越往外越慢（爆炸波 r ~ t^0.4），越扩越暗 */
 .toast.fx span::before {
   content: '';
   position: absolute;
@@ -2791,10 +2859,63 @@ button {
   height: 160px;
   margin: -80px 0 0 -80px;
   border-radius: 50%;
-  border: 4px solid var(--fx);
-  box-shadow: 0 0 30px var(--fx), inset 0 0 30px var(--fx);
-  animation: fx-ring 0.7s ease-out both;
+  background: radial-gradient(
+    circle closest-side,
+    transparent 58%,
+    color-mix(in srgb, var(--fx) 12%, transparent) 72%,
+    color-mix(in srgb, var(--fx) 45%, transparent) 84%,
+    var(--fx) 91%,
+    #fff 94%,
+    color-mix(in srgb, var(--fx) 50%, transparent) 96.5%,
+    transparent 100%
+  );
+  filter: drop-shadow(0 0 10px var(--fx));
+  animation: fx-ring 0.75s cubic-bezier(0.1, 0.8, 0.25, 1) both;
   z-index: -1;
+}
+
+/* 字后面一下子亮起来的一团光：一下亮到顶，前面暗得快、后面拖一点余光 */
+.toast.fx span::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 220px;
+  height: 220px;
+  margin: -110px 0 0 -110px;
+  border-radius: 50%;
+  background: radial-gradient(circle closest-side, #fff 0, color-mix(in srgb, var(--fx) 70%, #fff) 18%, color-mix(in srgb, var(--fx) 30%, transparent) 45%, transparent 100%);
+  mix-blend-mode: screen;
+  animation: fx-burst 0.55s ease-out both;
+  pointer-events: none;
+  z-index: -2;
+}
+
+/* 字后面迸出去的火星：每颗是一道拉长的流光，头白热、尾巴是本色，越飞越慢、越短、越淡（app.ts 的 fxSparksHtml） */
+.toast.fx .fx-sparks {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.toast.fx .fx-sparks i {
+  position: absolute;
+  left: 0;
+  top: -1.5px;
+  width: var(--l);
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fx) 80%, transparent) 55%, #fff);
+  transform-origin: 0 50%;
+  filter: drop-shadow(0 0 3px var(--fx));
+  animation: fx-spark var(--t) cubic-bezier(0.12, 0.75, 0.3, 1) var(--w) both;
+}
+.toast.fx-win .fx-sparks i {
+  height: 4px;
+  top: -2px;
 }
 
 .toast.fx-call {
@@ -2844,13 +2965,20 @@ button {
   animation-duration: 1s;
 }
 
+.toast.fx-win span::after {
+  width: 420px;
+  height: 420px;
+  margin: -210px 0 0 -210px;
+  animation-duration: 0.8s;
+}
+
 /* 和牌时整个画面闪一下 */
 .toast.fx-win::after {
   content: '';
   position: fixed;
   inset: 0;
   background: radial-gradient(circle at 50% 40%, rgba(255, 240, 200, 0.75), rgba(255, 200, 80, 0) 60%);
-  animation: fx-flash 0.8s ease-out both;
+  animation: fx-flash 0.9s linear both;
   pointer-events: none;
   z-index: -2;
 }
@@ -2876,30 +3004,82 @@ button {
 }
 
 @keyframes fx-ring {
-  from {
-    opacity: 1;
-    scale: 0.2;
-  }
-  to {
+  0% {
     opacity: 0;
-    scale: 2.2;
+    scale: 0.15;
+  }
+  4% {
+    opacity: 1;
+  }
+  30% {
+    opacity: 0.46;
+  }
+  60% {
+    opacity: 0.13;
+  }
+  100% {
+    opacity: 0;
+    scale: 2.4;
   }
 }
 
+/* 闪光的亮度：一下亮到顶，前一小段很快暗下去，后面拖一点余光 */
 @keyframes fx-flash {
+  0% {
+    opacity: 1;
+  }
+  8% {
+    opacity: 0.72;
+  }
+  25% {
+    opacity: 0.36;
+  }
+  60% {
+    opacity: 0.1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes fx-burst {
+  0% {
+    opacity: 0;
+    scale: 0.4;
+  }
+  6% {
+    opacity: 1;
+    scale: 0.75;
+  }
+  30% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0;
+    scale: 1.15;
+  }
+}
+
+@keyframes fx-spark {
   from {
     opacity: 1;
+    transform: rotate(var(--a)) translateX(24px) scaleX(1.5);
   }
   to {
     opacity: 0;
+    transform: rotate(var(--a)) translateX(var(--d)) scaleX(0.25);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .toast.fx span,
   .toast.fx span::before,
+  .toast.fx span::after,
   .toast.fx-win::after {
     animation-duration: 0.01s;
+  }
+  .toast.fx .fx-sparks {
+    display: none;
   }
 }
 
@@ -6954,23 +7134,52 @@ html:root .tm-draft .tmd-go {
 
 /* ---------- 薄墨初美的里鬼门 ---------- */
 
-/* 鸣出来的东、北中间那张：字发紫光 */
+/* 鸣出来的东、北中间那张：牌面本身就是紫色的字（和 3D 的 KIMON_INK 同色），不另外发光 */
 .tile.kimon-glow .face path {
-  fill: #b267ff;
-  stroke: #c58aff;
-}
-.tile.kimon-glow .face svg {
-  filter: drop-shadow(0 0 1px #c070ff) drop-shadow(0 0 4px #8a3cff);
-  animation: kimon-pulse 2.4s ease-in-out infinite;
-}
-.tile.kimon-glow {
-  box-shadow: 0 0 10px rgba(150, 70, 255, 0.55);
-}
-@keyframes kimon-pulse {
-  50% { filter: drop-shadow(0 0 3px #d090ff) drop-shadow(0 0 9px #9a4cff); }
+  fill: #8a3cf2;
+  stroke: #8a3cf2;
 }
 
-/* 2D 牌桌：紫色的风绕着牌桌打转、往中间卷（--lv 0–1 决定亮出来几道） */
+/* 光柱（照原作）：从牌直直往上，和牌一样宽，底下亮、往上淡，两边柔和（app.ts 的 kimonBeamHtml）。
+   从牌的上沿升起来，不糊在牌面上，紫字看得清。
+   光柱朝牌自己的“上”：横着的那张转了 -90°，它的上是本地的 +x */
+.kimon-beam {
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  bottom: 88%;
+  height: 250%;
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(to top, rgba(165, 105, 255, 0) 0, rgba(165, 105, 255, 0.85) 6%, rgba(145, 85, 255, 0.6) 22%, rgba(125, 65, 240, 0.28) 60%, rgba(110, 50, 230, 0) 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 22%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 22%, #000 78%, transparent 100%);
+  mix-blend-mode: screen;
+  animation: kimon-beam 2.4s ease-in-out infinite;
+}
+.tile.sideways .kimon-beam {
+  left: 88%;
+  right: auto;
+  top: -8%;
+  bottom: -8%;
+  width: 250%;
+  height: auto;
+  background: linear-gradient(to right, rgba(165, 105, 255, 0) 0, rgba(165, 105, 255, 0.85) 6%, rgba(145, 85, 255, 0.6) 22%, rgba(125, 65, 240, 0.28) 60%, rgba(110, 50, 230, 0) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+}
+@keyframes kimon-beam {
+  50% {
+    opacity: 0.75;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kimon-beam {
+    animation: none;
+  }
+}
+
+/* 2D 牌桌：初美的紫色旋风（gale2d.ts 画在 canvas 上），和牌时整层盖到结算上面 */
 .gale {
   position: absolute;
   inset: 0;
@@ -6978,193 +7187,61 @@ html:root .tm-draft .tmd-go {
   overflow: hidden;
   z-index: 0;
 }
-.gale > i {
-  position: absolute;
-  inset: 0;
-  opacity: clamp(0, calc(var(--lv, 0) * var(--n, 40) - var(--k)), 1);
-  transition: opacity 1.4s ease;
-}
-.gale > i > b {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: var(--s);
-  height: calc(var(--s) * var(--e, 1));
-  margin: calc(var(--s) * var(--e, 1) / -2) 0 0 calc(var(--s) / -2);
-  border-radius: 50%;
-  border: var(--w) solid transparent;
-  border-top-color: var(--c);
-  filter: drop-shadow(0 0 4px var(--c)) drop-shadow(0 0 1px #fff);
-  animation: gale-spin var(--d) linear infinite;
-}
-@keyframes gale-spin {
-  0% { transform: rotate(0deg) scale(1.45); opacity: 0; }
-  15% { opacity: 0.95; }
-  80% { opacity: 0.85; }
-  100% { transform: rotate(560deg) scale(0.2); opacity: 0; }
-}
-
-/* 鬼门法阵（2D）：白色灯丝 + 紫色光晕，描的进度由 kimon2d.ts 控制 */
-.kimon2d {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(92%, 680px);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  opacity: 0;
-  transition: opacity 1.2s ease;
-}
-.kimon2d.on {
-  opacity: 1;
-}
-.kimon2d svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  filter: drop-shadow(0 0 0.6px #f3d6ff) drop-shadow(0 0 4px #b04cff) drop-shadow(0 0 12px rgba(140, 50, 255, 0.55));
-}
-.kimon2d .ks * {
-  fill: none;
-  stroke: #f8ecff;
-  stroke-linecap: round;
-}
-.kimon2d .kw {
-  fill: rgba(150, 70, 255, 0.07);
-  stroke: none;
-}
-.kimon2d [data-p='dash'] {
-  stroke-dasharray: 0.026 0.016 !important;
-  transform-origin: 0 0;
-  animation: kimon-dash 24s linear infinite;
-}
-@keyframes kimon-dash {
-  to { transform: rotate(-405deg); }
-}
-.kimon2d .kspin {
-  transform: rotate(var(--gen, 90deg));
-}
-.kimon2d .kt path {
-  stroke-width: 0.015;
-  stroke-linecap: butt;
-}
-.kimon2d .kt {
-  opacity: 0;
-  transition: opacity 0.4s;
-}
-.kimon2d .kt.lit {
-  opacity: 1;
-  animation: kimon-lit 0.9s ease-out;
-}
-.kimon2d .kt.gen.lit path {
-  stroke: #fff;
-  filter: drop-shadow(0 0 0.02px #fff);
-  animation: kimon-gen 1.8s ease-in-out infinite;
-}
-@keyframes kimon-lit {
-  0% { filter: brightness(3) drop-shadow(0 0 0.04px #fff); }
-}
-@keyframes kimon-gen {
-  50% { opacity: 0.55; }
-}
-.kimon2d .kpen {
-  fill: #fff;
-  filter: drop-shadow(0 0 0.03px #fff) drop-shadow(0 0 0.06px #e0a0ff);
-  transition: opacity 0.3s;
-}
-.kimon2d.tenpai svg {
-  animation: kimon-pulse2d 2s ease-in-out infinite;
-}
-@keyframes kimon-pulse2d {
-  50% { filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 7px #c060ff) drop-shadow(0 0 20px rgba(150, 60, 255, 0.7)); }
-}
-/* 和牌：阵爆亮、放大一点，再淡掉 */
-.kimon2d.flare {
-  animation: kimon-flare 1.6s ease-out forwards;
-}
-@keyframes kimon-flare {
-  0% { filter: brightness(1); }
-  12% { filter: brightness(2.6); transform: translate(-50%, -50%) scale(1.03); opacity: 1; }
-  100% { filter: brightness(1); transform: translate(-50%, -50%) scale(1.12); opacity: 0; }
-}
-.kimon2d.gone:not(.flare) {
-  opacity: 0;
-}
-.gale-shock {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 40px;
-  height: 40px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  display: none;
-}
-.gale.burst .gale-shock {
-  display: block;
-  animation: gale-shock 1.3s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
-  border: 2px solid #fff;
-  box-shadow: 0 0 10px 3px #c060ff, inset 0 0 26px 6px rgba(170, 80, 255, 0.55);
-}
-@keyframes gale-shock {
-  0% { width: 40px; height: 40px; opacity: 1; }
-  100% { width: 1500px; height: 1500px; opacity: 0; }
-}
-
-/* 和牌：一阵紫光从牌桌中间往上冲，盖在结算上面 */
-.gale-burst {
-  position: absolute;
-  left: 50%;
-  top: 62%;
-  width: 0;
-  height: 0;
-  display: none;
-}
 .gale.burst {
   z-index: 60;
 }
-.gale.burst > i {
-  opacity: 0;
-  transition: opacity 0.3s;
-}
-.gale.burst .gale-burst {
-  display: block;
-}
-.gale-burst::before {
-  content: '';
+.gale2d,
+.gale2d canvas {
   position: absolute;
-  left: -260px;
-  top: -260px;
-  width: 520px;
-  height: 520px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 风起来时四周暗成星空（中间留出牌桌）；透明度由 JS 跟着风的浓淡调 */
+.gale-void {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse 46% 44% at 50% 50%, rgba(7, 4, 14, 0) 55%, rgba(7, 4, 14, 0.7) 80%, rgba(5, 2, 10, 0.95) 100%);
+}
+.gale-void i {
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
   border-radius: 50%;
-  background: radial-gradient(circle, #fff 0%, rgba(240, 190, 255, 0.85) 18%, rgba(190, 70, 255, 0.45) 45%, transparent 70%);
-  animation: gale-flash 1.4s ease-out forwards;
+  background: #f4e6ff;
+  box-shadow: 0 0 4px #c890ff;
+  animation: gale-star 3s ease-in-out infinite;
 }
-.gale-burst > u {
+@keyframes gale-star {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 1; }
+}
+
+/* 3D 牌桌：初美的和了牌砸到桌上时，画面从那张牌白一下，再褪成紫 */
+.gale-flash3d {
   position: absolute;
-  left: var(--x);
-  bottom: 0;
-  width: 5px;
-  height: var(--len);
-  margin-left: -2.5px;
-  border-radius: 2px;
-  background: linear-gradient(to top, transparent, var(--c) 35%, #fff);
-  box-shadow: 0 0 8px var(--c);
-  transform-origin: 50% 100%;
-  opacity: 0;
-  animation: gale-ray 2s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background: radial-gradient(circle at var(--x, 50%) var(--y, 55%), #fff 0%, #f2c8ff 30%, rgba(170, 60, 255, 0.5) 60%, rgba(90, 20, 160, 0) 100%);
+  animation: gale-flash3d 1.3s ease-out forwards;
 }
-@keyframes gale-ray {
-  0% { transform: rotate(var(--a)) translateY(0) scaleY(0.2); opacity: 0; }
-  10% { opacity: 1; }
-  70% { opacity: 0.9; }
-  100% { transform: rotate(var(--a)) translateY(-900px) scaleY(1.4); opacity: 0; }
+@keyframes gale-flash3d {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  100% { opacity: 0; }
 }
-@keyframes gale-flash {
-  0% { transform: scale(0.2); opacity: 0; }
-  15% { transform: scale(1); opacity: 1; }
-  100% { transform: scale(1.6); opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .gale-void i,
+  .gale-flash3d {
+    animation: none;
+  }
+  .gale-flash3d {
+    opacity: 0;
+  }
 }
 
 /* 透华的治水：2D 牌桌上铺一层平静的水面。冷蓝色、水底光纹慢慢晃，中间每隔几秒荡开一圈很轻的涟漪 */
