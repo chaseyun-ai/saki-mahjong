@@ -37,7 +37,7 @@ import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { paceOf, vary } from './vary';
-import { Table3D } from '../ui3d/table3d';
+import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
 import { backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
@@ -665,6 +665,9 @@ export class App {
       this.cutins = new Cutins(document.getElementById('cutins')!);
       this.cutinSeen.clear();
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d', v2);
+      // 改良布局的手牌画法（试做）：网址后面加 ?hand=A 到 F 换着看
+      const handStyle = HAND_STYLES_V2[new URLSearchParams(location.search).get('hand')?.toUpperCase() ?? ''];
+      if (v2 && handStyle) this.table3d.setView25(handStyle);
       this.table3d.onHover = (id) => this.hoverTile(id);
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
       if (this.mode === '25d') {

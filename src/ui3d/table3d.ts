@@ -54,12 +54,31 @@ export interface View25 {
   hand: number;
   tilt: number;
   fan: number;
+  // 下面几个只有改良布局用：lean 手牌比镜头俯角少仰多少度（0 是牌面和画面平行，大一点露出牌顶）；
+  // face 每张牌转过来正对镜头的程度（0 不转、1 张张正对）；clip 手牌下沿出画面多少（牌高的几分之几）；
+  // out 手牌往外（往镜头这边）挪多少；ortho 自己的手牌用没有透视的镜头单独画一层（雀魂那样，张张一模一样）
+  lean?: number;
+  face?: number;
+  clip?: number;
+  out?: number;
+  ortho?: boolean;
 }
 export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 34, lookZ: 1.5, hand: 1.15, tilt: 15, fan: 0 };
 // 改良布局（试做，参考雀魂）：镜头更俯视、视野窄一点，桌子不那么往后倒；自己的手牌大一点。
-// 手牌往后仰的角度和镜头俯角一样（tilt 不用）：每张牌的牌面都和画面平行，像雀魂那样张张正对着人，
-// 两头的牌不会因为透视往里歪、看起来一排牌像一道弧
-export const DEFAULT_VIEW_25D_V2: View25 = { pitch: 0.84, portraitPitch: 1.2, fov: 28, lookZ: 1.5, hand: 1.4, tilt: 48, fan: 0 };
+// 手牌往后仰的角度跟着镜头俯角（tilt 不用，看 lean）：lean 0 时每张牌面都和画面平行，
+// 再每张转过来正对镜头（face），像雀魂那样张张正对着人，两头的牌不会因为透视往里歪、一排牌像一道弧
+export const DEFAULT_VIEW_25D_V2: View25 = { pitch: 0.84, portraitPitch: 1.2, fov: 28, lookZ: 1.5, hand: 1.4, tilt: 48, fan: 0, lean: 0, face: 1, clip: 0.12, out: 0.9 };
+// 改良布局：自己手牌的几种画法（试做，给玩家挑）：网址后面加 ?hand=B 之类就换成那一种。
+// A 每张转过来正对镜头；B 雀魂那样单独一层、没有透视；C 同 B 牌顶露得多；D 同 B 小一号、整张露出来；
+// E 不转、牌面和画面平行；F 往后仰一点的真 3D
+export const HAND_STYLES_V2: Record<string, Partial<View25>> = {
+  A: { hand: 1.4, lean: 0, face: 1, clip: 0.12, out: 0.9, ortho: false },
+  B: { hand: 1.4, lean: 8, face: 0, clip: 0.12, out: 0.9, ortho: true },
+  C: { hand: 1.4, lean: 20, face: 0, clip: 0.12, out: 0.9, ortho: true },
+  D: { hand: 1.2, lean: 10, face: 0, clip: -0.08, out: 0.6, ortho: true },
+  E: { hand: 1.4, lean: 0, face: 0, clip: 0.12, out: 0.9, ortho: false },
+  F: { hand: 1.3, lean: 14, face: 0, clip: 0.05, out: 0.9, ortho: false },
+};
 // 改良布局：自己的手牌往外（往镜头这边）挪多少，仰得多了牌顶不会碰到自己面前的牌山
 const V2_HAND_OUT = 0.9;
 // 改良布局：自己的手牌下沿可以出画面多少（牌高的几分之几），像雀魂那样手牌贴着画面底边
@@ -286,6 +305,9 @@ export class Table3D {
   readonly renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
+  // 改良布局（ortho）：自己的手牌用这个没有透视的镜头单独画一层，朝向、位置跟着主镜头，
+  // 大小按手牌那一排离镜头的距离定，手牌在画面上的位置和用主镜头画的一样，只是每张牌没有透视
+  private orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
   private atlas = new FaceAtlas();
   private tiles: TileObj[] = [];
   private backMat: THREE.Material | null = null;
@@ -941,7 +963,7 @@ export class Table3D {
 
   // 自己的手牌离桌子中心多远（中线）：放大了往外让一点；改良布局再往外挪
   private myHandZ(hs: number): number {
-    return this.dim.handZ + (hs - 1) * 1.2 + (this.v2 ? V2_HAND_OUT : 0);
+    return this.dim.handZ + (hs - 1) * 1.2 + (this.v2 ? this.view25.out ?? V2_HAND_OUT : 0);
   }
 
   private get consoleH(): number {
@@ -1880,7 +1902,8 @@ export class Table3D {
     const xc = v.dot(right);
     const yc = v.dot(up);
     const zc = v.dot(fwd);
-    return [new THREE.Euler(rot.x, -Math.atan2(xc, zc), 0), v.length() / Math.hypot(yc, zc)];
+    const k = this.view25.face ?? 1;
+    return [new THREE.Euler(rot.x, -Math.atan2(xc, zc) * k, 0), 1 + (v.length() / Math.hypot(yc, zc) - 1) * k];
   }
 
   private toWorld(seat: number, me: number, x: number, y: number, z: number, rot: THREE.Euler, extraY = 0, scale = 1): Placement {
@@ -1995,7 +2018,7 @@ export class Table3D {
       const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
       const yaw = (fan ? (-fan * (x + shift)) / (width / 2) : 0) + (facing ? Math.PI : 0);
       // 改良布局：自己的手牌每张转过来正对镜头
-      const [r, k] = mine && this.v2 && !tilting ? this.faceOn(s, me, x, y, hz, rot) : [rot, 1];
+      const [r, k] = mine && this.v2 && !tilting && !this.view25.ortho ? this.faceOn(s, me, x, y, hz, rot) : [rot, 1];
       if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, r, yaw, hs * k) };
       if (t !== null && p.hand.includes(t)) {
         if (cover) {
@@ -2408,8 +2431,8 @@ export class Table3D {
       // 自己的手牌，下沿（改良布局让下沿出画面一点：取牌身上靠下的一条线）
       ...[-myHalf, myHalf].map((x) => {
         if (!this.v2) return new THREE.Vector3(x, 0, myZ + TILE_T);
-        const t = pitch;
-        const up = TILE_H * v.hand * V2_HAND_CLIP;
+        const t = pitch - THREE.MathUtils.degToRad(v.lean ?? 0);
+        const up = TILE_H * v.hand * (v.clip ?? V2_HAND_CLIP);
         return new THREE.Vector3(x, up * Math.cos(t), myZ + TILE_T / 2 - up * Math.sin(t));
       }),
       // 自己的副露（摆在手牌右边，横着的牌伸得最远）
@@ -2459,7 +2482,7 @@ export class Table3D {
       this.scene.fog.near = dist + 8;
       this.scene.fog.far = dist + 48;
     }
-    this.handTilt = this.v2 ? -pitch : -THREE.MathUtils.degToRad(v.tilt);
+    this.handTilt = this.v2 ? -(pitch - THREE.MathUtils.degToRad(v.lean ?? 0)) : -THREE.MathUtils.degToRad(v.tilt);
     if (this.debugCamera) return;
     cam.position.copy(this.rest.pos);
     cam.lookAt(this.rest.look);
@@ -2630,6 +2653,15 @@ export class Table3D {
   }
 
   private pick(): TileId | null {
+    const flatHand = new Set(this.orthoHand());
+    if (flatHand.size) {
+      this.syncOrtho();
+      this.raycaster.setFromCamera(this.pointer, this.orthoCam);
+      const own = [...this.clickable].filter((id) => flatHand.has(id)).map((id) => this.tiles[id].group);
+      let o: THREE.Object3D | null = this.raycaster.intersectObjects(own, true)[0]?.object ?? null;
+      while (o && o.userData.tileId === undefined) o = o.parent;
+      if (o) return o.userData.tileId as TileId;
+    }
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const cands = [...this.clickable].map((id) => this.tiles[id].group);
     const hit = this.raycaster.intersectObjects(cands, true)[0];
@@ -2904,14 +2936,81 @@ export class Table3D {
     this.frame = requestAnimationFrame(this.loop);
     this.tick(Math.min(this.clock.getDelta(), 0.05) * this.timeScale);
     this.beforeRender?.();
-    this.renderer.render(this.scene, this.camera);
+    this.draw();
   };
 
   // 调试用：按固定步长快进动画再画一帧，截图测试不受渲染速度影响
   debugAdvance(seconds: number): void {
     for (let t = 0; t < seconds; t += 1 / 30) this.tick(1 / 30);
     this.beforeRender?.();
+    this.draw();
+  }
+
+  // 画一帧。改良布局（ortho）时自己的手牌另外用没有透视的镜头画在最上面一层
+  private draw(): void {
+    const ids = this.orthoHand();
+    if (!ids.length) {
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    const groups = ids.map((id) => this.tiles[id].group);
+    for (const g of groups) g.traverse((o) => o.layers.set(1));
+    this.scene.traverse((o) => {
+      if ((o as THREE.Light).isLight) o.layers.enable(1);
+    });
     this.renderer.render(this.scene, this.camera);
+    this.syncOrtho();
+    const r = this.renderer;
+    const auto = r.autoClear;
+    r.autoClear = false;
+    r.shadowMap.autoUpdate = false;
+    r.clearDepth();
+    // 背景是纯色时 three 每次画都会先清屏，第二层先把背景拿掉
+    const bg = this.scene.background;
+    this.scene.background = null;
+    r.render(this.scene, this.orthoCam);
+    this.scene.background = bg;
+    r.autoClear = auto;
+    r.shadowMap.autoUpdate = true;
+    for (const g of groups) g.traverse((o) => o.layers.set(0));
+  }
+
+  // 改良布局（ortho）：现在要单独画的自己的手牌：在手牌那一排上的（理牌时左右挪也算）；
+  // 从牌山飞过来的、打出去正在飞的、配牌时还在牌山上的、倒牌时都不算，照常用主镜头画
+  private orthoHand(): TileId[] {
+    if (!this.v2 || !this.view25.ortho || !this.lastSync || this.reveal) return [];
+    const me = this.lastSync.view.me;
+    const row = this.handRows[me];
+    if (!row) return [];
+    const flying = new Set(this.flights.map((f) => f.tile));
+    return this.lastSync.g.players[me].hand.filter((id) => {
+      const t = this.tiles[id];
+      if (!t.group.visible || !t.target || flying.has(id)) return false;
+      // 自己坐在 +z 那边，手牌那一排的 z 是 row.z：目标和现在的位置都在这一排上才算
+      return Math.abs(t.target.pos.z - row.z) < 0.6 && Math.abs(t.group.position.z - row.z) < 0.6;
+    });
+  }
+
+  private syncOrtho(): void {
+    const cam = this.camera;
+    const o = this.orthoCam;
+    o.position.copy(cam.position);
+    o.quaternion.copy(cam.quaternion);
+    const me = this.lastSync?.view.me ?? 0;
+    const row = this.handRows[me] ?? { x0: 0, step: TILE_W + GAP, hs: 1, z: this.dim.handZ };
+    const center = this.toWorld(me, me, row.x0 + 6.5 * row.step, (TILE_H / 2) * row.hs, row.z, STANDING).pos;
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    const depth = center.sub(cam.position).dot(fwd);
+    const half = depth * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    o.top = half;
+    o.bottom = -half;
+    o.left = -half * cam.aspect;
+    o.right = half * cam.aspect;
+    o.near = cam.near;
+    o.far = cam.far;
+    o.layers.set(1);
+    o.updateProjectionMatrix();
+    o.updateMatrixWorld();
   }
 
   private tick(dt: number): void {
