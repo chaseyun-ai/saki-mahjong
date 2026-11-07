@@ -7633,6 +7633,12 @@ canvas.rii-sky {
   background: rgba(90, 74, 34, 0.85);
 }
 
+.rii-look.try::before {
+  content: '▶ ';
+  font-size: 9px;
+  opacity: 0.8;
+}
+
 .foresight .rii-looks {
   margin-top: 6px;
   justify-content: flex-start;

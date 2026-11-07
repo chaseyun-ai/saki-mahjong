@@ -1,8 +1,15 @@
-// 白水哩番缚的几种样子（试看用，挑好以后留一种）：投影朝内 / 朝外，几种锁链，头像上的锁。记在浏览器里。
+// 白水哩番缚的几种样子（试看用，挑好以后留一种）：投影朝内 / 朝外，几种锁链，头像上的锁，音效。记在浏览器里。
 
 export type RiiProj = 'in' | 'out';
 export type ChainStyleId = 'square' | 'steel' | 'heavy' | 'silver' | 'spirit';
 export type PlockStyleId = 'badge' | 'frame' | 'cross' | 'seal' | 'glow';
+export type RiiSfxId = 'real' | 'bright';
+
+// 番缚的音效（riiSound.ts）：写实的金属声 / 更亮、更像动画的光效
+export const SFX_LOOKS: { id: RiiSfxId; name: string }[] = [
+  { id: 'real', name: '写实' },
+  { id: 'bright', name: '闪亮' },
+];
 
 // 头像上的锁（app.ts 的 riiLockHtml 画，样子在 style.css 的 .rii-plock.<id>）
 export const PLOCK_LOOKS: { id: PlockStyleId; name: string }[] = [
@@ -42,6 +49,7 @@ interface Saved {
   proj: RiiProj;
   chain: ChainStyleId;
   plock: PlockStyleId;
+  sfx: RiiSfxId;
 }
 
 function load(): Saved {
@@ -51,9 +59,10 @@ function load(): Saved {
       proj: s?.proj === 'out' ? 'out' : 'in',
       chain: CHAIN_LOOKS.some((c) => c.id === s?.chain) ? s.chain : 'square',
       plock: PLOCK_LOOKS.some((c) => c.id === s?.plock) ? s.plock : 'badge',
+      sfx: SFX_LOOKS.some((c) => c.id === s?.sfx) ? s.sfx : 'real',
     };
   } catch {
-    return { proj: 'in', chain: 'square', plock: 'badge' };
+    return { proj: 'in', chain: 'square', plock: 'badge', sfx: 'real' };
   }
 }
 

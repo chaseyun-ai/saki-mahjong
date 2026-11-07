@@ -24,7 +24,7 @@ import { toyoneRedHidden } from '../abilities/toyone';
 import { RII, riiBind, riiCanBind, riiKeys } from '../abilities/rii';
 import { Chains2D } from './chains2d';
 import { chainOutcomes, outcomeTime, skyStart, skyTime } from './riiChainPlan';
-import { CHAIN_LOOKS, ChainStyleId, PLOCK_LOOKS, PlockStyleId, RiiProj, riiLook, setRiiLook } from './riiLook';
+import { CHAIN_LOOKS, ChainStyleId, PLOCK_LOOKS, PlockStyleId, RiiProj, RiiSfxId, SFX_LOOKS, riiLook, setRiiLook } from './riiLook';
 import { padlockArrive, playPadlock } from './riiPadlock';
 import { PlockEnd, PlockPlace, plockHtml } from './riiPlock';
 import { SkyKey } from './skyKey';
@@ -38,7 +38,7 @@ import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
-import { playLockSlam, playRiiLock, playRiiOutcome } from './riiSound';
+import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { paceOf, vary } from './vary';
 import { Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
@@ -926,6 +926,8 @@ export class App {
       this.riiLockAt = 0;
       this.riiPlockSwapAt = 0;
       this.riiLockEnd.clear();
+      // 桌上有哩：先把番缚的音效解码好
+      if (this.chars.some((c) => c?.id === 'rii')) preloadRiiSound();
     }
     if (e.type === 'discard') {
       // 隐身的桃子打的牌：看不见也听不见。刚隐身的那一张照常打出去，牌河和手牌慢慢淡掉（不放立直特效）
@@ -1553,6 +1555,16 @@ export class App {
       if (el.dataset.plock && el.dataset.plock !== riiLook.plock) {
         setRiiLook({ plock: el.dataset.plock as PlockStyleId });
         this.riiPlockSwapAt = Date.now();
+      }
+      // 换音效：马上试听一段锁上的声音
+      if (el.dataset.sfx) {
+        setRiiLook({ sfx: el.dataset.sfx as RiiSfxId });
+        previewRiiSound();
+      }
+      // 试听结算的声音（拿到钥匙 / 没和成），不用等到这一局结束
+      if (el.dataset.try) {
+        previewRiiSound(el.dataset.try as 'lock' | 'key' | 'broken');
+        return;
       }
       if (relock) this.riiLockAt = Date.now();
       this.render();
@@ -2305,7 +2317,9 @@ export class App {
       : '';
     const chainRow = `<div class="rii-looks"><span>锁链</span>${CHAIN_LOOKS.map((c) => btn(riiLook.chain === c.id, `data-chain="${c.id}"`, c.name)).join('')}</div>`;
     const plockRow = `<div class="rii-looks"><span>头像锁</span>${PLOCK_LOOKS.map((c) => btn(riiLook.plock === c.id, `data-plock="${c.id}"`, c.name)).join('')}</div>`;
-    return projRow + chainRow + plockRow;
+    const tryBtn = (scene: string, label: string) => `<button class="rii-look try" data-ui="rii-look" data-try="${scene}">${label}</button>`;
+    const sfxRow = `<div class="rii-looks"><span>音效</span>${SFX_LOOKS.map((c) => btn(riiLook.sfx === c.id, `data-sfx="${c.id}"`, c.name)).join('')}<span>试听</span>${tryBtn('lock', '锁上')}${tryBtn('key', '钥匙')}${tryBtn('broken', '崩断')}</div>`;
+    return projRow + chainRow + plockRow + sfxRow;
   }
 
   private myAreaHtml(withHand = true, withPlate = true): string {
