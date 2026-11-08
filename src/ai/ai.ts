@@ -380,6 +380,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     bad: number; // 久：打这张听的是烂听牌（只等一种牌，还有剩的）
     bowl: number; // 灼：打这张以后听成保龄球型（2 是希腊教堂）
     feed: number; // 浩子：这张是同桌能力者要的牌（漫爆发的六到九、灼的饼子、初美的西南风……）
+    std: number; // 咲：打这张以后一般型的向听数
+    trip: number; // 咲：打这张会拆掉暗刻（杠材）
   };
   // 被爽的蛇神威封印时读不了牌
   const sealed = g.isSealed(seat);
@@ -464,7 +466,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const shape = style.bowling && !sealed && sh === 0 ? bowlingOf(c, p.melds.length) : null;
     const bowl = shape === 'church' ? 2 : shape ? 1 : 0;
     const feed = style.scout && !sealed ? Math.max(0, ...[0, 1, 2, 3].map((o) => hirokoBias(g, seat, o, kindOf(a.tile)))) : 0;
-    cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl, feed });
+    // 咲：同样向听时往一般型做、不拆暗刻（第四张也不打）。七对子开不了杠，她的能力又一直把对子长成刻子：
+    // 按七对子的进张去打，摸到的第三张全成了废牌，只能一张张摸切掉
+    const kanHand = style.rinshan && !sealed;
+    const std = kanHand ? standardShanten(c, p.melds.length) : 0;
+    const trip = kanHand && counts[kindOf(a.tile)] >= 3 ? 1 : 0;
+    cands.push({ a, sh, sh2, uke: sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl, feed, std, trip });
   }
 
   // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌；涅莉的宣言局也一样，留下做的那门花色
@@ -500,7 +507,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const richOrder = (x: Cand, y: Cand) =>
     haiteiRich && x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? (isDoraTile(g, x.a.tile) ? 1 : 0) - (isDoraTile(g, y.a.tile) ? 1 : 0) : 0;
   const attackOrder = (x: Cand, y: Cand) =>
-    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || richOrder(x, y) || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || y.uke - x.uke || x.feed - y.feed || x.val - y.val;
+    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || richOrder(x, y) || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || x.std - y.std || x.trip - y.trip || y.uke - x.uke || x.feed - y.feed || x.val - y.val;
   cands.sort(attackOrder);
   // 怜：假设打掉现在最想打的那张，演算自己下一次摸到什么，按它重排。
   // 失误先掷（随机数用掉的时刻和别人一样），再演算：演算拿到的随机数和之后真的牌局一致

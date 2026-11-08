@@ -590,12 +590,8 @@ export class Game {
 
   // ---------- 一局的流程 ----------
 
-  private startRound(): void {
-    this.round++;
-    // 发牌前等玩家选技能的那一段结束了（不然 isSealed 之类会以为还在等下一局）
-    if (this.phase === 'predeal') this.phase = 'turn';
-    this.wall = new Wall(this.rng);
-    this.dice = [this.rng.int(6) + 1, this.rng.int(6) + 1];
+  // 桌上这一局的东西全部收掉：手牌、副露、牌河、立直，这一局的能力状态和结算。不碰牌山、骰子，也不掷随机数
+  private resetTable(): void {
     for (const p of this.players) {
       p.hand = [];
       p.melds = [];
@@ -619,6 +615,23 @@ export class Game {
     this.kanBy = [];
     this.noCallsYet = true;
     this.roundResult = null;
+  }
+
+  // 等玩家选发牌前的技能时：上一局的牌都收走，牌山也收掉（下一局发牌时才重新码牌山），桌上只剩点数、局数、立直棒。
+  // 不然界面停在发牌前那段时间里，桌上还摆着上一局的手牌、牌河和牌山
+  private clearTable(): void {
+    this.resetTable();
+    this.wall = new Wall(null);
+    this.dealtWall = { live: [], rinshan: [] };
+  }
+
+  private startRound(): void {
+    this.round++;
+    // 发牌前等玩家选技能的那一段结束了（不然 isSealed 之类会以为还在等下一局）
+    if (this.phase === 'predeal') this.phase = 'turn';
+    this.wall = new Wall(this.rng);
+    this.dice = [this.rng.int(6) + 1, this.rng.int(6) + 1];
+    this.resetTable();
     // 配牌：先由所有人定规矩，再依次调整（换牌不能让任何一条规矩变差），最后统一锁定、发牌
     const order = this.abilityOrder();
     this.dealRules = [];
@@ -1291,8 +1304,12 @@ export class Game {
   // 玩家操作的座位有发牌前技能可选，就先停在 predeal 等玩家（电脑在 dealRules 里自己决定）
   private startOrWait(): void {
     const ask = this.manual.some((m, s) => m && !this.isSealed(s, this.round + 1) && (this.abilities[s]?.preDeal?.(this, s) ?? []).some((o) => o.enabled));
-    if (ask) this.phase = 'predeal';
-    else this.startRound();
+    if (!ask) {
+      this.startRound();
+      return;
+    }
+    this.clearTable();
+    this.phase = 'predeal';
   }
 
   // 玩家选好发牌前的技能（Ability.setPreDeal）以后发牌；配牌后的技能（Ability.setPostDeal）选好以后开始摸牌

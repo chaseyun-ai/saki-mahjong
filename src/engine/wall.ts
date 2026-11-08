@@ -68,12 +68,14 @@ export class Wall {
   // 配牌调整期间的把关：live 的这些位置换成这些牌行不行（不能让配牌的规矩变差）。别的时候是 null
   guard: ((changes: [number, TileId][]) => boolean) | null = null;
 
-  constructor(rng: Rng) {
-    const tiles = rng.shuffle(Array.from({ length: TILE_COUNT }, (_, i) => i));
+  // rng 是 null：空的牌山（一局打完、下一局还没发牌时牌都收走了，桌上没有牌山，也没翻宝牌）
+  constructor(rng: Rng | null) {
+    const tiles = rng ? rng.shuffle(Array.from({ length: TILE_COUNT }, (_, i) => i)) : [];
     this.live = tiles.slice(0, 122);
     this.rinshan = tiles.slice(122, 126);
     this.doraIndicators = tiles.slice(126, 131);
     this.uraIndicators = tiles.slice(131, 136);
+    if (!rng) this.doraRevealed = 0;
   }
 
   get remaining(): number {
