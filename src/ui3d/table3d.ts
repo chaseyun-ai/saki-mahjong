@@ -98,6 +98,11 @@ const CONSOLE_H_25D = 0.3;
 // 2.5D 对家的立直棒再往牌河那边挪一点，离控制台远些（离牌河第一行还留着空）
 const TOP_STICK_OUT_25D = 0.07;
 const RIGHT_WALL_DOWN_25D = 0.2;
+// 改良布局：牌河第三排别贴着牌山。上家、下家的牌山（连同手牌）往桌边挪 V2_SIDE_OUT；
+// 对家的牌山只往中间收 V2_TOP_WALL_IN（原版收 0.8，第三排会压到牌山），手牌往后推 V2_TOP_HAND_PUSH，从牌山后面露出来
+const V2_SIDE_OUT = 1.0;
+const V2_TOP_WALL_IN = -0.6;
+const V2_TOP_HAND_PUSH = 1.7;
 
 // 全自动麻将机（参考大洋 AMOS）：桌框很低，手可以直接搭在上面；每个人右手边桌沿下有点棒抽屉。
 // 手牌、牌河、桌边、座位这些尺寸可以调，见 tableLayout.ts
@@ -185,6 +190,8 @@ export interface AirPose {
   scale: number;
 }
 const AIR_POSE: AirPose = { dx: 0.2, lift: 2.4, inward: 0.4, tilt: -0.9, yaw: 0.15, roll: -0.1, scale: 1.2 };
+// 改良布局：手牌已经放大、正对着人，摸到的牌在原位往上浮一点就够了，不另外放大、不往旁边飘
+const AIR_POSE_V2: AirPose = { dx: 0, lift: 0.7, inward: 0, tilt: 0, yaw: 0, roll: 0, scale: 1 };
 
 // 鸣牌、立直、和牌的特效颜色
 const FX_GOLD = '#ffd36b';
@@ -974,6 +981,8 @@ export class Table3D {
     if (this.lastSync?.view.ids[seat] === 'toki') {
       return this.toWorld(seat, me, 0, STICK_LEN / 2, this.dim.pondZ - 0.5, new THREE.Euler(0, 0, Math.PI / 2));
     }
+    // 改良布局：放在中央控制台顶上靠这一家的边上（雀魂那样）。放在牌河和控制台之间的话，自己的立直棒会被自己牌河第一排挡住
+    if (this.v2) return this.toWorld(seat, me, 0, this.consoleH + 0.085, CONSOLE_HALF - 0.24, STANDING);
     const out = this.style === '25d' && (seat - me + 4) % 4 === 2 ? TOP_STICK_OUT_25D : 0;
     return this.toWorld(seat, me, 0, 0.09, this.dim.pondZ - 0.35 + out, STANDING);
   }
@@ -981,6 +990,22 @@ export class Table3D {
   // 2.5D 改良布局（试做）
   private get v2(): boolean {
     return this.style === '25d' && this.improved;
+  }
+
+  // 这一边（相对座位，0 是自己）的牌山离中心多远。2.5D 对家的牌山往中间收，好让后面的手牌露出来；改良布局上家、下家的往外挪
+  private wallZ(rel: number): number {
+    if (this.style !== '25d') return WALL_Z;
+    if (rel === 2) return WALL_Z - (this.v2 ? V2_TOP_WALL_IN : TOP_WALL_IN_25D);
+    if (rel % 2 === 1 && this.v2) return WALL_Z + V2_SIDE_OUT;
+    return WALL_Z;
+  }
+
+  // 这一边（相对座位）的手牌比原来往桌边多推多少（2.5D：上家、下家、对家的手牌在牌山后面，推开一点才不被挡住）
+  private handPush(rel: number): number {
+    if (this.style !== '25d') return 0;
+    if (rel % 2 === 1) return SIDE_HAND_PUSH_25D + (this.v2 ? V2_SIDE_OUT : 0);
+    if (rel === 2) return this.v2 ? V2_TOP_HAND_PUSH : TOP_HAND_PUSH_25D;
+    return 0;
   }
 
   // 自己的手牌离桌子中心多远（中线）：放大了往外让一点；改良布局再往外挪
@@ -1914,6 +1939,13 @@ export class Table3D {
       const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 96), mat);
       disc.rotation.x = -Math.PI / 2;
       disc.position.y = 0.012;
+      // 改良布局的牌山不是正方形（左右往外挪、对家往后推）：圆拉成椭圆、挪一挪，照样和四边牌山的外沿相切
+      if (this.v2) {
+        const rx = this.wallZ(1) + TILE_H / 2;
+        const rz = (this.wallZ(0) + this.wallZ(2)) / 2 + TILE_H / 2;
+        disc.scale.set(rx / r, rz / r, 1);
+        disc.position.z = (this.wallZ(0) - this.wallZ(2)) / 2;
+      }
       disc.renderOrder = 1;
       this.scene.add(disc);
       this.gravityDisc = disc;
@@ -2036,9 +2068,8 @@ export class Table3D {
     const lie = facing && this.style === '25d';
     const rot = tilting ? new THREE.Euler(Math.PI / 2, 0, 0) : mine ? new THREE.Euler(this.handTilt, 0, 0) : lie ? FACE_UP : facing ? OPEN_HAND : open ? FACE_UP : STANDING;
     const y = tilting || (open && !facing) || lie ? (TILE_T / 2) * hs : (TILE_H / 2) * hs;
-    // 2.5D 时上家、下家的手牌斜着看过去离牌山很近，往桌边推一点
-    const top = this.style === '25d' && (s - me + 4) % 4 === 2;
-    const side = this.style === '25d' && (s - me + 4) % 2 === 1 ? SIDE_HAND_PUSH_25D : top ? TOP_HAND_PUSH_25D : 0;
+    // 2.5D 时上家、下家、对家的手牌在牌山后面，往桌边推一点（handPush）
+    const side = this.handPush((s - me + 4) % 4);
     const hz = (mine ? this.myHandZ(hs) : this.dim.handZ + side + (hs - 1) * 1.2) + (tilting ? (TILE_H / 2) * hs : 0);
     // 倒牌开始后不再更新：和牌以后手牌张数可能变了，倒牌要照着和牌前那一刻的位置
     if (!tilting && !this.reveal) this.handRows[s] = { x0: x, step, hs, z: hz };
@@ -2071,7 +2102,7 @@ export class Table3D {
     if (drawn !== null) {
       x += 0.5;
       if (mine && drawn === this.lastSync?.view.airDraw && p.hand.includes(drawn)) {
-        const a = this.airPose;
+        const a = this.v2 ? AIR_POSE_V2 : this.airPose;
         const yaw = (fan ? (-fan * (x + shift)) / (width / 2) : 0) + a.yaw;
         const tilt = new THREE.Euler(rot.x + a.tilt, 0, a.roll);
         out.set(drawn, this.toWorld(s, me, x + a.dx * hs, y + a.lift * hs, hz - a.inward * hs, tilt, yaw, hs * a.scale));
@@ -2161,7 +2192,7 @@ export class Table3D {
     const y = slot.level === 0 ? TILE_T * 1.5 : TILE_T * 0.5;
     const rel = (slot.wall - me + 4) % 4;
     const flat = this.style === '25d';
-    const out = this.toWorld(slot.wall, me, x, y, WALL_Z - (flat && rel === 2 ? TOP_WALL_IN_25D : 0), slot.faceUp ? FACE_UP : FACE_DOWN);
+    const out = this.toWorld(slot.wall, me, x, y, this.wallZ(rel), slot.faceUp ? FACE_UP : FACE_DOWN);
     // 往画面下方挪：自己坐在世界的 +z 那边
     if (flat && rel === 1) out.pos.z += RIGHT_WALL_DOWN_25D;
     return out;
@@ -2386,7 +2417,7 @@ export class Table3D {
       c.textAlign = 'left';
       c.fillText(score.toLocaleString('en-US'), -78, 192);
       c.textAlign = 'center';
-      if (g.seesRiichi(s, view.me)) drawStick(c, 0, 143, 160, 11);
+      if (g.seesRiichi(s, view.me) && !this.v2) drawStick(c, 0, 143, 160, 11);
       c.restore();
     }
     this.consoleTex.needsUpdate = true;
@@ -2473,17 +2504,18 @@ export class Table3D {
     const dir = new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch));
     const myZ = this.myHandZ(v.hand);
     const myHalf = this.myHandHalf();
-    const far = d.handZ + TILE_T + TOP_HAND_PUSH_25D;
+    const far = d.handZ + TILE_T + this.handPush(2);
+    const farSide = d.handZ + TILE_T + Math.max(this.handPush(1), this.handPush(2));
     const side = WALL_Z + TILE_H;
     const pts = [
       // 对家的手牌（立着，算上牌的高度）
       new THREE.Vector3(-side, TILE_H, -far),
       new THREE.Vector3(side, TILE_H, -far),
       // 左右两家的手牌
-      new THREE.Vector3(-far, TILE_H, -side),
-      new THREE.Vector3(far, TILE_H, -side),
-      new THREE.Vector3(-far, 0, side),
-      new THREE.Vector3(far, 0, side),
+      new THREE.Vector3(-farSide, TILE_H, -side),
+      new THREE.Vector3(farSide, TILE_H, -side),
+      new THREE.Vector3(-farSide, 0, side),
+      new THREE.Vector3(farSide, 0, side),
       // 自己的手牌，下沿（改良布局让下沿出画面一点：取牌身上靠下的一条线）
       ...[-myHalf, myHalf].map((x) => {
         if (!this.v2) return new THREE.Vector3(x, 0, myZ + TILE_T);
@@ -2664,7 +2696,7 @@ export class Table3D {
     const x = (STACKS_HALF - slot.stack) * WALL_PITCH;
     const rel = (slot.wall - me + 4) % 4;
     const flat = this.style === '25d';
-    const wallZ = WALL_Z - (flat && rel === 2 ? TOP_WALL_IN_25D : 0);
+    const wallZ = this.wallZ(rel);
     // 左右两边（竖着的）牌山转角那一墩：前面正好是横着那排牌山转角墩的投影，所以投到旁边，转角的空地上
     const corner = (rel === 1 || rel === 3) && (slot.stack === 1 || slot.stack === STACKS_HALF * 2 - 1);
     // 上层：贴在牌顶上；下层：牌山前面一排
