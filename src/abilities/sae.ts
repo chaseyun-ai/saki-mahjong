@@ -1,14 +1,21 @@
 import type { Game } from '../engine/game';
-import type { Ability } from './types';
+import { kindOf, type TileId } from '../engine/tiles';
+import type { Ability, DrawRule } from './types';
 
 // 臼泽塞（宫守）：镜片。一场比赛三枚镜片，用了不回来。
-// 局中任意时刻（配完牌以后、这一局结束之前）拿一枚镜片盯住一个人：这一局那个人和不了牌。
-// 一局只能盯一个人。别人的能力管不到的人（宫永照这样 immune 的）盯不住，镜片不会白白用掉；
-// 丰音的佛灭那一局盯住的人也照样能和（Game.canWin 只认 binds 得到的 forbidsWin）。
+// 局中任意时刻（配完牌以后、这一局结束之前）拿一枚镜片盯住一个人：这一局那个人摸不到和了牌。
+// 跟花田煌一样换牌：该发给他的和了牌换成别的牌（海底只剩一张时从王牌里换）。
+// 别人打出来的照样能荣和，和牌键不拿走。
+// 一局只能盯一个人。别人的能力管不到的人（宫永照这样 immune 的）盯不住，镜片不会白白用掉。
+// 换牌走控场能力的摸牌规矩（beforeAnyDraw 返回 DrawRule），所以丰音的佛灭、淡的高维领域、稳乃的深山、
+// 天使和挡掉一半，都跟别的控场能力一样算。
 // 玩家：把技能框里的镜片拖到别人头像上；电脑：有人立直时看情况用。
 export const SAE = {
   lenses: 3,
 };
+
+// 换掉和了牌时发的能力事件（用镜片时是「镜片」：界面只在用镜片时放狙击镜，换牌只出提示）
+export const SAE_BLOCK = '塞住';
 
 interface SaeGameState {
   used?: number;
@@ -73,18 +80,33 @@ function aiAim(g: Game, seat: number): void {
   if (pick !== undefined) saeAim(g, seat, pick);
 }
 
+// 被盯上的人这一次摸牌的规矩：听的牌都摸不到
+function blockRule(g: Game, seat: number, drawer: number, rinshan: boolean): DrawRule | null {
+  if (stateOf(g, seat).target !== drawer || !g.binds(seat, drawer)) return null;
+  const waits = g.waits(drawer);
+  if (!waits.length) return null;
+  const deny = (t: TileId) => waits.includes(kindOf(t));
+  const w = g.wall;
+  // 海底只剩一张、那张又是和了牌：牌山里换不出来，从还没翻开的王牌里换（先动的人定的规矩照样守）。
+  // 天使和照常有一半挡得住
+  if (!rinshan && w.live.length === 1 && deny(w.live[0])) {
+    const resist = g.active(drawer)?.resist?.(g, drawer, seat) ?? 0;
+    const earlier = w.deny;
+    if (!(resist > 0 && g.rng.chance(resist)) && w.bringFromDead(false, (t) => !deny(t) && !earlier?.(t), g.rng)) {
+      g.emit({ type: 'ability', seat, ability: 'sae', text: SAE_BLOCK, target: drawer });
+    }
+  }
+  return { seat, ability: 'sae', text: SAE_BLOCK, deny };
+}
+
 export const saeAbility: Ability = {
   id: 'sae',
   name: '镜片',
-  description: `一场比赛有 ${SAE.lenses} 枚镜片，用了不回来。局中任意时刻可以用一枚盯住一个人：这一局那个人和不了牌。一局只能盯一个人。`,
+  description: `一场比赛有 ${SAE.lenses} 枚镜片，用了不回来。局中任意时刻可以用一枚盯住一个人：这一局那个人摸不到和了牌，别人打出来的照样能荣和。一局只能盯一个人。`,
 
-  beforeAnyDraw(g, seat) {
+  beforeAnyDraw(g, seat, drawer, rinshan) {
     aiAim(g, seat);
-  },
-
-  forbidsWin(g, seat, target) {
-    aiAim(g, seat);
-    return stateOf(g, seat).target === target;
+    return blockRule(g, seat, drawer, rinshan);
   },
 
   // 这一局用镜片盯上了人：头像换成能力发动头像
@@ -98,11 +120,11 @@ export const saeAbility: Ability = {
     const targets = [0, 1, 2, 3].filter((o) => saeCanAim(g, seat, o));
     const note =
       target !== null
-        ? `这一局盯上了${g.players[target].name}：和不了牌（还剩 ${left} 枚）`
+        ? `这一局盯上了${g.players[target].name}：摸不到和了牌（还剩 ${left} 枚）`
         : left <= 0
           ? '镜片用完了'
           : inRound(g)
-            ? `还剩 ${left} 枚：把镜片拖到别人头像上，这一局那个人和不了`
+            ? `还剩 ${left} 枚：把镜片拖到别人头像上，这一局那个人摸不到和了牌`
             : `还剩 ${left} 枚，配完牌以后随时能用`;
     return { label: '', note, enabled: targets.length > 0, active: target !== null, lenses: { max: SAE.lenses, left, target, targets } };
   },
@@ -113,6 +135,6 @@ export const saeAbility: Ability = {
 
   insight(g, seat) {
     const t = stateOf(g, seat).target;
-    return [`镜片还剩 ${saeLensesLeft(g, seat)} 枚`, t !== undefined ? `这一局盯上了${g.players[t].name}，那家和不了` : '这一局还没盯人'];
+    return [`镜片还剩 ${saeLensesLeft(g, seat)} 枚`, t !== undefined ? `这一局盯上了${g.players[t].name}，那家摸不到和了牌` : '这一局还没盯人'];
   },
 };
