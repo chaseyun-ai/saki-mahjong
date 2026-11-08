@@ -1,5 +1,5 @@
 import type { Game } from '../engine/game';
-import { shanten } from '../engine/shanten';
+import { shanten, standardShanten } from '../engine/shanten';
 import { TileId, kindOf, toCounts } from '../engine/tiles';
 import type { Ability, PreDealOption } from './types';
 
@@ -81,6 +81,7 @@ export const yuukiAbility: Ability = {
   },
 
   // 东场：配牌换掉一两张没用的，换成能少一向听的牌（坐庄时换到一向听为止）
+  // 只看一般形的向听：七对子的向听也算的话，凑对子的牌也算“降向听”，配牌会偏成七对子
   beforeDeal(g, seat) {
     if (!yuukiActive(g, seat)) return;
     const dealer = seat === g.dealer;
@@ -89,7 +90,7 @@ export const yuukiAbility: Ability = {
     const mine = g.dealIndices(seat);
     for (let n = 0; n < max; n++) {
       const counts = toCounts(mine.map((i) => w.live[i]));
-      const cur = shanten(counts, 0);
+      const cur = standardShanten(counts, 0);
       if (dealer ? cur <= YUUKI.dealerTarget : n >= max) break;
       let done = false;
       for (const i of g.rng.shuffle([...mine])) {
@@ -97,7 +98,7 @@ export const yuukiAbility: Ability = {
         counts[k]--;
         const better = (t: TileId) => {
           counts[kindOf(t)]++;
-          const sh = shanten(counts, 0);
+          const sh = standardShanten(counts, 0);
           counts[kindOf(t)]--;
           return sh < cur;
         };

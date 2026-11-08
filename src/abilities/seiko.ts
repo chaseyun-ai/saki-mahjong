@@ -12,7 +12,7 @@ import type { Ability } from './types';
 export const SEIKO = {
   fish: 3, // 鸣几次开始必和
   pairs: 0.8, // 配牌里单张补成对子的概率（一手最多补 pairMax 张）
-  pairMax: 3,
+  pairMax: 1, // 以前补 3 对：平均 4.5 个对子，一半配牌是七对子一向听，六成和了是七对子，电脑的她也很少碰了
   first: 0.5, // 听牌后第一次摸牌就来的概率
 };
 

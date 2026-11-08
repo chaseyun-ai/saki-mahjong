@@ -1,9 +1,10 @@
 import type { Game } from '../engine/game';
-import { shanten } from '../engine/shanten';
+import { shanten, standardShanten } from '../engine/shanten';
 import { TileId, kindOf, toCounts } from '../engine/tiles';
 
 // “配牌、进张比没有能力的人顺 p”的通用做法（和龙门渊透华常态的 5% 一样）：
 // - 配牌：最多 tries 次，每次按 p 的概率把一张不影响向听的牌换成让向听前进的牌（从发完牌以后的牌山里拿）
+//   只看一般形的向听：七对子的向听也算的话，凑对子的牌也算“降向听”，配牌会偏成七对子
 // - 进张：每次摸牌按 p 的概率把下一张换成有效进张（听牌时就是和了牌）
 // 只交换没公开的牌，别人的规矩由 Wall.guard / 摸牌规矩把关
 
@@ -13,12 +14,12 @@ export function luckyDeal(g: Game, seat: number, p: number, tries = 4): void {
   for (let n = 0; n < tries; n++) {
     if (!g.rng.chance(p)) continue;
     const counts = toCounts(mine.map((j) => w.live[j]));
-    const cur = shanten(counts, 0);
+    const cur = standardShanten(counts, 0);
     if (cur <= 0) break;
     const spare = g.rng.shuffle([...mine]).filter((i) => {
       const k = kindOf(w.live[i]);
       counts[k]--;
-      const ok = shanten(counts, 0) === cur;
+      const ok = standardShanten(counts, 0) === cur;
       counts[k]++;
       return ok;
     });
@@ -27,7 +28,7 @@ export function luckyDeal(g: Game, seat: number, p: number, tries = 4): void {
       counts[k]--;
       const better = (t: TileId) => {
         counts[kindOf(t)]++;
-        const sh = shanten(counts, 0);
+        const sh = standardShanten(counts, 0);
         counts[kindOf(t)]--;
         return sh < cur;
       };
