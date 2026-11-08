@@ -121,10 +121,12 @@ const DEAL_END = DEAL_SORT + SORT_TILT + 0.15;
 // 倒牌：宣言后停一下，手牌依次（或一起）往前倒，倒完再放和牌特效
 const REVEAL_DELAY = 0.7;
 const TOPPLE_TIME = 0.24;
-// 改良布局：自己的手牌倒回桌上——从眼前那一层（大、正对着人）倒到桌面上手牌那条线，变回桌上牌的大小。
-// 倒得比别人慢一点，看得出是“倒回桌上”
-const V2_TOPPLE_TIME = 0.36;
-const V2_TOPPLE_STAGGER = 0.022;
+// 改良布局：自己和牌（流局听牌）时照雀魂：宣言后 V2_STAND 秒，眼前那排大手牌换成桌上立着的一排（桌上牌的大小、手牌那条线），
+// 自摸的那张悬在右边上方，过 V2_PLACE 秒落到隔开一点的地方立好，再停 V2_HOLD 秒，整排和别家一样往前倒
+const V2_STAND = 0.75;
+const V2_STAND_DRAW = 0.2;
+const V2_PLACE = 0.3;
+const V2_HOLD = 0.6;
 const TOPPLE_STAGGER = 0.07;
 // 平时的环境光、主光有多亮；和牌聚光灯亮起来时四周按 STAGE_DIM 暗下去一点，聚光灯本身最亮 STAGE_LIGHT
 const HEMI_BASE = 1.1;
@@ -209,7 +211,13 @@ interface RevealState {
   boltAt: number | null; // 闪电打在和的那张牌上的时间（3D 不放闪电），放过了就是 null
   stagger: number; // 一张张往下倒，相邻两张隔多久
   wins: { seat: number; tsumo: boolean; tile: TileId }[];
-  topple: Map<TileId, { at: number; from: Placement | null; time: number }>;
+  topple: Map<TileId, { at: number; from: Placement | null }>;
+  // 改良布局的自己：什么时候在桌上立起来、自摸那张什么时候落好（不涉及自己时是 null）
+  standAt: number | null;
+  placeAt: number | null;
+  snapped: boolean;
+  // 到这些时刻重摆一次牌（立起来、落好、开始倒）
+  syncs: number[];
   // 要砸的和了牌：不跟着手牌倒，at 时举起来往下砸（自摸是手里那张，荣和是从牌河拿过来）
   slams: Map<TileId, { seat: number; at: number; from: Placement | null; hit: boolean }>;
   // 砸下去那一下：桌上的牌从这里往外震一下
@@ -1240,15 +1248,18 @@ export class Table3D {
     const r = g.roundResult;
     if (!r) return;
     const flat = this.style === '25d';
-    const at = this.now + (r.wins.length ? (flat ? REVEAL_DELAY_25D : REVEAL_DELAY) : 0.3);
+    const shown = this.revealSeats(g);
+    // 改良布局里自己要倒牌：先在桌上立起来、自摸那张落好，再倒（倒牌时刻往后推）
+    const stand = [...shown.keys()].some((s) => this.fallsBack(s));
+    const standAt = stand ? this.now + (r.wins.length ? V2_STAND : V2_STAND_DRAW) : null;
+    const placeAt = standAt !== null ? standAt + V2_PLACE : null;
+    const at = Math.max(this.now + (r.wins.length ? (flat ? REVEAL_DELAY_25D : REVEAL_DELAY) : 0.3), placeAt !== null ? placeAt + V2_HOLD : 0);
     const stagger = flat ? TOPPLE_STAGGER_25D : TOPPLE_STAGGER;
     let fxAt = at;
-    const shown = this.revealSeats(g);
     for (const [s, win] of shown) {
       const n = g.players[s].hand.length + (win !== null && !g.players[s].hand.includes(win) ? 1 : 0);
       const wave = (LOOKS[this.lastSync?.view.ids[s] ?? '']?.reveal ?? 'wave') === 'wave';
-      const back = this.fallsBack(s);
-      fxAt = Math.max(fxAt, at + (wave ? (n - 1) * (back ? V2_TOPPLE_STAGGER : stagger) : 0) + (back ? V2_TOPPLE_TIME : TOPPLE_TIME) + 0.1);
+      fxAt = Math.max(fxAt, at + (wave ? (n - 1) * stagger : 0) + TOPPLE_TIME + 0.1);
     }
     // 初美聚着风和牌：手牌先倒，倒完那张和了牌举起来往桌上砸，砸到的时候才放特效
     const slams: RevealState['slams'] = new Map();
@@ -1274,6 +1285,10 @@ export class Table3D {
       slams,
       hops: [],
       spotsOn: false,
+      standAt,
+      placeAt,
+      snapped: false,
+      syncs: standAt !== null && placeAt !== null ? [standAt, placeAt, at] : [],
     };
     for (const w of r.wins) {
       if (w.from === null) continue;
@@ -2086,23 +2101,27 @@ export class Table3D {
   // 一局结束：和牌的人、流局时听牌的人把手牌摊开（倒牌），和的那张放在最右边
   private placeReveal(g: Game, me: number, out: Map<TileId, Placement>): void {
     const rv = this.reveal;
-    if (!rv || this.now < rv.at) return;
+    if (!rv) return;
     for (const [s, win] of this.revealSeats(g)) {
       const wave = (LOOKS[this.lastSync?.view.ids[s] ?? '']?.reveal ?? 'wave') === 'wave';
       const tiles = g.players[s].hand.filter((t) => t !== win).sort((a, b) => a - b);
       // 照着站着时的位置摆，每张牌原地往下倒，不左右挪（自摸的那张本来就在最右边隔开一点的地方）。
-      // 改良布局的自己：手牌是放大、挪到眼前的，倒的时候倒回桌面上手牌那条线、变回桌上牌的大小（雀魂那样）
+      // 改良布局的自己：手牌是放大、挪到眼前的，先在桌面上手牌那条线立起来（桌上牌的大小），再照常往前倒（雀魂那样）
       const back = this.fallsBack(s);
       const row = back ? this.tableRow(s, tiles.length + 1) : this.handRows[s] ?? { x0: 0, step: TILE_W + GAP, hs: 1, z: this.dim.handZ };
+      if (this.now < rv.at) {
+        if (back && rv.standAt !== null && this.now >= rv.standAt) this.placeStanding(g, s, me, win, tiles, row, out);
+        continue;
+      }
       let x = row.x0;
       const z = row.z + 0.3 * row.hs;
-      const stagger = back ? V2_TOPPLE_STAGGER : rv.stagger;
+      const stagger = rv.stagger;
       // 对家倒牌照常往桌子中间倒（字冲她自己）。只有公开手牌时她的牌本来就转过来朝我，
       // 这时接着朝我摆：从我这边看从左往右排，和的那张在我的右手边，不在倒牌时掉头
       const facing = (s - me + 4) % 4 === 2 && !!this.lastSync?.view.openHands;
       const yaw = facing ? Math.PI : 0;
       const topple = (t: TileId, i: number) => {
-        if (!rv.topple.has(t)) rv.topple.set(t, { at: rv.at + (wave ? i * stagger : 0), from: null, time: back ? V2_TOPPLE_TIME : TOPPLE_TIME });
+        if (!rv.topple.has(t)) rv.topple.set(t, { at: rv.at + (wave ? i * stagger : 0), from: null });
       };
       const n = tiles.length;
       tiles.forEach((t, i) => {
@@ -2118,6 +2137,19 @@ export class Table3D {
       if (tsumo || slam || this.now >= rv.fxAt) out.set(win, this.toWorld(s, me, facing ? row.x0 : x + 0.5, (TILE_T / 2) * row.hs, z, FACE_UP, yaw, row.hs));
       if (tsumo && !slam) topple(win, tiles.length);
     }
+  }
+
+  // 改良布局的自己：倒牌前先在桌上立着摆一排；自摸那张先悬在右边上方，到 placeAt 落下立好（初美要砸的那张不动）
+  private placeStanding(g: Game, s: number, me: number, win: TileId | null, tiles: TileId[], row: { x0: number; step: number; z: number }, out: Map<TileId, Placement>): void {
+    const rv = this.reveal!;
+    let x = row.x0;
+    for (const t of tiles) {
+      out.set(t, this.toWorld(s, me, x, TILE_H / 2, row.z, STANDING));
+      x += row.step;
+    }
+    if (win === null || !g.players[s].hand.includes(win) || rv.slams.has(win)) return;
+    const placed = rv.placeAt !== null && this.now >= rv.placeAt;
+    out.set(win, this.toWorld(s, me, x + 0.5, TILE_H / 2 + (placed ? 0 : TILE_H * 1.1), row.z, STANDING));
   }
 
   private wallPlacement(slot: WallSlot, me: number): Placement {
@@ -2901,6 +2933,22 @@ export class Table3D {
   private animateReveal(): void {
     const rv = this.reveal;
     if (!rv) return;
+    // 立起来、自摸那张落好、开始倒：到了就重摆一次
+    if (rv.syncs.length && this.now >= rv.syncs[0]) {
+      while (rv.syncs.length && this.now >= rv.syncs[0]) rv.syncs.shift();
+      if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
+      // 立起来那一下照雀魂是直接换：眼前的大手牌一下子变成桌上立着的一排（不从眼前滑过去）
+      if (!rv.snapped && rv.standAt !== null && this.now >= rv.standAt && this.lastSync) {
+        rv.snapped = true;
+        for (const id of this.lastSync.g.players[this.lastSync.view.me].hand) {
+          const t = this.tiles[id];
+          if (!t.target) continue;
+          t.group.position.copy(t.target.pos);
+          t.group.quaternion.copy(t.target.quat);
+          t.group.scale.setScalar(t.target.scale);
+        }
+      }
+    }
     if (rv.boltAt !== null && this.now >= rv.boltAt) {
       rv.boltAt = null;
       for (const w of rv.wins) {
@@ -2931,7 +2979,7 @@ export class Table3D {
     for (const [id, e] of rv.topple) {
       const tile = this.tiles[id];
       const to = tile.target;
-      if (!to || this.now >= e.at + e.time) {
+      if (!to || this.now >= e.at + TOPPLE_TIME) {
         rv.topple.delete(id);
         continue;
       }
@@ -2939,9 +2987,8 @@ export class Table3D {
       if (this.now < e.at) continue;
       const g = tile.group;
       e.from ??= { pos: g.position.clone(), quat: g.quaternion.clone(), scale: g.scale.x };
-      const k = (this.now - e.at) / e.time;
-      // 改良布局倒回桌上：先慢后快、落到桌面前收一点（不是直直砸下去）
-      const f = e.time === V2_TOPPLE_TIME ? k * k * (3 - 2 * k) : k * k;
+      const k = (this.now - e.at) / TOPPLE_TIME;
+      const f = k * k;
       const from = e.from;
       const scale = THREE.MathUtils.lerp(from.scale, to.scale, f);
       const quat = from.quat.clone().slerp(to.quat, f);
@@ -3005,14 +3052,12 @@ export class Table3D {
     const row = this.handRows[me];
     if (!row) return [];
     const rv = this.reveal;
+    // 倒牌前在桌上立起来以后，自己的手牌都回到桌上（主镜头）画
+    if (rv && ((rv.standAt !== null && this.now >= rv.standAt) || this.now >= rv.at)) return [];
     const flying = new Set(this.flights.map((f) => f.tile));
     return this.lastSync.g.players[me].hand.filter((id) => {
       const t = this.tiles[id];
       if (!t.group.visible || !t.target || flying.has(id)) return false;
-      if (rv && this.now >= rv.at) {
-        const e = rv.topple.get(id);
-        return !!e && this.now < e.at && Math.abs(t.group.position.z - row.z) < 0.6;
-      }
       // 自己坐在 +z 那边，手牌那一排的 z 是 row.z：目标和现在的位置都在这一排上才算
       return Math.abs(t.target.pos.z - row.z) < 0.6 && Math.abs(t.group.position.z - row.z) < 0.6;
     });
@@ -3029,7 +3074,7 @@ export class Table3D {
     return { x: ((p.x + 1) / 2) * this.container.clientWidth, y: ((1 - p.y) / 2) * this.container.clientHeight };
   }
 
-  // 改良布局里自己倒牌是“倒回桌上”（手牌平时放大、挪到眼前）
+  // 改良布局里自己倒牌前先回到桌上立起来（手牌平时放大、挪到眼前）
   private fallsBack(s: number): boolean {
     return this.v2 && s === (this.lastSync?.view.me ?? 0);
   }
