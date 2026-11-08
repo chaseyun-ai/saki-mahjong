@@ -122,7 +122,8 @@ const DEAL_END = DEAL_SORT + SORT_TILT + 0.15;
 const REVEAL_DELAY = 0.7;
 const TOPPLE_TIME = 0.24;
 // 改良布局：自己和牌（流局听牌）时照雀魂：宣言后 V2_STAND 秒，眼前那排大手牌换成桌上立着的一排（桌上牌的大小、手牌那条线），
-// 自摸的那张悬在右边上方，过 V2_PLACE 秒落到隔开一点的地方立好，再停 V2_HOLD 秒，整排和别家一样往前倒
+// 自摸的那张悬在右边上方，过 V2_PLACE 秒落到隔开一点的地方立好，再停 V2_HOLD 秒，整排和别家一样往前倒。
+// 荣和：点到的那张不进手牌，一直留在放铳的人的牌河里（闪电打在那张上），手牌立起来、停一下就倒
 const V2_STAND = 0.75;
 const V2_STAND_DRAW = 0.2;
 const V2_PLACE = 0.3;
@@ -1093,7 +1094,7 @@ export class Table3D {
     for (const w of rv.wins) {
       if (rv.slams.has(w.tile)) continue;
       const ids = [...g.players[w.seat].hand];
-      if (!ids.includes(w.tile)) ids.push(w.tile);
+      if (!ids.includes(w.tile) && !this.fallsBack(w.seat)) ids.push(w.tile);
       const pts = ids.map((id) => this.tiles[id].target?.pos).filter((p): p is THREE.Vector3 => !!p);
       if (!pts.length) continue;
       const o = this.seatPoint(w.seat, 0, 0, 0);
@@ -1252,8 +1253,9 @@ export class Table3D {
     // 改良布局里自己要倒牌：先在桌上立起来、自摸那张落好，再倒（倒牌时刻往后推）
     const stand = [...shown.keys()].some((s) => this.fallsBack(s));
     const standAt = stand ? this.now + (r.wins.length ? V2_STAND : V2_STAND_DRAW) : null;
-    const placeAt = standAt !== null ? standAt + V2_PLACE : null;
-    const at = Math.max(this.now + (r.wins.length ? (flat ? REVEAL_DELAY_25D : REVEAL_DELAY) : 0.3), placeAt !== null ? placeAt + V2_HOLD : 0);
+    const selfTsumo = r.wins.some((w) => w.from === null && this.fallsBack(w.seat));
+    const placeAt = standAt !== null && selfTsumo ? standAt + V2_PLACE : null;
+    const at = Math.max(this.now + (r.wins.length ? (flat ? REVEAL_DELAY_25D : REVEAL_DELAY) : 0.3), standAt !== null ? (placeAt ?? standAt) + V2_HOLD : 0);
     const stagger = flat ? TOPPLE_STAGGER_25D : TOPPLE_STAGGER;
     let fxAt = at;
     for (const [s, win] of shown) {
@@ -1288,7 +1290,7 @@ export class Table3D {
       standAt,
       placeAt,
       snapped: false,
-      syncs: standAt !== null && placeAt !== null ? [standAt, placeAt, at] : [],
+      syncs: standAt === null ? [] : placeAt !== null ? [standAt, placeAt, at] : [standAt, at],
     };
     for (const w of r.wins) {
       if (w.from === null) continue;
@@ -2133,8 +2135,8 @@ export class Table3D {
       if (win === null) continue;
       const tsumo = g.players[s].hand.includes(win);
       const slam = rv.slams.has(win);
-      // 自摸的那张跟着一起倒；荣和的那张等倒完再从牌河移过来。要砸的那张由 animateReveal 搬过去
-      if (tsumo || slam || this.now >= rv.fxAt) out.set(win, this.toWorld(s, me, facing ? row.x0 : x + 0.5, (TILE_T / 2) * row.hs, z, FACE_UP, yaw, row.hs));
+      // 自摸的那张跟着一起倒；荣和的那张等倒完再从牌河移过来（改良布局的自己荣和：留在牌河里，照雀魂）。要砸的那张由 animateReveal 搬过去
+      if (tsumo || slam || (this.now >= rv.fxAt && !back)) out.set(win, this.toWorld(s, me, facing ? row.x0 : x + 0.5, (TILE_T / 2) * row.hs, z, FACE_UP, yaw, row.hs));
       if (tsumo && !slam) topple(win, tiles.length);
     }
   }
