@@ -196,7 +196,7 @@ describe('宫永照', () => {
   it('压制：照魔镜看过以后，别人摸到进张的比例比没有照的桌子低', () => {
     const rate = (ids: string[]) => {
       const n = [0, 0];
-      for (let seed = 1; seed <= 12; seed++) {
+      for (let seed = 1; seed <= 40; seed++) {
         play(seed, ids, {
           setup: (g) => {
             g.onEvent((e) => {
@@ -216,7 +216,8 @@ describe('宫永照', () => {
     const withTeru = rate(['teru', 'izumi', 'izumi', 'izumi']);
     const without = rate(['izumi', 'izumi', 'izumi', 'izumi']);
     console.log({ withTeru: withTeru.toFixed(2), without: without.toFixed(2) });
-    expect(withTeru).toBeLessThan(without - 0.05);
+    // 实际差距在 0.05 左右（80 场：0.22 对 0.28），12 场、门槛 0.05 时随机数流向一变就可能过不了，所以多打几场、门槛放到 0.04
+    expect(withTeru).toBeLessThan(without - 0.04);
   }, 120000);
   it('铳牌：照魔镜看过以后，读得出立直的人听的牌；没立直的、第一局都不算', () => {
     const g = new Game({ seed: 1, players: ['teru', 'kuro', 'mako', 'ako'].map((id) => ({ name: id, ability: byId(id).ability })) });
