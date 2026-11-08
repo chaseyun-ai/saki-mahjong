@@ -45,7 +45,7 @@ describe('宝牌控制：松实玄', () => {
     ['shizuno', 'nelly', 'saki', 'kuro'],
   ];
 
-  it('能力还在时，别人立直和牌中不了里宝牌', () => {
+  it('能力还在时，别人立直和牌中不了里宝牌', async () => {
     let wins = 0;
     for (let seed = 1; seed <= 24; seed++) {
       play(seed, LINEUPS[seed % 4], (g) => {
@@ -60,6 +60,8 @@ describe('宝牌控制：松实玄', () => {
           }
         });
       });
+      // 打完一场歇一下，让测试进程能回应主进程（文件里第一个测试一口气算一分钟以上，vitest 会报 Timeout calling "onTaskUpdate"）
+      await new Promise((r) => setTimeout(r, 0));
     }
     expect(wins).toBeGreaterThan(10);
   }, 180000);
