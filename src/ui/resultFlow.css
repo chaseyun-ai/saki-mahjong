@@ -1,0 +1,781 @@
+/* ---------- 新结算（试做）：盖在 3D / 2.5D 牌桌上的几页，见 resultFlow.ts ---------- */
+
+.rf-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.rf-page {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  color: #f2f5fa;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* 继续：右下角，数字是倒数 */
+.rf-next {
+  position: absolute;
+  right: 28px;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 26px 10px 30px;
+  border: none;
+  clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+  background: linear-gradient(180deg, #ffe08a, #f0b43c);
+  color: #2a1a00;
+  font: 900 18px/1 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+
+.rf-next i {
+  min-width: 22px;
+  font-style: normal;
+  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  font-size: 18px;
+  opacity: 0.7;
+}
+
+.rf-next i:empty {
+  display: none;
+}
+
+/* 结算页盖着的时候，牌桌上自己的听牌提示框先收起来（不然隔着半透明的底透出来） */
+.stage3d:has(.rf-page) .hud .waits {
+  display: none;
+}
+
+/* ---------- 流局：牌桌中间的大字和每家的「听牌 / 不听」 ---------- */
+
+.rf-draw {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.rf-draw-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40%;
+  translate: 0 -50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 0 16px;
+  background: linear-gradient(90deg, transparent, rgba(16, 10, 40, 0.82) 22%, rgba(16, 10, 40, 0.82) 78%, transparent);
+  animation: rf-band 0.45s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.rf-draw-main {
+  font: 400 clamp(44px, 10vh, 92px)/1.05 'Ma Shan Zheng', 'Noto Serif SC', serif;
+  letter-spacing: 0.12em;
+  color: #f4ecff;
+  text-shadow:
+    0 0 18px rgba(170, 130, 255, 0.9),
+    0 3px 0 #4b2a8c;
+  animation: rf-ink 0.6s ease-out 0.1s both;
+}
+
+.rf-draw-sub {
+  margin-top: 4px;
+  font-size: clamp(14px, 2.6vh, 20px);
+  font-weight: 700;
+  color: #cdbfff;
+}
+
+.rf-tag {
+  position: absolute;
+  translate: -50% -100%;
+  padding: 4px 16px;
+  border-radius: 6px;
+  font: 900 clamp(14px, 2.6vh, 20px)/1.2 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  letter-spacing: 2px;
+  color: #dfe5ee;
+  background: rgba(40, 48, 62, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+  animation: rf-pop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1) 0.45s both;
+}
+
+.rf-tag.yes {
+  color: #fff;
+  background: linear-gradient(180deg, #ff9a4d, #e2541f);
+  border-color: #ffd0a8;
+}
+
+/* ---------- 和牌：一个和牌的人一页 ---------- */
+
+.rf-win {
+  display: grid;
+  grid-template-columns: minmax(0, 38%) minmax(0, 1fr);
+  background:
+    linear-gradient(105deg, transparent 0 36%, rgba(255, 255, 255, 0.04) 36% 37%, transparent 37%),
+    radial-gradient(120% 90% at 20% 100%, color-mix(in srgb, var(--c) 45%, transparent), transparent 60%),
+    linear-gradient(160deg, rgba(10, 16, 34, 0.96), rgba(18, 30, 62, 0.96));
+  animation: rf-fade 0.3s ease-out both;
+}
+
+.rf-art {
+  position: relative;
+  overflow: hidden;
+}
+
+.rf-art img {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: 30% 100%;
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.5));
+  animation: rf-art 0.6s cubic-bezier(0.2, 0.9, 0.3, 1) 0.05s both;
+}
+
+.rf-art .rf-glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 400 26vh/1 'Ma Shan Zheng', serif;
+  color: color-mix(in srgb, var(--c) 70%, white);
+  opacity: 0.85;
+}
+
+.rf-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 36px 40px 90px 8px;
+}
+
+.rf-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.rf-name {
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.rf-how {
+  padding: 2px 14px;
+  font: 400 30px/1.1 'Ma Shan Zheng', serif;
+  color: #fff;
+  background: linear-gradient(180deg, #e8473b, #b0201a);
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+}
+
+.rf-from {
+  font-size: 15px;
+  color: #b9c4d6;
+}
+
+.rf-hand {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 2px;
+  animation: rf-slide 0.45s ease-out 0.15s both;
+}
+
+.rf-hand .tile.t-pond {
+  width: 42px;
+  height: 57px;
+  border-radius: 5px;
+}
+
+.rf-hand .gap {
+  width: 14px;
+}
+
+.rf-hand .win-tile {
+  box-shadow:
+    0 2px 0 var(--tile-edge),
+    0 0 14px rgba(255, 210, 90, 0.9);
+}
+
+.rf-hand .meld {
+  display: inline-flex;
+  align-items: flex-end;
+  margin-left: 10px;
+}
+
+.rf-dora {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 22px;
+  animation: rf-slide 0.45s ease-out 0.3s both;
+}
+
+.rf-dora > span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.rf-dora label {
+  margin-right: 8px;
+  padding: 2px 10px;
+  font-size: 14px;
+  font-weight: 700;
+  background: rgba(232, 71, 59, 0.85);
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+
+.rf-dora .tile.t-pond {
+  width: 30px;
+  height: 41px;
+}
+
+.rf-yaku {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 260px));
+  gap: 6px 36px;
+}
+
+.rf-y {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 20px;
+  animation: rf-slide 0.35s ease-out calc(0.6s + var(--i) * 0.28s) both;
+}
+
+.rf-y b {
+  color: #ffd36b;
+  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  font-size: 22px;
+}
+
+.rf-total {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-top: 6px;
+}
+
+/* 番符章：役都出来以后盖上去 */
+.rf-stamp {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 118px;
+  height: 118px;
+  border-radius: 50%;
+  border: 4px solid #e8473b;
+  color: #ffe9e6;
+  background: radial-gradient(circle, rgba(232, 71, 59, 0.28), rgba(120, 10, 10, 0.5));
+  rotate: -12deg;
+  animation: rf-stamp 0.32s cubic-bezier(0.3, 1.5, 0.5, 1) var(--at) both;
+}
+
+.rf-stamp b {
+  font: 700 54px/1 'Barlow Condensed', 'Arial Narrow', sans-serif;
+}
+
+.rf-stamp small {
+  position: absolute;
+  bottom: 18px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.rf-stamp em {
+  position: absolute;
+  top: 16px;
+  font-style: normal;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.rf-stamp.yakuman b {
+  font: 400 34px/1 'Ma Shan Zheng', serif;
+}
+
+.rf-limit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: rf-slide 0.35s ease-out var(--at) both;
+}
+
+.rf-limit span {
+  font: 400 34px/1.1 'Ma Shan Zheng', serif;
+  color: #ffd36b;
+}
+
+.rf-limit b {
+  font: 700 34px/1 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  color: #9ff0b5;
+}
+
+/* 能力痕迹：收起来放最下面，点开看 */
+.rf-trace {
+  margin-top: 8px;
+  max-width: 760px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  animation: rf-fade 0.4s ease-out var(--at) both;
+}
+
+.rf-trace summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #ffd36b;
+}
+
+.rf-trace .trace h3 {
+  display: none;
+}
+
+/* 流局时能力痕迹放在点数页左下角 */
+.rf-points .rf-trace {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  max-width: min(640px, 60vw);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/* ---------- 点数移动 ---------- */
+
+.rf-points {
+  background: radial-gradient(ellipse at 50% 50%, rgba(6, 10, 22, 0.55), rgba(6, 10, 22, 0.82));
+  animation: rf-fade 0.25s ease-out both;
+}
+
+.rf-round {
+  position: absolute;
+  top: 5%;
+  left: 50%;
+  translate: -50% 0;
+  font: 400 clamp(22px, 4.4vh, 36px)/1 'Ma Shan Zheng', serif;
+  letter-spacing: 0.2em;
+  color: #ffd36b;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.rf-arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.rf-arrows path {
+  fill: none;
+  stroke: #eaf4ff;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  filter: drop-shadow(0 0 6px rgba(140, 200, 255, 0.9));
+  animation: rf-arrow 0.55s ease-out var(--d) forwards;
+}
+
+.rf-card {
+  --w: clamp(220px, 22vw, 320px);
+  position: absolute;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  width: var(--w);
+  padding: 10px 18px 10px 14px;
+  clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  background: linear-gradient(100deg, rgba(20, 34, 70, 0.95), rgba(32, 52, 100, 0.92));
+  border-left: 5px solid var(--c);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  animation: rf-card 0.4s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.rf-card.mine {
+  background: linear-gradient(100deg, rgba(120, 30, 40, 0.95), rgba(170, 50, 60, 0.92));
+}
+
+.rf-card.bottom {
+  left: 50%;
+  bottom: 16%;
+  translate: -50% 0;
+}
+
+.rf-card.top {
+  left: 50%;
+  top: 13%;
+  translate: -50% 0;
+}
+
+.rf-card.left {
+  left: 7%;
+  top: 44%;
+  translate: 0 -50%;
+}
+
+.rf-card.right {
+  right: 7%;
+  top: 44%;
+  translate: 0 -50%;
+}
+
+.rf-rank {
+  font: 700 18px/1 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  color: #ffd36b;
+}
+
+.rf-rank b {
+  display: inline-block;
+  margin-right: 2px;
+  font: italic 700 46px/1 'Barlow Condensed', 'Arial Narrow', sans-serif;
+}
+
+.rf-rank.moved b {
+  animation: rf-rank 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+.rf-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--c) 70%, #000);
+  border: 2px solid color-mix(in srgb, var(--c) 70%, white);
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.rf-face img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 15%;
+}
+
+.rf-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rf-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rf-cname {
+  min-width: 0;
+  font-size: 14px;
+  color: #c9d4e6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rf-score {
+  font: 700 34px/1 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.rf-delta {
+  flex: none;
+  font: 700 20px/1 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  animation: rf-fade 0.3s ease-out 0.4s both;
+}
+
+.rf-delta.plus {
+  color: #8ff0a8;
+}
+
+.rf-delta.minus {
+  color: #ff8f86;
+}
+
+.rf-delta.zero {
+  color: #9aa6b8;
+}
+
+/* ---------- 横过来的手机 ---------- */
+
+@media (max-height: 500px) {
+  .rf-next {
+    right: 12px;
+    bottom: 10px;
+    padding: 6px 16px 6px 20px;
+    font-size: 14px;
+  }
+
+  .rf-body {
+    gap: 6px;
+    padding: 12px 16px 56px 4px;
+  }
+
+  .rf-name {
+    font-size: 18px;
+  }
+
+  .rf-how {
+    font-size: 20px;
+  }
+
+  .rf-hand .tile.t-pond {
+    width: 26px;
+    height: 35px;
+  }
+
+  .rf-dora .tile.t-pond {
+    width: 20px;
+    height: 27px;
+  }
+
+  .rf-y {
+    padding: 2px;
+    font-size: 14px;
+  }
+
+  .rf-y b {
+    font-size: 16px;
+  }
+
+  .rf-stamp {
+    width: 74px;
+    height: 74px;
+    border-width: 3px;
+  }
+
+  .rf-stamp b {
+    font-size: 32px;
+  }
+
+  .rf-stamp small,
+  .rf-stamp em {
+    font-size: 10px;
+  }
+
+  .rf-stamp small {
+    bottom: 10px;
+  }
+
+  .rf-stamp em {
+    top: 9px;
+  }
+
+  .rf-limit span,
+  .rf-limit b {
+    font-size: 22px;
+  }
+
+  .rf-card {
+    --w: 200px;
+    padding: 5px 12px 5px 10px;
+    column-gap: 8px;
+  }
+
+  .rf-rank b {
+    font-size: 30px;
+  }
+
+  .rf-face {
+    width: 38px;
+    height: 38px;
+  }
+
+  .rf-score {
+    font-size: 24px;
+  }
+
+  .rf-delta {
+    font-size: 15px;
+  }
+
+  .rf-card.bottom {
+    bottom: 14%;
+  }
+}
+
+/* ---------- 竖着的手机：立绘放上面一条 ---------- */
+
+@media (orientation: portrait) and (max-width: 600px) {
+  .rf-win {
+    grid-template-columns: 1fr;
+    grid-template-rows: 28vh 1fr;
+  }
+
+  .rf-art img {
+    object-position: 50% 0;
+  }
+
+  .rf-body {
+    padding: 8px 14px 70px;
+  }
+
+  .rf-yaku {
+    grid-template-columns: 1fr;
+  }
+
+  .rf-hand .tile.t-pond {
+    width: 22px;
+    height: 30px;
+  }
+
+  .rf-card {
+    --w: 172px;
+    padding: 5px 12px 5px 10px;
+    column-gap: 6px;
+  }
+
+  .rf-rank {
+    font-size: 12px;
+  }
+
+  .rf-rank b {
+    font-size: 26px;
+  }
+
+  .rf-face {
+    width: 32px;
+    height: 32px;
+  }
+
+  .rf-cname {
+    font-size: 11px;
+  }
+
+  .rf-delta {
+    font-size: 13px;
+  }
+
+  .rf-score {
+    font-size: 20px;
+  }
+
+  .rf-round {
+    white-space: nowrap;
+    font-size: 22px;
+    top: 15%;
+  }
+
+  .rf-card.top {
+    top: 20%;
+  }
+
+  .rf-card.left {
+    left: 3%;
+  }
+
+  .rf-card.right {
+    right: 3%;
+  }
+
+  .rf-card.left,
+  .rf-card.right {
+    top: 50%;
+  }
+}
+
+@keyframes rf-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rf-band {
+  from {
+    opacity: 0;
+    scale: 1 0.2;
+  }
+}
+
+@keyframes rf-ink {
+  from {
+    opacity: 0;
+    letter-spacing: 0.6em;
+    filter: blur(6px);
+  }
+}
+
+@keyframes rf-pop {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+
+@keyframes rf-art {
+  from {
+    opacity: 0;
+    translate: -30% 0;
+  }
+}
+
+@keyframes rf-slide {
+  from {
+    opacity: 0;
+    translate: 24px 0;
+  }
+}
+
+@keyframes rf-stamp {
+  from {
+    opacity: 0;
+    scale: 2.4;
+  }
+}
+
+@keyframes rf-arrow {
+  from {
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes rf-card {
+  from {
+    opacity: 0;
+    scale: 0.85;
+  }
+}
+
+@keyframes rf-rank {
+  from {
+    scale: 1.8;
+    color: #fff;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rf-page *,
+  .rf-draw * {
+    animation-duration: 0.01s !important;
+    animation-delay: 0s !important;
+  }
+}

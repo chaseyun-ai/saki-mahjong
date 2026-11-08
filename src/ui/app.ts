@@ -41,6 +41,7 @@ import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
 import { backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
+import { FlowPage, PointSeat, ResultFlow, animatePoints, drawBannerHtml, pointsPageHtml, ranksOf } from './resultFlow';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
@@ -161,6 +162,9 @@ export class App {
   private faceTimer: number | null = null;
   // 2.5D 的切入演出；能力的切入每局每种只放第一次（宝牌聚集这种一局会发动好多次），之后只出小字
   private cutins: Cutins | null = null;
+  // 新结算（视觉设置「结算画面：新」）：正在放的几页；流局大字之后挂「听牌 / 不听」的计时器
+  private flow: ResultFlow | null = null;
+  private flowTimer: number | null = null;
   private cutinSeen = new Set<string>();
   // 爱丽丝的手绘板：牌桌现在是不是画成手绘板（重组特效刷满时才换过去，破碎时马上换回）
   private sketchView = false;
@@ -278,6 +282,7 @@ export class App {
   private teardown(): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    this.closeFlow();
     this.game = null;
     this.cutins?.clear();
     this.table3d?.dispose();
@@ -660,7 +665,7 @@ export class App {
       const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
       // 2.5D 改良布局（试做）：牌桌上加 v2，样式和镜头都只在 v2 里改，原版不动
       const v2 = this.mode === '25d' && this.settings.layout === 'improved';
-      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}${v2 ? ' v2' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div>${tip}</div>`;
+      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}${v2 ? ' v2' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div><div class="rf-layer" id="rf"></div>${tip}</div>`;
       // 切入演出只在 2.5D 放；3D、2D 只放素材页换上的技能动画
       this.cutins = new Cutins(document.getElementById('cutins')!);
       this.cutinSeen.clear();
@@ -737,10 +742,19 @@ export class App {
       // 3D 牌桌先让大家看清倒牌和特效，再弹结算。2.5D 和牌照雀魂，宣言后 3.4 秒进结算
       this.render();
       const wins = g.roundResult?.wins.length ?? 0;
-      const wait =
+      // 新结算：流局先在牌桌中间出大字、手牌上挂听牌 / 不听，多停一会儿再进点数移动
+      const staged = g.phase === 'roundEnd' && this.staged();
+      if (staged && !wins) this.drawBanner(g);
+      const base =
         this.mode === '2d' ? Math.max(0, this.riiHold - Date.now()) : Math.max(this.riiHold - Date.now(), this.mode === '25d' && wins ? Math.max(3400, this.busyMs() + 900) : (wins ? 2400 : 1400) + this.busyMs());
+      const wait = staged && !wins ? Math.max(base, 3000) : base;
       this.timer = window.setTimeout(() => {
         this.showResult = true;
+        if (staged) {
+          this.render();
+          this.openFlow(g);
+          return;
+        }
         this.render();
         // 托管：结算看一会儿自己点“下一局”
         if (this.auto && g.phase === 'roundEnd') this.timer = window.setTimeout(() => this.advance(), AUTO_NEXT);
@@ -880,6 +894,7 @@ export class App {
     if (!g || g.phase !== 'roundEnd') return;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    this.closeFlow();
     this.showResult = false;
     g.nextRound();
     // 下一局发牌前要选技能（爽的五色云等）：引擎已经把上一局的牌收走了，桌上的倒牌、锁链这些也收掉，停在空牌桌上选
@@ -1611,7 +1626,7 @@ export class App {
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
-      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
+      ${this.showResult && !(g.phase === 'roundEnd' && this.staged()) ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
     // 看下一巡时视野变绿
     hud.parentElement?.classList.toggle('deep', !!this.vision);
     this.renderToasts();
@@ -2661,6 +2676,124 @@ export class App {
       )
       .join('');
     return `<div class="trace"><h3>能力痕迹</h3>${lines || '<p class="trace-none">这一局牌山没被动过。</p>'}</div>`;
+  }
+
+  // ---------- 新结算（试做） ----------
+
+  // 用新结算：视觉设置选了「新」，3D、2.5D 牌桌（2D、天使和的网麻、怜的演算照旧用原版弹窗）
+  private staged(): boolean {
+    return this.settings.result === 'staged' && !!this.table3d && !this.netView && !this.vision;
+  }
+
+  private closeFlow(): void {
+    if (this.flowTimer !== null) clearTimeout(this.flowTimer);
+    this.flowTimer = null;
+    this.flow?.dispose();
+    this.flow = null;
+    document.getElementById('rf')?.replaceChildren();
+  }
+
+  // 流局：牌桌中间的大字；倒牌倒下去以后，每家手牌上挂「听牌 / 不听」（途中流局不挂）
+  private drawBanner(g: Game): void {
+    const r = g.roundResult;
+    const layer = document.getElementById('rf');
+    if (!r || !layer) return;
+    const main = r.kind === 'exhaustive' ? '荒牌流局' : '途中流局';
+    const sub = r.kind === 'abortive' ? (r.reason ?? '') : '';
+    layer.innerHTML = drawBannerHtml(main, sub, []);
+    if (r.kind !== 'exhaustive') return;
+    this.flowTimer = window.setTimeout(() => {
+      this.flowTimer = null;
+      if (this.game !== g || this.flow || !this.table3d) return;
+      const tags = [0, 1, 2, 3]
+        .map((s) => ({ s, at: this.table3d!.handScreenPos(s) }))
+        .filter((x): x is { s: number; at: { x: number; y: number } } => !!x.at)
+        .map(({ s, at }) => {
+          // 牌子挂在手牌上面：自己的手牌大，往上多让一点；不出画面
+          const w = this.root.clientWidth;
+          const h = this.root.clientHeight;
+          const y = at.y - (s === this.me ? h * 0.1 : 28);
+          return { x: Math.min(w - 60, Math.max(60, at.x)), y: Math.min(h - 20, Math.max(48, y)), tenpai: r.tenpai[s] };
+        });
+      layer.innerHTML = drawBannerHtml(main, sub, tags);
+    }, 1400);
+  }
+
+  // 结算的几页：每个和牌的人一页，最后点数移动；翻完进下一局
+  private openFlow(g: Game): void {
+    const r = g.roundResult;
+    const layer = document.getElementById('rf');
+    if (!r || !layer) {
+      this.render();
+      return;
+    }
+    if (this.flowTimer !== null) clearTimeout(this.flowTimer);
+    this.flowTimer = null;
+    const pages: FlowPage[] = r.wins.map((w, i) => ({ html: this.flowWinHtml(w, i === r.wins.length - 1), secs: this.auto ? 4 : 10 }));
+    const seats = this.pointSeats(r);
+    const trace = r.wins.length ? '' : this.flowTraceHtml();
+    pages.push({ html: pointsPageHtml(g.roundLabel(), seats, trace), secs: this.auto ? 3 : 6, after: (el) => animatePoints(el, seats) });
+    this.flow = new ResultFlow(layer, pages, () => {
+      this.flow = null;
+      this.advance();
+    });
+  }
+
+  private flowTraceHtml(): string {
+    return `<details class="rf-trace"><summary>能力痕迹（${this.trace?.entries.length ?? 0}）</summary>${this.traceHtml()}</details>`;
+  }
+
+  // 和牌那一页：左边立绘；右边手牌、宝牌里宝牌、役一条条出来、最后盖番符章和得点。last：能力痕迹放在最后一个和牌的人那页
+  private flowWinHtml(w: WinInfo, last: boolean): string {
+    const g = this.game!;
+    const c = this.chars[w.seat];
+    const r = w.result;
+    const hand = w.hand
+      .filter((t) => t !== w.tile)
+      .sort((a, b) => a - b)
+      .map((t) => tileHtml(t, { size: 'pond' }))
+      .join('');
+    const how = w.from === null ? '自摸' : '荣和';
+    const from = w.from === null ? '' : `<span class="rf-from">${this.chars[w.from].name} 放铳</span>`;
+    // 宝牌、里宝牌各五格：翻开的画牌面，其余画牌背
+    const slots = (tiles: TileId[], shown: number) =>
+      [0, 1, 2, 3, 4].map((i) => (i < shown && tiles[i] !== undefined ? tileHtml(tiles[i], { size: 'pond' }) : backHtml('pond'))).join('');
+    const yaku = r.yaku.map((y) => [y.name, r.yakuman ? '役满' : `${y.han} 番`]);
+    if (r.dora) yaku.push(['宝牌', `${r.dora} 番`]);
+    if (r.aka) yaku.push(['赤宝牌', `${r.aka} 番`]);
+    if (r.ura) yaku.push(['里宝牌', `${r.ura} 番`]);
+    const rows = yaku.map(([n, h], i) => `<div class="rf-y" style="--i:${i}"><span>${n}</span><b>${h}</b></div>`).join('');
+    // 役一条条出完再盖章
+    const at = `${(0.7 + yaku.length * 0.28).toFixed(2)}s`;
+    const stamp = r.yakuman ? '<div class="rf-stamp yakuman"><b>役满</b></div>' : `<div class="rf-stamp"><em>番</em><b>${r.han}</b><small>${r.fu} 符</small></div>`;
+    const gain = g.roundResult?.deltas[w.seat] ?? 0;
+    const url = cutinArt(c.id, 'result').url;
+    const art = url ? `<img src="${url}" alt="" onerror="this.remove()" />` : `<span class="rf-glyph">${c.name.slice(-1)}</span>`;
+    return `<div class="rf-page rf-win" style="--c:${c.color}">
+      <div class="rf-art">${art}</div>
+      <div class="rf-body" style="--at:${at}">
+        <div class="rf-head"><span class="rf-name">${c.name}</span><span class="rf-how">${how}</span>${from}</div>
+        <div class="rf-hand">${hand}<span class="gap"></span>${tileHtml(w.tile, { size: 'pond', classes: ['win-tile'] })}<span class="gap"></span>${this.meldsHtml(w.melds, w.seat)}</div>
+        <div class="rf-dora"><span><label>宝牌</label>${slots(g.wall.doraIndicators, g.wall.doraRevealed)}</span><span><label>里宝牌</label>${slots(w.uraIndicators, w.uraIndicators.length)}</span></div>
+        <div class="rf-yaku">${rows}</div>
+        <div class="rf-total">${stamp}<div class="rf-limit">${r.limitName ? `<span>${r.limitName}</span>` : ''}<b>+${gain.toLocaleString('en-US')}</b></div></div>
+        ${last ? this.flowTraceHtml() : ''}
+      </div>
+      <button class="rf-next" data-ui="rf-next">继续 <i></i></button>
+    </div>`;
+  }
+
+  // 点数移动页的四张卡：这一局之前、之后的点数和名次
+  private pointSeats(r: RoundResult): PointSeat[] {
+    const g = this.game!;
+    const after = g.players.map((p) => p.score);
+    const before = after.map((s, i) => s - r.deltas[i]);
+    const rb = ranksOf(before, g.firstDealer);
+    const ra = ranksOf(after, g.firstDealer);
+    return [0, 1, 2, 3].map((s) => {
+      const c = this.chars[s];
+      return { seat: s, rel: (s - this.me + 4) % 4, name: c.name, color: c.color, portrait: portraitUrl(c.id, this.faceOf(s)), glyph: c.name.slice(-1), before: before[s], after: after[s], rankBefore: rb[s], rankAfter: ra[s], mine: s === this.me };
+    });
   }
 
   private gameEndHtml(): string {

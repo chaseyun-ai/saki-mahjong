@@ -3018,6 +3018,17 @@ export class Table3D {
     });
   }
 
+  // 新结算：这一家手牌（倒下的或者还立着的）在画面上的中心，相对牌桌容器的像素；没有牌时 null
+  handScreenPos(seat: number): { x: number; y: number } | null {
+    const g = this.lastSync?.g;
+    if (!g) return null;
+    const pts = g.players[seat].hand.map((id) => (this.tiles[id].target?.pos ?? this.tiles[id].group.position).clone());
+    if (!pts.length) return null;
+    const c = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(pts.length);
+    const p = c.project(this.camera);
+    return { x: ((p.x + 1) / 2) * this.container.clientWidth, y: ((1 - p.y) / 2) * this.container.clientHeight };
+  }
+
   // 改良布局里自己倒牌是“倒回桌上”（手牌平时放大、挪到眼前）
   private fallsBack(s: number): boolean {
     return this.v2 && s === (this.lastSync?.view.me ?? 0);
