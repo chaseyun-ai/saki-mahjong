@@ -105,7 +105,8 @@ export interface Ability {
   // 配完牌、庄家摸第一张之前（配牌后的技能选好以后）。手牌已经发好
   afterDeal?(g: Game, seat: number): void;
   // 这一刻能不能和牌（照的照魔镜那一局和不了）。没写算能
-  canWin?(g: Game, seat: number): boolean;
+  // win：和的是哪一张、自摸还是荣和（郝慧宇的八番起和要看这一张）。只问“这一局能不能和”时不给
+  canWin?(g: Game, seat: number, win?: { tile: TileId; tsumo: boolean }): boolean;
   // 不许 target 和牌（涅莉的七姐妹封住的人）
   forbidsWin?(g: Game, seat: number, target: number): boolean;
   // 不许 target 自摸（衣的海底路线上，别人听了牌也不能自摸）。荣和照样可以

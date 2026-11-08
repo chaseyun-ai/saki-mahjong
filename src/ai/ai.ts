@@ -34,6 +34,7 @@ import { hirokoBias, hirokoDisrupt } from '../abilities/hiroko';
 import { haruRush } from '../abilities/haru';
 import { aislinnAiBrush, aislinnExtra, aislinnPlan } from '../abilities/aislinn';
 import { sakiAwaiFeed, sakiKanOk } from '../abilities/saki';
+import { HUIYU, type HuiyuPlan, huiyuCallOk, huiyuMinFanOn, huiyuMissingAfter, huiyuPlan, huiyuWaitFans } from '../abilities/huiyu';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
 import { kokushiShanten, shanten, standardShanten, waitingKinds } from '../engine/shanten';
@@ -292,6 +293,15 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const risk = (t: TileId) => Math.max(0, ...threats(g, seat).map((o) => danger(g, seat, o, kindOf(t), visible)));
     const extra = himekoExtra(g, seat, twin).sort((a, b) => risk(a) - risk(b));
     const out = extra.map((t) => legal.find((a) => a.type === 'discard' && !a.riichi && a.tile === t)).find((a) => a);
+    if (out) return out;
+  }
+
+  // 郝慧宇：照番种打（能自摸的都是国标够 8 番的，八番起和由 canWin 把关）
+  if (style.gb) {
+    const tsumo = find('tsumo');
+    if (tsumo) return tsumo;
+    const plan = huiyuPlan(g, seat);
+    const out = plan ? huiyuDiscard(g, seat, legal, plan, style) : null;
     if (out) return out;
   }
 
@@ -617,6 +627,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const riichi = discards.find((a) => a.riichi && kindOf(a.tile) === kindOf(best.a.tile));
   // 这一局和不了时立直白扔 1000 点
   if (riichi && best.sh === 0 && g.canWin(seat)) {
+    // 郝慧宇从不立直
+    if (style.gb) return best.a;
     const c = counts.slice();
     c[kindOf(best.a.tile)]--;
     // 桃子：还没隐身先默听，打这张就隐身了（别人看不见她立直）才立直
@@ -682,6 +694,59 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 
 // 丰音的先负等着时，没役的听牌听到这么多张（自己看不到的）才立直
 const TOYONE_WIDE = 8;
+
+// 郝慧宇照番种打：截来的牌扣着不打；番种用不到的牌先打，用不到的里先打最安全的；
+// 听牌时挑国标番最多的听法（还有牌可和的），哪怕听得窄。要防的人在、离番种还有两向听以上（差 3 张以上）才收
+function huiyuDiscard(g: Game, seat: number, legal: Action[], plan: HuiyuPlan, style: AiStyle): Action | null {
+  const p = g.players[seat];
+  const visible = visibleCounts(g, seat);
+  const ts = threats(g, seat);
+  const held = new Set(plan.sniped);
+  const minFan = huiyuMinFanOn(g, seat) ? HUIYU.minFan : 0;
+  const counts = toCounts(p.hand);
+  type C = { a: Extract<Action, { type: 'discard' }>; held: number; miss: number; fan: number; live: number; risk: number; sh: number; val: number };
+  const cands: C[] = [];
+  const seen = new Set<string>();
+  for (const a of legal) {
+    if (a.type !== 'discard' || a.riichi) continue;
+    const k = kindOf(a.tile);
+    const key = `${k}-${held.has(a.tile)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const hand = p.hand.filter((t) => t !== a.tile);
+    let fan = 0;
+    let live = 0;
+    for (const [w, f] of huiyuWaitFans(g, seat, hand)) {
+      const left = 4 - visible[w];
+      if (left <= 0 || f < minFan) continue;
+      live += left;
+      fan = Math.max(fan, f);
+    }
+    const c = counts.slice();
+    c[k]--;
+    cands.push({
+      a,
+      held: held.has(a.tile) ? 1 : 0,
+      miss: huiyuMissingAfter(g, seat, plan, a.tile),
+      fan,
+      live,
+      risk: ts.length ? Math.max(...ts.map((o) => danger(g, seat, o, k, visible))) : 0,
+      sh: shanten(c, p.melds.length),
+      val: tileValue(g, seat, k, counts),
+    });
+  }
+  if (!cands.length) return null;
+  // 听得了够番的牌就算听牌（番种之外的牌型碰巧够 8 番也算）
+  const miss = (x: C) => (x.live > 0 ? 1 : Math.max(2, x.miss));
+  const attack = (x: C, y: C) => x.held - y.held || miss(x) - miss(y) || y.fan - x.fan || y.live - x.live || x.risk - y.risk || x.sh - y.sh || x.val - y.val;
+  cands.sort(attack);
+  let best = cands[0];
+  if (ts.length && miss(best) >= 3) {
+    cands.sort((x, y) => x.held - y.held || x.risk - y.risk || attack(x, y));
+    best = cands[0];
+  } else if (cands.length > 1 && g.rng.chance(style.mistakeRate) && miss(cands[1]) === miss(best) && cands[1].held === best.held) best = cands[1];
+  return best.a;
+}
 
 // ---------- 差し込み ----------
 
@@ -955,6 +1020,17 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (style.waves && nellyTier(g, seat) > 0) return pass;
   // 透华治水：牌局平静如水，自己也不鸣
   if (tokaChisui(g, seat)) return pass;
+  // 郝慧宇：番种的面子才鸣，而且鸣了日麻还有役（不然和不了）
+  if (style.gb) {
+    const plan = g.callKind === 'discard' ? huiyuPlan(g, seat, false) : null;
+    const tile = g.lastDiscard?.tile;
+    if (plan && tile !== undefined) {
+      for (const a of legal) {
+        if ((a.type === 'chi' || a.type === 'pon') && huiyuCallOk(g, seat, plan, a.tiles, tile, a.type)) return a;
+      }
+    }
+    if (plan) return pass;
+  }
 
   const p = g.players[seat];
   const tile = g.lastDiscard!.tile;

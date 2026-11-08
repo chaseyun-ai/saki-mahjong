@@ -3,7 +3,7 @@ import { CHARACTERS } from '../src/abilities/characters';
 import { PRIORITY } from '../src/abilities/types';
 import { type DrawRec, type GameRec, nestedOutsideDraws, recordGame, uninstallRecorder } from './trace/recorder';
 
-// 用记录器把每次摸牌从能力处理到取牌的全过程记下来，逐次核对（大星淡、石户霞、天江衣 + 轮换一人）：
+// 用记录器把每次摸牌从能力处理到取牌的全过程记下来，逐次核对（大星淡、石户霞、天江衣 + 轮换一人，郝慧宇也在轮换里）：
 // - 牌守恒、公开的牌不变、锁住的牌不动
 // - 处理次数有界：每个钩子一次摸牌只调一次，没有钩子套钩子，换牌次数有上限
 // - 处理顺序固定：控场的人按优先级 → 摸牌人自己 → 对账 → 摸牌后
@@ -12,7 +12,7 @@ import { type DrawRec, type GameRec, nestedOutsideDraws, recordGame, uninstallRe
 
 const GAMES = Number(process.env.TRACE_GAMES ?? 8);
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
-const OTHERS = ['saki', 'kuro', 'toki', 'nodoka'];
+const OTHERS = ['saki', 'kuro', 'toki', 'nodoka', 'huiyu'];
 const lineup = (seed: number) => ['awai', 'kasumi', 'koromo', OTHERS[seed % OTHERS.length]].map(byId);
 const priorityOf = (id: string) => CHARACTERS.find((c) => c.id === id)?.ability?.priority ?? PRIORITY.self;
 

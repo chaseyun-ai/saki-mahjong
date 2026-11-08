@@ -13,6 +13,7 @@ import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
 import { Gale2D } from './gale2d';
 import { aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
+import { type HuiyuCard, huiyuBar, huiyuCards, huiyuMissedRon, huiyuReady, huiyuWinGb } from '../abilities/huiyu';
 import { playRebuild, playShatter } from './sketchFx';
 import { playNetWipe } from './netFx';
 import { kuroLost } from '../abilities/kuro';
@@ -91,12 +92,17 @@ const STAMINA_MAX = 100;
 const DEEP_COST = 15;
 const STAMINA_REGEN = 20;
 
+// 郝慧宇：国标这么多番以上，「食糊」和结算面板换金色
+const GB_GOLD_FAN = 24;
+const GB_GOLD = '#e6b422';
+
 interface Toast {
   id: number;
   seat: number;
   text: string;
   big: boolean;
   kind: string; // riichi / call / kan / win 时有特效样式
+  color?: string; // 不用角色色时（郝慧宇国标 24 番以上的金色「食糊」）
 }
 
 // 选人页顶栏：对局设置（滑杆）、视觉设置（调色盘）、更多（三个点）；随机出场的骰子
@@ -935,6 +941,7 @@ export class App {
       // 新的一局配牌先理好
       this.handOrder = null;
       this.cutinSeen.clear();
+      this.gbSighed.clear();
       this.stamina = Math.min(STAMINA_MAX, this.stamina + STAMINA_REGEN);
       this.blocked = this.penaltyNext;
       this.penaltyNext = false;
@@ -952,6 +959,7 @@ export class App {
       }
       this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
       if (!this.table3d) playClick({ pan: this.clickPan(e.seat), varied: true });
+      this.gbSigh(e.seat, e.tile);
       if (e.riichi) {
         playRiichi();
         // 第二形态（透华的治水）在素材页换了立直动画：放这一段
@@ -1005,6 +1013,8 @@ export class App {
         window.setTimeout(() => this.galeBurst2d(), slamImpact2d(slam.hand.filter((t) => t !== slam.tile).length) * 1000);
       }
       for (const w of e.result.wins) {
+        // 郝慧宇和牌喊「食糊」，国标 24 番以上金色
+        if (this.gbWinFx(w)) continue;
         // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
         const c = this.chars[w.seat];
         const word = w.from === null ? '自摸' : '荣和';
@@ -1268,6 +1278,88 @@ export class App {
     return `<div class="sketch-plan${fresh ? ' fresh' : ''}" title="${plan.yaku.join('、')}"><div class="sp-head"><b>手绘板</b><span>${when} · ${han}</span></div><div class="sp-tiles">${tiles}${melds}<span class="sp-win">${tileHtml(plan.win, { size: 'pond', sketch: true })}</span></div></div>`;
   }
 
+  // ---------- 郝慧宇的国标 ----------
+
+  // 这一局冒过“日麻无役”气泡的座位
+  private gbSighed = new Set<number>();
+  // 番种栏上次画的样子：番种、哪几格亮着、翻过几次面（新亮的格子闪金光，换番种整排翻面）
+  private gbShown: { key: string; lit: boolean[]; flips: number } | null = null;
+
+  // 别人打出她的和了牌：国标够 8 番，日麻却没役荣和不了。头像旁冒一个气泡，一局一次
+  private gbSigh(from: number, tile: TileId): void {
+    const g = this.game!;
+    for (let s = 0; s < 4; s++) {
+      if (this.chars[s]?.id !== 'huiyu' || this.gbSighed.has(s)) continue;
+      const fan = huiyuMissedRon(g, s, from, tile);
+      if (fan === null) continue;
+      this.gbSighed.add(s);
+      this.toast(s, `国标 ${fan} 番……日麻无役`, false, 'gb-sigh');
+    }
+  }
+
+  // 和牌喊「食糊」（素材页“食糊”那格有动画就放那段），国标 24 番以上换金色
+  private gbWinFx(w: WinInfo): boolean {
+    const c = this.chars[w.seat];
+    if (c?.id !== 'huiyu') return false;
+    const fan = huiyuWinGb(this.game!, w.seat)?.total ?? 0;
+    const color = fan >= GB_GOLD_FAN ? GB_GOLD : c.color;
+    const art = skillArt(c.id, 'sik');
+    if (this.mode === '25d' && this.cutins?.show({ pos: POS[w.seat], id: c.id, color, word: '食糊', kind: 'win', art, glyph: c.name.slice(-1) })) return true;
+    this.toast(w.seat, '食糊', true, 'win', color);
+    return true;
+  }
+
+  // 番种牌（配牌后三选一）：番种名、示意的 14 张（已有的亮、缺的暗）、还差几张、国标几番 / 日麻几点
+  private gbCardHtml(c: HuiyuCard, on: boolean): string {
+    const tiles = c.tiles.map((k, i) => tileHtml(k * 4 + 1, { size: 'mini', classes: [c.lit[i] ? 'gb-lit' : 'gb-dim'] })).join('');
+    const riichi = c.points ? `日麻约 ${c.points} 点` : '日麻无役';
+    return `<button class="pd-opt gb-card${on ? ' on' : ''}" data-ui="pd" data-pd="${c.key}" data-group="gb">
+      <span class="pd-check">${on ? '✓' : ''}</span>
+      <span class="pd-text"><b>${c.name}</b><span class="gb-tiles">${tiles}</span>
+        <small>还差 ${c.missing} 张 · <em class="gb-fan">国标约 ${c.gb} 番</em> / ${riichi}${c.ronOk ? '' : ' · <em class="gb-noron">荣和无役</em>'}</small></span>
+    </button>`;
+  }
+
+  // 番种栏：手牌上面一排小牌（番种牌那 14 张），听牌而且国标够 8 番时盖“成”字印。立直、被封印时变灰
+  private gbBarHtml(): string {
+    const g = this.game!;
+    const bar = this.chars[this.me]?.id === 'huiyu' && (g.phase === 'turn' || g.phase === 'calls') && !this.vision ? huiyuBar(g, this.me) : null;
+    if (!bar) {
+      this.gbShown = null;
+      return '';
+    }
+    const c = bar.card;
+    const prev = this.gbShown;
+    const flip = !!prev && prev.flips !== bar.flips;
+    const same = !!prev && prev.key === c.key && !flip;
+    this.gbShown = { key: c.key, lit: c.lit, flips: bar.flips };
+    const tiles = c.tiles
+      .map((k, i) => {
+        const hit = same && c.lit[i] && !prev!.lit[i];
+        return tileHtml(k * 4 + 1, { size: 'pond', classes: [c.lit[i] ? 'gb-lit' : 'gb-dim', ...(hit ? ['gb-hit'] : [])] });
+      })
+      .join('');
+    const left = c.missing ? `还差 ${c.missing} 张` : '齐了';
+    const riichi = c.points ? `日麻约 ${c.points} 点` : '日麻无役';
+    const seal = !bar.off && huiyuReady(g, this.me) ? '<span class="gb-seal">成</span>' : '';
+    return `<div class="gb-bar${bar.off ? ' off' : ''}${flip ? ' flip' : ''}">${seal}
+      <div class="gb-head"><b>番种</b><span class="gb-name">${c.name}</span><span>${left}</span>
+        <span class="gb-vs"><em>国标约 ${c.gb} 番</em> / ${riichi}${c.ronOk ? '' : ' · <i>荣和无役</i>'}</span></div>
+      <div class="gb-tiles">${tiles}</div></div>`;
+  }
+
+  // 结算：她和牌时在日麻点数下面加国标面板，最后一行大字对照“国标 X 番 / 日麻 Y 点”
+  private gbPanelHtml(w: WinInfo): string {
+    const g = this.game!;
+    const gb = this.chars[w.seat]?.id === 'huiyu' ? huiyuWinGb(g, w.seat) : null;
+    if (!gb) return '';
+    const r = w.result;
+    const pts = w.from !== null ? r.ron : w.seat === g.dealer ? r.tsumoOtherPays * 3 : r.tsumoDealerPays + 2 * r.tsumoOtherPays;
+    const rows = gb.fans.map((f) => `<div class="gb-f"><span>${f.name}${f.count > 1 ? ` ×${f.count}` : ''}</span><b>${f.fan * f.count} 番</b></div>`).join('');
+    return `<div class="gb-panel${gb.total >= GB_GOLD_FAN ? ' gold' : ''}"><div class="gb-panel-title">国标</div><div class="gb-fans">${rows}</div>
+      <div class="gb-versus"><b>国标 ${gb.total} 番</b><span class="gb-slash">/</span><span>日麻 ${pts.toLocaleString('en-US')} 点</span></div></div>`;
+  }
+
   // 立直、鸣牌、和牌的大字：2.5D 放带立绘的切入，3D、2D 还是原来的大字特效
   private bigFx(seat: number, word: string, kind: 'riichi' | 'call' | 'kan' | 'win'): void {
     if (this.mode === '25d') this.cutin(seat, word, kind);
@@ -1300,9 +1392,9 @@ export class App {
     return 'neutral';
   }
 
-  private toast(seat: number, text: string, big: boolean, kind = ''): void {
+  private toast(seat: number, text: string, big: boolean, kind = '', color?: string): void {
     const id = ++this.toastSeq;
-    this.toasts.push({ id, seat, text, big, kind });
+    this.toasts.push({ id, seat, text, big, kind, color });
     this.renderToasts();
     window.setTimeout(
       () => {
@@ -2039,9 +2131,11 @@ export class App {
     for (const el of Array.from(box.children) as HTMLElement[]) if (!live.has(el.dataset.id!)) el.remove();
     for (const t of this.toasts) {
       if (box.querySelector(`[data-id="${t.id}"]`)) continue;
+      // 郝慧宇“日麻无役”的气泡（gb-sigh）不放特效
+      const fx = !!t.kind && t.kind !== 'gb-sigh';
       box.insertAdjacentHTML(
         'beforeend',
-        `<div data-id="${t.id}" class="toast ${POS[t.seat]} ${t.big ? 'big' : ''} ${t.kind ? `fx fx-${t.kind}` : ''}" style="--c:${this.chars[t.seat].color}">${t.kind ? fxSparksHtml(t.kind) : ''}<span>${t.text}</span></div>`,
+        `<div data-id="${t.id}" class="toast ${POS[t.seat]} ${t.big ? 'big' : ''} ${fx ? `fx fx-${t.kind}` : t.kind}" style="--c:${t.color ?? this.chars[t.seat].color}">${fx ? fxSparksHtml(t.kind) : ''}<span>${t.text}</span></div>`,
       );
     }
   }
@@ -2297,7 +2391,7 @@ export class App {
       <div class="me" style="--c:${c.color}">
         <div class="actions">${buttons.join('')}</div>
         ${this.autoBtnHtml()}${this.assistHtml()}
-        ${this.sketchPlanHtml()}${waitHtml}${hint}${this.riiPickerHtml()}
+        ${this.sketchPlanHtml()}${this.gbBarHtml()}${waitHtml}${hint}${this.riiPickerHtml()}
         ${
           withHand
             ? `<div class="hand-row">
@@ -2396,9 +2490,12 @@ export class App {
     const spend = opts.filter((o) => this.pdPicks!.has(o.id)).reduce((sum, o) => sum + (o.cost ?? 0), 0);
     const left = meter ? meter.value - spend : Infinity;
     const unit = meter?.label ?? '能量';
+    const gbCards = post && ab?.id === 'huiyu' ? new Map(huiyuCards(g, this.me).map((c) => [c.key, c])) : null;
     const rows = opts
       .map((o) => {
         const on = this.pdPicks!.has(o.id);
+        const card = gbCards?.get(o.id);
+        if (card) return this.gbCardHtml(card, on);
         const affordable = on || (o.cost ?? 0) <= left;
         const usable = o.enabled && affordable;
         const note = !o.enabled ? (o.note ?? '') : !affordable ? `${unit}不够` : o.cost ? `${unit} -${o.cost}` : '';
@@ -2640,6 +2737,7 @@ export class App {
         ${ura}
         <div class="yaku-list">${yaku.join('')}</div>
         <div class="summary">${summary} ${points}</div>
+        ${this.gbPanelHtml(w)}
         </div>
       </div>`;
   }
@@ -2777,6 +2875,7 @@ export class App {
         <div class="rf-dora"><span><label>宝牌</label>${slots(g.wall.doraIndicators, g.wall.doraRevealed)}</span><span><label>里宝牌</label>${slots(w.uraIndicators, w.uraIndicators.length)}</span></div>
         <div class="rf-yaku">${rows}</div>
         <div class="rf-total">${stamp}<div class="rf-limit">${r.limitName ? `<span>${r.limitName}</span>` : ''}<b>+${gain.toLocaleString('en-US')}</b></div></div>
+        ${this.gbPanelHtml(w)}
         ${last ? this.flowTraceHtml() : ''}
       </div>
       <button class="rf-next" data-ui="rf-next">继续 <i></i></button>

@@ -43,6 +43,7 @@ import { kanaAbility } from './kana';
 import { kaoriAbility } from './kaori';
 import { yumiAbility } from './yumi';
 import { kinueAbility } from './kinue';
+import { huiyuAbility } from './huiyu';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -89,6 +90,7 @@ export interface AiStyle {
   beginner?: boolean; // 妹尾佳织：新手运拿到役满听牌的局只摸切、不鸣牌
   pin1?: boolean; // 爱宕娟慧：留着一筒
   twin: boolean; // 鹤田姬子：钥匙的那一局只照着那副牌打，先打不要的牌，不立直、不鸣牌、不荣和，等自摸
+  gb?: boolean; // 郝慧宇：照国标番种打，先打番种用不到的牌，听牌挑国标番多的；不立直，只在鸣了日麻还有役时鸣，一向听以内照样推
 }
 
 export interface Character {
@@ -215,6 +217,21 @@ export const CHARACTERS: Character[] = [
     color: '#c2185b',
     ability: nellyAbility,
     ai: { ...baseAi, mistakeRate: 0.03, waves: true },
+  },
+  {
+    id: 'huiyu',
+    cost: 2,
+    name: '郝慧宇',
+    school: '临海女子',
+    color: '#2e8b7a',
+    ability: huiyuAbility,
+    // 番种：配完牌挑好番种；成：听牌而且国标够 8 番；食糊：和牌（粤语的“和了”）
+    skillArts: [
+      { id: 'fan', name: '番种', hint: '配完牌亮出番种牌' },
+      { id: 'cheng', name: '成', hint: '听牌而且国标够 8 番' },
+      { id: 'sik', name: '食糊', label: '食糊（和牌）', hint: '她和牌时代替“自摸”“荣和”' },
+    ],
+    ai: { ...baseAi, mistakeRate: 0.03, gb: true },
   },
   {
     id: 'sawaya',
