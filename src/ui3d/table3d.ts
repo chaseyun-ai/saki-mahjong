@@ -128,6 +128,8 @@ const V2_STAND = 0.75;
 const V2_STAND_DRAW = 0.2;
 const V2_PLACE = 0.3;
 const V2_HOLD = 0.6;
+// 倒牌前立着的那一排，牌底边离画面底边留多少（画面高度的几分之几）
+const V2_STAND_MARGIN = 0.03;
 const TOPPLE_STAGGER = 0.07;
 // 平时的环境光、主光有多亮；和牌聚光灯亮起来时四周按 STAGE_DIM 暗下去一点，聚光灯本身最亮 STAGE_LIGHT
 const HEMI_BASE = 1.1;
@@ -3088,7 +3090,31 @@ export class Table3D {
     const width = n * step + 0.5;
     const edge = this.handEdges[s];
     const shift = this.lastSync?.g.players[s].melds.length && edge !== undefined ? Math.max(0, width / 2 - edge) : 0;
-    return { x0: -width / 2 - shift + TILE_W / 2, step, hs: 1, z: this.dim.handZ };
+    return { x0: -width / 2 - shift + TILE_W / 2, step, hs: 1, z: this.standZ(s) };
+  }
+
+  // 改良布局：自己倒牌那一排站在哪（座位本地 z）。照雀魂：底边和眼前那排大手牌的底边对齐，看起来是同一排牌原地缩小，
+  // 不往上跳——往桌边挪到牌底边落在画面底边上面一点（留画面高度的 V2_STAND_MARGIN），最远到桌框里面一点
+  private standZ(s: number): number {
+    const d = this.dim;
+    const me = this.lastSync?.view.me ?? 0;
+    if (s !== me) return d.handZ;
+    const cam = this.camera.clone();
+    cam.position.copy(this.rest.pos);
+    cam.lookAt(this.rest.look);
+    cam.updateMatrixWorld();
+    const bottom = (z: number) => -this.toWorld(s, me, 0, 0, z + TILE_T / 2, STANDING).pos.project(cam).y;
+    const goal = 1 - 2 * V2_STAND_MARGIN;
+    let a = d.handZ;
+    let b = d.tableHalf - TILE_T / 2 - 0.15;
+    if (bottom(b) <= goal) return b;
+    if (bottom(a) >= goal) return a;
+    for (let i = 0; i < 24; i++) {
+      const m = (a + b) / 2;
+      if (bottom(m) < goal) a = m;
+      else b = m;
+    }
+    return a;
   }
 
   private syncOrtho(): void {
