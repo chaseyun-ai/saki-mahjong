@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
 import { HARU, haruAbility, haruRush } from '../src/abilities/haru';
-import { hatsumiAbility, hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../src/abilities/hatsumi';
+import { hatsumiAbility, hatsumiGale, hatsumiGlowMelds, hatsumiOpen, hatsumiWindsComing } from '../src/abilities/hatsumi';
+import { HATSUMI_AI, chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
+import { Rng } from '../src/engine/rng';
 import { shanten } from '../src/engine/shanten';
-import { EAST, NORTH, SOUTH, TileId, WEST, kindOf, toCounts } from '../src/engine/tiles';
+import { EAST, NORTH, SOUTH, TileId, WEST, isDragon, isWind, kindOf, toCounts } from '../src/engine/tiles';
 import type { Ability } from '../src/abilities/types';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
@@ -144,6 +146,68 @@ describe('薄墨初美', () => {
     // 别人手里拿着西南、牌山里剩的不够时凑不齐（实战里可以碰别人打出来的）
     expect(done).toBeGreaterThan(14);
   });
+});
+
+describe('电脑的初美', () => {
+  it('鸣出东北以后不打西南、不小和，奔小四喜；不坐北家时不碰没役的客风', () => {
+    const me = byId('hatsumi');
+    let opened = 0;
+    let suushii = 0;
+    let windOut = 0;
+    let cheap = 0;
+    let guest = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const rng = new Rng(seed * 977);
+      const others = rng.shuffle(CHARACTERS.filter((c) => c.id !== me.id)).slice(0, 3);
+      const order = rng.shuffle([me, ...others]);
+      const mine = order.indexOf(me);
+      const g = new Game({ seed, format: 'east', players: order.map((c) => ({ name: c.id, ability: c.ability })) });
+      // 能力这一局起作用（没被封印、没被压住）、东北都鸣出来了
+      const kimon = () => hatsumiOpen(g, mine) && !g.isSealed(mine) && !g.quelled(mine);
+      let wasOpen = false;
+      g.onEvent((e) => {
+        if (e.type === 'roundStart') wasOpen = false;
+        if (e.type === 'ability' && e.seat === mine && e.text === '里鬼门') {
+          wasOpen = true;
+          opened++;
+        }
+        if (e.type === 'roundEnd' && wasOpen && e.result.wins.some((w) => w.seat === mine && w.result.yaku.some((y) => y.name.includes('四喜')))) suushii++;
+      });
+      let steps = 0;
+      while (g.phase !== 'gameEnd' && ++steps < 20000) {
+        if (g.phase === 'roundEnd') {
+          g.nextRound();
+          continue;
+        }
+        const s = g.waitingSeats()[0];
+        const a = chooseAction(g, s, order[s].ai);
+        if (s === mine) {
+          const p = g.players[mine];
+          // 西南是能力送来的：手里还有别的牌可打时不打（凑刻的留三张、凑对的留两张，两张以内一定不打）
+          if (a.type === 'discard' && kimon() && (kindOf(a.tile) === WEST || kindOf(a.tile) === SOUTH) && count(p.hand, kindOf(a.tile)) <= 2 && p.hand.some((t) => !isWind(kindOf(t)))) windOut++;
+          // 西南还没凑齐、牌山还多时，不是役满的和不和
+          if ((a.type === 'tsumo' || a.type === 'ron') && kimon() && hatsumiWindsComing(g, mine) && g.wall.remaining > HATSUMI_AI.holdLate && p.melds.length <= 3) {
+            const tile = a.type === 'tsumo' ? p.drawn! : g.lastDiscard!.tile;
+            if (!g.winResult(mine, tile, a.type === 'tsumo')?.yakuman) cheap++;
+          }
+          // 不坐北家：客风碰了没役（手里没有役牌副露时不碰）
+          if (a.type === 'pon' && g.seatWind(mine) !== NORTH) {
+            const k = kindOf(g.lastDiscard!.tile);
+            const yakuhai = (x: number) => isDragon(x) || x === g.seatWind(mine) || x === 27 + g.roundWind;
+            if (isWind(k) && !yakuhai(k) && !p.melds.some((m) => m.type !== 'chi' && yakuhai(kindOf(m.tiles[0])))) guest++;
+          }
+        }
+        g.act(s, a);
+      }
+    }
+    console.log({ opened, suushii, windOut, cheap, guest });
+    expect(opened).toBeGreaterThan(8);
+    expect(windOut).toBe(0);
+    expect(cheap).toBe(0);
+    expect(guest).toBe(0);
+    // 鸣出东北的局多半做成小四喜（改之前这些局里有四成把送来的西南打掉了，四喜只有三分之一）
+    expect(suushii / opened).toBeGreaterThan(0.45);
+  }, 120000);
 });
 
 describe('泷见春', () => {
