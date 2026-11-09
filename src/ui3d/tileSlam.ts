@@ -1,9 +1,13 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { TILE_H, TILE_T } from './tableLayout';
+import { FlickMotion, flickHitOffset, flickPressOffset } from './slamFlick';
+import { HAND_SCALE, Key, SlamMotion, SlamStyle, V, basis, bezier, clamp01, easeInOut, easeOut, smooth } from './slamMath';
 
-// 自摸砸牌（照雀魂的节奏，画面和动作都是自己做的）：
-// 一只修长的手（手背朝着看的人）从这一家身前伸上来，食指、中指的指尖压着那张牌（牌背贴着指肚），举高停一下，
+export type { SlamStyle } from './slamMath';
+
+// 自摸砸牌。每个角色用哪一套动作（style）在 looks.ts 里配，不配就是通用的 press：
+//   press（通用，照雀魂的节奏，画面和动作都是自己做的）：一只修长的手（手背朝着看的人）从这一家身前伸上来，食指、中指的指尖压着那张牌（牌背贴着指肚），举高停一下，
 // 往前一扫，把牌扣在桌上（牌面朝下）；手撤走，牌自己翻起来立住，亮一下光，再“砰”地炸开。
 // 自己自摸时手是从镜头跟前（画面左下）伸上来的，离镜头近，所以很大；扫下去的时候越来越远、越来越小。
 //
@@ -36,13 +40,16 @@ export interface SlamTiming {
 
 export const SLAM_TIMING: SlamTiming = { reach: 0.26, rise: 0.24, show: 0.12, sweep: 0.2, flat: 0.14, flip: 0.12, charge: 0.2, leave: 0.26 };
 
-// 从开始到牌扣到桌上、到炸开各要多久（carried：牌一开始就在手里，没有 reach）
-export function slamPressOffset(carried: boolean, timing: Partial<SlamTiming> = {}): number {
+// 从开始到牌扣到桌上、到炸开各要多久（carried：牌一开始就在手里，没有 reach）。
+// 竹井久那一套（hisa）的节奏在 slamFlick.ts，不看 carried、timing
+export function slamPressOffset(carried: boolean, timing: Partial<SlamTiming> = {}, style: SlamStyle = 'press'): number {
+  if (style === 'hisa') return flickPressOffset();
   const t = { ...SLAM_TIMING, ...timing };
   return (carried ? 0 : t.reach) + t.rise + t.show + t.sweep;
 }
 
-export function slamHitOffset(carried: boolean, timing: Partial<SlamTiming> = {}): number {
+export function slamHitOffset(carried: boolean, timing: Partial<SlamTiming> = {}, style: SlamStyle = 'press'): number {
+  if (style === 'hisa') return flickHitOffset();
   const t = { ...SLAM_TIMING, ...timing };
   return slamPressOffset(carried, t) + t.flat + t.flip + t.charge;
 }
@@ -68,15 +75,18 @@ export interface SlamView {
 
 export interface SlamSpec {
   tile: THREE.Object3D; // 要砸的那张牌（牌的整组）
-  to: SlamPose; // 最后立在桌上的样子
+  style?: SlamStyle; // 哪一套动作，不给是 press
+  to: SlamPose; // 最后的样子：press 是立在桌上，hisa 是牌面朝上躺在桌上
   from?: SlamPose; // 牌现在在哪：手先伸过去拿起来。不给（carried）就是牌一开始就在手里，跟着手从画面外伸上来
   side: THREE.Vector3; // 砸牌那一家的右手方向（世界坐标，水平）
   out: THREE.Vector3; // 那一家往外（朝她自己身体）的方向（世界坐标，水平）
   view?: SlamView; // 给了就是第一人称：手在这个镜头跟前举起来（自己砸牌）
+  cam?: SlamView; // 牌桌的镜头（不管是谁砸）：hisa 用它把弹到最高处的牌挪进画面
   timing?: Partial<SlamTiming>;
   arm?: Partial<ArmLook> | null; // null：不带手，牌从原处（from，不给就是落点）自己跳起来、转一圈亮出牌背，再扣下去
-  onPress?: (at: THREE.Vector3) => void; // 牌扣到桌上那一刻，at 是牌底下的桌面点
-  onCharge?: (at: THREE.Vector3) => void; // 牌立好、开始亮光，at 是牌中心
+  wall?: THREE.Vector3; // hisa：她面前那段牌山顶上（手先伸到这里摸牌）
+  onPress?: (at: THREE.Vector3) => void; // 牌扣到桌上那一刻（hisa 是翻过来落到桌上），at 是牌底下的桌面点
+  onCharge?: (at: THREE.Vector3, dur: number) => void; // 开始亮光（press 是牌立好，hisa 是弹到最高处），at 是牌中心，dur 是亮多久就炸开
   onHit?: (at: THREE.Vector3) => void; // 炸开那一刻，at 是牌底下的桌面点
   onDone?: () => void; // 炸完、手也撤走以后
 }
@@ -88,12 +98,8 @@ export interface SlamRun {
   doneAt: number;
 }
 
-interface Key {
-  pos: THREE.Vector3;
-  quat: THREE.Quaternion;
-}
-
 interface Active {
+  kind: 'press';
   spec: SlamSpec;
   timing: SlamTiming;
   t0: number;
@@ -112,40 +118,28 @@ interface Active {
   shadows: THREE.Mesh[]; // 牌在半空时关掉影子（离桌面远，影子落在桌子中间很怪），扣到桌上再打开
 }
 
-const easeOut = (x: number) => 1 - (1 - x) ** 3;
-const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
-const smooth = (a: number, b: number, x: number) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
-const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
-const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+// 自己算好整段的动作（SlamMotion，比如竹井久的 FlickMotion）
+interface MotionActive {
+  kind: 'motion';
+  spec: SlamSpec;
+  t0: number;
+  arm: THREE.Group | null;
+  motion: SlamMotion;
+  pressed: boolean;
+  charged: boolean;
+  hit: boolean;
+  shadows: THREE.Mesh[]; // 一直关到砸下去
+}
 
 // 牌在手里的位置（手里坐标，单位是牌宽）：食指、中指指肚底下，牌背贴着指肚，牌顶朝手腕，牌的下半截露在指尖外面
 const TILE_IN_HAND = V(-0.6, 3.5, -1.12);
 const TILE_IN_HAND_Q = new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), Math.PI - 0.4);
-// 手比照着牌放大多少（模型是按牌宽量的；放大一点，扣牌时离镜头远也看得清）
-const HAND_SCALE = 1.5;
 // 自己砸牌时手举在镜头前多远（牌的 scale 倍，单位牌宽）、画面上哪里（-1..1，手掌中心）
 const NEAR_DIST = 17;
 const NEAR_X = -0.45;
 const NEAR_Y = -0.55;
 // 扣牌时手指往下压多少（弧度）：手差不多平着，指尖弯下去压住牌，从上往下看手指最长
 const PRESS_PITCH = 0.08;
-
-// 手的朝向：手指朝 f，手背朝 d（d 会被扳成和 f 垂直）
-function basis(f: THREE.Vector3, d: THREE.Vector3): THREE.Quaternion {
-  const y = f.clone().normalize();
-  const z = d.clone().addScaledVector(y, -d.dot(y)).normalize();
-  const x = new THREE.Vector3().crossVectors(y, z);
-  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
-}
-
-function bezier(p0: THREE.Vector3, p1: THREE.Vector3, p2: THREE.Vector3, u: number): THREE.Vector3 {
-  const a = p0.clone().lerp(p1, u);
-  const b = p1.clone().lerp(p2, u);
-  return a.lerp(b, u);
-}
 
 // ---------- 手的模型 ----------
 
@@ -301,11 +295,18 @@ function disposeArm(g: THREE.Group): void {
 
 export class TileSlam {
   readonly group = new THREE.Group();
-  private list: Active[] = [];
+  private list: (Active | MotionActive)[] = [];
 
   // 开始砸一张牌，返回什么时候扣到桌上、什么时候炸开、什么时候做完
   start(spec: SlamSpec, now: number): SlamRun {
     this.cancel(spec.tile);
+    if (spec.style === 'hisa') {
+      const motion = new FlickMotion({ to: spec.to, side: spec.side, out: spec.out, wall: spec.wall, cam: spec.cam, near: !!spec.view, hand: spec.arm !== null });
+      const m: MotionActive = { kind: 'motion', spec, t0: now, arm: this.newArm(spec, motion.handScale), motion, pressed: false, charged: false, hit: false, shadows: this.shadowsOff(spec.tile) };
+      this.list.push(m);
+      this.poseMotion(m, now);
+      return { pressAt: now + motion.pressAt, hitAt: now + motion.hitAt, doneAt: now + motion.doneAt };
+    }
     const timing = { ...SLAM_TIMING, ...spec.timing };
     const s = spec.to.scale;
     const up = V(0, 1, 0);
@@ -361,27 +362,37 @@ export class TileSlam {
       const gq = basis(fwd.clone().addScaledVector(up, -0.5), up);
       grab = { pos: spec.from.pos.clone().sub(attach(gq)).addScaledVector(up, 0.1 * s), quat: gq };
     }
-    let arm: THREE.Group | null = null;
-    if (spec.arm !== null) {
-      arm = buildArm(spec.arm ?? {});
-      arm.scale.setScalar(s * HAND_SCALE);
-      arm.visible = false;
-      this.group.add(arm);
-    }
-    const shadows: THREE.Mesh[] = [];
-    spec.tile.traverse((o) => {
-      if (o instanceof THREE.Mesh && o.castShadow) {
-        o.castShadow = false;
-        shadows.push(o);
-      }
-    });
-    const a: Active = { spec, timing, t0: now, arm, s, enter, grab, raise, press, leave, flat, hop, pressed: false, charged: false, hit: false, shadows };
+    const arm = this.newArm(spec);
+    const shadows = this.shadowsOff(spec.tile);
+    const a: Active = { kind: 'press', spec, timing, t0: now, arm, s, enter, grab, raise, press, leave, flat, hop, pressed: false, charged: false, hit: false, shadows };
     this.list.push(a);
     this.pose(a, now);
     const carried = !spec.from || noHand;
     const pressAt = now + slamPressOffset(carried, timing);
     const hitAt = now + slamHitOffset(carried, timing);
     return { pressAt, hitAt, doneAt: noHand ? hitAt : Math.max(hitAt, pressAt + timing.leave) };
+  }
+
+  // 这一下的手（不带手是 null）：大小照着牌落地时的大小，先藏着
+  private newArm(spec: SlamSpec, scale = HAND_SCALE): THREE.Group | null {
+    if (spec.arm === null) return null;
+    const arm = buildArm(spec.arm ?? {});
+    arm.scale.setScalar(spec.to.scale * scale);
+    arm.visible = false;
+    this.group.add(arm);
+    return arm;
+  }
+
+  // 牌在半空时关掉影子，记下关了哪些
+  private shadowsOff(tile: THREE.Object3D): THREE.Mesh[] {
+    const shadows: THREE.Mesh[] = [];
+    tile.traverse((o) => {
+      if (o instanceof THREE.Mesh && o.castShadow) {
+        o.castShadow = false;
+        shadows.push(o);
+      }
+    });
+    return shadows;
   }
 
   // 这张牌正在被砸（还没炸开）
@@ -403,10 +414,43 @@ export class TileSlam {
   }
 
   update(now: number): void {
-    for (const a of [...this.list]) this.pose(a, now);
+    for (const a of [...this.list]) {
+      if (a.kind === 'motion') this.poseMotion(a, now);
+      else this.pose(a, now);
+    }
   }
 
-  private finish(a: Active, callback: boolean): void {
+  // 自己算好整段的动作：照 motion 摆手和牌，到点回调
+  private poseMotion(a: MotionActive, now: number): void {
+    const { spec, motion: m } = a;
+    const k = now - a.t0;
+    const fr = m.frame(k);
+    if (a.arm) {
+      a.arm.visible = fr.hand !== null;
+      if (fr.hand) {
+        a.arm.position.copy(fr.hand.pos);
+        a.arm.quaternion.copy(fr.hand.quat);
+      }
+    }
+    if (!a.hit) this.setTile(a, fr.tile.pos, fr.tile.quat, fr.tile.scale);
+    if (!a.pressed && k >= m.pressAt) {
+      a.pressed = true;
+      spec.onPress?.(m.pressPoint.clone());
+    }
+    if (!a.charged && k >= m.chargeAt) {
+      a.charged = true;
+      spec.onCharge?.(m.chargePoint.clone(), m.chargeDur);
+    }
+    if (!a.hit && k >= m.hitAt) {
+      a.hit = true;
+      this.shadowsOn(a);
+      this.setTile(a, spec.to.pos, spec.to.quat, spec.to.scale);
+      spec.onHit?.(m.hitPoint.clone());
+    }
+    if (a.hit && k >= m.doneAt) this.finish(a, true);
+  }
+
+  private finish(a: Active | MotionActive, callback: boolean): void {
     this.list = this.list.filter((x) => x !== a);
     this.shadowsOn(a);
     const { tile, to } = a.spec;
@@ -422,12 +466,12 @@ export class TileSlam {
     if (callback) a.spec.onDone?.();
   }
 
-  private shadowsOn(a: Active): void {
+  private shadowsOn(a: Active | MotionActive): void {
     for (const m of a.shadows) m.castShadow = true;
     a.shadows = [];
   }
 
-  private setTile(a: Active, pos: THREE.Vector3, quat: THREE.Quaternion, scale: number): void {
+  private setTile(a: Active | MotionActive, pos: THREE.Vector3, quat: THREE.Quaternion, scale: number): void {
     const t = a.spec.tile;
     t.position.copy(pos);
     t.quaternion.copy(quat);
@@ -563,13 +607,13 @@ export class TileSlam {
       this.setTile(a, spec.to.pos, spec.to.quat, s);
       if (!a.charged) {
         a.charged = true;
-        spec.onCharge?.(spec.to.pos.clone());
+        spec.onCharge?.(spec.to.pos.clone(), t.charge);
       }
     } else if (!a.hit) {
       a.hit = true;
       if (!a.charged) {
         a.charged = true;
-        spec.onCharge?.(spec.to.pos.clone());
+        spec.onCharge?.(spec.to.pos.clone(), 0);
       }
       this.setTile(a, spec.to.pos, spec.to.quat, s);
       spec.onHit?.(spec.to.pos.clone().addScaledVector(up, (-TILE_H / 2) * s));

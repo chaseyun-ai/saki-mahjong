@@ -29,6 +29,7 @@ import { ChainStyleId, PlockStyleId, RiiProj, RiiSfxId, lookChoices, riiLook, se
 import { RiiTestStart, riiSetPanelHtml, riiTestPanelHtml } from './riiSetup';
 import { riichiTsumoStage } from './riiStage';
 import { RinshanTier, rinshanStage, rinshanTestPanelHtml } from './sakiStage';
+import { slamStage, slamTestPanelHtml } from './slamStage';
 import { koromoSea } from './koromoSea';
 import { SEA_TEST_OPPONENTS, koromoSeaStage } from './waterStage';
 import { padlockArrive, playPadlock } from './riiPadlock';
@@ -170,7 +171,7 @@ export class App {
   private mode: TableMode = loadTableMode();
   // 单人对局的规则、动画开关（matchSetup.ts）；panel 是选人页上开着的设置面板
   private settings: MatchSettings = loadSettings();
-  private panel: 'match' | 'visual' | 'rii' | 'riiTest' | 'sakiTest' | null = null;
+  private panel: 'match' | 'visual' | 'rii' | 'riiTest' | 'sakiTest' | 'slamTest' | null = null;
   // 这一局是「白水哩 · 姬子测试」窗口开的：番缚的样子用测试那一份，对局里也能换样子、试结算
   private riiTest = false;
   // 页面主人才能换素材：视觉设置里多一行入口
@@ -360,6 +361,8 @@ export class App {
     this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="rii-test">白水哩 · 姬子测试</button>');
     // 宫永咲的岭上开花测试：每局暗杠、岭上自摸，看砸牌和百合
     this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="saki-test">宫永咲 · 岭上开花测试</button>');
+    // 自摸动作测试：挑一个人、坐哪家，每局第二张自摸，看她砸牌的动作
+    this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="slam-test">自摸动作测试</button>');
     // 水的特效：衣每一局都海底捞月、一路打到海底自摸；透华开局就治水
     this.root
       .querySelector('.sel-more-menu')
@@ -395,7 +398,7 @@ export class App {
   }
 
   // 右上角的两个设置面板
-  private openPanel(kind: 'match' | 'visual' | 'rii' | 'riiTest' | 'sakiTest'): void {
+  private openPanel(kind: 'match' | 'visual' | 'rii' | 'riiTest' | 'sakiTest' | 'slamTest'): void {
     this.root.querySelector('details.sel-more[open]')?.removeAttribute('open');
     this.panel = kind;
     // 番缚设置、测试窗口各改各的那一份
@@ -436,7 +439,9 @@ export class App {
               ? riiTestPanelHtml()
               : this.panel === 'sakiTest'
                 ? rinshanTestPanelHtml()
-                : '';
+                : this.panel === 'slamTest'
+                  ? slamTestPanelHtml()
+                  : '';
     const panel = slot.querySelector<HTMLElement>('.set-panel');
     if (panel) panel.scrollTop = top;
     if (key) slot.querySelector<HTMLElement>(key)?.focus();
@@ -642,6 +647,21 @@ export class App {
     const players = [mine, ...others];
     const stage = rinshanStage(this.me, tier);
     this.beginGame(players, new Game({ seed, format: st.length, startScore: st.start, rules: { ...rulesOf(st), tobi: false }, firstDealer: this.me, stage, players: players.map((c, i) => ({ name: c.name, ability: i === this.me ? c.ability : null, manual: i === this.me })) }));
+  }
+
+  // 「自摸动作测试」：charId 坐在 rel 那一家（0 自己、1 下家、2 对家、3 上家）、坐庄，每局第二张自摸（slamStage.ts）。
+  // 别的座位坐三位没有特别动作的人；谁都不用能力、不击飞，挂机看（点「挂机中」可以接管）
+  private startSlamTest(charId: string, rel: number): void {
+    const seat = (this.me + rel) % 4;
+    const star = CHARACTERS.find((c) => c.id === charId)!;
+    const fill = ['hajime', 'tomoki', 'izumi', 'kana'].filter((id) => id !== charId).map((id) => CHARACTERS.find((c) => c.id === id)!);
+    const players = [0, 1, 2, 3].map((s) => (s === seat ? star : fill.shift()!));
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    const st = this.settings;
+    this.team = null;
+    this.auto = true;
+    const game = new Game({ seed, format: st.length, startScore: st.start, rules: { ...rulesOf(st), tobi: false }, firstDealer: seat, stage: slamStage(seat), players: players.map((c) => ({ name: c.name, ability: null, manual: false })) });
+    this.beginGame(players, game);
   }
 
   // 试玩姬子的配牌特效：自己是姬子，每一局（东南两场、0–9 本场）都当作哩拿到了钥匙（broken：破碎的钥匙），开局就是那一局
@@ -1713,6 +1733,15 @@ export class App {
     if (el.dataset.ui === 'saki-test-go') {
       this.panel = null;
       this.startRinshanTest(el.dataset.v as RinshanTier | 'cycle');
+      return;
+    }
+    if (el.dataset.ui === 'slam-test') {
+      this.openPanel('slamTest');
+      return;
+    }
+    if (el.dataset.ui === 'slam-test-go' && el.dataset.v) {
+      this.panel = null;
+      this.startSlamTest(el.dataset.v, Number(el.dataset.seat ?? 0));
       return;
     }
     if (el.dataset.ui === 'rii-test-go') {

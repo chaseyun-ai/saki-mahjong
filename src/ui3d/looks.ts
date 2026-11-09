@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { VRM } from '@pixiv/three-vrm';
+import type { SlamStyle } from './slamMath';
 
 // 每个角色用哪个底模，以及头发、眼睛要染成什么颜色。
 // 底模是 VRoid 官方的 CC0 示例模型（见 README），颜色在加载后直接改贴图，不用另存模型。
@@ -16,6 +17,8 @@ export interface Look {
   pose?: RestPose;
   // 牌河和副露倒过来摆，方便对手看（松实玄、松实宥）
   upsideDown?: boolean;
+  // 自摸砸牌用哪一套动作（tileSlam.ts）：不配就是通用的 press；hisa 是竹井久的摔牌
+  slam?: SlamStyle;
   // 先占位、借别人的模型：头像、切入不用这个模型渲染的图，显示名字的最后一个字（素材页换了图的照样显示）
   borrowed?: boolean;
 }
@@ -58,7 +61,7 @@ export const LOOKS: Record<string, Look> = {
   // 染谷真子：先占位，借咲的短发模型换成墨绿色头发、棕色眼睛
   mako: { model: 'models/vroid-e.v2.glb', hair: '#3c5a48', eyes: '#7a5a3a', hairContrast: 0.6, reveal: 'wave', pose: 'crossed', borrowed: true },
   // 竹井久：先占位，借和的长发模型换成红棕色头发、灰绿色眼睛
-  hisa: { model: 'models/vroid-g.v2.glb', hair: '#8a3a2e', eyes: '#5a7a6a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
+  hisa: { model: 'models/vroid-g.v2.glb', hair: '#8a3a2e', eyes: '#5a7a6a', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true, slam: 'hisa' },
   // 末原恭子：先占位，借玄的长发模型换成黑色头发、深蓝色眼睛
   kyouko: { model: 'models/vroid-shino.v2.glb', hair: '#26242c', eyes: '#3a4a7a', hairContrast: 0.5, reveal: 'wave', pose: 'edge', borrowed: true },
   // 涉谷尧深：先占位，借怜的短发模型换成深棕色头发、深棕色眼睛
