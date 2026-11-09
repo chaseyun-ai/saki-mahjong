@@ -1,8 +1,8 @@
 import './himeko2d.css';
-import { beatHit, beatLength } from './himekoBeat';
+import { beatFinal, beatHit, beatLength } from './himekoBeat';
 
-// 鹤田姬子拿到钥匙的那一局（2D 牌桌）：和 3D 一样，配牌时她的牌一张接一张（himekoBeat.ts）裹着火、拖着火尾，
-// 像流星一样从画面右上方的天上砸进她手里，最后一张砸下来最重（推开一圈光、牌桌一震）；理完牌一团火从她右手边烧到左手边。
+// 鹤田姬子拿到钥匙的那一局（2D 牌桌）：和 3D 一样，配牌时她的牌东一张西一张错落着（himekoBeat.ts）裹着火、拖着火尾，
+// 从画面正上方的天上竖着砸进她手里（牌不打转），最后一张砸下来最重（推开一圈光、牌桌一震）；理完牌一团火从她右手边烧到左手边。
 // 包着牌的火、火尾、落地的火星和后面的火画在盖住牌桌的一张 canvas 上（不挡点击）；牌自己的下落在同一帧里
 // 用 translate/rotate/scale 摆（这样牌和火尾永远对得上），牌出现、发橙光、被火烧到时映橙色是 CSS 动画
 // （himeko2d.css，牌桌每次重画后 apply() 用负的 animation-delay 接着放）。
@@ -15,8 +15,8 @@ const T = {
   burn: 1.0, // 火头过去以后还烧多久
 };
 
-// 流星从哪个方向来：画面右上方，偏竖直 24°
-const DIR = { x: Math.sin(0.42), y: -Math.cos(0.42) };
+// 流星从哪个方向来：画面正上方，竖着砸下来
+const DIR = { x: 0, y: -1 };
 
 interface Spot {
   x: number; // 牌中心（牌桌坐标）
@@ -140,11 +140,17 @@ export class Himeko2D {
   private sprites: HTMLCanvasElement[] | null = null;
   private calm = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   private count = 13;
+  private seed = 0; // 这一局落下的先后、间隔（himekoBeat.ts 的 beatSeed）
   private shook = false;
 
   // 第 i 张（她自己看过去从左到右）什么时候落地
   private hitAt(i: number): number {
-    return T.open + beatHit(i, this.count).at;
+    return T.open + beatHit(i, this.count, this.seed).at;
+  }
+
+  // 第 i 张是不是最后砸下来的那张（重拍）
+  private accent(i: number): boolean {
+    return beatHit(i, this.count, this.seed).accent === 2;
   }
 
   // 整段多久（秒）
@@ -153,7 +159,7 @@ export class Himeko2D {
   }
 
   private get fireAt(): number {
-    return T.open + beatLength(this.count) + T.light;
+    return T.open + beatLength(this.count, this.seed) + T.light;
   }
 
   get running(): boolean {
@@ -166,7 +172,8 @@ export class Himeko2D {
     return Math.max(0, this.total * 1000 - (performance.now() - this.start));
   }
 
-  begin(): void {
+  begin(seed = 0): void {
+    this.seed = seed;
     this.start = performance.now();
     this.spots = [];
     this.shook = false;
@@ -209,7 +216,7 @@ export class Himeko2D {
     });
     measured.sort((a, b) => a.along - b.along);
     this.spots = measured.map((m) => m.spot);
-    // 手里从左到右第 i 张（她自己看过去），照这个顺序一张接一张砸下来；火从最后一张烧到第一张
+    // 手里从左到右第 i 张（她自己看过去），按 himekoBeat.ts 排好的先后错落着砸下来；火从最后一张烧到第一张
     this.spots.forEach(({ el }, i) => {
       el.classList.add('hk-tile');
       const fall = this.hitAt(i) - T.drop - t;
@@ -251,7 +258,7 @@ export class Himeko2D {
     ctx.globalCompositeOperation = 'lighter';
     this.sprites ??= [0.1, 0.35, 0.6, 0.9].map(sprite);
     // 最后一张砸下来时牌桌一震
-    if (!this.shook && this.spots.length && t >= this.hitAt(this.spots.length - 1)) {
+    if (!this.shook && this.spots.length && t >= T.open + beatFinal(this.count, this.seed)) {
       this.shook = true;
       const table = c.parentElement;
       table?.classList.add('hk-shake');
@@ -264,7 +271,7 @@ export class Himeko2D {
     this.raf = requestAnimationFrame(this.draw);
   };
 
-  // 正在往下砸的牌摆到火尾的头上（越落越快，翻着跟头，离得远时大一点）；落地了就去掉位移
+  // 正在往下砸的牌摆到火尾的头上（越落越快，竖着落、不打转，离得远时大一点）；落地了就去掉位移
   private place(t: number): void {
     this.spots.forEach((s, i) => {
       const a = t - (this.hitAt(i) - T.drop);
@@ -276,7 +283,6 @@ export class Himeko2D {
       const k = Math.max(0, a / T.drop);
       const left = 1 - k * k;
       style.translate = `${(s.lx * left).toFixed(1)}px ${(s.ly * left).toFixed(1)}px`;
-      style.rotate = `${((i % 2 ? 260 : -220) * (1 - k) * (1 - k)).toFixed(1)}deg`;
       style.scale = (1 + 0.3 * (1 - k)).toFixed(3);
     });
   }
@@ -296,7 +302,7 @@ export class Himeko2D {
   private drawMeteor(ctx: CanvasRenderingContext2D, s: Spot, i: number, t: number): void {
     const a = t - (this.hitAt(i) - T.drop);
     if (a < 0 || a > T.drop + 0.9) return;
-    const accent = i === this.spots.length - 1;
+    const accent = this.accent(i);
     const k = Math.min(1, a / T.drop);
     const [hx, hy] = this.at(s, k);
     const size = Math.max(s.w, s.h * 0.75);

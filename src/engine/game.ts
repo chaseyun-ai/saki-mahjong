@@ -133,6 +133,15 @@ export interface GameOptions {
   allies?: string[][];
   // 团体赛：同队的白水哩在之前的位置拿到的钥匙（每个座位一份），鹤田姬子在同一个场、局、本场用
   keys?: BindKey[][];
+  // 测试用（「白水哩 · 姬子测试」窗口开的局）：见 Stage
+  stage?: Stage;
+}
+
+// 测试用的摆牌：所有能力调整完配牌以后（发牌前）、所有能力动完这一次摸牌以后（摸之前），最后再把牌山摆一下。
+// 平常的对局没有
+export interface Stage {
+  deal?(g: Game): void;
+  draw?(g: Game, seat: number, rinshan: boolean): void;
 }
 
 const WIND_NAMES = ['东', '南', '西', '北'];
@@ -156,6 +165,8 @@ export class Game {
   allies: string[][] = [[], [], [], []];
   // 每个座位从之前的位置带来的钥匙（见 GameOptions.keys）
   keys: BindKey[][] = [[], [], [], []];
+  // 测试用的摆牌（见 Stage）
+  stage: Stage | null = null;
 
   // 第几局（从 1 起，每开一局加一，连庄也算）；发牌前等玩家选技能时还是上一局的
   round = 0;
@@ -224,6 +235,7 @@ export class Game {
     setRedFives(this.rules.red);
     if (opts.allies) this.allies = opts.allies.map((a) => [...a]);
     if (opts.keys) this.keys = opts.keys.map((k) => [...k]);
+    if (opts.stage) this.stage = opts.stage;
     this.riichiSticks = opts.riichiSticks ?? 0;
     this.startOrWait();
   }
@@ -649,6 +661,7 @@ export class Game {
       this.wall.guard = null;
       this.dealActor = null;
     }
+    this.stage?.deal?.(this);
     this.dealUnmet = this.dealRules.filter((r) => r.bad(this.dealHand(r.target)) > 0);
     for (let i = 0; i < 52; i++) this.wall.locked.add(this.wall.live[i], 'deal');
     for (let i = 0; i < 13; i++) {
@@ -687,6 +700,7 @@ export class Game {
     this.applyDrawAbilities(seat, rinshan, bust);
     if (!rinshan && seat === this.dealer && this.isFirstTurn(seat)) this.denyTenhou(seat, bust);
     this.bustFallback(seat, rinshan, bust);
+    this.stage?.draw?.(this, seat, rinshan);
     const tile = rinshan ? this.wall.drawRinshan() : this.wall.draw();
     this.drawing = null;
     const p = this.players[seat];

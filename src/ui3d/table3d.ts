@@ -27,7 +27,7 @@ import { TableColors, tableColors } from '../ui/theme';
 import { pondJitter, varyDiscard, vary } from '../ui/vary';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
-import { BeatHit, beatFinal, beatHit, beatLength } from '../ui/himekoBeat';
+import { BeatHit, beatFinal, beatHit, beatLength, beatSeed } from '../ui/himekoBeat';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -1267,16 +1267,18 @@ export class Table3D {
     this.himekoDeal = null;
     const hk = himekoKeySeat(g);
     if (hk !== null) {
-      // 姬子的牌照常从牌山里拿走（往天上飞走），等别人发完，再一张接一张裹着火像流星一样砸进手里（himekoBeat.ts）
+      // 姬子的牌照常从牌山里拿走（往天上飞走），等别人发完，再错落着一张一张裹着火从天上竖着砸进手里（himekoBeat.ts）
       const p = g.players[hk];
       const open = start + DEAL_START + 16 * DEAL_BATCH + 0.2;
       if (p.drawn !== null) order.set(p.drawn, { d: 52, time: open - 0.2 });
       const mine = [...p.hand].sort((a, b) => (order.get(a)?.d ?? 99) - (order.get(b)?.d ?? 99));
       const n = mine.length;
-      const land = new Map(mine.map((t, i) => [t, { ...beatHit(i, n), at: open + beatHit(i, n).at }] as [TileId, BeatHit]));
-      this.deal.extra = Math.max(0, open + beatLength(n) - (start + DEAL_SORT));
+      // mine 按发到的顺序排，也就是发牌时她手里从左到右的顺序
+      const seed = beatSeed(g.seed, g.round);
+      const land = new Map(mine.map((t, i) => [t, { ...beatHit(i, n, seed), at: open + beatHit(i, n, seed).at }] as [TileId, BeatHit]));
+      this.deal.extra = Math.max(0, open + beatLength(n, seed) - (start + DEAL_SORT));
       const fireAt = start + this.deal.extra + DEAL_END + 0.15;
-      this.himekoDeal = { seat: hk, land, pending: new Set(mine), axes: new Map(), open, aimed: false, final: open + beatFinal(n), shook: false, fireAt, fired: false };
+      this.himekoDeal = { seat: hk, land, pending: new Set(mine), axes: new Map(), open, aimed: false, final: open + beatFinal(n, seed), shook: false, fireAt, fired: false };
     }
     this.dice.roll(g.dice, DEAL_END + 0.6);
     for (const a of this.handAnims) this.emitMarkers(a, Infinity);
@@ -2088,15 +2090,14 @@ export class Table3D {
     return out;
   }
 
-  // 姬子的配牌：第一次摆牌时记下她每张牌落在手里哪里，定好每颗流星从哪个方向砸下来
+  // 姬子的配牌：第一次摆牌时记下她每张牌落在手里哪里；流星都从正上方竖着砸下来
   private aimHimeko(g: Game, hand: Map<TileId, Placement>): void {
     const hk = this.himekoDeal;
     if (!hk || hk.aimed || !this.deal) return;
     hk.aimed = true;
-    // 流星都从她右手边、牌桌中间那一侧的天上斜着砸下来（2D 也是从画面右上方来）
-    const up = new THREE.Vector3(0, 1, 0);
-    const inward = this.seatPoint(hk.seat, 0, 0, -1).normalize();
-    const right = this.seatPoint(hk.seat, 1, 0, 0).normalize();
+    // 流星在画面上竖着砸下来（2D 也是从画面正上方来）：沿着镜头的“上”方向落，这样不管牌在画面哪边，
+    // 火尾在画面上都是竖直的（照世界的竖直方向落的话，透视会让画面两边的火尾歪成斜的）
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion).normalize();
     const list: DescentTile[] = [];
     let scale = 1;
     for (const t of g.players[hk.seat].hand) {
@@ -2104,9 +2105,7 @@ export class Table3D {
       const dest = hand.get(t);
       if (!hit || !dest) continue;
       scale = dest.scale;
-      // 每颗稍微错开一点，火尾不叠成一条
-      const wob = ((t * 37) % 11) / 10 - 0.5;
-      const axis = up.clone().addScaledVector(inward, 0.42 + 0.08 * wob).addScaledVector(right, 0.5 + 0.12 * wob).normalize();
+      const axis = up.clone();
       hk.axes.set(t, axis);
       list.push({ pos: dest.pos.clone(), floor: dest.pos.y - (TILE_H / 2) * dest.scale, axis, at: hit.at, accent: hit.accent });
     }
@@ -2126,7 +2125,7 @@ export class Table3D {
     }
   }
 
-  // 每帧：流星还在天上的牌照着轨迹摆（越落越快、翻着跟头），砸到手里那一下落定；最后一张砸下来画面一震；
+  // 每帧：流星还在天上的牌照着轨迹摆（越落越快，竖着落、不打转），砸到手里那一下落定；最后一张砸下来画面一震；
   // 理完牌火从她右手边那张烧到左手边那张。要在 animateHands（会清空 held）之后、牌往目标靠拢之前调用
   private updateHimeko(): void {
     const hk = this.himekoDeal;
@@ -2156,8 +2155,7 @@ export class Table3D {
       this.held.add(t);
       if (this.burnMats) [obj.body.material, obj.back.material, obj.face.material] = [this.burnMats.body, this.burnMats.back, this.burnMats.face];
       obj.group.position.copy(HimekoFx.meteorAt({ pos: dest.pos, axis }, s));
-      const spin = (1 - s) * (1 - s) * (t % 2 ? 2.6 : -2.2);
-      obj.group.quaternion.copy(dest.quat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0.8, 0.25, 0.55).normalize(), spin));
+      obj.group.quaternion.copy(dest.quat);
       obj.group.scale.setScalar(dest.scale * (1 + 0.25 * (1 - s)));
     }
     if (!hk.shook && this.now >= hk.final) {

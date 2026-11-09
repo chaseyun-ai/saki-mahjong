@@ -26,6 +26,7 @@ import { Chains2D } from './chains2d';
 import { ChainOutcome, FADE, chainOutcomes, outcomeTime, skyStart, skyTime } from './riiChainPlan';
 import { ChainStyleId, PlockStyleId, RiiProj, RiiSfxId, lookChoices, riiLook, setRiiLook, useRiiLook } from './riiLook';
 import { RiiTestStart, riiSetPanelHtml, riiTestPanelHtml } from './riiSetup';
+import { riichiTsumoStage } from './riiStage';
 import { padlockArrive, playPadlock } from './riiPadlock';
 import { PlockEnd, PlockPlace, plockHtml } from './riiPlock';
 import { SkyKey } from './skyKey';
@@ -34,7 +35,7 @@ import { saeCanAim, saeAim, snipedBy } from '../abilities/sae';
 import { initLensDrag, lensMarkHtml, lensSlotsHtml, playLensShot } from './lensDrag';
 import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
-import { Action, Game, GameEvent, RoundResult, WinInfo } from '../engine/game';
+import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/game';
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
@@ -60,6 +61,7 @@ import { ForecastCache } from '../ai/forecast';
 import { himekoKeySeat } from '../abilities/himeko';
 import type { BindKey } from '../abilities/types';
 import { Himeko2D } from './himeko2d';
+import { beatSeed } from './himekoBeat';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -598,6 +600,7 @@ export class App {
   private startRiiTest(kind: RiiTestStart): void {
     this.pendingRiiTest = true;
     if (kind === 'rii') this.startGame('rii');
+    else if (kind === 'riichi') this.startGame('rii', undefined, riichiTsumoStage(this.me));
     else if (kind === 'pair') this.startGame('rii', 'himeko');
     else this.startHimekoDemo(kind === 'himeko-broken');
   }
@@ -619,8 +622,8 @@ export class App {
     this.beginGame(players, new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer: Math.floor(Math.random() * 4), keys: [0, 1, 2, 3].map((i) => (i === this.me ? keys : [])), players: players.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
   }
 
-  // with：测试用，下家固定坐这位（白水哩和姬子同桌）
-  private startGame(charId: string, withId?: string): void {
+  // with：测试用，下家固定坐这位（白水哩和姬子同桌）；stage：测试用的摆牌（见 Game 的 Stage）
+  private startGame(charId: string, withId?: string, stage?: Stage): void {
     const mine = CHARACTERS.find((c) => c.id === charId)!;
     const seed = Math.floor(Math.random() * 2 ** 31);
     // 对手：设置里选了的照选的坐，随机的从其余角色里抽
@@ -629,7 +632,7 @@ export class App {
     this.team = null;
     this.auto = false;
     const st = this.settings;
-    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer: Math.floor(Math.random() * 4), players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me, startForm: i === this.me && c.id === 'toka' && st.chisui })) }));
+    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer: Math.floor(Math.random() * 4), players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me, startForm: i === this.me && c.id === 'toka' && st.chisui })), stage }));
   }
 
   // 公开手牌：单人对局按设置，团体赛不公开
@@ -1693,14 +1696,14 @@ export class App {
     return this.table3d?.busyMs() ?? this.himeko2d.busyMs();
   }
 
-  // 2D：姬子拿到钥匙的那一局，配牌时光柱砸下来、理完牌火从右烧到左（3D、2.5D 在 table3d 里放）
+  // 2D：姬子拿到钥匙的那一局，配牌时她的牌错落着竖着砸下来、理完牌火从右烧到左（3D、2.5D 在 table3d 里放）
   private himekoFx2d(g: Game, table: HTMLElement): void {
     const seat = himekoKeySeat(g);
     const fresh = g.players.every((p) => p.discards.length === 0 && p.melds.length === 0);
     const key = `${g.seed}-${g.round}`;
     if (seat !== null && fresh && this.himeko2dRound !== key && !this.vision) {
       this.himeko2dRound = key;
-      this.himeko2d.begin();
+      this.himeko2d.begin(beatSeed(g.seed, g.round));
     }
     if (seat === null) return;
     const sel = seat === this.me ? '.me .hand' : `.opponent.${POS[seat]} .ohand`;

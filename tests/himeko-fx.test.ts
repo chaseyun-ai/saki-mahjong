@@ -25,15 +25,31 @@ describe('姬子配牌特效的触发', () => {
   });
 });
 
-describe('姬子配牌的节奏（一张接一张）', () => {
-  it('匀速一张接一张，最后一张是重拍', async () => {
-    const { beatHit, HIMEKO_BEAT, beatFinal, beatLength } = await import('../src/ui/himekoBeat');
+describe('姬子配牌的节奏（错落着砸下来）', () => {
+  it('每张砸一次，不按从左到右，前后两张在手里隔得开，间隔有长有短，最后一张是重拍', async () => {
+    const { beatHit, beatFinal, beatLength, beatSeed } = await import('../src/ui/himekoBeat');
     for (const n of [13, 14]) {
-      const at = Array.from({ length: n }, (_, i) => beatHit(i, n).at);
-      for (let i = 1; i < n; i++) expect(at[i] - at[i - 1]).toBeCloseTo(HIMEKO_BEAT.step);
-      expect(Array.from({ length: n }, (_, i) => beatHit(i, n).accent)).toEqual([...Array(n - 1).fill(0), 2]);
-      expect(beatFinal(n)).toBe(at[n - 1]);
-      expect(beatLength(n)).toBeGreaterThan(beatFinal(n));
+      const orders = new Set<string>();
+      for (const seed of [1, 7, 12345, beatSeed(99, 3)]) {
+        const at = Array.from({ length: n }, (_, i) => beatHit(i, n, seed).at);
+        const seq = [...at.keys()].sort((a, b) => at[a] - at[b]);
+        orders.add(seq.join());
+        expect(seq).not.toEqual([...Array(n).keys()]);
+        const gaps = seq.slice(1).map((i, k) => at[i] - at[seq[k]]);
+        for (const d of gaps) expect(d).toBeGreaterThan(0.05);
+        expect(Math.max(...gaps) - Math.min(...gaps)).toBeGreaterThan(0.06);
+        for (let k = 1; k < n; k++) expect(Math.abs(seq[k] - seq[k - 1])).toBeGreaterThanOrEqual(2);
+        // 重拍只有一张，是最后砸下来的那张
+        const accents = Array.from({ length: n }, (_, i) => beatHit(i, n, seed).accent);
+        expect(accents.filter((x) => x === 2)).toHaveLength(1);
+        expect(accents[seq[n - 1]]).toBe(2);
+        expect(beatFinal(n, seed)).toBe(at[seq[n - 1]]);
+        expect(beatLength(n, seed)).toBeGreaterThan(beatFinal(n, seed));
+        // 同一个种子每次一样（3D、2D 对得上）
+        expect(Array.from({ length: n }, (_, i) => beatHit(i, n, seed).at)).toEqual(at);
+      }
+      // 每一局不一样
+      expect(orders.size).toBeGreaterThan(1);
     }
   });
 });
