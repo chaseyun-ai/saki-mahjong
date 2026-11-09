@@ -334,6 +334,7 @@ export interface SyncView {
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
+  slamHand?: boolean; // 改良布局的自摸砸牌带不带手（false：牌自己跳起来扣下去），不给就带手
   mist?: number; // 高鸭稳乃的深山：牌山上的雾有几级（0 没有）
   sketch?: boolean; // 爱丽丝的手绘板：牌、桌布换成手绘风格
   gale?: { seat: number; level: number } | null; // 薄墨初美的里鬼门：紫色的风聚得多浓（0–1），和牌时那张牌上紫光往上冲
@@ -1325,7 +1326,8 @@ export class Table3D {
     if (tw) {
       const self = this.fallsBack(tw.seat);
       const start = self && standAt !== null ? standAt : this.now + V2_STAND;
-      const hitAt = start + slamHitOffset(self);
+      const hand = this.lastSync?.view.slamHand !== false;
+      const hitAt = start + slamHitOffset(self || !hand);
       const rinshan = g.rinshanDraw || tw.result.yaku.some((y) => y.name === '岭上开花');
       const lily = this.lastSync?.view.ids[tw.seat] === 'saki' && rinshan ? tw.result.base : null;
       tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt, started: false, lily };
@@ -1765,6 +1767,7 @@ export class Table3D {
       to,
       from: self ? undefined : { pos: tile.group.position.clone(), quat: tile.group.quaternion.clone(), scale: tile.group.scale.x },
       near: self,
+      hand: this.lastSync?.view.slamHand !== false,
       onPress: (at) => this.slamPress(ts.seat, at, to.scale),
       onCharge: (at) => this.slamFx.charge(at, to.scale, SLAM_TIMING.charge),
       onHit: (at) => this.slamImpact(ts.seat, ts.tile, at, ts.lily),
@@ -1775,6 +1778,7 @@ export class Table3D {
   // 砸一张牌（可以给别的特效用，比如天江衣的海底捞月）：一只手把 id 这张牌举起来、往前扫下去扣在桌上，牌自己翻起来立在 to，炸开。
   // from 不给就是牌已经在手里、跟着手从画面外伸上来（自己自摸）；给了就是先伸过去在 from 拿起来。
   // near：手在镜头跟前举起来（第一人称，自己砸牌时用），不给就是 seat 是自己时为 true。
+  // hand: false 不带手：牌从原处（from，不给就是落点）自己跳起来、翻身亮出牌背，再扣下去，后面一样翻起来炸开。
   // 牌扣到桌上调 onPress，立好开始亮调 onCharge，炸开调 onHit（at 是牌底下的桌面点）；
   // 扣牌的小震动、聚光、冲击波和旋风要自己在回调里叫 slamPress / slamFx.charge / slamImpact。
   // 返回什么时候扣到桌上、什么时候炸开、什么时候手撤走（和 now 同一个时钟，秒）
@@ -1785,6 +1789,7 @@ export class Table3D {
       to: Placement;
       from?: Placement;
       near?: boolean;
+      hand?: boolean;
       timing?: SlamSpec['timing'];
       onPress?: (at: THREE.Vector3) => void;
       onCharge?: (at: THREE.Vector3) => void;
@@ -1804,6 +1809,7 @@ export class Table3D {
         side: this.seatPoint(seat, 1, 0, 0).normalize(),
         out: this.seatPoint(seat, 0, 0, 1).normalize(),
         view: near ? { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov, aspect: cam.aspect } : undefined,
+        arm: o.hand === false ? null : undefined,
         timing: o.timing,
         onPress: o.onPress,
         onCharge: o.onCharge,

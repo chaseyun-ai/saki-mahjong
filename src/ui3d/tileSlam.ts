@@ -74,7 +74,7 @@ export interface SlamSpec {
   out: THREE.Vector3; // 那一家往外（朝她自己身体）的方向（世界坐标，水平）
   view?: SlamView; // 给了就是第一人称：手在这个镜头跟前举起来（自己砸牌）
   timing?: Partial<SlamTiming>;
-  arm?: Partial<ArmLook> | null; // null：不画手，只有牌自己飞
+  arm?: Partial<ArmLook> | null; // null：不带手，牌从原处（from，不给就是落点）自己跳起来、转一圈亮出牌背，再扣下去
   onPress?: (at: THREE.Vector3) => void; // 牌扣到桌上那一刻，at 是牌底下的桌面点
   onCharge?: (at: THREE.Vector3) => void; // 牌立好、开始亮光，at 是牌中心
   onHit?: (at: THREE.Vector3) => void; // 炸开那一刻，at 是牌底下的桌面点
@@ -105,6 +105,7 @@ interface Active {
   press: Key; // 把牌扣在桌上
   leave: Key; // 撤到哪
   flat: SlamPose; // 牌扣在桌上（牌面朝下）
+  hop: { from: SlamPose; apex: Key } | null; // 不带手：牌从哪跳起来、跳到哪
   pressed: boolean;
   charged: boolean;
   hit: boolean;
@@ -348,7 +349,15 @@ export class TileSlam {
       leave = { pos: enter.pos.clone(), quat: enter.quat.clone() };
     }
     let grab: Key | null = null;
-    if (spec.from) {
+    const noHand = spec.arm === null;
+    // 不带手：从原处跳到扣牌处的上方、往人那边一点，牌背朝上、往人那边仰（看得见牌背）
+    const hop = noHand
+      ? {
+          from: spec.from ?? spec.to,
+          apex: { pos: flatPos.clone().addScaledVector(up, 3.4 * s).addScaledVector(out, 0.8 * s), quat: new THREE.Quaternion().setFromAxisAngle(side, 0.6).multiply(flatQ) },
+        }
+      : null;
+    if (spec.from && !noHand) {
       const gq = basis(fwd.clone().addScaledVector(up, -0.5), up);
       grab = { pos: spec.from.pos.clone().sub(attach(gq)).addScaledVector(up, 0.1 * s), quat: gq };
     }
@@ -366,12 +375,13 @@ export class TileSlam {
         shadows.push(o);
       }
     });
-    const a: Active = { spec, timing, t0: now, arm, s, enter, grab, raise, press, leave, flat, pressed: false, charged: false, hit: false, shadows };
+    const a: Active = { spec, timing, t0: now, arm, s, enter, grab, raise, press, leave, flat, hop, pressed: false, charged: false, hit: false, shadows };
     this.list.push(a);
     this.pose(a, now);
-    const pressAt = now + slamPressOffset(!spec.from, timing);
-    const hitAt = now + slamHitOffset(!spec.from, timing);
-    return { pressAt, hitAt, doneAt: Math.max(hitAt, pressAt + timing.leave) };
+    const carried = !spec.from || noHand;
+    const pressAt = now + slamPressOffset(carried, timing);
+    const hitAt = now + slamHitOffset(carried, timing);
+    return { pressAt, hitAt, doneAt: noHand ? hitAt : Math.max(hitAt, pressAt + timing.leave) };
   }
 
   // 这张牌正在被砸（还没炸开）
@@ -433,6 +443,31 @@ export class TileSlam {
     };
   }
 
+  // 不带手：跳起来（一边转一圈一边仰成牌背朝上），在高处往后一仰蓄力，再扣下去
+  private hopTile(a: Active, k: number, hop: NonNullable<Active['hop']>): void {
+    const { spec, timing: t, s } = a;
+    const up = V(0, 1, 0);
+    const show = (f: number): Key => ({
+      pos: hop.apex.pos.clone().addScaledVector(up, 0.25 * s * f),
+      quat: new THREE.Quaternion().setFromAxisAngle(spec.side, 0.15 * f).multiply(hop.apex.quat),
+    });
+    if (k < t.rise) {
+      const f = clamp01(k / t.rise);
+      const e = easeOut(f);
+      const q = new THREE.Quaternion().setFromAxisAngle(up, Math.PI * 2 * (1 - e)).multiply(hop.from.quat.clone().slerp(hop.apex.quat, e));
+      const p = hop.from.pos.clone().lerp(hop.apex.pos, e).addScaledVector(up, Math.sin(Math.PI * f) * 0.6 * s);
+      this.setTile(a, p, q, THREE.MathUtils.lerp(hop.from.scale, s, e));
+    } else if (k < t.rise + t.show) {
+      const c = show(easeOut(clamp01((k - t.rise) / t.show)));
+      this.setTile(a, c.pos, c.quat, s);
+    } else {
+      const f = clamp01((k - t.rise - t.show) / t.sweep);
+      const c = show(1);
+      const ctrl = a.flat.pos.clone().addScaledVector(up, 1.6 * s).lerp(c.pos, 0.4);
+      this.setTile(a, bezier(c.pos, ctrl, a.flat.pos, f * f), c.quat.clone().slerp(a.flat.quat, smooth(0, 0.9, f)), s);
+    }
+  }
+
   // 这一刻手在哪、牌在哪
   private pose(a: Active, now: number): void {
     const { spec, timing: t, s } = a;
@@ -445,7 +480,11 @@ export class TileSlam {
     const flipT = pressT + t.flat;
     const stoodT = flipT + t.flip;
     const hitT = stoodT + t.charge;
-    const goneT = pressT + t.leave;
+    const goneT = a.hop ? pressT : pressT + t.leave;
+    if (a.hop && k < pressT) {
+      this.hopTile(a, k, a.hop);
+      return;
+    }
     // 手
     let hand: Key | null = null;
     // 举在高处、蓄一下力（手指往镜头那边仰一点、往上带一点）
