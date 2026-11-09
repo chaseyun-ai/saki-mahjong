@@ -28,6 +28,7 @@ import { ChainOutcome, chainEnd, chainOutcomes, outcomeTime, skyStart, skyTime }
 import { ChainStyleId, PlockStyleId, RiiProj, RiiSfxId, lookChoices, riiLook, setRiiLook, useRiiLook } from './riiLook';
 import { RiiTestStart, riiSetPanelHtml, riiTestPanelHtml } from './riiSetup';
 import { riichiTsumoStage } from './riiStage';
+import { RinshanTier, rinshanStage, rinshanTestPanelHtml } from './sakiStage';
 import { padlockArrive, playPadlock } from './riiPadlock';
 import { PlockEnd, PlockPlace, plockHtml } from './riiPlock';
 import { SkyKey } from './skyKey';
@@ -40,7 +41,8 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
+import { playCall, playChime, playClick, playLily, playRiichi, playSlam, playWin } from './sound';
+import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { paceOf, vary } from './vary';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
@@ -166,7 +168,7 @@ export class App {
   private mode: TableMode = loadTableMode();
   // 单人对局的规则、动画开关（matchSetup.ts）；panel 是选人页上开着的设置面板
   private settings: MatchSettings = loadSettings();
-  private panel: 'match' | 'visual' | 'rii' | 'riiTest' | null = null;
+  private panel: 'match' | 'visual' | 'rii' | 'riiTest' | 'sakiTest' | null = null;
   // 这一局是「白水哩 · 姬子测试」窗口开的：番缚的样子用测试那一份，对局里也能换样子、试结算
   private riiTest = false;
   // 页面主人才能换素材：视觉设置里多一行入口
@@ -354,6 +356,8 @@ export class App {
       </div>`;
     // 「更多」菜单里加一个白水哩、姬子的测试窗口（全部样子、开测试对局）
     this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="rii-test">白水哩 · 姬子测试</button>');
+    // 宫永咲的岭上开花测试：每局暗杠、岭上自摸，看砸牌和百合
+    this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="saki-test">宫永咲 · 岭上开花测试</button>');
     // 换了皮肤的选人页：介绍不再是浮窗，固定在左边当大立绘面板，先放这一页的第一位
     if (hero) this.pickCard(this.root.querySelector<HTMLElement>('.char-card'));
     // 能换素材的人（页面主人）在视觉设置里多一行“角色素材”
@@ -385,7 +389,7 @@ export class App {
   }
 
   // 右上角的两个设置面板
-  private openPanel(kind: 'match' | 'visual' | 'rii' | 'riiTest'): void {
+  private openPanel(kind: 'match' | 'visual' | 'rii' | 'riiTest' | 'sakiTest'): void {
     this.root.querySelector('details.sel-more[open]')?.removeAttribute('open');
     this.panel = kind;
     // 番缚设置、测试窗口各改各的那一份
@@ -424,7 +428,9 @@ export class App {
             ? riiSetPanelHtml()
             : this.panel === 'riiTest'
               ? riiTestPanelHtml()
-              : '';
+              : this.panel === 'sakiTest'
+                ? rinshanTestPanelHtml()
+                : '';
     const panel = slot.querySelector<HTMLElement>('.set-panel');
     if (panel) panel.scrollTop = top;
     if (key) slot.querySelector<HTMLElement>(key)?.focus();
@@ -618,6 +624,20 @@ export class App {
 
   private pendingRiiTest = false;
 
+  // 「宫永咲 · 岭上开花测试」：自己打咲、开局坐庄，每局配牌都是暗杠、岭上自摸的那一档（cycle 一局一档轮着来）。
+  // 对手照对局设置坐，但不用能力（会抢庄、挡自摸、封听牌的能力都会把这一下挡掉）；不击飞，一直连庄
+  private startRinshanTest(tier: RinshanTier | 'cycle'): void {
+    const mine = CHARACTERS.find((c) => c.id === 'saki')!;
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    const others = pickOpponents(this.settings, 'saki', new Rng(seed ^ 0x5a17));
+    this.team = null;
+    this.auto = false;
+    const st = this.settings;
+    const players = [mine, ...others];
+    const stage = rinshanStage(this.me, tier);
+    this.beginGame(players, new Game({ seed, format: st.length, startScore: st.start, rules: { ...rulesOf(st), tobi: false }, firstDealer: this.me, stage, players: players.map((c, i) => ({ name: c.name, ability: i === this.me ? c.ability : null, manual: i === this.me })) }));
+  }
+
   // 试玩姬子的配牌特效：自己是姬子，每一局（东南两场、0–9 本场）都当作哩拿到了钥匙（broken：破碎的钥匙），开局就是那一局
   private startHimekoDemo(broken = false): void {
     const mine = CHARACTERS.find((c) => c.id === 'himeko')!;
@@ -735,6 +755,11 @@ export class App {
       // 3D 牌桌上牌真正落到牌河时才响
       this.table3d.onMarker = (seat, _tile, name) => {
         if (name === 'land') playClick({ pan: this.clickPan(seat), varied: true });
+      };
+      // 自摸砸牌拍到桌上；咲的岭上开花再加一串铃和风声
+      this.table3d.onSlam = (_seat, lily) => {
+        playSlam();
+        if (lily !== null) playLily(lilyGrand(lily));
       };
       // 第一局在牌桌建好之前就开始了，补一次开局动画
       if (!resume) {
@@ -1642,6 +1667,15 @@ export class App {
     }
     if (el.dataset.ui === 'rii-try') {
       previewRiiSound(el.dataset.v as 'lock' | 'key' | 'broken');
+      return;
+    }
+    if (el.dataset.ui === 'saki-test') {
+      this.openPanel('sakiTest');
+      return;
+    }
+    if (el.dataset.ui === 'saki-test-go') {
+      this.panel = null;
+      this.startRinshanTest(el.dataset.v as RinshanTier | 'cycle');
       return;
     }
     if (el.dataset.ui === 'rii-test-go') {

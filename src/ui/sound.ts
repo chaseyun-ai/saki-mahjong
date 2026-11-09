@@ -123,3 +123,65 @@ export function playWin(): void {
   [523, 659, 784, 1047, 1319].forEach((f, i) => tone(a, f, now + i * 0.07, 0.9, 0.14, 'triangle'));
   tone(a, 131, now, 1.2, 0.25, 'sine');
 }
+
+// 自摸砸牌：牌拍在桌上的“砰”。一记往下沉的闷响（桌子被震了一下），加一声比平常落桌更重、更闷的“啪”
+export function playSlam(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(150, now);
+  osc.frequency.exponentialRampToValueAtTime(46, now + 0.2);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.6, now + 0.006);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+  osc.connect(gain).connect(a.destination);
+  osc.start(now);
+  osc.stop(now + 0.35);
+  const len = Math.floor(a.sampleRate * 0.1);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 1400;
+  filter.Q.value = 0.7;
+  const g2 = a.createGain();
+  g2.gain.value = 0.9;
+  src.connect(filter).connect(g2).connect(a.destination);
+  src.start(now);
+}
+
+// 宫永咲的岭上开花：百合开出来的那一下，一串很轻的高音铃往上走，后面拖一阵风声（花瓣飘起来）。big 0–1：和得越大铃越多、风越长
+export function playLily(big = 0): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime + 0.02;
+  const notes = [1568, 1976, 2349, 2637, 3136, 3520, 3951].slice(0, 4 + Math.round(big * 3));
+  notes.forEach((f, i) => tone(a, f, now + i * 0.065, 1.4, 0.045, 'sine'));
+  tone(a, 784, now, 1.6, 0.06, 'sine');
+  // 风：滤过的噪声慢慢起来再落下去
+  const dur = 1.2 + big * 1.4;
+  const len = Math.floor(a.sampleRate * dur);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(900, now);
+  filter.frequency.linearRampToValueAtTime(2400, now + dur);
+  filter.Q.value = 0.9;
+  const gain = a.createGain();
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.07 + big * 0.05, now + 0.35);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  src.connect(filter).connect(gain).connect(a.destination);
+  src.start(now);
+  src.stop(now + dur + 0.05);
+}

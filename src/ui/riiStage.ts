@@ -16,11 +16,11 @@ export const RIICHI_HAND = [0, 1, 2, 3, 4, 5, 15, 16, 17, 26, 26, 20, 21];
 // 和的那一张：2s，没有了就 5s
 export const RIICHI_WIN = [19, 22];
 
-const swap = (a: TileId[], i: number, b: TileId[], j: number) => ([a[i], b[j]] = [b[j], a[i]]);
+export const swap = (a: TileId[], i: number, b: TileId[], j: number) => ([a[i], b[j]] = [b[j], a[i]]);
 
 // 牌山里找一张 k（不要赤牌、不要锁住的）：先找 live 里 ok 的位置（配牌以外的优先），
 // 再找岭上牌、还没翻开的宝牌指示牌、里宝牌指示牌
-function spare(g: Game, k: number, ok: (j: number) => boolean): [TileId[], number] | null {
+export function spare(g: Game, k: number, ok: (j: number) => boolean): [TileId[], number] | null {
   const w = g.wall;
   const fit = (t: TileId) => kindOf(t) === k && !isRed(t) && !w.locked.has(t);
   const sources: [TileId[], (j: number) => boolean][] = [
