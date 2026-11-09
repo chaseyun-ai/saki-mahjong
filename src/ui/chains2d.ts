@@ -21,6 +21,7 @@ interface Spark {
   life: number;
   color: string;
   r: number;
+  twinkle?: number; // 一闪一闪（崩断的粒子）
 }
 
 type Stage = { kind: 'lock'; t0: number; quick: boolean } | { kind: ChainOutcome; t0: number; shown: number };
@@ -60,6 +61,8 @@ export class Chains2D {
   private ctx: CanvasRenderingContext2D;
   private seats = new Map<number, SeatChains>();
   private sparks: Spark[] = [];
+  // 每一帧画之前的变换（只有 dpr）：粒子按这个画，左右两家转过的点要换回来
+  private base = new DOMMatrix();
   private raf = 0;
   private last = 0;
   private now = 0;
@@ -175,6 +178,7 @@ export class Chains2D {
     }
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.base = ctx.getTransform();
     ctx.clearRect(0, 0, W, H);
     ctx.save();
     const box = this.clip();
@@ -287,33 +291,32 @@ export class Chains2D {
       if (tc - crack > rise) sc.done = true;
       return;
     }
-    // 崩断：绷紧发白，一节节化成粒子消散，剩下的化成光冲上天
-    const { show, crack, dissolve, rise, keep } = BREAK;
+    // 崩断：绷紧发白，然后一节节碎成细细的粒子，慢慢飘开、淡掉
+    const { show, crack, dissolve, crumble, drift } = BREAK;
     const op = st.shown + (1 - st.shown) * easeOut(t / show);
     const tc = t - show;
     const td = tc - crack;
-    if (td <= dissolve) {
-      const k0 = clamp01(tc / crack);
-      draw((l, k, ci) => {
-        const r0 = dissolveAt(ci, k);
-        let scale = 1;
-        if (r0 < 1 - keep && td > 0) {
-          const when = (r0 / (1 - keep)) * dissolve;
-          scale = 1 - clamp01((td - when) / 0.08);
-          const id = `${ci}-${k}`;
-          if (td >= when && !sc.dusted.has(id)) {
-            sc.dusted.add(id);
-            this.dust(sx(l), sy(l), link);
-          }
-        }
-        if (scale <= 0) return;
-        const j = Math.sin(k * 2.3 + t * 70) * k0 * link * 0.06 * (1 - clamp01(td / 0.3));
-        this.link(sx(l) + l.t[1] * j, sy(l) + l.t[0] * j, l.t[0], -l.t[1], link * scale, k, op, 0, 0, k0 * 0.8 + (td > 0 ? 0.3 : 0));
-      });
-      return;
-    }
-    this.rise(chains, td - dissolve, 0, rise, link, sx, sy, false, (ci, k) => dissolveAt(ci, k) >= 1 - keep);
-    if (td > dissolve + rise) sc.done = true;
+    const k0 = clamp01(tc / crack);
+    draw((l, k, ci) => {
+      const when = dissolveAt(ci, k) * dissolve;
+      const u = td > when ? clamp01((td - when) / crumble) : 0;
+      const id = `${ci}-${k}`;
+      // 碎开的一开始、一半各撒一次（画面外的不撒）
+      const x = sx(l);
+      const y = sy(l);
+      if (u > 0 && !sc.dusted.has(id)) {
+        sc.dusted.add(id);
+        this.dust(x, y, link, 0.6);
+      }
+      if (u >= 0.5 && !sc.dusted.has(`${id}b`)) {
+        sc.dusted.add(`${id}b`);
+        this.dust(x, y, link, 0.4);
+      }
+      if (u >= 1) return;
+      const j = Math.sin(k * 2.3 + t * 70) * k0 * link * 0.06 * (1 - clamp01(td / 0.3));
+      this.link(x + l.t[1] * j, y + l.t[0] * j, l.t[0], -l.t[1], link * (1 - 0.6 * u), k, op * (1 - u * u), 0, 0, k0 * 0.8 + (td > 0 ? 0.3 : 0) + u * 0.6);
+    });
+    if (td > dissolve + crumble + drift) sc.done = true;
   }
 
   // 碎成两片半环、先弹开一点，再越来越快冲上天，拖着光
@@ -459,12 +462,28 @@ export class Chains2D {
     }
   }
 
-  // 一节锁链化成的尘埃：细细的一团，慢慢往上飘着散开
-  private dust(x: number, y: number, link: number): void {
-    for (let i = 0; i < 12; i++) {
+  // 一节锁链碎成的粒子：细细的一团，向四面慢慢飘开，稍微往上浮，一闪一闪地淡掉（share：这一节撒多少）
+  private dust(x: number, y: number, link: number, share: number): void {
+    if (this.reduced) return;
+    // 画面上的位置（左右两家整套转了 90 度画）
+    const q = this.base.inverse().transformPoint(this.ctx.getTransform().transformPoint(new DOMPoint(x, y)));
+    if (q.x < -link || q.y < -link || q.x > window.innerWidth + link || q.y > window.innerHeight + link) return;
+    const count = Math.round(26 * share);
+    for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
-      const v = link * (0.4 + Math.random() * 1.4);
-      this.sparks.push({ x: x + (Math.random() - 0.5) * link * 0.6, y: y + (Math.random() - 0.5) * link * 0.4, vx: Math.cos(a) * v, vy: Math.sin(a) * v - link * 1.5, t: 0, life: 0.6 + Math.random() * 0.5, color: '#dfe7f5', r: 1.2 + Math.random() });
+      const v = link * (0.25 + Math.random() * 0.9);
+      const pale = Math.random();
+      this.sparks.push({
+        x: q.x + (Math.random() - 0.5) * link * 0.7,
+        y: q.y + (Math.random() - 0.5) * link * 0.45,
+        vx: Math.cos(a) * v,
+        vy: Math.sin(a) * v * 0.7 - link * (0.15 + Math.random() * 0.3),
+        t: 0,
+        life: 0.6 + Math.random() * 0.6,
+        color: pale < 0.55 ? '#eef3fc' : pale < 0.85 ? '#c2d4f2' : '#ffffff',
+        r: 0.9 + Math.random() * 1.5,
+        twinkle: Math.random() * 6,
+      });
     }
   }
 
@@ -478,10 +497,12 @@ export class Chains2D {
       s.vy *= drag;
       s.x += s.vx * dt;
       s.y += s.vy * dt;
-      ctx.globalAlpha = 1 - clamp01(s.t / s.life) ** 2;
+      const age = clamp01(s.t / s.life);
+      const tw = s.twinkle === undefined ? 1 : 0.65 + 0.35 * Math.sin(s.t * 18 + s.twinkle);
+      ctx.globalAlpha = (1 - age ** 2) * tw;
       ctx.fillStyle = s.color;
       ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.arc(s.x, s.y, s.twinkle === undefined ? s.r : s.r * (1 - 0.5 * age), 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;

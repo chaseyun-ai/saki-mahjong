@@ -66,7 +66,7 @@ export function saveSettings(s: MatchSettings): void {
 }
 
 // 每一项能选的值；value 用字符串写在按钮上，点的时候再换回来
-interface Option {
+export interface Option {
   label: string;
   value: string;
 }
@@ -191,7 +191,7 @@ export function rulesOf(s: MatchSettings): Partial<Rules> {
 }
 
 // 一排选项按钮：on 的那个亮着
-function optsHtml(ui: string, key: string, options: Option[], current: string): string {
+export function optsHtml(ui: string, key: string, options: Option[], current: string): string {
   return options
     .map((o) => {
       const on = current === o.value;
@@ -200,7 +200,7 @@ function optsHtml(ui: string, key: string, options: Option[], current: string): 
     .join('');
 }
 
-function rowHtml(name: string, body: string, note?: string, cls = ''): string {
+export function rowHtml(name: string, body: string, note?: string, cls = ''): string {
   return `<div class="setup-row${cls ? ` ${cls}` : ''}"><span class="setup-name">${name}${note ? `<small>${note}</small>` : ''}</span><div class="setup-opts">${body}</div></div>`;
 }
 
@@ -217,7 +217,7 @@ function settingRows(s: MatchSettings, keys: (keyof MatchSettings)[]): string {
     .join('');
 }
 
-function panelHtml(kind: string, title: string, sub: string, body: string, actions: string): string {
+export function panelHtml(kind: string, title: string, sub: string, body: string, actions: string): string {
   return `
     <div class="modal setup-modal set-modal" role="dialog" aria-modal="true" aria-label="${title}">
       <div class="setup set-panel set-${kind}">
@@ -228,7 +228,7 @@ function panelHtml(kind: string, title: string, sub: string, body: string, actio
     </div>`;
 }
 
-const section = (name: string) => `<h3 class="set-sec">${name}</h3>`;
+export const section = (name: string) => `<h3 class="set-sec">${name}</h3>`;
 
 // 个人对局用的规则：一句话说清楚，显示在出场按钮旁边。窄的地方只放前半句（局数、点数）
 export function ruleSummary(s: MatchSettings): { main: string; opp: string } {

@@ -356,52 +356,47 @@ export class ChainFx {
     (this.trails.material as THREE.LineBasicMaterial).opacity = tr > 0 ? 0.85 * (1 - clamp01((tr / rise - 0.6) / 0.4)) : 0;
   }
 
-  // ---------- 崩断：绷紧发白，一节节化成粒子消散，剩下的化成光冲上天 ----------
+  // ---------- 崩断：绷紧发白，然后一节节碎成细细的粒子，慢慢飘开、淡掉 ----------
 
   private updateBroken(t: number, shown: number): void {
-    const { show, crack, dissolve, rise, keep } = BREAK;
+    const { show, crack, dissolve, crumble, drift } = BREAK;
     const op = shown + (1 - shown) * easeOut(t / show);
     const tc = t - show;
     const td = tc - crack;
     const s = this.frame.size;
     if (td > 0 && !this.dust) this.makeDust();
+    const k0 = clamp01(tc / crack);
     this.chains.forEach((c, ci) => {
-      if (td > dissolve) return;
-      const k0 = clamp01(tc / crack);
       c.mat.opacity = op;
-      c.mat.depthWrite = op > 0.99;
+      c.mat.depthWrite = op > 0.99 && td <= 0;
       c.mat.emissive.copy(PALE).multiplyScalar(k0 * 0.5 * (0.7 + 0.3 * Math.sin(t * 80)) + (td > 0 ? 0.4 : 0));
       for (let k = 0; k < c.links.length; k++) {
         const l = c.links[k];
         const jit = (1 - clamp01(td / 0.3)) * k0 * s * 0.05;
         const pos = l.p.clone().addScaledVector(l.n, Math.sin(k * 2.3 + t * 70) * jit);
-        // 消散：到了这一节的时间，缩没了，变成一团尘埃
-        const r = dissolveAt(ci, k);
-        let scale = 1;
-        if (r < 1 - keep && td > 0) {
-          const when = (r / (1 - keep)) * dissolve;
-          scale = 1 - clamp01((td - when) / 0.08);
-          if (td >= when && !this.dusted.has(`${ci}-${k}`)) {
-            this.dusted.add(`${ci}-${k}`);
-            this.spawnDust(l.p);
-          }
+        // 轮到这一节：边缩小边碎成粒子（一开始、一半各撒一次）
+        const when = dissolveAt(ci, k) * dissolve;
+        const u = td > when ? clamp01((td - when) / crumble) : 0;
+        const id = `${ci}-${k}`;
+        if (u > 0 && !this.dusted.has(id)) {
+          this.dusted.add(id);
+          this.spawnDust(l.p, 10);
         }
-        this.put(c, k, pos, scale);
+        if (u >= 0.5 && !this.dusted.has(`${id}b`)) {
+          this.dusted.add(`${id}b`);
+          this.spawnDust(l.p, 7);
+        }
+        this.put(c, k, pos, u >= 1 ? 0 : 1 - 0.7 * u);
       }
       c.mesh.instanceMatrix.needsUpdate = true;
     });
-    // 剩下的化成光冲上天
-    if (td > dissolve) this.rise(td - dissolve, 0, rise, s, PALE, '#cfe0ff', (c) => {
-      const ci = this.chains.indexOf(c);
-      return c.links.map((_, k) => dissolveAt(ci, k) >= 1 - keep);
-    });
-    if (td > dissolve + rise) this.done = true;
+    if (td > dissolve + crumble + drift) this.done = true;
   }
 
   private dusted = new Set<string>();
 
   private makeDust(): void {
-    const total = this.chains.reduce((a, c) => a + c.links.length, 0) * 14;
+    const total = this.chains.reduce((a, c) => a + c.links.length, 0) * 17;
     const geo = new THREE.BufferGeometry();
     const pos = new Float32Array(total * 3);
     const alpha = new Float32Array(total);
@@ -439,19 +434,20 @@ export class ChainFx {
     this.dust = { pts, born: new Float32Array(total).fill(-1), vel: new Float32Array(total * 3), origin: new Float32Array(total * 3), used: 0 };
   }
 
-  private spawnDust(at: THREE.Vector3): void {
+  // 一节碎成的粒子：向四面慢慢飘开，稍微往上浮
+  private spawnDust(at: THREE.Vector3, count: number): void {
     const d = this.dust;
     if (!d) return;
     const s = this.frame.size;
-    for (let i = 0; i < 14 && d.used < d.born.length; i++, d.used++) {
+    for (let i = 0; i < count && d.used < d.born.length; i++, d.used++) {
       const j = d.used;
       d.born[j] = this.now;
-      d.origin.set([at.x + (Math.random() - 0.5) * s * 0.4, at.y + (Math.random() - 0.5) * s * 0.4, at.z + (Math.random() - 0.5) * s * 0.4], j * 3);
-      const v = this.frame.up
-        .clone()
-        .multiplyScalar(0.6 + Math.random())
-        .add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(1.6))
-        .multiplyScalar(s * 0.9);
+      d.origin.set([at.x + (Math.random() - 0.5) * s * 0.45, at.y + (Math.random() - 0.5) * s * 0.45, at.z + (Math.random() - 0.5) * s * 0.45], j * 3);
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
+        .normalize()
+        .multiplyScalar(0.3 + Math.random() * 0.9)
+        .addScaledVector(this.frame.up, 0.2 + Math.random() * 0.35)
+        .multiplyScalar(s * 0.8);
       d.vel.set([v.x, v.y, v.z], j * 3);
     }
   }
@@ -461,12 +457,14 @@ export class ChainFx {
     if (!d) return;
     const pos = d.pts.geometry.getAttribute('position') as THREE.BufferAttribute;
     const al = d.pts.geometry.getAttribute('alpha') as THREE.BufferAttribute;
-    const life = 1.1;
     for (let j = 0; j < d.used; j++) {
       const age = this.now - d.born[j];
-      const x = (1 - Math.exp(-age * 2.5)) / 2.5;
+      // 每一颗活得不一样久，一闪一闪地淡掉
+      const life = 0.6 + ((j * 0.618) % 1) * 0.6;
+      const x = (1 - Math.exp(-age * 1.8)) / 1.8;
       pos.setXYZ(j, d.origin[j * 3] + d.vel[j * 3] * x, d.origin[j * 3 + 1] + d.vel[j * 3 + 1] * x, d.origin[j * 3 + 2] + d.vel[j * 3 + 2] * x);
-      al.setX(j, age < 0 ? 0 : (1 - clamp01(age / life)) * Math.min(1, age * 20));
+      const tw = 0.65 + 0.35 * Math.sin(age * 18 + j);
+      al.setX(j, age < 0 ? 0 : (1 - clamp01(age / life) ** 2) * Math.min(1, age * 20) * tw);
     }
     pos.needsUpdate = true;
     al.needsUpdate = true;

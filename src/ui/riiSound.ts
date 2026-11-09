@@ -10,7 +10,7 @@ import { RiiSfxId, riiLook } from './riiLook';
 // 两套可以挑（riiLook.sfx）：写实（金属声多一点）/ 闪亮（更亮、更像动画的光效）。
 // 锁上：每条锁链甩过来“锵”地压上手牌；大锁落下“哐”一声、锁扣“咔哒”；锁链化开；锁挂到头像上。
 // 结算：拿到钥匙——变金时一股往上收的光、“叮”地碎成金片、一串金色的小叮往天上冲、放晴时风铃、钥匙“叮当”落下；
-// 没和成——锁链抖着哗啦作响、“锵”地崩断、碎片叮叮落开、一节节化成细碎的光点、剩下的往上飘走；
+// 没和成——锁链抖着哗啦作响、“锵”地崩断、碎片叮叮落开、一节节碎成细碎的光点慢慢散掉；
 // 番数不够——轻轻往下一沉（这一声是合成的）。
 
 interface Cue {
@@ -193,7 +193,7 @@ const CHIME_TING = [0.74, 0.99, 1.48, 2.85, 3.0];
 const KEY_TING = [0, 0.3, 0.5];
 const RING = [0.1, 0.16, 0.22, 0.3, 0.36, 0.42, 0.5];
 
-// 一团粒子：count 颗很短的叮均匀地撒在 [at, at+span] 里。rise：先响后轻、音高越来越高（往上冲）；even：音高随机；grow：越来越密越来越响
+// 一团粒子：count 颗很短的叮均匀地撒在 [at, at+span] 里。rise：先响后轻、音高越来越高（往上冲）；even：音高随机；grow：越来越密越来越响；fade：越来越轻（散掉）
 interface Sparks {
   clip: RiiClip;
   from: number[];
@@ -203,7 +203,7 @@ interface Sparks {
   count: number;
   rate: [number, number];
   gain: number;
-  shape: 'rise' | 'even' | 'grow';
+  shape: 'rise' | 'even' | 'grow' | 'fade';
   spread?: number;
   lp?: number;
   hp?: number;
@@ -212,8 +212,8 @@ interface Sparks {
 function sparks(s: Sparks): Cue[] {
   return Array.from({ length: s.count }, (_, i) => {
     const u = (i + Math.random()) / s.count;
-    const env = s.shape === 'rise' ? Math.sin(Math.PI * Math.min(0.97, 0.18 + u * 0.85)) : s.shape === 'grow' ? 0.3 + 0.7 * u : 1;
-    const r = s.rate[0] + (s.rate[1] - s.rate[0]) * (s.shape === 'even' ? Math.random() : u);
+    const env = s.shape === 'rise' ? Math.sin(Math.PI * Math.min(0.97, 0.18 + u * 0.85)) : s.shape === 'grow' ? 0.3 + 0.7 * u : s.shape === 'fade' ? 1 - 0.85 * u : 1;
+    const r = s.rate[0] + (s.rate[1] - s.rate[0]) * (s.shape === 'even' || s.shape === 'fade' ? Math.random() : u);
     return {
       clip: s.clip,
       at: s.at + s.span * (s.shape === 'grow' ? Math.sqrt(u) : u),
@@ -318,12 +318,13 @@ function keyCues(set: RiiSfxId, t: number): Cue[] {
   ];
 }
 
-// 没和成：锁链绷紧抖得哗啦响 → “锵”地崩断、碎片叮叮落开 → 一节节化成细碎的光点 → 剩下的化成光往上飘走
+// 没和成：锁链绷紧抖得哗啦响 → “锵”地崩断、碎片叮叮落开 → 一节节碎成细碎的光点 → 光点越来越稀、散掉
 function breakCues(set: RiiSfxId, n: number, t: number): Cue[] {
   const shake = t + BREAK.show;
   const snap = shake + BREAK.crack;
-  const up = snap + BREAK.dissolve;
-  const dust = Math.min(22, 4 + 4 * Math.max(1, n));
+  const tail = snap + BREAK.dissolve * 0.6;
+  const fadeSpan = BREAK.dissolve * 0.4 + BREAK.crumble + BREAK.drift * 0.6;
+  const dust = Math.min(26, 6 + 4 * Math.max(1, n));
   const rattle = (rate: [number, number], gain: number) =>
     sparks({ clip: 'tincane', from: RING, dur: [0.05, 0.08], at: shake, span: BREAK.crack - 0.03, count: 12, rate, gain, shape: 'grow', spread: 0.5, lp: 7000 });
   const shards = (rate: [number, number], gain: number): Cue[] =>
@@ -335,7 +336,7 @@ function breakCues(set: RiiSfxId, n: number, t: number): Cue[] {
       { clip: 'kira', at: snap, gain: 0.45, rate: 0.8 },
       ...shards([1.5, 1.9], 0.22),
       ...sparks({ clip: 'chime', from: CHIME_TING, dur: [0.05, 0.1], at: snap + 0.04, span: BREAK.dissolve, count: dust, rate: [1.5, 2.4], gain: 0.08, shape: 'even', spread: 0.8, hp: 2000 }),
-      ...sparks({ clip: 'kira', from: KIRA_TING, dur: [0.12, 0.2], at: up, span: BREAK.rise, count: 12, rate: [1.0, 1.8], gain: 0.16, shape: 'rise', spread: 0.7 }),
+      ...sparks({ clip: 'kira', from: KIRA_TING, dur: [0.12, 0.2], at: tail, span: fadeSpan, count: 10, rate: [1.3, 1.9], gain: 0.13, shape: 'fade', spread: 0.8 }),
     ];
   return [
     ...rattle([1.0, 1.2], 0.9),
@@ -343,7 +344,7 @@ function breakCues(set: RiiSfxId, n: number, t: number): Cue[] {
     { clip: 'keyin', at: snap + 0.01, gain: 0.45, rate: 0.85 },
     ...shards([1.25, 1.7], 0.32),
     ...sparks({ clip: 'kira', from: KIRA_TING, dur: [0.09, 0.15], at: snap + 0.04, span: BREAK.dissolve, count: dust, rate: [1.6, 2.4], gain: 0.3, shape: 'even', spread: 0.8 }),
-    ...sparks({ clip: 'chime', from: CHIME_TING, dur: [0.12, 0.2], at: up, span: BREAK.rise, count: 12, rate: [0.9, 1.5], gain: 0.3, shape: 'rise', spread: 0.7, hp: 1500 }),
+    ...sparks({ clip: 'chime', from: CHIME_TING, dur: [0.12, 0.2], at: tail, span: fadeSpan, count: 10, rate: [1.1, 1.6], gain: 0.24, shape: 'fade', spread: 0.8, hp: 1500 }),
   ];
 }
 

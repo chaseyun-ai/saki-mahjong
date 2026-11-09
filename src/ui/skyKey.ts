@@ -1,8 +1,9 @@
 import { SKY, clamp01, easeInOut, easeOut } from './riiChainPlan';
-import { keyArt } from './keyArt';
+import { KEY_RING_AT, keyArt } from './keyArt';
 
 // 白水哩拿到钥匙（照原作）：锁链碎片冲上天以后，天空放晴——整个画面从上往下亮起来，
 // 天顶洒下一道道光、到处一闪一闪的星光，钥匙从画面上方缓缓落下，停在手牌上方，再淡掉。
+// 落下时和原作一样斜着：吊牌在右上、齿朝左下，边落边转平，落定时吊牌在右边、稍微往下垂（像姬子手上那一幕）。
 // 三种视角都画在盖住整个画面的一张 canvas 上（不挡点击）。
 
 interface Play {
@@ -141,7 +142,8 @@ export class SkyKey {
     const out = clamp01((t - end) / fade);
     const y = -p.len * 0.6 + (p.y + p.len * 0.6) * u + Math.sin(tf * 1.8) * 6 * u;
     const x = p.x + Math.sin(tf * 1.3) * p.len * 0.06 * (1 - u);
-    const rot = -0.5 * (1 - u) + Math.sin(tf * 1.6) * 0.14 * (1 - u * 0.7) - 0.08;
+    // 前一段斜着落（像原作那一格），后一段慢慢转平
+    const rot = FALL_TILT + (REST_TILT - FALL_TILT) * easeInOut((u - 0.3) / 0.7) + Math.sin(tf * 1.6) * 0.1 * (1 - u * 0.7);
     ctx.save();
     ctx.translate(x, y);
     // 钥匙后面一团柔光
@@ -164,7 +166,7 @@ export class SkyKey {
       const tw = Math.max(0, Math.sin(tf * 3));
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      this.star(x + p.len * 0.12, y - p.len * 0.05, p.len * 0.07 * tw, (1 - out) * tw);
+      this.star(x + Math.cos(rot) * p.len * KEY_RING_AT, y + Math.sin(rot) * p.len * KEY_RING_AT, p.len * 0.07 * tw, (1 - out) * tw);
       ctx.restore();
     }
   }
@@ -190,6 +192,10 @@ export class SkyKey {
     ctx.restore();
   }
 }
+
+// 钥匙落下时的角度（弧度）：一开始吊牌在右上、齿朝左下斜着，落定时吊牌在右边稍微往下垂
+const FALL_TILT = -1.0;
+const REST_TILT = 0.38;
 
 function hash(n: number): number {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;

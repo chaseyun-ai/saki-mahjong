@@ -82,8 +82,9 @@ export const SKY = { clear: 0.7, fall: 1.7, hold: 1.1, fade: 0.6 };
 export const skyStart = () => GOLD.show + GOLD.sweep + GOLD.crack + GOLD.rise * 0.7;
 export const skyTime = () => SKY.clear + SKY.fall + SKY.hold + SKY.fade;
 export const goldTime = () => skyStart() + skyTime();
-// 崩断：先绷紧发白、抖一下，一节节像粒子一样消散（dissolve 秒内随机），剩下的化成光冲上天
-export const BREAK = { show: 0.3, crack: 0.3, dissolve: 0.75, rise: 0.75, keep: 0.4 };
+// 崩断：先绷紧发白、抖一下，然后一节节碎成细细的粒子散掉（dissolve 秒内随机轮到每一节，
+// 每一节 crumble 秒里边缩小边碎开），粒子慢慢飘开、淡掉（drift 秒），不往天上冲
+export const BREAK = { show: 0.3, crack: 0.3, dissolve: 1.1, crumble: 0.22, drift: 1.2 };
 export const FADE = 0.8;
 
 // 别人的哩番缚没人看得见（只有她自己），所以结算时才现出锁链：快一点锁上
@@ -97,7 +98,7 @@ export type ChainOutcome = 'key' | 'broken' | 'fade';
 
 export function outcomeTime(kind: ChainOutcome): number {
   if (kind === 'key') return goldTime();
-  if (kind === 'broken') return BREAK.show + BREAK.crack + BREAK.dissolve + BREAK.rise;
+  if (kind === 'broken') return BREAK.show + BREAK.crack + BREAK.dissolve + BREAK.crumble + BREAK.drift;
   return FADE;
 }
 
@@ -114,7 +115,7 @@ export function chainOutcomes(g: Game, result: RoundResult): { seat: number; bin
   return out;
 }
 
-// 每一节锁链崩断时什么时候消散（0..1，比 keep 大的不消散、化成光冲上天）。同一节每次一样
+// 每一节锁链崩断时什么时候碎开（0..1，乘上 BREAK.dissolve）。同一节每次一样
 export function dissolveAt(chain: number, k: number): number {
   const x = Math.sin((chain * 131 + k) * 12.9898 + 78.233) * 43758.5453;
   return x - Math.floor(x);

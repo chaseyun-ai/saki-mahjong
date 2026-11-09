@@ -62,12 +62,16 @@ describe('白水哩番缚的锁链特效', () => {
     expect(plockHtml('frame', 'seat', 2, 'broken', -1, -0.5)).toContain('pl-frame at-seat broken');
   });
 
-  it('崩断时大部分消散，剩下一部分化成光', () => {
+  it('崩断时每一节轮流碎成粒子，先后撒得开，放完前都碎完', () => {
     const r = Array.from({ length: 200 }, (_, k) => dissolveAt(1, k));
-    const kept = r.filter((x) => x >= 1 - BREAK.keep).length / r.length;
-    expect(kept).toBeGreaterThan(0.25);
-    expect(kept).toBeLessThan(0.55);
+    expect(Math.min(...r)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...r)).toBeLessThan(1);
+    // 前一半、后一半时间里碎的都不少（不是一下子全没了）
+    const early = r.filter((x) => x < 0.5).length / r.length;
+    expect(early).toBeGreaterThan(0.3);
+    expect(early).toBeLessThan(0.7);
     expect(dissolveAt(2, 5)).toBe(dissolveAt(2, 5));
+    expect(outcomeTime('broken')).toBeCloseTo(BREAK.show + BREAK.crack + BREAK.dissolve + BREAK.crumble + BREAK.drift);
   });
 
   it('锁得越多锁上越久；钥匙那一段最长', () => {
