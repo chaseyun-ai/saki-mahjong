@@ -176,6 +176,8 @@ const STICK_DROP_DELAY = 0.25;
 const STICK_DROP_HEIGHT = 3;
 // 摸牌不用手，牌自己沿弧线从牌山飞进手里
 const DRAW_FLIGHT = 0.25;
+// 改良布局：摸的牌飞到这一段（占整段的比例）就转好身、放大好，落进手里时已经是手牌的样子，不在手里原地转
+const DRAW_TURN_V2 = 0.7;
 // 摸牌路径关掉时：先在牌山上淡出（DRAW_FADE_OUT 秒），再在手里淡入（DRAW_FADE_IN 秒）
 const DRAW_FADE_OUT = 0.12;
 const DRAW_FADE_IN = 0.18;
@@ -243,6 +245,8 @@ interface Flight {
   tile: TileId;
   t: number;
   start: THREE.Vector3;
+  quat: THREE.Quaternion; // 起飞时的朝向、大小：转身、放大照飞行进度走，落下时正好到位
+  scale: number;
   // 不飞：在牌山上渐渐消失，再在手里渐渐出现（摸牌路径关掉时）
   fade: boolean;
 }
@@ -336,6 +340,7 @@ export class Table3D {
   // 改良布局（ortho）：自己的手牌用这个没有透视的镜头单独画一层，朝向、位置跟着主镜头，
   // 大小按手牌那一排离镜头的距离定，手牌在画面上的位置和用主镜头画的一样，只是每张牌没有透视
   private orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+  private orthoDepth = 1; // 手牌那一排离镜头多远（沿视线）
   private atlas = new FaceAtlas();
   private tiles: TileObj[] = [];
   private backMat: THREE.Material | null = null;
@@ -1179,7 +1184,7 @@ export class Table3D {
     const path = this.lastSync?.view.drawPath ?? 'on';
     const fade = path === 'off' || (path === 'self' && seat !== this.lastSync?.view.me);
     this.flights = this.flights.filter((f) => f.tile !== tile);
-    this.flights.push({ tile, t: 0, start: obj.group.position.clone(), fade });
+    this.flights.push({ tile, t: 0, start: obj.group.position.clone(), quat: obj.group.quaternion.clone(), scale: obj.group.scale.x, fade });
   }
 
   // 摸牌淡出淡入：牌的材质是大家共用的，淡的时候这张牌换成自己的半透明复制品，淡完换回去
@@ -2838,12 +2843,21 @@ export class Table3D {
         this.held.add(f.tile);
         return true;
       }
-      if (!dest || f.t >= DRAW_FLIGHT) return false;
+      if (!dest) return false;
+      if (f.t >= DRAW_FLIGHT) {
+        // 落下：正好落在手牌的位置、朝向上（之前转身是每帧往目标逼近，落下时还差一点，落进手里以后还在原地转一下）
+        tile.group.position.copy(dest.pos);
+        tile.group.quaternion.copy(dest.quat);
+        tile.group.scale.setScalar(dest.scale);
+        return false;
+      }
       const k = f.t / DRAW_FLIGHT;
       const e = k * k * (3 - 2 * k);
       tile.group.position.lerpVectors(f.start, dest.pos, e).setY(THREE.MathUtils.lerp(f.start.y, dest.pos.y, e) + Math.sin(k * Math.PI) * 2.2);
-      tile.group.quaternion.slerp(dest.quat, Math.min(1, dt * 10));
-      tile.group.scale.setScalar(THREE.MathUtils.lerp(tile.group.scale.x, dest.scale, Math.min(1, dt * 10)));
+      const r = Math.min(1, k / (this.v2 ? DRAW_TURN_V2 : 1));
+      const er = r * r * (3 - 2 * r);
+      tile.group.quaternion.slerpQuaternions(f.quat, dest.quat, er);
+      tile.group.scale.setScalar(THREE.MathUtils.lerp(f.scale, dest.scale, er));
       this.held.add(f.tile);
       return true;
     });
@@ -3095,10 +3109,19 @@ export class Table3D {
       this.renderer.render(this.scene, this.camera);
       return;
     }
-    const groups = ids.map((id) => this.tiles[id].group);
+    // 自己摸的牌：整段飞行都画在手牌这一层（没有透视）。不然飞的时候用主镜头画、看得到侧面，
+    // 落进手里那一下换成没有透视的样子，看起来像牌在手里转了一下
+    const me = this.lastSync?.view.me ?? 0;
+    const hand = this.lastSync?.g.players[me].hand ?? [];
+    const flying = this.flights.filter((f) => !f.fade && hand.includes(f.tile)).map((f) => this.tiles[f.tile].group);
+    const groups = [...ids.map((id) => this.tiles[id].group), ...flying];
     for (const g of groups) g.traverse((o) => o.layers.set(1));
-    // 白水哩的锁链压在手牌上面：手牌那一层画完以后再用主镜头单独画一层（不然被手牌盖住，横着压过手牌的那条整条看不见）
-    const over = this.chains.filter((c): c is ChainFx => !!c && !c.vanished).map((c) => c.group);
+    // 白水哩的锁链压在手牌上面：手牌那一层画完以后再用主镜头单独画一层（不然被手牌盖住，横着压过手牌的那条整条看不见）。
+    // 自己是姬子时：理完牌烧过手牌的火和手牌画在同一层（前后照样互相遮挡），流星的火尾、闪光画在手牌上面
+    const hk = this.himekoDeal?.seat === me;
+    const withHand = hk ? this.himeko.withHand : [];
+    const over = [...this.chains.filter((c): c is ChainFx => !!c && !c.vanished).map((c) => c.group), ...(hk ? this.himeko.overHand : [])];
+    for (const o of withHand) o.layers.set(1);
     for (const g of over) g.traverse((o) => o.layers.set(2));
     this.scene.traverse((o) => {
       if (!(o as THREE.Light).isLight) return;
@@ -3115,7 +3138,21 @@ export class Table3D {
     // 背景是纯色时 three 每次画都会先清屏，第二层先把背景拿掉
     const bg = this.scene.background;
     this.scene.background = null;
+    // 飞着的牌顺着视线挪到手牌那一排的远近、按远近缩小：没有透视的镜头下，在画面上的位置、大小和主镜头画的一样
+    const cam = this.camera.position;
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    const saved = flying.map((g) => {
+      const keep = { pos: g.position.clone(), scale: g.scale.x };
+      const k = this.orthoDepth / Math.max(1, g.position.clone().sub(cam).dot(fwd));
+      g.position.sub(cam).multiplyScalar(k).add(cam);
+      g.scale.setScalar(keep.scale * k);
+      return keep;
+    });
     r.render(this.scene, this.orthoCam);
+    flying.forEach((g, i) => {
+      g.position.copy(saved[i].pos);
+      g.scale.setScalar(saved[i].scale);
+    });
     if (over.length) {
       r.clearDepth();
       const mask = this.camera.layers.mask;
@@ -3128,6 +3165,7 @@ export class Table3D {
     r.shadowMap.autoUpdate = true;
     for (const g of groups) g.traverse((o) => o.layers.set(0));
     for (const g of over) g.traverse((o) => o.layers.set(0));
+    for (const o of withHand) o.layers.set(0);
   }
 
   // 改良布局（ortho）：现在要单独画的自己的手牌：在手牌那一排上的（理牌时左右挪也算）；
@@ -3210,6 +3248,7 @@ export class Table3D {
     const center = this.toWorld(me, me, row.x0 + 6.5 * row.step, (TILE_H / 2) * row.hs, row.z, STANDING).pos;
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
     const depth = center.sub(cam.position).dot(fwd);
+    this.orthoDepth = depth;
     const half = depth * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
     o.top = half;
     o.bottom = -half;

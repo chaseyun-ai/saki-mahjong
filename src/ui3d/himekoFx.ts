@@ -377,6 +377,16 @@ export class HimekoFx {
     this.group.add(this.beams, this.fire, this.meteors, this.light);
   }
 
+  // 改良布局里自己的手牌用没有透视的镜头单独画一层（table3d 的 draw）：烧过手牌的火跟手牌画在同一层，
+  // 前后照样互相遮挡；流星的火尾、落下的闪光画在手牌上面
+  get withHand(): THREE.Object3D[] {
+    return [this.fire];
+  }
+
+  get overHand(): THREE.Object3D[] {
+    return [this.beams, this.meteors];
+  }
+
   // 配牌的流星（节奏见 ui/himekoBeat.ts）
   descend(tiles: DescentTile[], scale: number): void {
     if (!tiles.length) return;
