@@ -13,6 +13,7 @@ import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
 import { Gale2D } from './gale2d';
 import { aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
+import { type HuiyuCard, huiyuBar, huiyuCards, huiyuMissedRon, huiyuReady, huiyuWinGb } from '../abilities/huiyu';
 import { playRebuild, playShatter } from './sketchFx';
 import { playNetWipe } from './netFx';
 import { kuroLost } from '../abilities/kuro';
@@ -42,10 +43,11 @@ import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles
 import { playCall, playChime, playClick, playRiichi, playWin } from './sound';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { paceOf, vary } from './vary';
-import { Table3D } from '../ui3d/table3d';
+import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
 import { backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
+import { FlowPage, PointSeat, ResultFlow, animatePoints, drawBannerHtml, pointsPageHtml, ranksOf } from './resultFlow';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
@@ -96,12 +98,17 @@ const STAMINA_MAX = 100;
 const DEEP_COST = 15;
 const STAMINA_REGEN = 20;
 
+// 郝慧宇：国标这么多番以上，「食糊」和结算面板换金色
+const GB_GOLD_FAN = 24;
+const GB_GOLD = '#e6b422';
+
 interface Toast {
   id: number;
   seat: number;
   text: string;
   big: boolean;
   kind: string; // riichi / call / kan / win 时有特效样式
+  color?: string; // 不用角色色时（郝慧宇国标 24 番以上的金色「食糊」）
 }
 
 // 选人页顶栏：对局设置（滑杆）、视觉设置（调色盘）、更多（三个点）；随机出场的骰子
@@ -179,6 +186,9 @@ export class App {
   private faceTimer: number | null = null;
   // 2.5D 的切入演出；能力的切入每局每种只放第一次（宝牌聚集这种一局会发动好多次），之后只出小字
   private cutins: Cutins | null = null;
+  // 新结算（视觉设置「结算画面：新」）：正在放的几页；流局大字之后挂「听牌 / 不听」的计时器
+  private flow: ResultFlow | null = null;
+  private flowTimer: number | null = null;
   private cutinSeen = new Set<string>();
   // 爱丽丝的手绘板：牌桌现在是不是画成手绘板（重组特效刷满时才换过去，破碎时马上换回）
   private sketchView = false;
@@ -296,6 +306,7 @@ export class App {
   private teardown(): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    this.closeFlow();
     this.game = null;
     this.cutins?.clear();
     this.table3d?.dispose();
@@ -706,11 +717,16 @@ export class App {
     if (this.mode !== '2d') {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
       const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
-      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div>${tip}</div>`;
+      // 2.5D 改良布局（试做）：牌桌上加 v2，样式和镜头都只在 v2 里改，原版不动
+      const v2 = this.mode === '25d' && this.settings.layout === 'improved';
+      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}${v2 ? ' v2' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div><div class="rf-layer" id="rf"></div>${tip}</div>`;
       // 切入演出只在 2.5D 放；3D、2D 只放素材页换上的技能动画
       this.cutins = new Cutins(document.getElementById('cutins')!);
       this.cutinSeen.clear();
-      this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d');
+      this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d', v2);
+      // 改良布局的手牌画法：照视觉设置（B / C）；网址后面加 ?hand=A 到 F 可以临时换成别的几种看
+      const handStyle = HAND_STYLES_V2[new URLSearchParams(location.search).get('hand')?.toUpperCase() ?? ''] ?? HAND_STYLES_V2[this.settings.hand];
+      if (v2 && handStyle) this.table3d.setView25(handStyle);
       this.table3d.onHover = (id) => this.hoverTile(id);
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
       if (this.mode === '25d') {
@@ -780,10 +796,19 @@ export class App {
       // 3D 牌桌先让大家看清倒牌和特效，再弹结算。2.5D 和牌照雀魂，宣言后 3.4 秒进结算
       this.render();
       const wins = g.roundResult?.wins.length ?? 0;
-      const wait =
+      // 新结算：流局先在牌桌中间出大字、手牌上挂听牌 / 不听，多停一会儿再进点数移动
+      const staged = g.phase === 'roundEnd' && this.staged();
+      if (staged && !wins) this.drawBanner(g);
+      const base =
         this.mode === '2d' ? Math.max(0, this.riiHold - Date.now()) : Math.max(this.riiHold - Date.now(), this.mode === '25d' && wins ? Math.max(3400, this.busyMs() + 900) : (wins ? 2400 : 1400) + this.busyMs());
+      const wait = staged && !wins ? Math.max(base, 3000) : base;
       this.timer = window.setTimeout(() => {
         this.showResult = true;
+        if (staged) {
+          this.render();
+          this.openFlow(g);
+          return;
+        }
         this.render();
         // 托管：结算看一会儿自己点“下一局”
         if (this.auto && g.phase === 'roundEnd') this.timer = window.setTimeout(() => this.advance(), AUTO_NEXT);
@@ -923,8 +948,14 @@ export class App {
     if (!g || g.phase !== 'roundEnd') return;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    this.closeFlow();
     this.showResult = false;
     g.nextRound();
+    // 下一局发牌前要选技能（爽的五色云等）：引擎已经把上一局的牌收走了，桌上的倒牌、锁链这些也收掉，停在空牌桌上选
+    if ((g.phase as string) === 'predeal') {
+      this.clearRoundFx();
+      this.table3d?.clearRound();
+    }
     // 终局：没拿到第一的都“懵逼”
     if ((g.phase as string) === 'gameEnd') {
       const rank = g.ranking();
@@ -940,6 +971,21 @@ export class App {
     this.step();
   }
 
+  // 上一局留在桌上的东西收掉（隐身淡掉的牌河、手绘板、哩的锁链和钥匙）：新的一局开始，或者发牌前选技能时
+  private clearRoundFx(): void {
+    this.gone.clear();
+    this.vanishAt.clear();
+    this.sketchView = false;
+    this.riiPicking = false;
+    this.chains2d?.clear();
+    this.skyKey?.clear();
+    this.riiPadlockStop?.();
+    this.riiPadlockStop = null;
+    this.riiLockAt = 0;
+    this.riiPlockSwapAt = 0;
+    this.riiLockEnd.clear();
+  }
+
   private onGameEvent(e: GameEvent): void {
     this.table3d?.onEvent(e, this.game!);
     this.updateFaces(e);
@@ -948,20 +994,11 @@ export class App {
       // 新的一局配牌先理好
       this.handOrder = null;
       this.cutinSeen.clear();
+      this.gbSighed.clear();
       this.stamina = Math.min(STAMINA_MAX, this.stamina + STAMINA_REGEN);
       this.blocked = this.penaltyNext;
       this.penaltyNext = false;
-      this.gone.clear();
-      this.vanishAt.clear();
-      this.sketchView = false;
-      this.riiPicking = false;
-      this.chains2d?.clear();
-      this.skyKey?.clear();
-      this.riiPadlockStop?.();
-      this.riiPadlockStop = null;
-      this.riiLockAt = 0;
-      this.riiPlockSwapAt = 0;
-      this.riiLockEnd.clear();
+      this.clearRoundFx();
       // 桌上有哩：先把番缚的音效解码好
       if (this.chars.some((c) => c?.id === 'rii')) preloadRiiSound();
     }
@@ -977,6 +1014,7 @@ export class App {
       }
       this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
       if (!this.table3d) playClick({ pan: this.clickPan(e.seat), varied: true });
+      this.gbSigh(e.seat, e.tile);
       if (e.riichi) {
         playRiichi();
         // 第二形态（透华的治水）在素材页换了立直动画：放这一段
@@ -1030,6 +1068,8 @@ export class App {
         window.setTimeout(() => this.galeBurst2d(), slamImpact2d(slam.hand.filter((t) => t !== slam.tile).length) * 1000);
       }
       for (const w of e.result.wins) {
+        // 郝慧宇和牌喊「食糊」，国标 24 番以上金色
+        if (this.gbWinFx(w)) continue;
         // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
         const c = this.chars[w.seat];
         const word = w.from === null ? '自摸' : '荣和';
@@ -1379,6 +1419,88 @@ export class App {
     return `<div class="sketch-plan${fresh ? ' fresh' : ''}" title="${plan.yaku.join('、')}"><div class="sp-head"><b>手绘板</b><span>${when} · ${han}</span></div><div class="sp-tiles">${tiles}${melds}<span class="sp-win">${tileHtml(plan.win, { size: 'pond', sketch: true })}</span></div></div>`;
   }
 
+  // ---------- 郝慧宇的国标 ----------
+
+  // 这一局冒过“日麻无役”气泡的座位
+  private gbSighed = new Set<number>();
+  // 番种栏上次画的样子：番种、哪几格亮着、翻过几次面（新亮的格子闪金光，换番种整排翻面）
+  private gbShown: { key: string; lit: boolean[]; flips: number } | null = null;
+
+  // 别人打出她的和了牌：国标够 8 番，日麻却没役荣和不了。头像旁冒一个气泡，一局一次
+  private gbSigh(from: number, tile: TileId): void {
+    const g = this.game!;
+    for (let s = 0; s < 4; s++) {
+      if (this.chars[s]?.id !== 'huiyu' || this.gbSighed.has(s)) continue;
+      const fan = huiyuMissedRon(g, s, from, tile);
+      if (fan === null) continue;
+      this.gbSighed.add(s);
+      this.toast(s, `国标 ${fan} 番……日麻无役`, false, 'gb-sigh');
+    }
+  }
+
+  // 和牌喊「食糊」（素材页“食糊”那格有动画就放那段），国标 24 番以上换金色
+  private gbWinFx(w: WinInfo): boolean {
+    const c = this.chars[w.seat];
+    if (c?.id !== 'huiyu') return false;
+    const fan = huiyuWinGb(this.game!, w.seat)?.total ?? 0;
+    const color = fan >= GB_GOLD_FAN ? GB_GOLD : c.color;
+    const art = skillArt(c.id, 'sik');
+    if (this.mode === '25d' && this.cutins?.show({ pos: POS[w.seat], id: c.id, color, word: '食糊', kind: 'win', art, glyph: c.name.slice(-1) })) return true;
+    this.toast(w.seat, '食糊', true, 'win', color);
+    return true;
+  }
+
+  // 番种牌（配牌后三选一）：番种名、示意的 14 张（已有的亮、缺的暗）、还差几张、国标几番 / 日麻几点
+  private gbCardHtml(c: HuiyuCard, on: boolean): string {
+    const tiles = c.tiles.map((k, i) => tileHtml(k * 4 + 1, { size: 'mini', classes: [c.lit[i] ? 'gb-lit' : 'gb-dim'] })).join('');
+    const riichi = c.points ? `日麻约 ${c.points} 点` : '日麻无役';
+    return `<button class="pd-opt gb-card${on ? ' on' : ''}" data-ui="pd" data-pd="${c.key}" data-group="gb">
+      <span class="pd-check">${on ? '✓' : ''}</span>
+      <span class="pd-text"><b>${c.name}</b><span class="gb-tiles">${tiles}</span>
+        <small>还差 ${c.missing} 张 · <em class="gb-fan">国标约 ${c.gb} 番</em> / ${riichi}${c.ronOk ? '' : ' · <em class="gb-noron">荣和无役</em>'}</small></span>
+    </button>`;
+  }
+
+  // 番种栏：手牌上面一排小牌（番种牌那 14 张），听牌而且国标够 8 番时盖“成”字印。立直、被封印时变灰
+  private gbBarHtml(): string {
+    const g = this.game!;
+    const bar = this.chars[this.me]?.id === 'huiyu' && (g.phase === 'turn' || g.phase === 'calls') && !this.vision ? huiyuBar(g, this.me) : null;
+    if (!bar) {
+      this.gbShown = null;
+      return '';
+    }
+    const c = bar.card;
+    const prev = this.gbShown;
+    const flip = !!prev && prev.flips !== bar.flips;
+    const same = !!prev && prev.key === c.key && !flip;
+    this.gbShown = { key: c.key, lit: c.lit, flips: bar.flips };
+    const tiles = c.tiles
+      .map((k, i) => {
+        const hit = same && c.lit[i] && !prev!.lit[i];
+        return tileHtml(k * 4 + 1, { size: 'pond', classes: [c.lit[i] ? 'gb-lit' : 'gb-dim', ...(hit ? ['gb-hit'] : [])] });
+      })
+      .join('');
+    const left = c.missing ? `还差 ${c.missing} 张` : '齐了';
+    const riichi = c.points ? `日麻约 ${c.points} 点` : '日麻无役';
+    const seal = !bar.off && huiyuReady(g, this.me) ? '<span class="gb-seal">成</span>' : '';
+    return `<div class="gb-bar${bar.off ? ' off' : ''}${flip ? ' flip' : ''}">${seal}
+      <div class="gb-head"><b>番种</b><span class="gb-name">${c.name}</span><span>${left}</span>
+        <span class="gb-vs"><em>国标约 ${c.gb} 番</em> / ${riichi}${c.ronOk ? '' : ' · <i>荣和无役</i>'}</span></div>
+      <div class="gb-tiles">${tiles}</div></div>`;
+  }
+
+  // 结算：她和牌时在日麻点数下面加国标面板，最后一行大字对照“国标 X 番 / 日麻 Y 点”
+  private gbPanelHtml(w: WinInfo): string {
+    const g = this.game!;
+    const gb = this.chars[w.seat]?.id === 'huiyu' ? huiyuWinGb(g, w.seat) : null;
+    if (!gb) return '';
+    const r = w.result;
+    const pts = w.from !== null ? r.ron : w.seat === g.dealer ? r.tsumoOtherPays * 3 : r.tsumoDealerPays + 2 * r.tsumoOtherPays;
+    const rows = gb.fans.map((f) => `<div class="gb-f"><span>${f.name}${f.count > 1 ? ` ×${f.count}` : ''}</span><b>${f.fan * f.count} 番</b></div>`).join('');
+    return `<div class="gb-panel${gb.total >= GB_GOLD_FAN ? ' gold' : ''}"><div class="gb-panel-title">国标</div><div class="gb-fans">${rows}</div>
+      <div class="gb-versus"><b>国标 ${gb.total} 番</b><span class="gb-slash">/</span><span>日麻 ${pts.toLocaleString('en-US')} 点</span></div></div>`;
+  }
+
   // 立直、鸣牌、和牌的大字：2.5D 放带立绘的切入，3D、2D 还是原来的大字特效
   private bigFx(seat: number, word: string, kind: 'riichi' | 'call' | 'kan' | 'win'): void {
     if (this.mode === '25d') this.cutin(seat, word, kind);
@@ -1411,9 +1533,9 @@ export class App {
     return 'neutral';
   }
 
-  private toast(seat: number, text: string, big: boolean, kind = ''): void {
+  private toast(seat: number, text: string, big: boolean, kind = '', color?: string): void {
     const id = ++this.toastSeq;
-    this.toasts.push({ id, seat, text, big, kind });
+    this.toasts.push({ id, seat, text, big, kind, color });
     this.renderToasts();
     window.setTimeout(
       () => {
@@ -1485,8 +1607,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、动画开关是别处的设置，留着
-      const { chisui, drawPath, vary } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary };
+      const { chisui, drawPath, vary, layout, hand } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary, layout, hand };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -1691,6 +1813,8 @@ export class App {
 
   // 2D：姬子拿到钥匙的那一局，配牌时她的牌错落着竖着砸下来、理完牌火从右烧到左（3D、2.5D 在 table3d 里放）
   private himekoFx2d(g: Game, table: HTMLElement): void {
+    // 发牌前选技能时桌上是空的，等真的配牌再放
+    if (g.phase === 'predeal') return;
     const seat = himekoKeySeat(g);
     const fresh = g.players.every((p) => p.discards.length === 0 && p.melds.length === 0);
     const key = `${g.seed}-${g.round}`;
@@ -1782,7 +1906,7 @@ export class App {
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
-      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
+      ${this.showResult && !(g.phase === 'roundEnd' && this.staged()) ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
     // 看下一巡时视野变绿
     hud.parentElement?.classList.toggle('deep', !!this.vision);
     this.renderToasts();
@@ -2195,9 +2319,11 @@ export class App {
     for (const el of Array.from(box.children) as HTMLElement[]) if (!live.has(el.dataset.id!)) el.remove();
     for (const t of this.toasts) {
       if (box.querySelector(`[data-id="${t.id}"]`)) continue;
+      // 郝慧宇“日麻无役”的气泡（gb-sigh）不放特效
+      const fx = !!t.kind && t.kind !== 'gb-sigh';
       box.insertAdjacentHTML(
         'beforeend',
-        `<div data-id="${t.id}" class="toast ${POS[t.seat]} ${t.big ? 'big' : ''} ${t.kind ? `fx fx-${t.kind}` : ''}" style="--c:${this.chars[t.seat].color}">${t.kind ? fxSparksHtml(t.kind) : ''}<span>${t.text}</span></div>`,
+        `<div data-id="${t.id}" class="toast ${POS[t.seat]} ${t.big ? 'big' : ''} ${fx ? `fx fx-${t.kind}` : t.kind}" style="--c:${t.color ?? this.chars[t.seat].color}">${fx ? fxSparksHtml(t.kind) : ''}<span>${t.text}</span></div>`,
       );
     }
   }
@@ -2224,7 +2350,7 @@ export class App {
       .join('');
     return `
       <div class="round">${g.roundLabel()}</div>
-      <div class="remain">余 ${g.wall.remaining}</div>
+      <div class="remain">余 ${g.phase === 'predeal' ? '—' : g.wall.remaining}</div>
       <div class="sticks">立直棒 ×${g.shownSticks(this.me)}</div>
       <div class="dora">${dora}</div>
       ${this.sakiPeekHtml()}
@@ -2458,14 +2584,14 @@ export class App {
     const waitHtml = `<div data-r="waits">${this.waitsSlotHtml()}</div>`;
     const hint =
       g.phase === 'turn' && g.turn === this.me && discardable.size > 0
-        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹封住，这一局和不了）' : ''}${this.sniper(this.me) !== null ? '（被镜片盯上，这一局和不了）' : ''}${this.bustBlocked() ? '（灰掉的牌放铳会被击飞，打不出去）' : ''}</div>`
+        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹封住，这一局和不了）' : ''}${this.sniper(this.me) !== null ? '（被镜片盯上，这一局摸不到和了牌）' : ''}${this.bustBlocked() ? '（灰掉的牌放铳会被击飞，打不出去）' : ''}</div>`
         : '';
     const c = this.chars[this.me];
     return `
       <div class="me" style="--c:${c.color}">
         <div class="actions">${buttons.join('')}</div>
         ${this.autoBtnHtml()}${this.assistHtml()}
-        ${this.sketchPlanHtml()}${waitHtml}${hint}${this.riiPickerHtml()}
+        ${this.sketchPlanHtml()}${this.gbBarHtml()}${waitHtml}${hint}${this.riiPickerHtml()}
         ${
           withHand
             ? `<div class="hand-row">
@@ -2566,9 +2692,12 @@ export class App {
     const spend = opts.filter((o) => this.pdPicks!.has(o.id)).reduce((sum, o) => sum + (o.cost ?? 0), 0);
     const left = meter ? meter.value - spend : Infinity;
     const unit = meter?.label ?? '能量';
+    const gbCards = post && ab?.id === 'huiyu' ? new Map(huiyuCards(g, this.me).map((c) => [c.key, c])) : null;
     const rows = opts
       .map((o) => {
         const on = this.pdPicks!.has(o.id);
+        const card = gbCards?.get(o.id);
+        if (card) return this.gbCardHtml(card, on);
         const affordable = on || (o.cost ?? 0) <= left;
         const usable = o.enabled && affordable;
         const note = !o.enabled ? (o.note ?? '') : !affordable ? `${unit}不够` : o.cost ? `${unit} -${o.cost}` : '';
@@ -2810,6 +2939,7 @@ export class App {
         ${ura}
         <div class="yaku-list">${yaku.join('')}</div>
         <div class="summary">${summary} ${points}</div>
+        ${this.gbPanelHtml(w)}
         </div>
       </div>`;
   }
@@ -2846,6 +2976,125 @@ export class App {
       )
       .join('');
     return `<div class="trace"><h3>能力痕迹</h3>${lines || '<p class="trace-none">这一局牌山没被动过。</p>'}</div>`;
+  }
+
+  // ---------- 新结算（试做） ----------
+
+  // 用新结算：视觉设置选了「新」，3D、2.5D 牌桌（2D、天使和的网麻、怜的演算照旧用原版弹窗）
+  private staged(): boolean {
+    return this.settings.result === 'staged' && !!this.table3d && !this.netView && !this.vision;
+  }
+
+  private closeFlow(): void {
+    if (this.flowTimer !== null) clearTimeout(this.flowTimer);
+    this.flowTimer = null;
+    this.flow?.dispose();
+    this.flow = null;
+    document.getElementById('rf')?.replaceChildren();
+  }
+
+  // 流局：牌桌中间的大字；倒牌倒下去以后，每家手牌上挂「听牌 / 不听」（途中流局不挂）
+  private drawBanner(g: Game): void {
+    const r = g.roundResult;
+    const layer = document.getElementById('rf');
+    if (!r || !layer) return;
+    const main = r.kind === 'exhaustive' ? '荒牌流局' : '途中流局';
+    const sub = r.kind === 'abortive' ? (r.reason ?? '') : '';
+    layer.innerHTML = drawBannerHtml(main, sub, []);
+    if (r.kind !== 'exhaustive') return;
+    this.flowTimer = window.setTimeout(() => {
+      this.flowTimer = null;
+      if (this.game !== g || this.flow || !this.table3d) return;
+      const tags = [0, 1, 2, 3]
+        .map((s) => ({ s, at: this.table3d!.handScreenPos(s) }))
+        .filter((x): x is { s: number; at: { x: number; y: number } } => !!x.at)
+        .map(({ s, at }) => {
+          // 牌子挂在手牌上面：自己的手牌大，往上多让一点；不出画面
+          const w = this.root.clientWidth;
+          const h = this.root.clientHeight;
+          const y = at.y - (s === this.me ? h * 0.1 : 28);
+          return { x: Math.min(w - 60, Math.max(60, at.x)), y: Math.min(h - 20, Math.max(48, y)), tenpai: r.tenpai[s] };
+        });
+      layer.innerHTML = drawBannerHtml(main, sub, tags);
+    }, 1400);
+  }
+
+  // 结算的几页：每个和牌的人一页，最后点数移动；翻完进下一局
+  private openFlow(g: Game): void {
+    const r = g.roundResult;
+    const layer = document.getElementById('rf');
+    if (!r || !layer) {
+      this.render();
+      return;
+    }
+    if (this.flowTimer !== null) clearTimeout(this.flowTimer);
+    this.flowTimer = null;
+    const pages: FlowPage[] = r.wins.map((w, i) => ({ html: this.flowWinHtml(w, i === r.wins.length - 1), secs: this.auto ? 4 : 10 }));
+    const seats = this.pointSeats(r);
+    const trace = r.wins.length ? '' : this.flowTraceHtml();
+    pages.push({ html: pointsPageHtml(g.roundLabel(), seats, trace), secs: this.auto ? 3 : 6, after: (el) => animatePoints(el, seats) });
+    this.flow = new ResultFlow(layer, pages, () => {
+      this.flow = null;
+      this.advance();
+    });
+  }
+
+  private flowTraceHtml(): string {
+    return `<details class="rf-trace"><summary>能力痕迹（${this.trace?.entries.length ?? 0}）</summary>${this.traceHtml()}</details>`;
+  }
+
+  // 和牌那一页：左边立绘；右边手牌、宝牌里宝牌、役一条条出来、最后盖番符章和得点。last：能力痕迹放在最后一个和牌的人那页
+  private flowWinHtml(w: WinInfo, last: boolean): string {
+    const g = this.game!;
+    const c = this.chars[w.seat];
+    const r = w.result;
+    const hand = w.hand
+      .filter((t) => t !== w.tile)
+      .sort((a, b) => a - b)
+      .map((t) => tileHtml(t, { size: 'pond' }))
+      .join('');
+    const how = w.from === null ? '自摸' : '荣和';
+    const from = w.from === null ? '' : `<span class="rf-from">${this.chars[w.from].name} 放铳</span>`;
+    // 宝牌、里宝牌各五格：翻开的画牌面，其余画牌背
+    const slots = (tiles: TileId[], shown: number) =>
+      [0, 1, 2, 3, 4].map((i) => (i < shown && tiles[i] !== undefined ? tileHtml(tiles[i], { size: 'pond' }) : backHtml('pond'))).join('');
+    const yaku = r.yaku.map((y) => [y.name, r.yakuman ? '役满' : `${y.han} 番`]);
+    if (r.dora) yaku.push(['宝牌', `${r.dora} 番`]);
+    if (r.aka) yaku.push(['赤宝牌', `${r.aka} 番`]);
+    if (r.ura) yaku.push(['里宝牌', `${r.ura} 番`]);
+    const rows = yaku.map(([n, h], i) => `<div class="rf-y" style="--i:${i}"><span>${n}</span><b>${h}</b></div>`).join('');
+    // 役一条条出完再盖章
+    const at = `${(0.7 + yaku.length * 0.28).toFixed(2)}s`;
+    const stamp = r.yakuman ? '<div class="rf-stamp yakuman"><b>役满</b></div>' : `<div class="rf-stamp"><em>番</em><b>${r.han}</b><small>${r.fu} 符</small></div>`;
+    const gain = g.roundResult?.deltas[w.seat] ?? 0;
+    const url = cutinArt(c.id, 'result').url;
+    const art = url ? `<img src="${url}" alt="" onerror="this.remove()" />` : `<span class="rf-glyph">${c.name.slice(-1)}</span>`;
+    return `<div class="rf-page rf-win" style="--c:${c.color}">
+      <div class="rf-art">${art}</div>
+      <div class="rf-body" style="--at:${at}">
+        <div class="rf-head"><span class="rf-name">${c.name}</span><span class="rf-how">${how}</span>${from}</div>
+        <div class="rf-hand">${hand}<span class="gap"></span>${tileHtml(w.tile, { size: 'pond', classes: ['win-tile'] })}<span class="gap"></span>${this.meldsHtml(w.melds, w.seat)}</div>
+        <div class="rf-dora"><span><label>宝牌</label>${slots(g.wall.doraIndicators, g.wall.doraRevealed)}</span><span><label>里宝牌</label>${slots(w.uraIndicators, w.uraIndicators.length)}</span></div>
+        <div class="rf-yaku">${rows}</div>
+        <div class="rf-total">${stamp}<div class="rf-limit">${r.limitName ? `<span>${r.limitName}</span>` : ''}<b>+${gain.toLocaleString('en-US')}</b></div></div>
+        ${this.gbPanelHtml(w)}
+        ${last ? this.flowTraceHtml() : ''}
+      </div>
+      <button class="rf-next" data-ui="rf-next">继续 <i></i></button>
+    </div>`;
+  }
+
+  // 点数移动页的四张卡：这一局之前、之后的点数和名次
+  private pointSeats(r: RoundResult): PointSeat[] {
+    const g = this.game!;
+    const after = g.players.map((p) => p.score);
+    const before = after.map((s, i) => s - r.deltas[i]);
+    const rb = ranksOf(before, g.firstDealer);
+    const ra = ranksOf(after, g.firstDealer);
+    return [0, 1, 2, 3].map((s) => {
+      const c = this.chars[s];
+      return { seat: s, rel: (s - this.me + 4) % 4, name: c.name, color: c.color, portrait: portraitUrl(c.id, this.faceOf(s)), glyph: c.name.slice(-1), before: before[s], after: after[s], rankBefore: rb[s], rankAfter: ra[s], mine: s === this.me };
+    });
   }
 
   private gameEndHtml(): string {

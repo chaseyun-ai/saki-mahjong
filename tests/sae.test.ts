@@ -1,10 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { SAE, saeAim, saeCanAim, saeLensesLeft, saeTarget, snipedBy } from '../src/abilities/sae';
+import { SAE, SAE_BLOCK, saeAim, saeCanAim, saeLensesLeft, saeTarget, snipedBy } from '../src/abilities/sae';
+import type { DrawRule } from '../src/abilities/types';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
+import { kindOf, type TileId } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
+
+// 把 want 这张牌换到 arr[i]（从各家手牌、牌山、王牌里找出来对换，牌的总数不变）
+function swapInto(g: Game, arr: TileId[], i: number, want: TileId) {
+  const w = g.wall;
+  for (const c of [...g.players.map((p) => p.hand), w.live, w.rinshan, w.doraIndicators, w.uraIndicators]) {
+    const j = c.indexOf(want);
+    if (j < 0) continue;
+    [c[j], arr[i]] = [arr[i], c[j]];
+    return;
+  }
+  throw new Error(`找不到 ${want}`);
+}
+
+// 把 seat 的手牌换成 ids（13 张）
+function arrange(g: Game, seat: number, ids: TileId[]) {
+  const hand = g.players[seat].hand;
+  expect(hand.length).toBe(13);
+  ids.forEach((t, i) => hand[i] !== t && swapInto(g, hand, i, t));
+}
 
 function setup(seed: number, ids: string[], format: 'east' | 'south' = 'east') {
   const seats = ids.map(byId);
@@ -28,7 +49,7 @@ describe('臼泽塞', () => {
     expect(byId('sae').school).toBe('宫守女子');
   });
 
-  it('玩家：镜片盯住的人这一局和不了，一局只能盯一个，三枚用完不回来', () => {
+  it('玩家：镜片盯住的人这一局摸不到和了牌（和牌键不拿走），一局只能盯一个，三枚用完不回来', () => {
     const { g, seats } = setup(3, ['sae', 'nodoka', 'izumi', 'kuro'], 'south');
     g.manual[0] = true;
     let round = 0;
@@ -42,16 +63,20 @@ describe('臼泽塞', () => {
       if (ok) {
         expect(saeTarget(g, 0)).toBe(target);
         expect(snipedBy(g, target)).toBe(0);
-        expect(g.canWin(target)).toBe(false);
+        // 和牌键不拿走：别人打出来的照样能荣和
+        expect(g.canWin(target)).toBe(true);
         // 一局只能盯一个人
         expect(saeAim(g, 0, 1 + ((round + 1) % 3))).toBe(false);
       }
       playRound(g, seats, (g) => {
-        if (ok && (g.phase === 'turn' || g.phase === 'calls')) expect(g.canWin(target)).toBe(false);
+        // 被盯的人摸到的牌永远不是和了牌
+        if (ok && g.phase === 'turn' && g.turn === target && g.players[target].drawn !== null) {
+          expect(g.legalActions(target).some((a) => a.type === 'tsumo')).toBe(false);
+        }
       });
       const end = [...g.events].reverse().find((e) => e.type === 'roundEnd');
       if (end?.type === 'roundEnd') {
-        if (ok) for (const w of end.result.wins) expect(w.seat).not.toBe(target);
+        if (ok) for (const w of end.result.wins) if (w.seat === target) expect(w.from).not.toBe(null);
       }
       if ((g.phase as string) === 'gameEnd') break;
       g.nextRound();
@@ -86,19 +111,47 @@ describe('臼泽塞', () => {
     expect(byId('sae').ability!.powered!(g, 0)).toBe(true);
   });
 
-  it('电脑：有人立直时用，一场最多三枚，盯上的人那一局不和牌', () => {
+  it('海底只剩一张、又是被盯的人的和了牌：从王牌里换掉；他照样能荣和', () => {
+    const { g } = setup(1, ['sae', 'izumi', 'izumi', 'izumi']);
+    g.manual[0] = true;
+    expect(saeAim(g, 0, 1)).toBe(true);
+    // 一二三四五六七八九万、一一筒、二三筒：听一筒、四筒（一气通贯，门清有役）
+    const id = (k: number, copy = 1) => k * 4 + copy;
+    arrange(g, 1, [id(0), id(1), id(2), id(3), id(4), id(5), id(6), id(7), id(8), id(9, 1), id(9, 2), id(10), id(11)]);
+    expect(g.waits(1).sort((a, b) => a - b)).toEqual([9, 12]);
+    const w = g.wall;
+    const fourPin = id(12);
+    swapInto(g, w.live, w.live.length - 1, fourPin);
+    w.live = w.live.slice(-1);
+    const before = g.events.length;
+    const rule = byId('sae').ability!.beforeAnyDraw!(g, 0, 1, false) as DrawRule;
+    expect(rule.deny(fourPin)).toBe(true);
+    expect(rule.deny(id(20))).toBe(false);
+    expect([9, 12]).not.toContain(kindOf(w.live[0]));
+    expect([...w.rinshan, ...w.uraIndicators]).toContain(fourPin);
+    expect(g.events.slice(before).some((e) => e.type === 'ability' && e.ability === 'sae' && e.text === SAE_BLOCK && e.target === 1)).toBe(true);
+    // 别人打出来的照样能荣和
+    expect(g.canWin(1)).toBe(true);
+    expect(g.winResult(1, fourPin, false)).not.toBeNull();
+    // 没被盯的人不管
+    expect(byId('sae').ability!.beforeAnyDraw!(g, 0, 2, false)).toBeFalsy();
+  });
+
+  it('电脑：有人立直时用，一场最多三枚，盯上的人那一局摸不到和了牌', () => {
     let used = 0;
+    let blocked = 0;
     for (let seed = 1; seed <= 10; seed++) {
       const { g, seats } = setup(seed, ['sae', 'nodoka', 'sera', 'kuro'], 'south');
       let steps = 0;
       const shots: { round: number; target: number }[] = [];
       g.onEvent((e) => {
-        if (e.type === 'ability' && e.ability === 'sae') shots.push({ round: g.round, target: saeTarget(g, 0)! });
+        if (e.type === 'ability' && e.ability === 'sae' && e.text === SAE_BLOCK) blocked++;
+        if (e.type === 'ability' && e.ability === 'sae' && e.text === '镜片') shots.push({ round: g.round, target: saeTarget(g, 0)! });
         if (e.type === 'roundEnd') {
           const shot = shots.find((s) => s.round === g.round);
           if (shot) {
             expect(g.players[shot.target].riichi).toBe(true);
-            for (const w of e.result.wins) expect(w.seat).not.toBe(shot.target);
+            for (const w of e.result.wins) if (w.seat === shot.target) expect(w.from).not.toBe(null);
           }
         }
       });
@@ -115,5 +168,6 @@ describe('臼泽塞', () => {
       used += shots.length;
     }
     expect(used).toBeGreaterThan(5);
+    expect(blocked).toBeGreaterThan(0);
   }, 60000);
 });

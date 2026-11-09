@@ -16,7 +16,7 @@ const reticle = (cls: string) =>
   `<path d="M-30 -4V4M-20 -3V3M20 -3V3M30 -4V4M-4 -30H4M-3 -20H3M-3 20H3M-4 30H4" stroke="currentColor" stroke-width="1.6"/></svg>`;
 
 // 头像上的标记：这一局被镜片盯上了
-export const lensMarkHtml = (by: string) => `<span class="lens-mark" title="被${by}的镜片盯上：这一局和不了">${reticle('lm-svg')}</span>`;
+export const lensMarkHtml = (by: string) => `<span class="lens-mark" title="被${by}的镜片盯上：这一局摸不到和了牌">${reticle('lm-svg')}</span>`;
 
 // 技能框里的镜片：还剩的亮着，用过的碎了；能拖的那几枚带 ready
 export function lensSlotsHtml(l: LensSlots, note: string, dragging: boolean): string {
@@ -30,7 +30,7 @@ export function lensSlotsHtml(l: LensSlots, note: string, dragging: boolean): st
       cls += ' lifted';
       lifted = true;
     }
-    return `<span class="lens ${cls}" ${!spent && ready ? 'data-lens="1" title="拖到别人头像上：这一局那个人和不了"' : ''}><i class="lens-glint"></i>${spent ? '<i class="lens-crack"></i>' : ''}</span>`;
+    return `<span class="lens ${cls}" ${!spent && ready ? 'data-lens="1" title="拖到别人头像上：这一局那个人摸不到和了牌"' : ''}><i class="lens-glint"></i>${spent ? '<i class="lens-crack"></i>' : ''}</span>`;
   }).join('');
   return `<div class="lens-row">${slots}</div><div class="fs-note skill-state">${note}</div>`;
 }

@@ -71,6 +71,31 @@ function windNeed(g: Game, seat: number): number | null {
   return null;
 }
 
+// 电脑的初美用：东北鸣出来以后，手里西风、南风要留到几张（凑刻的那种三张、凑对的那种两张；鸣出来的不算）。
+// 能力会把还差的送来，打牌时当它们已经在手里算向听。没鸣出东北是 null
+export function hatsumiWindGoal(g: Game, seat: number): Map<number, number> | null {
+  if (!hatsumiOpen(g, seat)) return null;
+  const { big, small } = westSouth(g, seat);
+  const k = meldedKinds(g, seat);
+  const goal = new Map<number, number>();
+  if (!k.has(big)) goal.set(big, 3);
+  if (!k.has(small)) goal.set(small, 2);
+  return goal;
+}
+
+// 东北鸣出来了、西南还没凑齐（接下来的摸牌能力会送来）
+export function hatsumiWindsComing(g: Game, seat: number): boolean {
+  return hatsumiOpen(g, seat) && windNeed(g, seat) !== null;
+}
+
+// 坐北家、西南还留给她的时候，别人手里没有西风、南风（配牌里没有，也摸不到；岭上牌除外）：
+// 她自己知道，打西南不会放铳
+export function hatsumiSafeWinds(g: Game, seat: number): boolean {
+  return isNorthSeat(g, seat) && hatsumiHoard(g, seat).length === 2 && !g.players.some((p, s) => s !== seat && p.melds.some((m) => m.type !== 'chi' && (kindOf(m.tiles[0]) === WEST || kindOf(m.tiles[0]) === SOUTH)));
+}
+
+export const hatsumiNorth = isNorthSeat;
+
 // 这一次摸牌先找哪种风：还差的那种，没有了（在别人手里）就找另一种（之后可以碰别人打出来的）
 function windOrder(g: Game, seat: number): number[] {
   const need = windNeed(g, seat);

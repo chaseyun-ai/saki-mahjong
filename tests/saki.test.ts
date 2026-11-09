@@ -4,7 +4,7 @@ import { SAKI, sakiKanOk, sakiMood, sakiSeesThrough } from '../src/abilities/sak
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { waitingKinds } from '../src/engine/shanten';
-import { kindOf, parseKinds, toCounts } from '../src/engine/tiles';
+import { kindOf, parseKinds, parseTiles, toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -105,4 +105,47 @@ describe('宫永咲', () => {
     [g.wall.rinshan[0], g.wall.live[five]] = [g.wall.live[five], g.wall.rinshan[0]];
     expect(sakiKanOk(g, 0, ready, 1)).toBe(true);
   });
+
+  it('对子多的配牌：摸到成刻的牌不打，往一般型做、留着杠材（七对子开不了杠）', () => {
+    const g = new Game({ seed: 1, players: [byId('saki'), byId('nodoka'), byId('mihoko'), byId('hisa')].map((c) => ({ name: c.id, ability: c.ability })) });
+    const p = g.players[0];
+    // 4477m 22s 33s 南南 加摸来的三索成刻：七对子、一般型都是一向听，按七对子的进张会打三索
+    p.hand = parseTiles('13m4477m22333s22z3z');
+    p.drawn = p.hand.filter((t) => kindOf(t) === parseKinds('3s')[0])[2];
+    const steady = { mistakeRate: 0 };
+    const saki = chooseAction(g, 0, { ...byId('saki').ai, ...steady });
+    expect(saki.type).toBe('discard');
+    if (saki.type === 'discard') expect(kindOf(saki.tile)).not.toBe(parseKinds('3s')[0]);
+    // 没有杠的能力的人照七对子的进张打（通用电脑不变）
+    const plain = chooseAction(g, 0, { ...byId('izumi').ai, ...steady });
+    expect(plain.type === 'discard' && kindOf(plain.tile)).toBe(parseKinds('3s')[0]);
+  });
+
+  it('整场下来：门清没立直时摸到成刻的牌，很少当场打掉', () => {
+    let drawn = 0;
+    let broke = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const seats = ['saki', 'nodoka', 'mihoko', 'hisa'].map(byId);
+      const g = new Game({ seed, format: 'south', players: seats.map((c) => ({ name: c.id, ability: c.ability })) });
+      let steps = 0;
+      while (g.phase !== 'gameEnd' && ++steps < 20000) {
+        if (g.phase === 'roundEnd') {
+          g.nextRound();
+          continue;
+        }
+        const s = g.waitingSeats()[0];
+        const a = chooseAction(g, s, seats[s].ai);
+        const p = g.players[0];
+        if (s === 0 && g.phase === 'turn' && a.type === 'discard' && p.drawn !== null && !p.riichi && p.melds.length === 0 && toCounts(p.hand)[kindOf(p.drawn)] === 3) {
+          drawn++;
+          if (kindOf(a.tile) === kindOf(p.drawn)) broke++;
+        }
+        g.act(s, a);
+      }
+    }
+    console.log({ drawn, broke });
+    // 改之前按七对子的进张打，一成多当场打掉；现在只剩失误和一般型里确实该打的
+    expect(drawn).toBeGreaterThan(60);
+    expect(broke).toBeLessThan(drawn * 0.05);
+  }, 120000);
 });

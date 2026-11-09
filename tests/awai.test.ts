@@ -105,7 +105,7 @@ describe('大星淡：被动', () => {
     let kuroWins = 0;
     let tenhou = 0;
     // 玄的能力一直在的场次里谁都中不了里宝牌：多打几场，挑得出玄打出宝牌失去能力的局
-    for (let seed = 1; seed <= 40; seed++) {
+    for (let seed = 1; seed <= 80; seed++) {
       play(seed, (g) => {
         const awai = g.players.findIndex((p) => p.name === 'awai');
         let kanKind = -1;

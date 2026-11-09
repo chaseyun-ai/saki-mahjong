@@ -1,5 +1,5 @@
 import type { Game, RoundResult } from '../engine/game';
-import { shanten } from '../engine/shanten';
+import { shanten, standardShanten } from '../engine/shanten';
 import { Kind, TileId, kindOf, toCounts } from '../engine/tiles';
 import { usefulKinds } from './jun';
 import type { Ability } from './types';
@@ -71,18 +71,19 @@ export function roundMovement(g: Game, result: RoundResult): number {
 }
 
 // 配牌顺：按概率把没用的牌换成让向听前进的牌（从发完牌以后的牌山里拿）
+// 只看一般形的向听：七对子的向听也算的话，凑对子的牌也算“降向听”，配牌会偏成七对子
 function luckyDeal(g: Game, seat: number, p: number): void {
   const w = g.wall;
   const mine = g.dealIndices(seat);
   for (let n = 0; n < TOKA.dealTries; n++) {
     if (!g.rng.chance(p)) continue;
     const counts = toCounts(mine.map((j) => w.live[j]));
-    const cur = shanten(counts, 0);
+    const cur = standardShanten(counts, 0);
     if (cur <= 0) break;
     const spare = g.rng.shuffle([...mine]).filter((i) => {
       const k = kindOf(w.live[i]);
       counts[k]--;
-      const ok = shanten(counts, 0) === cur;
+      const ok = standardShanten(counts, 0) === cur;
       counts[k]++;
       return ok;
     });
@@ -91,7 +92,7 @@ function luckyDeal(g: Game, seat: number, p: number): void {
       counts[k]--;
       const better = (t: TileId) => {
         counts[kindOf(t)]++;
-        const sh = shanten(counts, 0);
+        const sh = standardShanten(counts, 0);
         counts[kindOf(t)]--;
         return sh < cur;
       };

@@ -95,7 +95,7 @@ describe('对局规则', () => {
 
 describe('设置弹窗', () => {
   it('默认：半庄、25000、30000、击飞开、四赤、食断开、一番缚、不公开手牌', () => {
-    expect(DEFAULT_SETTINGS).toEqual({ length: 'south', start: 25000, target: 30000, tobi: true, red: 4, kuitan: true, minHan: 1, open: false, drawPath: 'on', vary: true, opponents: ['', '', ''], chisui: false });
+    expect(DEFAULT_SETTINGS).toEqual({ length: 'south', start: 25000, target: 30000, tobi: true, red: 4, kuitan: true, minHan: 1, open: false, drawPath: 'on', vary: true, opponents: ['', '', ''], chisui: false, layout: 'classic', hand: 'B', result: 'classic' });
   });
 
   it('选对手：选了的照坐，随机、重复的、选了自己的从剩下的抽', () => {

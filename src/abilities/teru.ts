@@ -1,6 +1,6 @@
 import type { Game, WinInfo } from '../engine/game';
 import { evaluateWin, type WinResult } from '../engine/score';
-import { shanten, waitingKinds } from '../engine/shanten';
+import { shanten, standardShanten, waitingKinds } from '../engine/shanten';
 import { EAST, Kind, TileId, isRed, kindOf, toCounts } from '../engine/tiles';
 import { readOthers } from './hiroe';
 import { isDoraTile } from './kuro';
@@ -160,6 +160,7 @@ function dealChuuren(g: Game, seat: number): number | null {
 }
 
 // 配牌往一门花色偏：inSet 里的牌（这一门，混一色再加字牌）不到 want 张，就把别的牌换成 inSet 里的，向听不变差
+// 配牌的向听都只看一般形（见 beforeDeal）
 function tiltDeal(g: Game, seat: number, honors: boolean, want: number): void {
   const w = g.wall;
   const mine = g.dealIndices(seat);
@@ -171,7 +172,7 @@ function tiltDeal(g: Game, seat: number, honors: boolean, want: number): void {
     const tiles = mine.map((i) => w.live[i]);
     if (tiles.filter(inSet).length >= want) return;
     const counts = toCounts(tiles);
-    const cur = shanten(counts, 0);
+    const cur = standardShanten(counts, 0);
     let done = false;
     for (const i of g.rng.shuffle(mine.filter((i) => !inSet(w.live[i])))) {
       const k = kindOf(w.live[i]);
@@ -179,7 +180,7 @@ function tiltDeal(g: Game, seat: number, honors: boolean, want: number): void {
       const fine = (t: TileId) => {
         if (!inSet(t)) return false;
         counts[kindOf(t)]++;
-        const sh = shanten(counts, 0);
+        const sh = standardShanten(counts, 0);
         counts[kindOf(t)]--;
         return sh <= cur;
       };
@@ -220,6 +221,7 @@ export const teruAbility: Ability = {
   },
 
   // 照魔镜看过以后：叽叽叽满了就做九莲宝灯；不然配牌超过这一层的向听上限就换几张，高层再往一门花色偏
+  // 只看一般形的向听：七对子的向听也算的话，凑对子的牌也算“降向听”，配牌会偏成七对子
   beforeDeal(g, seat) {
     if (!teruMirrored(g, seat)) return;
     const gs = gameStateOf(g, seat);
@@ -235,7 +237,7 @@ export const teruAbility: Ability = {
     const mine = g.dealIndices(seat);
     for (let n = 0; n < TERU.dealSwaps; n++) {
       const counts = toCounts(mine.map((i) => w.live[i]));
-      const cur = shanten(counts, 0);
+      const cur = standardShanten(counts, 0);
       if (cur <= TERU.dealMax[level]) break;
       let done = false;
       for (const i of g.rng.shuffle([...mine])) {
@@ -243,7 +245,7 @@ export const teruAbility: Ability = {
         counts[k]--;
         const better = (t: number) => {
           counts[kindOf(t)]++;
-          const sh = shanten(counts, 0);
+          const sh = standardShanten(counts, 0);
           counts[kindOf(t)]--;
           return sh < cur;
         };

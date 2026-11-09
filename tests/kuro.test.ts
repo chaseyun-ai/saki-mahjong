@@ -30,7 +30,7 @@ function play(seed: number, ids: string[], setup: (g: Game, kuro: number) => voi
 }
 
 describe('松实玄：宝牌绝对优先', () => {
-  it('能力还在时，别人（包括照、爽）的配牌没有宝牌，也摸不到宝牌；谁也封印不了她', () => {
+  it('能力还在时，别人（包括照、爽）的配牌没有宝牌，也摸不到宝牌；谁也封印不了她', async () => {
     let hands = 0;
     let draws = 0;
     for (let seed = 1; seed <= 16; seed++) {
@@ -61,6 +61,8 @@ describe('松实玄：宝牌绝对优先', () => {
           }
         });
       });
+      // 打完一场歇一下，让测试进程能回应主进程（文件里第一个测试一口气算一分钟以上，vitest 会报 Timeout calling "onTaskUpdate"）
+      await new Promise((r) => setTimeout(r, 0));
     }
     expect(hands).toBeGreaterThan(150);
     expect(draws).toBeGreaterThan(1000);

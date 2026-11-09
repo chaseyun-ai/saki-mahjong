@@ -295,9 +295,9 @@ export class Game {
   }
 
   // 能力允不允许这家现在和牌（照的照魔镜那一局不和）。这是自己给自己的限制，被封印也照样
-  // 别人的能力也可能不许他和（涅莉的七姐妹）
-  canWin(seat: number): boolean {
-    if (!(this.abilities[seat]?.canWin?.(this, seat) ?? true)) return false;
+  // 别人的能力也可能不许他和（涅莉的七姐妹）。win：和的是哪一张（郝慧宇的八番起和要看），只问这一局能不能和时不给
+  canWin(seat: number, win?: { tile: TileId; tsumo: boolean }): boolean {
+    if (!(this.abilities[seat]?.canWin?.(this, seat, win) ?? true)) return false;
     return ![0, 1, 2, 3].some((o) => o !== seat && this.binds(o, seat) && !!this.active(o)?.forbidsWin?.(this, o, seat));
   }
 
@@ -514,7 +514,7 @@ export class Game {
       for (const d of [1, 2, 3]) {
         const o = (seat + d) % 4;
         if (this.stealthed(seat, o)) continue;
-        if (!this.canWin(o)) continue;
+        if (!this.canWin(o, { tile, tsumo: false })) continue;
         const r = this.winResult(o, tile, false, last);
         if (!r) continue;
         pay += r.ron + (n === 0 ? 300 * this.honba : 0);
@@ -528,7 +528,7 @@ export class Game {
 
   // seat 摸到 tile 能不能自摸（还没摸的时候算）
   private tsumoWith(seat: number, tile: TileId, rinshan: boolean): WinResult | null {
-    if (!this.canWin(seat)) return null;
+    if (!this.canWin(seat, { tile, tsumo: true })) return null;
     const p = this.players[seat];
     const prev = this.rinshanDraw;
     p.hand.push(tile);
@@ -602,12 +602,8 @@ export class Game {
 
   // ---------- 一局的流程 ----------
 
-  private startRound(): void {
-    this.round++;
-    // 发牌前等玩家选技能的那一段结束了（不然 isSealed 之类会以为还在等下一局）
-    if (this.phase === 'predeal') this.phase = 'turn';
-    this.wall = new Wall(this.rng);
-    this.dice = [this.rng.int(6) + 1, this.rng.int(6) + 1];
+  // 桌上这一局的东西全部收掉：手牌、副露、牌河、立直，这一局的能力状态和结算。不碰牌山、骰子，也不掷随机数
+  private resetTable(): void {
     for (const p of this.players) {
       p.hand = [];
       p.melds = [];
@@ -631,6 +627,23 @@ export class Game {
     this.kanBy = [];
     this.noCallsYet = true;
     this.roundResult = null;
+  }
+
+  // 等玩家选发牌前的技能时：上一局的牌都收走，牌山也收掉（下一局发牌时才重新码牌山），桌上只剩点数、局数、立直棒。
+  // 不然界面停在发牌前那段时间里，桌上还摆着上一局的手牌、牌河和牌山
+  private clearTable(): void {
+    this.resetTable();
+    this.wall = new Wall(null);
+    this.dealtWall = { live: [], rinshan: [] };
+  }
+
+  private startRound(): void {
+    this.round++;
+    // 发牌前等玩家选技能的那一段结束了（不然 isSealed 之类会以为还在等下一局）
+    if (this.phase === 'predeal') this.phase = 'turn';
+    this.wall = new Wall(this.rng);
+    this.dice = [this.rng.int(6) + 1, this.rng.int(6) + 1];
+    this.resetTable();
     // 配牌：先由所有人定规矩，再依次调整（换牌不能让任何一条规矩变差），最后统一锁定、发牌
     const order = this.abilityOrder();
     this.dealRules = [];
@@ -786,7 +799,7 @@ export class Game {
     const p = this.players[seat];
     const out: Action[] = [];
     if (p.drawn !== null) {
-      if (this.canWin(seat) && this.canTsumo(seat) && this.winResult(seat, p.drawn, true)) out.push({ type: 'tsumo' });
+      if (this.canWin(seat, { tile: p.drawn, tsumo: true }) && this.canTsumo(seat) && this.winResult(seat, p.drawn, true)) out.push({ type: 'tsumo' });
       if (this.isFirstTurn(seat)) {
         const kinds = new Set(p.hand.map(kindOf));
         if (YAOCHU_KINDS.filter((k) => kinds.has(k)).length >= 9) out.push({ type: 'kyuushu' });
@@ -943,7 +956,7 @@ export class Game {
       if (this.stealthed(seat, o)) continue;
       const q = this.players[o];
       const opts: Action[] = [];
-      if (this.canWin(o) && this.winResult(o, tile, false)) opts.push({ type: 'ron' });
+      if (this.canWin(o, { tile, tsumo: false }) && this.winResult(o, tile, false)) opts.push({ type: 'ron' });
       if (this.wall.remaining > 0 && !q.riichi && !this.callsFrozen(o)) {
         const same = q.hand.filter((t) => kindOf(t) === kind);
         for (const pair of distinctPairs(same)) opts.push({ type: 'pon', tiles: pair });
@@ -1124,7 +1137,7 @@ export class Game {
       if (o === seat) continue;
       // 隐身的桃子加杠别人看不见，抢不了
       if (this.stealthed(seat, o)) continue;
-      if (this.canWin(o) && this.winResult(o, tile, false)) this.pending.set(o, [{ type: 'ron' }, { type: 'pass' }]);
+      if (this.canWin(o, { tile, tsumo: false }) && this.winResult(o, tile, false)) this.pending.set(o, [{ type: 'ron' }, { type: 'pass' }]);
     }
     if (this.pending.size > 0) {
       this.phase = 'calls';
@@ -1305,8 +1318,12 @@ export class Game {
   // 玩家操作的座位有发牌前技能可选，就先停在 predeal 等玩家（电脑在 dealRules 里自己决定）
   private startOrWait(): void {
     const ask = this.manual.some((m, s) => m && !this.isSealed(s, this.round + 1) && (this.abilities[s]?.preDeal?.(this, s) ?? []).some((o) => o.enabled));
-    if (ask) this.phase = 'predeal';
-    else this.startRound();
+    if (!ask) {
+      this.startRound();
+      return;
+    }
+    this.clearTable();
+    this.phase = 'predeal';
   }
 
   // 玩家选好发牌前的技能（Ability.setPreDeal）以后发牌；配牌后的技能（Ability.setPostDeal）选好以后开始摸牌
