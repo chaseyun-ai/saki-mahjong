@@ -124,7 +124,7 @@ export function playWin(): void {
   tone(a, 131, now, 1.2, 0.25, 'sine');
 }
 
-// 自摸砸牌：牌拍在桌上的“砰”。一记往下沉的闷响（桌子被震了一下），加一声比平常落桌更重、更闷的“啪”
+// 自摸砸牌：牌翻起来炸开的“砰”。一记往下沉的闷响（桌子被震了一下），一声更重、更闷的“啪”，后面卷一阵风
 export function playSlam(): void {
   const a = audio();
   if (!a) return;
@@ -154,6 +154,26 @@ export function playSlam(): void {
   g2.gain.value = 0.9;
   src.connect(filter).connect(g2).connect(a.destination);
   src.start(now);
+  // 旋风：滤过的噪声，频率先往上卷再落下来
+  const wl = Math.floor(a.sampleRate * 0.6);
+  const wb = a.createBuffer(1, wl, a.sampleRate);
+  const wd = wb.getChannelData(0);
+  for (let i = 0; i < wl; i++) wd[i] = Math.random() * 2 - 1;
+  const ws = a.createBufferSource();
+  ws.buffer = wb;
+  const wf = a.createBiquadFilter();
+  wf.type = 'bandpass';
+  wf.Q.value = 1.4;
+  wf.frequency.setValueAtTime(500, now);
+  wf.frequency.exponentialRampToValueAtTime(2600, now + 0.18);
+  wf.frequency.exponentialRampToValueAtTime(700, now + 0.6);
+  const wg = a.createGain();
+  wg.gain.setValueAtTime(0.0001, now);
+  wg.gain.exponentialRampToValueAtTime(0.22, now + 0.06);
+  wg.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+  ws.connect(wf).connect(wg).connect(a.destination);
+  ws.start(now);
+  ws.stop(now + 0.62);
 }
 
 // 宫永咲的岭上开花：百合开出来的那一下，一串很轻的高音铃往上走，后面拖一阵风声（花瓣飘起来）。big 0–1：和得越大铃越多、风越长

@@ -28,7 +28,8 @@ import { pondJitter, varyDiscard, vary } from '../ui/vary';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
 import { BeatHit, beatFinal, beatHit, beatLength, beatSeed } from '../ui/himekoBeat';
-import { SLAM_TIMING, SlamSpec, TileSlam } from './tileSlam';
+import { SLAM_TIMING, SlamSpec, TileSlam, slamHitOffset } from './tileSlam';
+import { SlamFx } from './slamFx';
 import { LilyFx, lilyGrand } from './lilyFx';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
@@ -160,10 +161,10 @@ const SLAM_HANG = 0.14;
 const SLAM_DROP = 0.09;
 const SLAM_TIME = SLAM_LIFT + SLAM_HANG + SLAM_DROP;
 const SLAM_HOP = 0.32; // 砸下去以后桌上的牌跟着震一下
-// 改良布局的自摸砸牌（雀魂那样，tileSlam.ts）：手牌在桌上立起来的同时，一只手捏着自摸的那张从画面外伸进来、举高、
-// 往后一扳，竖着拍在手牌右边隔开一点的地方（别人自摸是伸过去捏起那张、举起来再拍回原处）。
-// 拍下去以后按住停 V2_SLAM_HOLD 秒才倒牌（咲的岭上开花停 V2_LILY_HOLD 秒，让百合开完）
-const V2_SLAM_HOLD = 0.55;
+// 改良布局的自摸砸牌（照雀魂的节奏，tileSlam.ts）：手牌在桌上立起来的同时，一只手捏着自摸的那张从镜头跟前伸上来、举高，
+// 往前扫下去扣在手牌右边隔开一点的地方，牌自己翻起来立住、亮一下光再炸开（别人自摸是伸过去拿起那张，扣回原处再翻起来）。
+// 炸开以后停 V2_SLAM_HOLD 秒才倒牌（咲的岭上开花停 V2_LILY_HOLD 秒，让百合开完）
+const V2_SLAM_HOLD = 0.75;
 const V2_LILY_HOLD = 1.05;
 
 // 用手搬牌的动作：伸手、拿起来移过去、放下停一下、收手（秒）
@@ -421,8 +422,9 @@ export class Table3D {
   // 别人打出的牌还在半空时摸到的牌：先留在牌山原处，落桌后再飞进手里
   private heldDraw: { seat: number; tile: TileId; at: number; from: Placement } | null = null;
   private effects: Effects;
-  // 自摸砸牌的手（tileSlam.ts）、咲的岭上开花的百合（lilyFx.ts）
+  // 自摸砸牌的手（tileSlam.ts）和光效（slamFx.ts）、咲的岭上开花的百合（lilyFx.ts）
   private slam = new TileSlam();
+  private slamFx = new SlamFx();
   private lily = new LilyFx();
   // 砸牌、百合放到什么时候：这之前先别弹结算
   private fxHold = 0;
@@ -447,8 +449,8 @@ export class Table3D {
   // 出牌动作经过标记（出发、抓住、落桌、松手、收回）时通知外面，比如落桌时放声音。
   // 每张打出的牌每个标记都恰好报一次，动作被打断也会补报
   onMarker: ((seat: number, tile: TileId, name: MarkerName) => void) | null = null;
-  // 砸牌拍到桌面的那一下（放音效用）；lily：咲的岭上开花这一手的基本点（不是就是 null）
-  onSlam: ((seat: number, lily: number | null) => void) | null = null;
+  // 砸牌（放音效用）：phase 'press' 是牌扣到桌上，'hit' 是牌立起来炸开；lily：咲的岭上开花这一手的基本点（不是就是 null）
+  onSlam: ((seat: number, lily: number | null, phase: 'press' | 'hit') => void) | null = null;
   // 每帧画之前调用（动画已经推进到这一帧），调试场景在这里更新辅助线和读数
   beforeRender: (() => void) | null = null;
   // 鼠标移到能打的牌上、或者移开（null）时通知外面，用来显示打这张以后听什么
@@ -530,7 +532,7 @@ export class Table3D {
     this.buildTiles();
     this.scene.add(this.dice.group);
     this.effects = new Effects(this.scene);
-    this.scene.add(this.slam.group, this.lily.group);
+    this.scene.add(this.slam.group, this.slamFx.group, this.lily.group);
     this.scene.add(this.himeko.group);
     this.scene.add(this.mist.group);
     this.buildRiichiSticks();
@@ -910,6 +912,7 @@ export class Table3D {
   clearRound(): void {
     this.reveal = null;
     this.slam.clear();
+    this.slamFx.clear();
     this.lily.clear();
     this.fxHold = 0;
     this.clearChains();
@@ -1322,8 +1325,7 @@ export class Table3D {
     if (tw) {
       const self = this.fallsBack(tw.seat);
       const start = self && standAt !== null ? standAt : this.now + V2_STAND;
-      const T = SLAM_TIMING;
-      const hitAt = start + (self ? T.reach : T.reach + T.lift) + T.hang + T.drop;
+      const hitAt = start + slamHitOffset(self);
       const rinshan = g.rinshanDraw || tw.result.yaku.some((y) => y.name === '岭上开花');
       const lily = this.lastSync?.view.ids[tw.seat] === 'saki' && rinshan ? tw.result.base : null;
       tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt, started: false, lily };
@@ -1751,7 +1753,8 @@ export class Table3D {
     window.setTimeout(() => flash.remove(), 1400);
   }
 
-  // 改良布局的自摸砸牌：手伸进来（自己的带着牌从画面外，别人的伸过去捏起那张），举高、蓄力、竖着拍在落点上
+  // 改良布局的自摸砸牌：手伸上来（自己的带着牌从镜头跟前，别人的伸过去拿起那张），举高、往前扫下去把牌扣在桌上，
+  // 牌翻起来立在落点、亮一下光、炸开
   private startTsumoSlam(ts: NonNullable<RevealState['tsumoSlam']>): void {
     ts.started = true;
     const tile = this.tiles[ts.tile];
@@ -1761,18 +1764,38 @@ export class Table3D {
     const run = this.slamTile(ts.tile, ts.seat, {
       to,
       from: self ? undefined : { pos: tile.group.position.clone(), quat: tile.group.quaternion.clone(), scale: tile.group.scale.x },
+      near: self,
+      onPress: (at) => this.slamPress(ts.seat, at, to.scale),
+      onCharge: (at) => this.slamFx.charge(at, to.scale, SLAM_TIMING.charge),
       onHit: (at) => this.slamImpact(ts.seat, ts.tile, at, ts.lily),
     });
     ts.hitAt = run.hitAt;
   }
 
-  // 砸一张牌（可以给别的特效用，比如天江衣的海底捞月）：一只手从 seat 这一家身后伸进来，把 id 这张牌举起来拍到 to。
-  // from 不给就是牌已经在手里、跟着手从画面外进来（自己自摸）；给了就是先伸过去在 from 捏起来。
-  // 砸到桌面那一下调 onHit（at 是牌底下的桌面点），冲击波、震屏、桌上的牌跳一下要自己在 onHit 里叫 slamImpact。
-  // 返回什么时候砸到、什么时候手收回去（和 now 同一个时钟，秒）
-  slamTile(id: TileId, seat: number, o: { to: Placement; from?: Placement; lift?: number; timing?: SlamSpec['timing']; onHit?: (at: THREE.Vector3) => void; onDone?: () => void }): { hitAt: number; doneAt: number } {
+  // 砸一张牌（可以给别的特效用，比如天江衣的海底捞月）：一只手把 id 这张牌举起来、往前扫下去扣在桌上，牌自己翻起来立在 to，炸开。
+  // from 不给就是牌已经在手里、跟着手从画面外伸上来（自己自摸）；给了就是先伸过去在 from 拿起来。
+  // near：手在镜头跟前举起来（第一人称，自己砸牌时用），不给就是 seat 是自己时为 true。
+  // 牌扣到桌上调 onPress，立好开始亮调 onCharge，炸开调 onHit（at 是牌底下的桌面点）；
+  // 扣牌的小震动、聚光、冲击波和旋风要自己在回调里叫 slamPress / slamFx.charge / slamImpact。
+  // 返回什么时候扣到桌上、什么时候炸开、什么时候手撤走（和 now 同一个时钟，秒）
+  slamTile(
+    id: TileId,
+    seat: number,
+    o: {
+      to: Placement;
+      from?: Placement;
+      near?: boolean;
+      timing?: SlamSpec['timing'];
+      onPress?: (at: THREE.Vector3) => void;
+      onCharge?: (at: THREE.Vector3) => void;
+      onHit?: (at: THREE.Vector3) => void;
+      onDone?: () => void;
+    },
+  ): { pressAt: number; hitAt: number; doneAt: number } {
     const tile = this.tiles[id];
     tile.group.visible = true;
+    const near = o.near ?? seat === (this.lastSync?.view.me ?? 0);
+    const cam = this.camera;
     const run = this.slam.start(
       {
         tile: tile.group,
@@ -1780,8 +1803,10 @@ export class Table3D {
         from: o.from,
         side: this.seatPoint(seat, 1, 0, 0).normalize(),
         out: this.seatPoint(seat, 0, 0, 1).normalize(),
-        lift: o.lift,
+        view: near ? { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov, aspect: cam.aspect } : undefined,
         timing: o.timing,
+        onPress: o.onPress,
+        onCharge: o.onCharge,
         onHit: o.onHit,
         onDone: o.onDone,
       },
@@ -1791,13 +1816,38 @@ export class Table3D {
     return run;
   }
 
-  // 拍到桌面那一下：一圈冲击波贴着桌面推出去、一点白光、扬起一点灰，画面一震，四周的牌跟着跳一下；
+  // 牌扣到桌上那一下：一点灰、画面轻轻一震
+  slamPress(seat: number, at: THREE.Vector3, scale = 1): void {
+    this.shake = Math.max(this.shake, 0.18);
+    this.effects.sparks(at.clone().setY(0.02), '#e9e4da', {
+      count: 10,
+      life: [0.15, 0.3],
+      vel: (v) => {
+        const a = Math.random() * Math.PI * 2;
+        const sp = (1.5 + Math.random() * 2) * scale;
+        v.set(Math.cos(a) * sp, 0.3 + Math.random(), Math.sin(a) * sp);
+      },
+      gravity: 8,
+      drag: 6,
+      size: [0.025, 0.05],
+      stretch: 0.02,
+      jitter: 0.4 * scale,
+    });
+    this.onSlam?.(seat, null, 'press');
+  }
+
+  // 炸开那一下：一团白光、贴着桌面卷出去的白色旋风和冲击波，往上飘一把光点，画面一震，四周的牌跟着跳一下；
   // lily 是咲的岭上开花（这一手的基本点）：牌顶上开一朵百合，花瓣越大的手越多
   slamImpact(seat: number, id: TileId, at: THREE.Vector3, lily: number | null = null): void {
+    const g = this.tiles[id].group;
+    const s = g.scale.x;
+    const big = lily !== null ? lilyGrand(lily) : 0;
     this.shake = Math.max(this.shake, lily !== null ? 0.75 : 0.55);
     const floor = at.clone().setY(0.02);
-    this.effects.ring(floor, '#ffffff', 2.6, 0.4, 0.75);
-    this.effects.flash(floor.clone().setY(0.35), '#fff4dc', 2.4, 0.22);
+    const mid = g.position.clone();
+    this.slamFx.swirl(floor, s, big);
+    this.effects.ring(floor, '#ffffff', 3.2 * s, 0.45, 0.6);
+    this.effects.flash(mid, '#f4fbff', 3.2 * s, 0.4, true);
     this.effects.sparks(floor, '#e9e4da', {
       count: 22,
       life: [0.22, 0.45],
@@ -1812,19 +1862,19 @@ export class Table3D {
       stretch: 0.03,
       jitter: 0.3,
     });
-    this.effects.pulse(floor.clone().setY(1.5), '#fff2d8', 25, 0.1);
+    this.effects.sparkles(mid, '#eef8ff', 26, 2.2 * s, 1.4);
+    this.effects.pulse(floor.clone().setY(1.5), '#f2f8ff', 30, 0.12);
     this.reveal?.hops.push({ at: this.now, x: floor.clone() });
-    this.onSlam?.(seat, lily);
+    this.onSlam?.(seat, lily, 'hit');
     if (lily === null) return;
-    const g = this.tiles[id].group;
-    const top = g.position.clone().add(new THREE.Vector3(0, (TILE_H / 2) * g.scale.x + 0.12, 0));
+    const top = g.position.clone().add(new THREE.Vector3(0, (TILE_H / 2) * s + 0.12, 0));
     // 花朝着镜头、偏上开
     const face = this.camera.position.clone().sub(top).normalize().add(new THREE.Vector3(0, 0.6, 0)).normalize();
-    this.lily.bloom({ at: top, face, base: lily, scale: g.scale.x, area: this.dim.tableHalf * 0.85, inward: this.seatPoint(seat, 0, 0, -1) });
+    this.lily.bloom({ at: top, face, base: lily, scale: s, area: this.dim.tableHalf * 0.85, inward: this.seatPoint(seat, 0, 0, -1) });
     this.effects.flash(top, '#fffaf0', 3, 0.45);
     this.effects.pulse(top.clone().setY(2), '#fff4e4', 55, 0.25);
     // 结算等花开完、花瓣飘一会儿再弹（和得越大等得越久）
-    this.fxHold = Math.max(this.fxHold, this.now + 2 + 1.6 * lilyGrand(lily));
+    this.fxHold = Math.max(this.fxHold, this.now + 2 + 1.6 * big);
   }
 
   // 砸牌：手牌倒完，和了牌从原地（荣和是牌河里那张）举到头顶、牌面朝自己一歪，停一下，再狠狠拍到倒好的手牌右边；
@@ -3156,9 +3206,9 @@ export class Table3D {
     if (rv.boltAt !== null && this.now >= rv.boltAt) {
       rv.boltAt = null;
       for (const w of rv.wins) {
-        // 初美的和了牌不劈闪电：等手牌倒完自己砸下去。咲的岭上开花开百合，也不劈
+        // 初美的和了牌不劈闪电：等手牌倒完自己砸下去。改良布局的自摸砸牌自己炸开了，也不劈
         if (rv.slams.has(w.tile)) continue;
-        if (rv.tsumoSlam?.tile === w.tile && rv.tsumoSlam.lily !== null) continue;
+        if (rv.tsumoSlam?.tile === w.tile) continue;
         const at = this.tiles[w.tile].group.position.clone();
         // 从画面上沿（靠中间一点）斜着劈下来：起点和那张牌一样远，牌在画面上方时闪电也不会大半截出了画面
         const p = at.clone().project(this.camera);
@@ -3420,6 +3470,7 @@ export class Table3D {
     }
     this.animateReveal();
     this.slam.update(this.now);
+    this.slamFx.update(dt);
     this.lily.update(dt);
     this.effects.update(dt);
     this.updateSpots(dt);

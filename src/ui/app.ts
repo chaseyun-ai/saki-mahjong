@@ -756,8 +756,12 @@ export class App {
       this.table3d.onMarker = (seat, _tile, name) => {
         if (name === 'land') playClick({ pan: this.clickPan(seat), varied: true });
       };
-      // 自摸砸牌拍到桌上；咲的岭上开花再加一串铃和风声
-      this.table3d.onSlam = (_seat, lily) => {
+      // 自摸砸牌：牌扣到桌上“嗒”一声，翻起来炸开时一记闷响加一阵旋风；咲的岭上开花再加一串铃和风声
+      this.table3d.onSlam = (seat, lily, phase) => {
+        if (phase === 'press') {
+          playClick({ pan: this.clickPan(seat) });
+          return;
+        }
         playSlam();
         if (lily !== null) playLily(lilyGrand(lily));
       };

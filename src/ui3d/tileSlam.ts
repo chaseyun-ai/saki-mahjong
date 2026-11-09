@@ -2,15 +2,17 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { TILE_H, TILE_T } from './tableLayout';
 
-// 自摸砸牌（参考雀魂的手感，画面和动作都是自己做的）：一只手从这一家身后伸进画面，捏着那张牌的上半截举起来、牌面亮给镜头看，
-// 往后上方带一点蓄力，再狠狠把牌竖着拍在桌上，停一下，手收回去，牌留在桌上立着。
+// 自摸砸牌（照雀魂的节奏，画面和动作都是自己做的）：
+// 一只修长的手（手背朝着看的人）从这一家身前伸上来，食指、中指的指尖压着那张牌（牌背贴着指肚），举高停一下，
+// 往前一扫，把牌扣在桌上（牌面朝下）；手撤走，牌自己翻起来立住，亮一下光，再“砰”地炸开。
+// 自己自摸时手是从镜头跟前（画面左下）伸上来的，离镜头近，所以很大；扫下去的时候越来越远、越来越小。
 //
-// 这里只管手和牌怎么动：牌桌（table3d.ts）给出牌从哪拿、砸到哪、这一家的朝向，砸到桌面那一下回调 onHit，
-// 冲击波、震屏、桌上的牌跳一下、音效、角色特效（咲的百合、衣的水花……）都在 onHit 里放。
-// 一次可以砸好几张（不同的人），每张一只手。手是卡通渲染：三阶明暗加一圈描边，袖子、袖口、皮肤的颜色可以换。
+// 这里只管手和牌怎么动：牌桌（table3d.ts）给出牌从哪拿、立在哪、这一家的朝向、镜头，
+// 扣到桌上 onPress、开始亮 onCharge、炸开 onHit 各回调一次；冲击波、旋风、震屏、音效、角色特效（咲的百合、衣的水……）都在回调里放。
+// 一次可以砸好几张（不同的人），每张一只手。手是卡通渲染：三阶明暗加一圈细描边，皮肤、指甲、袖子的颜色可以换；手不投影子。
 //
-// 坐标：牌的“手里坐标”是竖着放的牌（牌面朝 +z，也就是朝着坐着的人），手从上面捏住牌顶，
-// 手背朝上，四根手指扣在牌背（-z），大拇指压在牌面（+z）上，前臂往 +z（人那边）、往上伸。
+// 坐标：手的“手里坐标”原点在手掌中心，+y 是手指方向，+z 是手背那面，右手，大拇指在 -x。
+// 牌的“手里坐标”是立着放的牌（牌面朝 +z，牌顶 +y）。
 
 export interface SlamPose {
   pos: THREE.Vector3;
@@ -18,46 +20,77 @@ export interface SlamPose {
   scale: number;
 }
 
-// 一下砸牌的节奏（秒）：reach 手伸到牌上捏住（carried 时是带着牌从画面外伸进来、直接到举高的地方）、
-// lift 举起来、hang 在最高处往后蓄力、drop 拍下去、hold 按在桌上停一下、back 手收回画面外
+// 一下砸牌的节奏（秒）：reach 手伸过去拿牌（只有给了 from 才有）、rise 举起来（自己的是从画面外带着牌伸上来）、
+// show 举在高处停一下、sweep 往前扫下去把牌扣在桌上、flat 牌扣着停一下、flip 翻起来立住、charge 立着亮光，然后炸开；
+// leave 扣下去以后手撤出画面要多久（和 flat、flip 同时走）
 export interface SlamTiming {
   reach: number;
-  lift: number;
-  hang: number;
-  drop: number;
-  hold: number;
-  back: number;
+  rise: number;
+  show: number;
+  sweep: number;
+  flat: number;
+  flip: number;
+  charge: number;
+  leave: number;
 }
 
-export const SLAM_TIMING: SlamTiming = { reach: 0.3, lift: 0.2, hang: 0.12, drop: 0.08, hold: 0.16, back: 0.32 };
+export const SLAM_TIMING: SlamTiming = { reach: 0.26, rise: 0.24, show: 0.12, sweep: 0.2, flat: 0.14, flip: 0.12, charge: 0.2, leave: 0.26 };
 
-// 手臂的颜色：袖子、袖口那一圈、皮肤
+// 从开始到牌扣到桌上、到炸开各要多久（carried：牌一开始就在手里，没有 reach）
+export function slamPressOffset(carried: boolean, timing: Partial<SlamTiming> = {}): number {
+  const t = { ...SLAM_TIMING, ...timing };
+  return (carried ? 0 : t.reach) + t.rise + t.show + t.sweep;
+}
+
+export function slamHitOffset(carried: boolean, timing: Partial<SlamTiming> = {}): number {
+  const t = { ...SLAM_TIMING, ...timing };
+  return slamPressOffset(carried, t) + t.flat + t.flip + t.charge;
+}
+
+// 手的颜色：皮肤、指甲、描边；袖子、袖口不给（null）就是光着的手臂
 export interface ArmLook {
-  sleeve: THREE.ColorRepresentation;
-  cuff: THREE.ColorRepresentation;
   skin: THREE.ColorRepresentation;
-  line: THREE.ColorRepresentation; // 描边
+  nail: THREE.ColorRepresentation;
+  line: THREE.ColorRepresentation;
+  sleeve: THREE.ColorRepresentation | null;
+  cuff: THREE.ColorRepresentation | null;
 }
 
-export const DEFAULT_ARM: ArmLook = { sleeve: '#eef1f7', cuff: '#2b3a66', skin: '#f1c0a4', line: '#5b3934' };
+export const DEFAULT_ARM: ArmLook = { skin: '#f4c3b6', nail: '#ffe9e4', line: '#c5847c', sleeve: null, cuff: null };
+
+// 镜头（自己砸牌时手从镜头跟前伸上来）
+export interface SlamView {
+  pos: THREE.Vector3;
+  quat: THREE.Quaternion;
+  fov: number; // 竖直视野（度）
+  aspect: number;
+}
 
 export interface SlamSpec {
   tile: THREE.Object3D; // 要砸的那张牌（牌的整组）
-  to: SlamPose; // 砸下去以后牌的样子（竖着立在桌上）
-  from?: SlamPose; // 牌现在在哪：手先伸过去捏住再举起来。不给（carried）就是牌一开始就在手里，跟着手从画面外伸进来
+  to: SlamPose; // 最后立在桌上的样子
+  from?: SlamPose; // 牌现在在哪：手先伸过去拿起来。不给（carried）就是牌一开始就在手里，跟着手从画面外伸上来
   side: THREE.Vector3; // 砸牌那一家的右手方向（世界坐标，水平）
   out: THREE.Vector3; // 那一家往外（朝她自己身体）的方向（世界坐标，水平）
-  lift?: number; // 举多高（牌宽，按牌的大小放大），默认 3.2
+  view?: SlamView; // 给了就是第一人称：手在这个镜头跟前举起来（自己砸牌）
   timing?: Partial<SlamTiming>;
-  arm?: Partial<ArmLook> | null; // null：不画手，只有牌自己飞起来砸下去
-  onHit?: (at: THREE.Vector3) => void; // 砸到桌面那一刻，at 是牌底下的桌面点
-  onDone?: () => void; // 手收回去以后
+  arm?: Partial<ArmLook> | null; // null：不画手，只有牌自己飞
+  onPress?: (at: THREE.Vector3) => void; // 牌扣到桌上那一刻，at 是牌底下的桌面点
+  onCharge?: (at: THREE.Vector3) => void; // 牌立好、开始亮光，at 是牌中心
+  onHit?: (at: THREE.Vector3) => void; // 炸开那一刻，at 是牌底下的桌面点
+  onDone?: () => void; // 炸完、手也撤走以后
 }
 
-// start 返回这一下什么时候砸到、什么时候整段做完（和 now 同一个时钟）
+// start 返回这一下什么时候扣到桌上、什么时候炸开、什么时候整段做完（和 now 同一个时钟）
 export interface SlamRun {
+  pressAt: number;
   hitAt: number;
   doneAt: number;
+}
+
+interface Key {
+  pos: THREE.Vector3;
+  quat: THREE.Quaternion;
 }
 
 interface Active {
@@ -65,35 +98,61 @@ interface Active {
   timing: SlamTiming;
   t0: number;
   arm: THREE.Group | null;
+  s: number; // 手和牌的大小（牌落地时的 scale）
+  enter: Key; // 手从哪伸进来
+  grab: Key | null; // 伸过去拿牌的样子（给了 from 才有）
+  raise: Key; // 举在高处
+  press: Key; // 把牌扣在桌上
+  leave: Key; // 撤到哪
+  flat: SlamPose; // 牌扣在桌上（牌面朝下）
+  pressed: boolean;
+  charged: boolean;
   hit: boolean;
-  done: boolean;
-  // 手捏住的点（牌顶往下一点）在手里坐标里相对牌中心的位置
-  enter: THREE.Vector3; // 手从哪伸进来（世界）
-  apex: THREE.Vector3; // 举到最高的地方（捏住的点，世界）
-  grabFrom: THREE.Vector3 | null; // 伸过去捏住的地方（捏住的点，世界）
-  grabTo: THREE.Vector3; // 砸下去以后捏住的点（世界）
+  shadows: THREE.Mesh[]; // 牌在半空时关掉影子（离桌面远，影子落在桌子中间很怪），扣到桌上再打开
 }
-
-// 捏住的点：牌中心往上 GRIP_Y 个牌高
-const GRIP_Y = 0.3;
-// 手的大小（牌宽的几倍，1 是按下面量好的尺寸）
-const HAND_SCALE = 1.3;
-// 举着的时候牌面往镜头那边仰多少（弧度，负的是牌顶往桌子中间倒）
-const SHOW = -0.8;
-// 牌仰起来的时候手腕弯回来多少（1 是前臂一点不跟着转）
-const WRIST_BEND = 0.8;
 
 const easeOut = (x: number) => 1 - (1 - x) ** 3;
 const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
+const smooth = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
-// ---------- 手臂的模型 ----------
+// 牌在手里的位置（手里坐标，单位是牌宽）：食指、中指指肚底下，牌背贴着指肚，牌顶朝手腕，牌的下半截露在指尖外面
+const TILE_IN_HAND = V(-0.6, 3.5, -1.12);
+const TILE_IN_HAND_Q = new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), Math.PI - 0.4);
+// 手比照着牌放大多少（模型是按牌宽量的；放大一点，扣牌时离镜头远也看得清）
+const HAND_SCALE = 1.5;
+// 自己砸牌时手举在镜头前多远（牌的 scale 倍，单位牌宽）、画面上哪里（-1..1，手掌中心）
+const NEAR_DIST = 17;
+const NEAR_X = -0.45;
+const NEAR_Y = -0.55;
+// 扣牌时手指往下压多少（弧度）：手差不多平着，指尖弯下去压住牌，从上往下看手指最长
+const PRESS_PITCH = 0.08;
+
+// 手的朝向：手指朝 f，手背朝 d（d 会被扳成和 f 垂直）
+function basis(f: THREE.Vector3, d: THREE.Vector3): THREE.Quaternion {
+  const y = f.clone().normalize();
+  const z = d.clone().addScaledVector(y, -d.dot(y)).normalize();
+  const x = new THREE.Vector3().crossVectors(y, z);
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+}
+
+function bezier(p0: THREE.Vector3, p1: THREE.Vector3, p2: THREE.Vector3, u: number): THREE.Vector3 {
+  const a = p0.clone().lerp(p1, u);
+  const b = p1.clone().lerp(p2, u);
+  return a.lerp(b, u);
+}
+
+// ---------- 手的模型 ----------
 
 let gradient: THREE.DataTexture | null = null;
-// 三阶明暗（卡通渲染）：暗部、中间、亮部
+// 三阶明暗（卡通渲染），暗部不太暗：皮肤看着软
 function toonGradient(): THREE.DataTexture {
   if (gradient) return gradient;
-  const data = new Uint8Array([120, 120, 120, 255, 200, 200, 200, 255, 255, 255, 255, 255]);
+  const data = new Uint8Array([176, 176, 176, 255, 222, 222, 222, 255, 255, 255, 255, 255]);
   gradient = new THREE.DataTexture(data, 3, 1, THREE.RGBAFormat);
   gradient.minFilter = THREE.NearestFilter;
   gradient.magFilter = THREE.NearestFilter;
@@ -112,102 +171,121 @@ function outlineMat(color: THREE.ColorRepresentation, width: number): THREE.Mesh
 }
 
 interface ArmParts {
-  group: THREE.Group;
   mats: THREE.Material[];
   geos: THREE.BufferGeometry[];
 }
 
-// 一节圆柱形的手指 / 手臂：从 a 到 b，两头圆的（胶囊）
+// 一节手指：从 a 到 b，两头圆的（胶囊）
 function capsule(parts: ArmParts, mat: THREE.Material, line: THREE.Material, a: THREE.Vector3, b: THREE.Vector3, r: number, parent: THREE.Object3D): void {
-  const len = a.distanceTo(b);
-  const geo = new THREE.CapsuleGeometry(r, Math.max(0.001, len), 6, 12);
+  const geo = new THREE.CapsuleGeometry(r, Math.max(0.001, a.distanceTo(b)), 6, 14);
   parts.geos.push(geo);
-  const mesh = new THREE.Mesh(geo, mat);
-  const edge = new THREE.Mesh(geo, line);
-  for (const m of [mesh, edge]) {
+  for (const mat0 of [mat, line]) {
+    const m = new THREE.Mesh(geo, mat0);
     m.position.copy(a).add(b).multiplyScalar(0.5);
-    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    m.quaternion.setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize());
     parent.add(m);
   }
-  mesh.castShadow = true;
 }
 
-// 一节锥形的筒（前臂、袖子）：底下 a 半径 ra，上面 b 半径 rb
+// 一节锥形的筒（手腕、前臂、袖子）：a 那头半径 ra，b 那头半径 rb
 function tube(parts: ArmParts, mat: THREE.Material, line: THREE.Material | null, a: THREE.Vector3, b: THREE.Vector3, ra: number, rb: number, parent: THREE.Object3D, open = false): void {
-  const geo = new THREE.CylinderGeometry(rb, ra, a.distanceTo(b), 18, 1, open);
+  const geo = new THREE.CylinderGeometry(rb, ra, a.distanceTo(b), 20, 1, open);
   parts.geos.push(geo);
   const meshes = [new THREE.Mesh(geo, mat), ...(line ? [new THREE.Mesh(geo, line)] : [])];
   for (const m of meshes) {
     m.position.copy(a).add(b).multiplyScalar(0.5);
-    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    m.quaternion.setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize());
     parent.add(m);
   }
-  meshes[0].castShadow = true;
 }
 
-const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+// 指甲：贴在最后一节手背那面的扁椭球
+function nail(parts: ArmParts, mat: THREE.Material, a: THREE.Vector3, b: THREE.Vector3, back: THREE.Vector3, r: number, parent: THREE.Object3D): void {
+  const geo = new THREE.SphereGeometry(1, 12, 8);
+  parts.geos.push(geo);
+  const m = new THREE.Mesh(geo, mat);
+  const dir = b.clone().sub(a).normalize();
+  const n = back.clone().addScaledVector(dir, -back.dot(dir)).normalize();
+  m.position.copy(a).lerp(b, 0.62).addScaledVector(n, r * 0.78);
+  m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(dir, n), dir, n));
+  m.scale.set(r * 0.72, a.distanceTo(b) * 0.5 + r * 0.25, r * 0.28);
+  parent.add(m);
+}
 
-// 右手，捏着牌顶。原点是捏住的点（牌中心往上 GRIP_Y 个牌高），单位是牌宽
+// 一根手指：根部 base，长 len，粗 r；spread 往大拇指那边张开多少，curl 三个关节各往手心弯多少（弧度）
+function finger(parts: ArmParts, skin: THREE.Material, line: THREE.Material, nailMat: THREE.Material, base: THREE.Vector3, len: number, r: number, spread: number, curl: [number, number, number], parent: THREE.Object3D): void {
+  const segs = [0.46, 0.3, 0.24];
+  let p = base.clone();
+  let bend = 0;
+  for (let i = 0; i < 3; i++) {
+    bend += curl[i];
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-bend, 0, spread, 'ZXY'));
+    const dir = V(0, 1, 0).applyQuaternion(q);
+    const next = p.clone().addScaledVector(dir, len * segs[i]);
+    const ri = r * [1, 0.93, 0.86][i];
+    capsule(parts, skin, line, p, next, ri, parent);
+    if (i === 2) nail(parts, nailMat, p, next, V(0, 0, 1).applyQuaternion(q), ri, parent);
+    p = next;
+  }
+}
+
+// 右手，手背朝 +z、手指朝 +y，原点在手掌中心，单位是牌宽
 export function buildArm(look: Partial<ArmLook> = {}): THREE.Group {
   const lk = { ...DEFAULT_ARM, ...look };
-  const parts: ArmParts = { group: new THREE.Group(), mats: [], geos: [] };
+  const parts: ArmParts = { mats: [], geos: [] };
   const toon = (c: THREE.ColorRepresentation) => new THREE.MeshToonMaterial({ color: c, gradientMap: toonGradient() });
   const skin = toon(lk.skin);
-  const sleeve = toon(lk.sleeve);
-  const cuff = toon(lk.cuff);
-  const line = outlineMat(lk.line, 0.035);
-  const lineThin = outlineMat(lk.line, 0.025);
-  parts.mats.push(skin, sleeve, cuff, line, lineThin);
-  const g = parts.group;
-  // 牌顶在 y = TILE_H * (0.5 - GRIP_Y)，牌背 z = -TILE_T / 2，牌面 z = +TILE_T / 2
-  const top = TILE_H * (0.5 - GRIP_Y);
-  const back = -TILE_T / 2;
-  const front = TILE_T / 2;
-  // 手掌：手背朝上，压在牌顶上方，往人那边（+z）多出一截接手腕
-  const palmGeo = new RoundedBoxGeometry(1.75, 0.62, 1.55, 3, 0.26);
+  const nailMat = toon(lk.nail);
+  const line = outlineMat(lk.line, 0.03);
+  parts.mats.push(skin, nailMat, line);
+  const g = new THREE.Group();
+  // 手掌：扁的圆角块，往手腕那头收窄，手背拱一点
+  const palmGeo = new RoundedBoxGeometry(2.3, 2.7, 0.62, 4, 0.3);
+  const pos = palmGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const t = (y + 1.35) / 2.7;
+    pos.setX(i, x * (0.8 + 0.2 * t));
+    if (z > 0) pos.setZ(i, z + 0.1 * Math.max(0, 1 - (x / 1.15) ** 2));
+  }
+  palmGeo.computeVertexNormals();
   parts.geos.push(palmGeo);
-  const palm = new THREE.Mesh(palmGeo, skin);
-  const palmEdge = new THREE.Mesh(palmGeo, line);
-  for (const m of [palm, palmEdge]) {
-    m.position.set(0.08, top + 0.42, 0.28);
-    m.rotation.x = 0.18;
-    g.add(m);
+  for (const mat of [skin, line]) {
+    g.add(new THREE.Mesh(palmGeo, mat));
   }
-  palm.castShadow = true;
-  // 四根手指从手掌靠牌背那一边伸出去，翻过牌顶、扣在牌背上：食指在左（靠大拇指）、小指在右
-  const fingers: [number, number, number][] = [
-    [-0.56, 1, 1],
-    [-0.18, 1.08, 1],
-    [0.2, 1.02, 0.96],
-    [0.55, 0.86, 0.88],
-  ];
-  for (const [x, len, thick] of fingers) {
-    const r = 0.19 * thick;
-    const k0 = V(x, top + 0.34, back - 0.02);
-    const k1 = k0.clone().add(V(0, -0.08, -0.32 * len));
-    const k2 = k1.clone().add(V(0, -0.42 * len, -0.04));
-    const k3 = k2.clone().add(V(0, -0.3 * len, 0.16));
-    capsule(parts, skin, lineThin, k0, k1, r, g);
-    capsule(parts, skin, lineThin, k1, k2, r * 0.94, g);
-    capsule(parts, skin, lineThin, k2, k3, r * 0.88, g);
-  }
-  // 大拇指：从手掌左前方（靠人那边）弯下来，指肚压在牌面左上角
-  const t0 = V(-0.78, top + 0.32, 0.62);
-  const t1 = V(-0.62, top - 0.02, front + 0.32);
-  const t2 = V(-0.42, top - 0.24, front + 0.17);
-  capsule(parts, skin, line, t0, t1, 0.21, g);
-  capsule(parts, skin, lineThin, t1, t2, 0.18, g);
-  // 手腕、前臂：往人那边、往上伸。袖口一圈深色，再往后是袖子。前臂单独一组，绕手腕转（牌仰起来亮给镜头时手腕弯，前臂还是从人那边伸过来）
+  // 四根手指：食指（靠大拇指）到小指；食指、中指的指肚压着牌，弯得多一点
+  finger(parts, skin, line, nailMat, V(-0.8, 1.2, 0.02), 2.45, 0.25, 0.1, [0.12, 0.2, 0.18], g);
+  finger(parts, skin, line, nailMat, V(-0.27, 1.32, 0.04), 2.72, 0.26, 0.02, [0.12, 0.2, 0.18], g);
+  finger(parts, skin, line, nailMat, V(0.27, 1.24, 0.02), 2.52, 0.24, -0.07, [0.1, 0.14, 0.12], g);
+  finger(parts, skin, line, nailMat, V(0.75, 1.06, -0.02), 1.98, 0.21, -0.18, [0.1, 0.14, 0.12], g);
+  // 大拇指：从手掌靠下那边伸出去，往上、往手心那边弯
+  const t0 = V(-0.82, -0.6, -0.12);
+  const t1 = t0.clone().add(V(-0.62, 0.52, -0.3));
+  const t2 = t1.clone().add(V(-0.3, 0.68, -0.22));
+  const t3 = t2.clone().add(V(-0.1, 0.6, -0.14));
+  capsule(parts, skin, line, t0, t1, 0.36, g);
+  capsule(parts, skin, line, t1, t2, 0.29, g);
+  capsule(parts, skin, line, t2, t3, 0.26, g);
+  nail(parts, nailMat, t2, t3, V(-0.55, 0, 0.83), 0.26, g);
+  // 手腕、前臂：往手指的反方向伸出去，往手背那边带一点（扁一点：宽比厚多）
   const fore = new THREE.Group();
-  fore.position.set(0.12, top + 0.46, 1.0);
+  fore.scale.set(1.25, 1, 0.82);
   g.add(fore);
-  const dir = V(0.12, 0.62, 1).normalize();
-  const at = (d: number) => dir.clone().multiplyScalar(d);
-  tube(parts, skin, line, at(0), at(2.2), 0.4, 0.5, fore);
-  tube(parts, cuff, line, at(2.05), at(2.5), 0.62, 0.64, fore, true);
-  tube(parts, sleeve, line, at(2.45), at(9), 0.66, 0.8, fore, true);
+  tube(parts, skin, line, V(0.04, -1.0, 0), V(0.06, -3.2, 0.12), 0.56, 0.6, fore);
+  tube(parts, skin, line, V(0.06, -3.1, 0.12), V(0.12, -11, 0.7), 0.6, 0.86, fore);
+  if (lk.sleeve !== null) {
+    const sleeve = toon(lk.sleeve);
+    parts.mats.push(sleeve);
+    if (lk.cuff !== null) {
+      const cuff = toon(lk.cuff);
+      parts.mats.push(cuff);
+      tube(parts, cuff, line, V(0.08, -5.2, 0.32), V(0.09, -5.8, 0.36), 0.95, 0.98, fore, true);
+    }
+    tube(parts, sleeve, line, V(0.09, -5.7, 0.35), V(0.15, -14, 0.9), 1.02, 1.3, fore, true);
+  }
   g.userData.parts = parts;
-  g.userData.fore = fore;
   return g;
 }
 
@@ -224,18 +302,56 @@ export class TileSlam {
   readonly group = new THREE.Group();
   private list: Active[] = [];
 
-  // 开始砸一张牌，返回什么时候砸到、什么时候做完
+  // 开始砸一张牌，返回什么时候扣到桌上、什么时候炸开、什么时候做完
   start(spec: SlamSpec, now: number): SlamRun {
     this.cancel(spec.tile);
     const timing = { ...SLAM_TIMING, ...spec.timing };
     const s = spec.to.scale;
-    const up = new THREE.Vector3(0, 1, 0);
-    const grip = (p: SlamPose) => p.pos.clone().add(new THREE.Vector3(0, TILE_H * GRIP_Y * p.scale, 0).applyQuaternion(p.quat));
-    const grabTo = grip(spec.to);
-    // 举到牌落点的上方、往人那边一点（手从人那边伸过来）
-    const apex = grabTo.clone().addScaledVector(up, (spec.lift ?? 3.2) * s).addScaledVector(spec.out, 0.9 * s);
-    // 画面外：往人那边、往右、往上
-    const enter = grabTo.clone().addScaledVector(spec.out, 9 * s).addScaledVector(spec.side, 2.5 * s).addScaledVector(up, 5.5 * s);
+    const up = V(0, 1, 0);
+    const { side, out } = spec;
+    // 扣在桌上：牌面朝下、牌顶朝人，扣在立牌的地方（往桌子中间挪一点，手不会全出画面）；翻起来时跳一下立回去
+    const flatQ = spec.to.quat.clone().multiply(new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), Math.PI / 2));
+    const flatPos = spec.to.pos.clone().addScaledVector(out, -0.3 * s).setY(spec.to.pos.y + (TILE_T / 2 - TILE_H / 2) * s);
+    const flat: SlamPose = { pos: flatPos, quat: flatQ, scale: s };
+    // 扣牌时手：手指朝前（离开自己）往下压、往右偏一点，手背朝上；牌在指尖底下
+    const fwd = out.clone().negate();
+    const pressF = fwd.clone().multiplyScalar(Math.cos(0.22)).addScaledVector(side, Math.sin(0.22)).multiplyScalar(Math.cos(PRESS_PITCH)).addScaledVector(up, -Math.sin(PRESS_PITCH));
+    const pressQ = basis(pressF, up);
+    const attach = (q: THREE.Quaternion) => TILE_IN_HAND.clone().multiplyScalar(s * HAND_SCALE).applyQuaternion(q);
+    const press: Key = { pos: flatPos.clone().sub(attach(pressQ)).addScaledVector(up, 0.05 * s), quat: pressQ };
+    let raise: Key;
+    let enter: Key;
+    let leave: Key;
+    const v = spec.view;
+    if (v) {
+      // 第一人称：手在镜头跟前、画面左下举着，手背朝镜头，手指朝画面上方、往右斜一点
+      const right = V(1, 0, 0).applyQuaternion(v.quat);
+      const camUp = V(0, 1, 0).applyQuaternion(v.quat);
+      const ahead = V(0, 0, -1).applyQuaternion(v.quat);
+      const tan = Math.tan(THREE.MathUtils.degToRad(v.fov / 2));
+      const at = (nx: number, ny: number, d: number) =>
+        v.pos
+          .clone()
+          .addScaledVector(ahead, d)
+          .addScaledVector(right, nx * d * tan * v.aspect)
+          .addScaledVector(camUp, ny * d * tan);
+      const d = NEAR_DIST * s;
+      const q = basis(camUp.clone().addScaledVector(right, 0.2).addScaledVector(ahead, 0.3), ahead.clone().negate());
+      raise = { pos: at(NEAR_X, NEAR_Y, d), quat: q };
+      enter = { pos: at(NEAR_X - 0.1, NEAR_Y - 2.3, d * 0.9), quat: basis(camUp.clone().addScaledVector(ahead, 0.15), ahead.clone().negate()) };
+      leave = { pos: at(0.45, -2.4, d * 0.8), quat: q.clone().slerp(pressQ, 0.4) };
+    } else {
+      // 别家：手在她身前举高，手背朝她自己，手指朝上、往桌子中间斜一点
+      const q = basis(up.clone().addScaledVector(fwd, 0.3), out);
+      raise = { pos: spec.to.pos.clone().addScaledVector(out, 2.4 * s).addScaledVector(up, 4.4 * s).addScaledVector(side, -0.4 * s), quat: q };
+      enter = { pos: spec.to.pos.clone().addScaledVector(out, 8 * s).addScaledVector(up, 2.5 * s), quat: basis(up.clone().addScaledVector(fwd, 0.6), out) };
+      leave = { pos: enter.pos.clone(), quat: enter.quat.clone() };
+    }
+    let grab: Key | null = null;
+    if (spec.from) {
+      const gq = basis(fwd.clone().addScaledVector(up, -0.5), up);
+      grab = { pos: spec.from.pos.clone().sub(attach(gq)).addScaledVector(up, 0.1 * s), quat: gq };
+    }
     let arm: THREE.Group | null = null;
     if (spec.arm !== null) {
       arm = buildArm(spec.arm ?? {});
@@ -243,14 +359,22 @@ export class TileSlam {
       arm.visible = false;
       this.group.add(arm);
     }
-    const a: Active = { spec, timing, t0: now, arm, hit: false, done: false, enter, apex, grabFrom: spec.from ? grip(spec.from) : null, grabTo };
+    const shadows: THREE.Mesh[] = [];
+    spec.tile.traverse((o) => {
+      if (o instanceof THREE.Mesh && o.castShadow) {
+        o.castShadow = false;
+        shadows.push(o);
+      }
+    });
+    const a: Active = { spec, timing, t0: now, arm, s, enter, grab, raise, press, leave, flat, pressed: false, charged: false, hit: false, shadows };
     this.list.push(a);
-    const hitAt = now + this.hitOffset(a);
     this.pose(a, now);
-    return { hitAt, doneAt: hitAt + timing.hold + timing.back };
+    const pressAt = now + slamPressOffset(!spec.from, timing);
+    const hitAt = now + slamHitOffset(!spec.from, timing);
+    return { pressAt, hitAt, doneAt: Math.max(hitAt, pressAt + timing.leave) };
   }
 
-  // 这张牌正在被砸（手里拿着或者刚砸完、手还没收回）
+  // 这张牌正在被砸（还没炸开）
   holds(tile: THREE.Object3D): boolean {
     return this.list.some((a) => a.spec.tile === tile && !a.hit);
   }
@@ -259,7 +383,7 @@ export class TileSlam {
     return this.list.length > 0;
   }
 
-  // 收掉这张牌的砸牌（没砸到的直接放到落点，不回调）
+  // 收掉这张牌的砸牌（没炸开的直接放到落点，不回调）
   cancel(tile: THREE.Object3D): void {
     for (const a of this.list.filter((x) => x.spec.tile === tile)) this.finish(a, false);
   }
@@ -272,13 +396,9 @@ export class TileSlam {
     for (const a of [...this.list]) this.pose(a, now);
   }
 
-  private hitOffset(a: Active): number {
-    const t = a.timing;
-    return (a.grabFrom ? t.reach + t.lift : t.reach) + t.hang + t.drop;
-  }
-
   private finish(a: Active, callback: boolean): void {
     this.list = this.list.filter((x) => x !== a);
+    this.shadowsOn(a);
     const { tile, to } = a.spec;
     if (!a.hit) {
       tile.position.copy(to.pos);
@@ -292,104 +412,129 @@ export class TileSlam {
     if (callback) a.spec.onDone?.();
   }
 
-  // 这一刻手捏住的点在哪、手转成什么样（相对落地时的样子，绕这一家的右手方向转：正数是牌顶往人那边倒，
-// 负数是牌顶往桌子中间倒、牌面朝上——举着的时候亮给镜头看摸到了什么）
+  private shadowsOn(a: Active): void {
+    for (const m of a.shadows) m.castShadow = true;
+    a.shadows = [];
+  }
+
+  private setTile(a: Active, pos: THREE.Vector3, quat: THREE.Quaternion, scale: number): void {
+    const t = a.spec.tile;
+    t.position.copy(pos);
+    t.quaternion.copy(quat);
+    t.scale.setScalar(scale);
+  }
+
+  // 牌跟着手：在手里坐标的 TILE_IN_HAND
+  private attached(a: Active, hand: Key): SlamPose {
+    return {
+      pos: hand.pos.clone().add(TILE_IN_HAND.clone().multiplyScalar(a.s * HAND_SCALE).applyQuaternion(hand.quat)),
+      quat: hand.quat.clone().multiply(TILE_IN_HAND_Q),
+      scale: a.s,
+    };
+  }
+
+  // 这一刻手在哪、牌在哪
   private pose(a: Active, now: number): void {
-    const { spec, timing: t } = a;
+    const { spec, timing: t, s } = a;
+    const up = V(0, 1, 0);
     const k = now - a.t0;
-    const s = spec.to.scale;
-    const hitT = this.hitOffset(a);
-    const up = new THREE.Vector3(0, 1, 0);
-    let grip: THREE.Vector3;
-    let tilt = 0;
-    let holding = true; // 牌还在手里
-    let quatFrom: THREE.Quaternion | null = null; // 还在原处捏住、还没转到落地的朝向
-    let quatK = 1;
-    let scale = s;
-    const cocked = a.apex.clone().addScaledVector(spec.out, 0.35 * s).addScaledVector(up, 0.25 * s);
-    if (a.grabFrom && k < t.reach) {
-      // 手伸过去，牌还在原处
-      const f = easeInOut(clamp01(k / t.reach));
-      const hand = a.enter.clone().lerp(a.grabFrom, f);
-      hand.y += Math.sin(Math.PI * f) * 1.2 * s;
-      this.place(a, hand, tilt * (1 - f), spec.from!.quat, 0);
-      if (a.arm) a.arm.visible = true;
-      a.spec.tile.position.copy(spec.from!.pos);
-      a.spec.tile.quaternion.copy(spec.from!.quat);
-      a.spec.tile.scale.setScalar(spec.from!.scale);
+    const reach = a.grab ? t.reach : 0;
+    const raised = reach + t.rise;
+    const shown = raised + t.show;
+    const pressT = shown + t.sweep;
+    const flipT = pressT + t.flat;
+    const stoodT = flipT + t.flip;
+    const hitT = stoodT + t.charge;
+    const goneT = pressT + t.leave;
+    // 手
+    let hand: Key | null = null;
+    // 举在高处、蓄一下力（手指往镜头那边仰一点、往上带一点）
+    const cocked = (f: number): Key => {
+      const lift = (spec.view ? V(0, 1, 0).applyQuaternion(spec.view.quat) : up).multiplyScalar(0.3 * s * f);
+      return { pos: a.raise.pos.clone().add(lift), quat: a.raise.quat.clone().multiply(new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), 0.12 * f)) };
+    };
+    if (a.grab && k < reach) {
+      const f = easeInOut(clamp01(k / reach));
+      hand = { pos: a.enter.pos.clone().lerp(a.grab.pos, f).addScaledVector(up, Math.sin(Math.PI * f) * 1.2 * s), quat: a.enter.quat.clone().slerp(a.grab.quat, f) };
+    } else if (k < raised) {
+      const f = easeOut(clamp01((k - reach) / t.rise));
+      const from = a.grab ?? a.enter;
+      hand = { pos: from.pos.clone().lerp(a.raise.pos, f), quat: from.quat.clone().slerp(a.raise.quat, f) };
+    } else if (k < shown) {
+      hand = cocked(easeOut(clamp01((k - raised) / t.show)));
+    } else if (k < pressT) {
+      // 往前扫下去：先慢后快，从上面压下来
+      const f = clamp01((k - shown) / t.sweep);
+      const c = cocked(1);
+      const ctrl = a.press.pos.clone().addScaledVector(up, 3.2 * s).lerp(c.pos, 0.3);
+      hand = { pos: bezier(c.pos, ctrl, a.press.pos, f ** 1.6), quat: c.quat.clone().slerp(a.press.quat, smooth(0, 0.85, f)) };
+    } else if (k < goneT) {
+      // 撤手：先往上一提，再往回撤出画面
+      const f = clamp01((k - pressT) / t.leave);
+      const ctrl = a.press.pos.clone().addScaledVector(up, 2.6 * s);
+      hand = { pos: bezier(a.press.pos, ctrl, a.leave.pos, f ** 1.4), quat: a.press.quat.clone().slerp(a.leave.quat, easeInOut(f)) };
+    }
+    if (a.arm) {
+      a.arm.visible = hand !== null;
+      if (hand) {
+        a.arm.position.copy(hand.pos);
+        a.arm.quaternion.copy(hand.quat);
+      }
+    }
+    // 牌
+    if (k < pressT) {
+      if (a.grab && k < reach) {
+        const fr = spec.from!;
+        this.setTile(a, fr.pos, fr.quat, fr.scale);
+      } else {
+        const held = this.attached(a, hand!);
+        let scale = s;
+        if (a.grab && k < raised) {
+          // 刚拿起来：从原来的样子转到指尖底下
+          const fr = spec.from!;
+          const w = smooth(0, 0.6, (k - reach) / t.rise);
+          held.pos.lerpVectors(fr.pos, held.pos, w);
+          held.quat.copy(fr.quat.clone().slerp(held.quat, w));
+          scale = THREE.MathUtils.lerp(fr.scale, s, w);
+        }
+        if (k > shown) {
+          // 快扣下去的时候牌转平
+          const w = smooth(0.55, 1, (k - shown) / t.sweep);
+          held.pos.lerp(a.flat.pos, w);
+          held.quat.slerp(a.flat.quat, w);
+        }
+        this.setTile(a, held.pos, held.quat, scale);
+      }
       return;
     }
-    const lift0 = a.grabFrom ? t.reach : 0;
-    const liftT = a.grabFrom ? t.lift : t.reach;
-    if (k < lift0 + liftT) {
-      // 举起来（carried：带着牌从画面外伸进来，直接到最高处）
-      const f = easeOut(clamp01((k - lift0) / liftT));
-      const from = a.grabFrom ?? a.enter;
-      grip = from.clone().lerp(a.apex, f);
-      grip.y += Math.sin(Math.PI * f) * 0.5 * s;
-      tilt = SHOW * f;
-      if (a.grabFrom) {
-        quatFrom = spec.from!.quat;
-        quatK = f;
-        scale = THREE.MathUtils.lerp(spec.from!.scale, s, f);
-      }
-    } else if (k < lift0 + liftT + t.hang) {
-      // 最高处亮一下牌，再往后上方带一点：蓄力
-      const f = easeOut(clamp01((k - lift0 - liftT) / t.hang));
-      grip = a.apex.clone().lerp(cocked, f);
-      tilt = SHOW + 0.15 * f;
+    if (!a.pressed) {
+      a.pressed = true;
+      this.shadowsOn(a);
+      spec.onPress?.(a.flat.pos.clone().addScaledVector(up, (-TILE_T / 2) * s));
+    }
+    if (k < flipT) {
+      this.setTile(a, a.flat.pos, a.flat.quat, s);
+    } else if (k < stoodT) {
+      // 跳起来翻身立住：牌顶从朝人转到朝上，牌面转过来朝人
+      const f = clamp01((k - flipT) / t.flip);
+      const e = easeOut(f);
+      const q = spec.to.quat.clone().multiply(new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), (Math.PI / 2) * (1 - e)));
+      this.setTile(a, a.flat.pos.clone().lerp(spec.to.pos, e).addScaledVector(up, Math.sin(Math.PI * f) * 0.6 * s), q, s);
     } else if (k < hitT) {
-      // 拍下去：越来越快，牌立起来，正好竖着落地
-      const f = clamp01((k - lift0 - liftT - t.hang) / t.drop) ** 2;
-      grip = cocked.clone().lerp(a.grabTo, f);
-      tilt = (SHOW + 0.15) * (1 - f) ** 1.5;
-    } else {
-      if (!a.hit) {
-        a.hit = true;
-        spec.tile.position.copy(spec.to.pos);
-        spec.tile.quaternion.copy(spec.to.quat);
-        spec.tile.scale.setScalar(s);
-        spec.onHit?.(spec.to.pos.clone().addScaledVector(up, -(TILE_H / 2) * s));
+      this.setTile(a, spec.to.pos, spec.to.quat, s);
+      if (!a.charged) {
+        a.charged = true;
+        spec.onCharge?.(spec.to.pos.clone());
       }
-      holding = false;
-      const h = k - hitT;
-      if (h < t.hold) {
-        // 按住：手往下压一点再弹回来
-        const f = h / t.hold;
-        grip = a.grabTo.clone().addScaledVector(up, -0.06 * s * Math.sin(Math.PI * f));
-      } else if (h < t.hold + t.back) {
-        // 松手往回收：先往上抬、再往人那边退出画面
-        const f = easeInOut(clamp01((h - t.hold) / t.back));
-        grip = a.grabTo.clone().lerp(a.enter, f);
-        grip.addScaledVector(up, Math.sin(Math.PI * Math.min(1, f * 1.4)) * 1.2 * s);
-        tilt = -0.25 * f;
-      } else {
-        this.finish(a, true);
-        return;
+    } else if (!a.hit) {
+      a.hit = true;
+      if (!a.charged) {
+        a.charged = true;
+        spec.onCharge?.(spec.to.pos.clone());
       }
+      this.setTile(a, spec.to.pos, spec.to.quat, s);
+      spec.onHit?.(spec.to.pos.clone().addScaledVector(up, (-TILE_H / 2) * s));
     }
-    const q = this.place(a, grip, tilt, quatFrom, quatK);
-    if (a.arm) a.arm.visible = true;
-    if (!holding) return;
-    // 牌跟着手：捏住的点往下 GRIP_Y 个牌高是牌中心
-    spec.tile.quaternion.copy(q);
-    spec.tile.scale.setScalar(scale);
-    spec.tile.position.copy(grip).add(new THREE.Vector3(0, -TILE_H * GRIP_Y * scale, 0).applyQuaternion(q));
-  }
-
-  // 把手摆到 grip，朝向是落地时牌的朝向再绕右手方向转 tilt；quatFrom 不是 null 时从它转过来（k 是转了多少）
-  private place(a: Active, grip: THREE.Vector3, tilt: number, quatFrom: THREE.Quaternion | null, k: number): THREE.Quaternion {
-    const { spec } = a;
-    const q = new THREE.Quaternion().setFromAxisAngle(spec.side, tilt).multiply(spec.to.quat);
-    if (quatFrom) q.copy(quatFrom.clone().slerp(q, k));
-    if (a.arm) {
-      a.arm.position.copy(grip);
-      a.arm.quaternion.copy(q);
-      // 手腕弯回来大半：前臂差不多还是落地时的方向
-      const fore = a.arm.userData.fore as THREE.Object3D | undefined;
-      if (fore) fore.rotation.x = -tilt * WRIST_BEND;
-    }
-    return q;
+    if (a.hit && k >= goneT) this.finish(a, true);
   }
 }
-
