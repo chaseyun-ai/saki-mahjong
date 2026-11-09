@@ -6,6 +6,8 @@ https://github.com/Humpalumps/ultra-elements
 
 Hatsumi's purple whirlwind (`src/ui3d/gale.ts`) follows techniques from Ultra Elements' `src/vfx/Ribbons.js` and `src/vfx/Shockwaves.js`: analytic ribbons whose centreline is evaluated per vertex in the vertex shader and expanded towards the camera, the "phone-wire" rule that a strip thinner than 1.5 px dims instead of thinning, and a blast-wave (r ∝ t^0.4) shock ring. The table's general effects (`src/ui3d/effects.ts`) and the 2D call/win effects (`src/ui/style.css`) follow more of its techniques: the ground shock profile with a sharp leading edge and a soft wake from `Shockwaves.js`; velocity-stretched additive sparks that cool from white-hot, with drag and gravity evaluated analytically, from the glow particles in `src/vfx/Particles.js`; the fractal lightning path (Reed & Wyvill 1994), stepped leader, return stroke, restrikes on the same channel with new branches and a cooling, beading residual channel from `src/vfx/Bolts.js` and `src/spells/lightning.js`. The code was rewritten for this project.
 
+The water on the table (`src/ui3d/water.ts`: Toka's still water and Koromo's rising sea) follows Ultra Elements' water in `src/scene/pool.js`, `src/spells/water.js` and `src/vfx/Refraction.js`: a GPU ripple height field (height plus velocity per texel, four-neighbour Laplacian, drops stamped into it); surface normals from the height-field slope; a Schlick Fresnel (f0 = 0.02) mix of a sky gradient, a planar mirror and the refracted floor; Beer–Lambert absorption along the view path through the water; the curvature "lens" that focuses ripples into bright and dark bands on the floor; and the folded-sine caustic cookie from `src/vfx/common.js`. The code was rewritten for this project.
+
 ```
 MIT License
 
@@ -29,3 +31,15 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## WebGL Water (Evan Wallace)
+
+https://madebyevan.com/webgl-water — Copyright (c) 2011 Evan Wallace, MIT License (same terms as above).
+
+The ripple height-field update in `src/ui3d/water.ts` (`RippleSim`: height plus velocity per texel, the four-neighbour Laplacian, damping and drops), as used by Ultra Elements' `src/scene/pool.js`.
+
+## Hash without Sine (Dave Hoskins)
+
+https://www.shadertoy.com/view/4djSRW — Copyright (c) 2014 David Hoskins, MIT License (same terms as above).
+
+The `hash12` function in `src/ui3d/water.ts`.

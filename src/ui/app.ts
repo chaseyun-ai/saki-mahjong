@@ -29,6 +29,8 @@ import { ChainStyleId, PlockStyleId, RiiProj, RiiSfxId, lookChoices, riiLook, se
 import { RiiTestStart, riiSetPanelHtml, riiTestPanelHtml } from './riiSetup';
 import { riichiTsumoStage } from './riiStage';
 import { RinshanTier, rinshanStage, rinshanTestPanelHtml } from './sakiStage';
+import { koromoSea } from './koromoSea';
+import { SEA_TEST_OPPONENTS, koromoSeaStage } from './waterStage';
 import { padlockArrive, playPadlock } from './riiPadlock';
 import { PlockEnd, PlockPlace, plockHtml } from './riiPlock';
 import { SkyKey } from './skyKey';
@@ -41,7 +43,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playLily, playRiichi, playSlam, playWin } from './sound';
+import { playCall, playChime, playClick, playLily, playRiichi, playSlam, playSplash, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { paceOf, vary } from './vary';
@@ -358,6 +360,10 @@ export class App {
     this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="rii-test">白水哩 · 姬子测试</button>');
     // 宫永咲的岭上开花测试：每局暗杠、岭上自摸，看砸牌和百合
     this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="saki-test">宫永咲 · 岭上开花测试</button>');
+    // 水的特效：衣每一局都海底捞月、一路打到海底自摸；透华开局就治水
+    this.root
+      .querySelector('.sel-more-menu')
+      ?.insertAdjacentHTML('beforeend', '<button data-ui="water-test" data-v="koromo">衣 · 海底捞月测试</button><button data-ui="water-test" data-v="toka">透华 · 治水测试</button>');
     // 换了皮肤的选人页：介绍不再是浮窗，固定在左边当大立绘面板，先放这一页的第一位
     if (hero) this.pickCard(this.root.querySelector<HTMLElement>('.char-card'));
     // 能换素材的人（页面主人）在视觉设置里多一行“角色素材”
@@ -653,17 +659,20 @@ export class App {
     this.beginGame(players, new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer: Math.floor(Math.random() * 4), keys: [0, 1, 2, 3].map((i) => (i === this.me ? keys : [])), players: players.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
   }
 
-  // with：测试用，下家固定坐这位（白水哩和姬子同桌）；stage：测试用的摆牌（见 Game 的 Stage）
-  private startGame(charId: string, withId?: string, stage?: Stage): void {
+  // with：测试用，下家固定坐这位（白水哩和姬子同桌）；stage：测试用的摆牌（见 Game 的 Stage）；
+  // opts.dealer 测试用的起家，opts.chisui 透华不管设置开局就治水
+  private startGame(charId: string, withId?: string, stage?: Stage, opts: { dealer?: number; chisui?: boolean; opponents?: string[] } = {}): void {
     const mine = CHARACTERS.find((c) => c.id === charId)!;
     const seed = Math.floor(Math.random() * 2 ** 31);
-    // 对手：设置里选了的照选的坐，随机的从其余角色里抽
+    // 对手：设置里选了的照选的坐，随机的从其余角色里抽（测试局可以直接指定）
     const pick = withId ? { ...this.settings, opponents: [withId, ...this.settings.opponents.slice(1).map((id) => (id === withId ? '' : id))] } : this.settings;
-    const others = pickOpponents(pick, charId, new Rng(seed ^ 0x5a17));
+    const others = opts.opponents?.map((id) => CHARACTERS.find((c) => c.id === id)!) ?? pickOpponents(pick, charId, new Rng(seed ^ 0x5a17));
     this.team = null;
     this.auto = false;
     const st = this.settings;
-    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer: Math.floor(Math.random() * 4), players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me, startForm: i === this.me && c.id === 'toka' && st.chisui })), stage }));
+    const chisui = opts.chisui ?? st.chisui;
+    const firstDealer = opts.dealer ?? Math.floor(Math.random() * 4);
+    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer, players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me, startForm: i === this.me && c.id === 'toka' && chisui })), stage }));
   }
 
   // 公开手牌：单人对局按设置，团体赛不公开
@@ -765,6 +774,8 @@ export class App {
         playSlam();
         if (lily !== null) playLily(lilyGrand(lily));
       };
+      // 衣的海底牌砸进海里：水声
+      this.table3d.onSeaSlam = () => playSplash();
       // 第一局在牌桌建好之前就开始了，补一次开局动画
       if (!resume) {
         this.table3d.onEvent({ type: 'roundStart', label: this.game!.roundLabel() }, this.game!);
@@ -1127,6 +1138,15 @@ export class App {
     const g = this.game;
     if (!g || this.netView || g.phase === 'predeal' || g.phase === 'postdeal') return false;
     return [0, 1, 2, 3].some((s) => this.chars[s]?.id === 'toka' && tokaChisui(g, s));
+  }
+
+  // ---------- 衣的海底 ----------
+
+  // 牌桌上的海水（谁都看得见：海底捞月发动时放了切入）：海底路线上越接近海底涨得越高（网络麻将的画面不铺水）
+  private seaView() {
+    const g = this.game;
+    if (!g || this.netView || g.phase === 'predeal' || g.phase === 'postdeal') return null;
+    return koromoSea(g, this.chars.map((c) => c?.id));
   }
 
   // 2D：牌桌上盖一层水面（几圈慢慢荡开的涟漪和水底的光纹）
@@ -1658,6 +1678,19 @@ export class App {
       this.openLab();
       return;
     }
+    if (el.dataset.ui === 'water-test') {
+      this.root.querySelector('details.sel-more[open]')?.removeAttribute('open');
+      // 衣坐庄家的下家：没人鸣牌时牌山最后一张归她
+      if (el.dataset.v === 'koromo') {
+        // 对手固定成没有能力的三位：别人的能力（错开流向、改牌山）会把海底挪走，就测不到捞月
+        this.startGame('koromo', undefined, koromoSeaStage(this.me), { dealer: (this.me + 3) % 4, opponents: SEA_TEST_OPPONENTS });
+        // 挂机看：电脑替她打到海底自摸（点「挂机中」可以接管）
+        this.auto = true;
+        if (this.game) this.game.manual[this.me] = false;
+        this.render();
+      } else this.startGame('toka', undefined, undefined, { chisui: true });
+      return;
+    }
     // 白水哩番缚设置（局外）、白水哩 · 姬子测试窗口
     if (el.dataset.ui === 'rii-set' || el.dataset.ui === 'rii-test') {
       this.openPanel(el.dataset.ui === 'rii-set' ? 'rii' : 'riiTest');
@@ -1972,6 +2005,7 @@ export class App {
       gale: this.galeView(),
       glowTiles: this.glowTiles(),
       stillWater: this.waterOn(),
+      sea: this.seaView(),
       riiCover: this.riiPicking,
       riiBind: this.chars[this.me]?.id === 'rii' && !this.vision ? riiBind(g, this.me) : null,
     });

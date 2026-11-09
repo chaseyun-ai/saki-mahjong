@@ -13,7 +13,7 @@ import { BOLT_LEADER, Effects } from './effects';
 import { type SpotRow, WinSpots } from './winSpots';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
-import { StillWater } from './stillWater';
+import { SEA, Water, wet, wetLike } from './water';
 import { ChainFx, ChainFrame } from './chains';
 import { riiLook } from '../ui/riiLook';
 import { ChainEnd, outcomeTime } from '../ui/riiChainPlan';
@@ -166,6 +166,24 @@ const SLAM_HOP = 0.32; // 砸下去以后桌上的牌跟着震一下
 // 炸开以后停 V2_SLAM_HOLD 秒才倒牌（咲的岭上开花停 V2_LILY_HOLD 秒，让百合开完）
 const V2_SLAM_HOLD = 0.75;
 const V2_LILY_HOLD = 1.05;
+// 天江衣的海底捞月砸下去：等水花落下、海水退干净再倒牌
+const V2_SEA_HOLD = 0.95;
+// 水面：透华的静水贴着桌布；衣的海最高涨到牌山顶上再高一点（牌山两层 = 2 个牌厚）
+const STILL_LEVEL = 0.03;
+const SEA_TOP = TILE_T * 2 + 0.07;
+const SEA_RISE = 0.35; // 涨潮每秒最多涨多少
+// 衣的海底捞月：月亮的倒影一亮、水面一圈圈收进去（WAIT），牌从海底直直浮上来破水而出（RISE），
+// 停在半空、身上的水往下淌（HOLD），再飞进她手里（FLY）。秒
+const SCOOP_WAIT = 0.35;
+const SCOOP_RISE = 0.7;
+const SCOOP_HOLD = 0.45;
+const SCOOP_FLY = 0.3;
+const SCOOP_TIME = SCOOP_WAIT + SCOOP_RISE + SCOOP_HOLD + SCOOP_FLY;
+const MOON_GLOW = '#cfe4ff';
+// 月亮的倒影离海底牌往桌子中间挪多少
+const MOON_IN = 1.9;
+// 海水涨满时四周暗下来多少（夜里的海，月亮更亮）
+const SEA_NIGHT = 0.3;
 
 // 用手搬牌的动作：伸手、拿起来移过去、放下停一下、收手（秒）
 interface HandTiming {
@@ -248,7 +266,8 @@ interface RevealState {
   hops: { at: number; x: THREE.Vector3 }[];
   spotsOn: boolean; // 聚光灯打开了没有
   // 改良布局的自摸砸牌：start 时手伸进来，hitAt 拍到桌上；lily 是咲的岭上开花（这一手的基本点），没有是 null
-  tsumoSlam: { seat: number; tile: TileId; start: number; hitAt: number; started: boolean; lily: number | null } | null;
+  // sea：天江衣从海里捞上来的海底牌，砸下去把海水打散
+  tsumoSlam: { seat: number; tile: TileId; start: number; hitAt: number; started: boolean; lily: number | null; sea: boolean } | null;
 }
 
 interface Flight {
@@ -259,6 +278,16 @@ interface Flight {
   scale: number;
   // 不飞：在牌山上渐渐消失，再在手里渐渐出现（摸牌路径关掉时）
   fade: boolean;
+}
+
+// 衣的海底捞月：从海里捞上来的那张牌
+interface Scoop {
+  tile: TileId;
+  seat: number;
+  t: number;
+  from: Placement;
+  broke: boolean; // 破水而出了没有
+  drip: number; // 下一滴水什么时候滴
 }
 
 // 手的动作：tile 搬一张牌，stick 从抽屉拿立直棒，gesture 只是举手示意
@@ -339,7 +368,10 @@ export interface SyncView {
   sketch?: boolean; // 爱丽丝的手绘板：牌、桌布换成手绘风格
   gale?: { seat: number; level: number } | null; // 薄墨初美的里鬼门：紫色的风聚得多浓（0–1），和牌时那张牌上紫光往上冲
   glowTiles?: Set<TileId>; // 初美鸣出来的东、北中间那张：字发紫光，牌上一道淡淡的紫色光柱
-  stillWater?: boolean; // 透华的治水：桌布上铺一层平静的水面
+  stillWater?: boolean; // 透华的治水：桌布上铺一层平静的水面，打进牌河的牌荡开涟漪
+  // 天江衣的海底：level 海水涨到哪（0 刚开始、1 淹没整个牌山），on 海底现在归她（被错开时潮水退下去），
+  // moon 月相（MOON_PHASES 的下标），haitei 海底牌（月亮映在它上方的水面上）
+  sea?: { seat: number; level: number; on: boolean; moon: number; haitei: TileId | null } | null;
   riiCover?: boolean; // 白水哩番缚选番数时：自己的手牌扣在桌上，原来的位置投影出牌面
   riiBind?: number | null; // 白水哩这一局缚了几番（只有她自己看得到）：几条锁链压住自己的手牌
 }
@@ -452,6 +484,8 @@ export class Table3D {
   onMarker: ((seat: number, tile: TileId, name: MarkerName) => void) | null = null;
   // 砸牌（放音效用）：phase 'press' 是牌扣到桌上，'hit' 是牌立起来炸开；lily：咲的岭上开花这一手的基本点（不是就是 null）
   onSlam: ((seat: number, lily: number | null, phase: 'press' | 'hit') => void) | null = null;
+  // 天江衣的海底牌砸进海里炸开的那一下（放水声用；扣进水里那一下照常是 onSlam 的 'press'）
+  onSeaSlam: ((seat: number) => void) | null = null;
   // 每帧画之前调用（动画已经推进到这一帧），调试场景在这里更新辅助线和读数
   beforeRender: (() => void) | null = null;
   // 鼠标移到能打的牌上、或者移开（null）时通知外面，用来显示打这张以后听什么
@@ -464,8 +498,14 @@ export class Table3D {
   private gale: Gale | null = null;
   private roomBase = new THREE.Color(); // 房间本来的颜色（手绘板会换）
   private roomDark = 0; // 初美的风让四周暗下来多少
-  // 透华的治水：桌布上的水面（用到时才建，换桌子尺寸时重建）
-  private water: StillWater | null = null;
+  // 透华的治水、衣的海底：桌上的水（water.ts，用到时才建，换桌子尺寸时重建）
+  private water: Water | null = null;
+  // 衣的海底捞月：正从海里捞上来的牌；要砸的那张（自摸时砸下去）；砸下去以后这一局海水散掉
+  private scoop: Scoop | null = null;
+  private seaSlamTile: TileId | null = null;
+  private seaDrained = false;
+  // 捞上来的牌身上一层月光（用到时才建）
+  private moonMats: { body: THREE.MeshStandardMaterial; back: THREE.MeshStandardMaterial } | null = null;
   // 白水哩的番缚：每个座位的锁链；选番数时手牌原来位置上的投影牌面
   private chains: (ChainFx | null)[] = [null, null, null, null];
   private ghosts = new Map<TileId, THREE.Group>();
@@ -563,6 +603,7 @@ export class Table3D {
   dispose(): void {
     cancelAnimationFrame(this.frame);
     this.resizer.disconnect();
+    this.water?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.loadingEl?.remove();
@@ -587,8 +628,8 @@ export class Table3D {
     this.scene.add(key);
 
     // 桌子：黑色亮面，桌框只比桌布高一点，内侧一圈金属包边；尺寸变了会整个重建（buildTable）
-    const frameMat = new THREE.MeshStandardMaterial({ color: this.colors.frame, roughness: 0.32, metalness: 0.25 });
-    const trimMat = new THREE.MeshStandardMaterial({ color: this.colors.trim, roughness: 0.3, metalness: 0.8 });
+    const frameMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.frame, roughness: 0.32, metalness: 0.25 }));
+    const trimMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.trim, roughness: 0.3, metalness: 0.8 }));
     this.tableMats = {
       frame: frameMat,
       trim: trimMat,
@@ -603,7 +644,7 @@ export class Table3D {
       (m as THREE.MeshStandardMaterial).envMap = room;
       (m as THREE.MeshStandardMaterial).envMapIntensity = k;
     }
-    this.feltMat = new THREE.MeshStandardMaterial({ map: feltTexture(this.colors, this.v2 ? this.dim.tableHalf : 0), roughness: 0.95 });
+    this.feltMat = wet(new THREE.MeshStandardMaterial({ map: feltTexture(this.colors, this.v2 ? this.dim.tableHalf : 0), roughness: 0.95 }));
     this.keyLight = key;
     this.buildTable();
 
@@ -620,7 +661,8 @@ export class Table3D {
 
     // 中央控制台：顶面画点数和局数
     const consoleMats = [
-      new THREE.MeshStandardMaterial({ color: '#0c0d0f', roughness: 0.25, metalness: 0.3 }),
+      wet(new THREE.MeshStandardMaterial({ color: '#0c0d0f', roughness: 0.25, metalness: 0.3 })),
+      // 顶面的点数、局数是自己发光的屏幕，淹在水里也照样看得清（不泡水）
       new THREE.MeshStandardMaterial({ map: this.consoleTex, roughness: 0.2, emissive: '#ffffff', emissiveMap: this.consoleTex, emissiveIntensity: 0.35 }),
     ];
     const h = this.consoleH;
@@ -645,6 +687,7 @@ export class Table3D {
     // 桌子尺寸变了：水面按新尺寸重建（下一次 sync 再建）
     if (this.water) {
       this.scene.remove(this.water.group);
+      this.water.dispose();
       this.water = null;
     }
     const group = buildTableModel(d, FRAME_TOP, this.tableMats!);
@@ -670,18 +713,18 @@ export class Table3D {
     const backGeom = new RoundedBoxGeometry(TILE_W, TILE_H, TILE_T * 0.42, 3, 0.12);
     // 2.5D 时自己的手牌几乎正对镜头，灯又在镜头这边，亮面会把牌面照白一片，所以磨砂一点
     const matte = this.style === '25d' ? 0.62 : 0;
-    const bodyMat = new THREE.MeshStandardMaterial({ color: '#f6f1e3', roughness: matte || 0.35 });
+    const bodyMat = wet(new THREE.MeshStandardMaterial({ color: '#f6f1e3', roughness: matte || 0.35 }));
     this.bodyMat = bodyMat;
-    this.deadlyMat = new THREE.MeshStandardMaterial({ color: '#f08a80', emissive: '#d23a2e', emissiveIntensity: 0.35, roughness: matte || 0.35 });
-    const backMat = new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: matte || 0.4 });
+    this.deadlyMat = wet(new THREE.MeshStandardMaterial({ color: '#f08a80', emissive: '#d23a2e', emissiveIntensity: 0.35, roughness: matte || 0.35 }));
+    const backMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: matte || 0.4 }));
     this.backMat = backMat;
     // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
     this.tintMats = ['#e0453a', '#3a6df0', '#2fb25a', '#f4f4f0'].map(
-      (c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.35, roughness: matte || 0.4 }),
+      (c) => wet(new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.35, roughness: matte || 0.4 })),
     );
-    this.akaMat = new THREE.MeshStandardMaterial({ color: '#ff5a2e', emissive: '#ff7a1e', emissiveIntensity: 0.7, roughness: matte || 0.4 });
-    this.waveMat = new THREE.MeshStandardMaterial({ color: '#9b6bff', emissive: '#7c4dff', emissiveIntensity: 0.85, roughness: matte || 0.4 });
-    const faceMat = new THREE.MeshStandardMaterial({ map: this.atlas.texture, transparent: true, roughness: matte || 0.35 });
+    this.akaMat = wet(new THREE.MeshStandardMaterial({ color: '#ff5a2e', emissive: '#ff7a1e', emissiveIntensity: 0.7, roughness: matte || 0.4 }));
+    this.waveMat = wet(new THREE.MeshStandardMaterial({ color: '#9b6bff', emissive: '#7c4dff', emissiveIntensity: 0.85, roughness: matte || 0.4 }));
+    const faceMat = wet(new THREE.MeshStandardMaterial({ map: this.atlas.texture, transparent: true, roughness: matte || 0.35 }));
     this.faceMat = faceMat;
     for (let id = 0; id < TILE_COUNT; id++) {
       const group = new THREE.Group();
@@ -901,6 +944,8 @@ export class Table3D {
     for (const a of this.handAnims) if (a.kind === 'tile') until = Math.max(until, this.now - a.t + a.timing.reach + a.timing.carry);
     // 摸到的牌还没从牌山出发
     if (this.heldDraw) until = Math.max(until, this.heldDraw.at);
+    // 衣的海底捞月：牌还没捞上来、飞进手里
+    if (this.scoop) until = Math.max(until, this.now + SCOOP_TIME - this.scoop.t);
     if (this.reveal) until = Math.max(until, this.reveal.fxAt);
     until = Math.max(until, this.fxHold);
     // 白水哩的锁链在变金、崩断
@@ -929,6 +974,9 @@ export class Table3D {
     if (e.type === 'roundStart') {
       this.startDeal(g);
       this.clearRound();
+      this.scoop = null;
+      this.seaSlamTile = null;
+      this.seaDrained = false;
       // 牌河里每张牌歪多少换一套：同一张牌这一局一直歪成一样，下一局换个样子
       this.pondSalt = Math.floor(vary.next() * 2 ** 31);
     }
@@ -982,6 +1030,8 @@ export class Table3D {
         }
       }
     } else if (e.type === 'ability') {
+      // 衣摸到了海底牌：这一张不照常飞，从海里捞上来
+      if (e.ability === 'koromo' && e.text === '海底自摸') this.startScoop(g, e.seat);
       for (const ch of all) {
         if (ch.seat === e.seat) ch.avatar?.setMood('relaxed', 2);
         else ch.avatar?.setMood('surprised', 1.2);
@@ -1184,8 +1234,9 @@ export class Table3D {
       sp.update(dt);
     }
     const lvl = sp?.level ?? 0;
-    if (this.hemi) this.hemi.intensity = HEMI_BASE * (1 - STAGE_DIM * lvl);
-    if (this.keyLight) this.keyLight.intensity = KEY_BASE * (1 - STAGE_DIM * 1.15 * lvl);
+    const night = 1 - SEA_NIGHT * (this.water?.night ?? 0);
+    if (this.hemi) this.hemi.intensity = HEMI_BASE * (1 - STAGE_DIM * lvl) * night;
+    if (this.keyLight) this.keyLight.intensity = KEY_BASE * (1 - STAGE_DIM * 1.15 * lvl) * night;
     const light = this.stageLight;
     if (light) {
       light.intensity = STAGE_LIGHT * lvl;
@@ -1210,6 +1261,12 @@ export class Table3D {
     const fade = path === 'off' || (path === 'self' && seat !== this.lastSync?.view.me);
     this.flights = this.flights.filter((f) => f.tile !== tile);
     this.flights.push({ tile, t: 0, start: obj.group.position.clone(), quat: obj.group.quaternion.clone(), scale: obj.group.scale.x, fade });
+    // 从淹在水里的牌山摸牌：牌出水的地方一小圈水花
+    const p = obj.group.position;
+    if (!fade && this.water?.under(p)) {
+      this.water.drop(p.x, p.z, 0.035, 0.6);
+      this.droplets(p.clone().setY(this.water.level), 8, 2.2, 0.5);
+    }
   }
 
   // 摸牌淡出淡入：牌的材质是大家共用的，淡的时候这张牌换成自己的半透明复制品，淡完换回去
@@ -1225,7 +1282,7 @@ export class Table3D {
       // 换过一次以后 sync 可能又把共用的材质放回来（立直、标红换了材质也一样），以现在的为准重新复制
       if (m.material !== m.userData.fadeMat) {
         (m.userData.fadeMat as THREE.Material | undefined)?.dispose();
-        const own = (m.material as THREE.Material).clone();
+        const own = wetLike(m.material as THREE.Material, (m.material as THREE.Material).clone());
         own.transparent = true;
         m.userData.base = m.material;
         m.userData.fadeMat = own;
@@ -1293,6 +1350,7 @@ export class Table3D {
     const due = dueMarkers(a.motion!, a.hold, a.fired ?? 0, t);
     a.fired = (a.fired ?? 0) + due.length;
     for (const m of due) {
+      if (m.name === 'land') this.splashTile(a.tile, a.riichi ? 1.4 : 1);
       if (m.name === 'land' && a.riichi) this.callFx(a.seat, 'riichi');
       this.onMarker?.(a.seat, a.tile, m.name);
     }
@@ -1330,10 +1388,10 @@ export class Table3D {
       const hitAt = start + slamHitOffset(self || !hand);
       const rinshan = g.rinshanDraw || tw.result.yaku.some((y) => y.name === '岭上开花');
       const lily = this.lastSync?.view.ids[tw.seat] === 'saki' && rinshan ? tw.result.base : null;
-      tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt, started: false, lily };
+      tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt, started: false, lily, sea: tw.tile === this.seaSlamTile };
     }
     const placeAt = standAt !== null && selfTsumo && !tsumoSlam ? standAt + V2_PLACE : null;
-    const slamDone = tsumoSlam ? tsumoSlam.hitAt + (tsumoSlam.lily !== null ? V2_LILY_HOLD : V2_SLAM_HOLD) : 0;
+    const slamDone = tsumoSlam ? tsumoSlam.hitAt + (tsumoSlam.lily !== null ? V2_LILY_HOLD : tsumoSlam.sea ? V2_SEA_HOLD : V2_SLAM_HOLD) : 0;
     const at = Math.max(this.now + (r.wins.length ? (flat ? REVEAL_DELAY_25D : REVEAL_DELAY) : 0.3), standAt !== null ? (placeAt ?? standAt) + V2_HOLD : 0, slamDone);
     const stagger = flat ? TOPPLE_STAGGER_25D : TOPPLE_STAGGER;
     let fxAt = at;
@@ -1345,7 +1403,9 @@ export class Table3D {
     // 初美聚着风和牌：手牌先倒，倒完那张和了牌举起来往桌上砸，砸到的时候才放特效
     const slams: RevealState['slams'] = new Map();
     for (const w of r.wins) {
-      if (!this.galeWin(w.seat)) continue;
+      // 衣从海里捞上来的海底牌：自摸时也举起来砸下去（改良布局走上面那只手砸）
+      const sea = w.from === null && w.tile === this.seaSlamTile && tsumoSlam?.tile !== w.tile;
+      if (!this.galeWin(w.seat) && !sea) continue;
       const n = g.players[w.seat].hand.filter((t) => t !== w.tile).length;
       const wave = (LOOKS[this.lastSync?.view.ids[w.seat] ?? '']?.reveal ?? 'wave') === 'wave';
       const slamAt = at + (wave ? Math.max(0, n - 1) * stagger : 0) + TOPPLE_TIME + 0.12;
@@ -1454,9 +1514,10 @@ export class Table3D {
       const t = this.tiles[id];
       const target = targets.get(id) ?? null;
       t.target = target;
-      const back = view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
+      const moon = this.scoop?.tile === id ? this.moonGlow() : null;
+      const back = moon ? moon.back : view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
       if (back && t.back.material !== back) t.back.material = back;
-      const body = view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
+      const body = moon ? moon.body : view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
       const faceMat = view.glowTiles?.has(id) ? this.kimonFace() : this.faceMat;
       if (faceMat && t.face.material !== faceMat) t.face.material = faceMat;
@@ -1665,12 +1726,232 @@ export class Table3D {
   }
 
   // 透华的治水：水面渐渐铺开，退出时渐渐散掉
+  // 透华的治水：贴着桌布一层静水。衣的海底：海水照牌山剩多少往上涨，最后没过牌山；海底被错开时退下去；
+  // 衣自摸把牌砸下去时海水被打散，一局结束（没砸）时慢慢退潮。两个人同桌就是同一片水
   private syncWater(view: SyncView): void {
-    if (view.stillWater && !this.water) {
-      this.water = new StillWater(this.dim.tableHalf);
+    const sea = view.sea ?? null;
+    const still = !!view.stillWater;
+    if ((still || sea) && !this.water) {
+      this.water = new Water(this.renderer, this.dim.tableHalf, FRAME_TOP);
       this.scene.add(this.water.group);
     }
-    this.water?.setOn(!!view.stillWater);
+    const w = this.water;
+    if (!w) return;
+    const ended = this.lastSync?.g.phase === 'roundEnd' || this.lastSync?.g.phase === 'gameEnd';
+    // 一局结束：要砸的那张还没砸下去就先留着海水，不然慢慢退潮
+    const rv = this.reveal;
+    const id = this.seaSlamTile;
+    const slamPending = id !== null && !!rv && (rv.tsumoSlam?.tile === id || rv.slams.get(id)?.hit === false);
+    const ebb = ended && !(slamPending && !this.seaDrained);
+    if (sea && !this.seaDrained && !ebb) {
+      w.set(STILL_LEVEL + (SEA_TOP - STILL_LEVEL) * sea.level, 1, true);
+      w.setRate(SEA_RISE);
+    } else {
+      w.set(STILL_LEVEL, still || sea ? 1 : 0, !!sea);
+      if (!this.seaDrained) w.setRate(0.8);
+    }
+    // 月亮映在海底牌上方的水面上，海水涨上来才看得清
+    const haitei = sea?.on && !this.scoop && !this.seaDrained && !ended ? sea.haitei : null;
+    const at = haitei !== null && haitei !== undefined ? this.tiles[haitei].target?.pos : null;
+    if (sea && at) {
+      // 映在海底牌前面（往桌子中间一点）的水面上：底下是桌布，月亮看得清
+      const c = at.clone().setY(0);
+      const toward = c.clone().negate().normalize();
+      const side = Math.abs(c.x) > Math.abs(c.z) ? new THREE.Vector3(Math.sign(-c.x), 0, 0) : new THREE.Vector3(0, 0, Math.sign(-c.z));
+      const m = c.addScaledVector(side.lengthSq() ? side : toward, MOON_IN);
+      w.setMoon({ x: m.x, z: m.z, phase: sea.moon / 8, amount: THREE.MathUtils.smoothstep(sea.level, 0.12, 0.55) });
+    } else w.setMoon(null);
+  }
+
+  // 牌落进水里（打进牌河、砸下去）：按牌的样子压下去一块，荡开一圈圈涟漪
+  private splashTile(id: TileId, strength = 1): void {
+    const w = this.water;
+    if (!w?.active) return;
+    const t = this.tiles[id];
+    const at = t.target ?? { pos: t.group.position, quat: t.group.quaternion };
+    // 牌躺着时长边（牌的本地 y）朝哪
+    const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(at.quat);
+    w.splashTile(at.pos.x, at.pos.z, Math.atan2(axis.x, axis.z), strength);
+  }
+
+  // 一把水珠：往上、往外溅，落回水里（加法混合的亮点，像反着光的水滴）
+  private droplets(at: THREE.Vector3, count: number, speed: number, up: number, life = 0.75): void {
+    this.effects.sparks(at, '#8fcfff', {
+      count,
+      life: [life * 0.55, life],
+      vel: (v) => {
+        const a = Math.random() * Math.PI * 2;
+        const r = speed * (0.3 + 0.7 * Math.random());
+        v.set(Math.cos(a) * r, up * (0.5 + Math.random()), Math.sin(a) * r);
+      },
+      gravity: 20,
+      drag: 0.6,
+      size: [0.03, 0.07],
+      stretch: 0.05,
+      jitter: 0.35,
+      hot: '#ffffff',
+    });
+  }
+
+  // 捞上来的牌身上的月光（牌身、牌背换成会自己发光的一份）
+  private moonGlow(): { body: THREE.MeshStandardMaterial; back: THREE.MeshStandardMaterial } {
+    const matte = this.style === '25d' ? 0.62 : 0;
+    this.moonMats ??= {
+      body: wet(new THREE.MeshStandardMaterial({ color: '#f6f1e3', emissive: MOON_GLOW, emissiveIntensity: 0, roughness: matte || 0.35 })),
+      back: wet(new THREE.MeshStandardMaterial({ color: this.colors.back, emissive: MOON_GLOW, emissiveIntensity: 0, roughness: matte || 0.4 })),
+    };
+    return this.moonMats;
+  }
+
+  // 衣摸到海底牌：这一张从海里捞上来（海底捞月）。摸牌时已经开始照常飞了，先停下来，放回牌山上的位置
+  private startScoop(g: Game, seat: number): void {
+    const tile = g.players[seat].drawn;
+    const view = this.lastSync?.view;
+    if (tile === null || !view?.sea || view.sea.seat !== seat || !this.water?.active) return;
+    const obj = this.tiles[tile];
+    const slot = this.wallSlotOf.get(tile);
+    const from = slot ? this.wallPlacement(slot, view.me) : { pos: obj.group.position.clone(), quat: obj.group.quaternion.clone(), scale: obj.group.scale.x };
+    this.flights = this.flights.filter((f) => f.tile !== tile);
+    if (this.heldDraw?.tile === tile) this.heldDraw = null;
+    obj.group.position.copy(from.pos);
+    obj.group.quaternion.copy(from.quat);
+    obj.group.scale.setScalar(from.scale);
+    this.scoop = { tile, seat, t: 0, from, broke: false, drip: SCOOP_WAIT + SCOOP_RISE * 0.6 };
+    this.seaSlamTile = tile;
+    // 月亮的倒影亮一下，水面往这里收一下
+    this.water.drop(from.pos.x, from.pos.z, -0.06, 1.2);
+    this.effects.pulse(from.pos.clone().setY(3), MOON_GLOW, 30, 0.5);
+    if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
+  }
+
+  private animateScoop(dt: number): void {
+    const sc = this.scoop;
+    if (!sc) return;
+    sc.t += dt;
+    const tile = this.tiles[sc.tile];
+    const dest = tile.target;
+    const glow = this.moonGlow();
+    if (!dest || sc.t >= SCOOP_TIME) {
+      this.scoop = null;
+      glow.body.emissiveIntensity = glow.back.emissiveIntensity = 0;
+      if (dest) {
+        tile.group.position.copy(dest.pos);
+        tile.group.quaternion.copy(dest.quat);
+        tile.group.scale.setScalar(dest.scale);
+      }
+      if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
+      return;
+    }
+    this.held.add(sc.tile);
+    const g = tile.group;
+    const from = sc.from;
+    const level = this.water?.level ?? 0;
+    const smooth = (x: number) => x * x * (3 - 2 * x);
+    // 浮上来停在海底牌正上方（往桌子中间一点），离水面两个多牌高；海底在对面牌山时画面上会顶出上沿，再往中间挪
+    const apex = from.pos.clone().lerp(new THREE.Vector3(0, from.pos.y, 0), 0.08);
+    apex.y = Math.max(level, from.pos.y) + 2.3;
+    const top = (TILE_H / 2) * Math.max(from.scale, dest.scale) * 1.15;
+    for (let i = 0; i < 8 && apex.clone().setY(apex.y + top).project(this.camera).y > 0.82; i++) apex.lerp(new THREE.Vector3(0, apex.y, 0), 0.15);
+    // 半路转过来：自己捞的牌面朝着自己（和进了手里一样），别人捞的照她手里的朝向（背对别家）
+    const upright = dest.quat;
+    let t = sc.t;
+    let light = 0;
+    if (t < SCOOP_WAIT) {
+      // 海底牌在水里微微一颤，月光聚过来
+      const k = t / SCOOP_WAIT;
+      g.position.copy(from.pos).add(new THREE.Vector3(Math.sin(t * 60) * 0.02 * k, 0.05 * k, 0));
+      g.quaternion.copy(from.quat);
+      g.scale.setScalar(from.scale);
+      light = 0.8 * k;
+    } else if ((t -= SCOOP_WAIT) < SCOOP_RISE) {
+      const k = t / SCOOP_RISE;
+      const e = smooth(k);
+      g.position.lerpVectors(from.pos, apex, e);
+      g.quaternion.slerpQuaternions(from.quat, upright, smooth(Math.min(1, k * 1.2)));
+      g.scale.setScalar(THREE.MathUtils.lerp(from.scale, Math.max(from.scale, dest.scale) * 1.15, e));
+      light = 0.8 + 0.7 * e;
+      // 破水而出：水面隆起一圈、水花往上溅、月亮的倒影碎掉
+      if (!sc.broke && g.position.y - (TILE_H / 2) * g.scale.x > level) {
+        sc.broke = true;
+        const p = g.position.clone().setY(level);
+        this.water?.drop(p.x, p.z, 0.16, 0.9);
+        this.water?.setMoon(null);
+        this.droplets(p, 40, 2.6, 7, 0.9);
+        this.effects.flash(p.clone().setY(level + 0.8), MOON_GLOW, 5, 0.45);
+        this.effects.ring(p.clone().setY(level), '#a8dcff', 3, 0.6, 0.7);
+      }
+    } else if ((t -= SCOOP_RISE) < SCOOP_HOLD) {
+      // 停在半空，慢慢转正，身上的水往下淌，一滴滴落回海里
+      const k = t / SCOOP_HOLD;
+      g.position.copy(apex).add(new THREE.Vector3(0, Math.sin(k * Math.PI) * 0.12, 0));
+      g.quaternion.copy(upright);
+      g.scale.setScalar(Math.max(from.scale, dest.scale) * 1.15);
+      light = 1.5 - 0.4 * k;
+    } else {
+      t -= SCOOP_HOLD;
+      const k = Math.min(1, t / SCOOP_FLY);
+      const e = k * k * (3 - 2 * k);
+      g.position.lerpVectors(apex, dest.pos, e);
+      g.position.y += Math.sin(k * Math.PI) * 0.6;
+      g.quaternion.copy(upright).slerp(dest.quat, e);
+      g.scale.setScalar(THREE.MathUtils.lerp(Math.max(from.scale, dest.scale) * 1.15, dest.scale, e));
+      light = 1.1 * (1 - e);
+    }
+    glow.body.emissiveIntensity = light * 0.55;
+    glow.back.emissiveIntensity = light * 0.75;
+    // 出水以后身上的水一滴滴往下掉，落到水面上一个个小涟漪
+    if (sc.broke && sc.t >= sc.drip && sc.t < SCOOP_TIME - SCOOP_FLY * 0.5) {
+      sc.drip = sc.t + 0.07 + Math.random() * 0.06;
+      const p = g.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, -(TILE_H / 2) * g.scale.x, (Math.random() - 0.5) * 0.3));
+      this.effects.sparks(p, '#9fd6ff', { count: 2, life: [0.3, 0.45], vel: (v) => v.set((Math.random() - 0.5) * 0.4, -1, (Math.random() - 0.5) * 0.4), gravity: 24, drag: 0.2, size: [0.03, 0.05], stretch: 0.06, jitter: 0.05, hot: '#ffffff' });
+      const fall = Math.sqrt(Math.max(0, 2 * (p.y - level) / 24));
+      this.effects.later(fall, () => this.water?.drop(p.x, p.z, -0.02, 0.25));
+    }
+  }
+
+  // 衣的海底牌扣进海里那一下：水面被按下去一块，溅起一小圈水珠，画面轻轻一震
+  private seaPress(seat: number, at: THREE.Vector3, scale = 1): void {
+    this.shake = Math.max(this.shake, 0.18);
+    const w = this.water;
+    if (w?.active) {
+      w.drop(at.x, at.z, -0.14 * scale, 0.9 * scale);
+      this.droplets(at.clone().setY(w.level), 18, 1.8 * scale, 3.2, 0.55);
+    }
+    this.onSlam?.(seat, null, 'press');
+  }
+
+  // 衣自摸，捞上来的海底牌砸到桌上：海水一下子被打散，一圈大浪荡出去，水花冠一样溅起来，水退成薄薄一层
+  private seaSlam(at: THREE.Vector3, seat: number): void {
+    this.seaDrained = true;
+    this.onSeaSlam?.(seat);
+    const w = this.water;
+    if (w) {
+      // 砸下去那一下把海水推开：半秒左右退干净
+      w.setRate(0.22);
+      w.set(STILL_LEVEL, 1, true);
+      w.setMoon(null);
+      w.drop(at.x, at.z, -0.5, 2.6);
+    }
+    const p = at.clone().setY(Math.max(0.2, (w?.level ?? 0) * 0.6));
+    this.effects.sparks(p, '#9fd6ff', {
+      count: 110,
+      life: [0.5, 1.05],
+      vel: (v) => {
+        const a = Math.random() * Math.PI * 2;
+        const r = 3 + Math.random() * 5;
+        v.set(Math.cos(a) * r, 6 + Math.random() * 7, Math.sin(a) * r);
+      },
+      gravity: 24,
+      drag: 0.7,
+      size: [0.04, 0.1],
+      stretch: 0.06,
+      jitter: 0.6,
+      hot: '#ffffff',
+    });
+    this.effects.ring(at.clone().setY(0.05), '#a8dcff', 8, 0.9);
+    this.effects.flash(at.clone().setY(0.8), '#e6f3ff', 7, 0.45);
+    this.effects.pulse(at.clone().setY(2.5), MOON_GLOW, 70, 0.35);
+    this.shake = Math.max(this.shake, 1);
   }
 
   // 初美的里鬼门：风的浓淡，和东北中间那张牌的紫光
@@ -1710,14 +1991,16 @@ export class Table3D {
     if (this.kimonFaceMat) return this.kimonFaceMat;
     const atlas = new FaceAtlas((kind, red) => (kind >= 27 && kind <= 30 ? glowGlyph(kind, KIMON_INK) : faceSvg(kind, red)));
     void atlas.draw();
-    this.kimonFaceMat = new THREE.MeshStandardMaterial({
-      map: atlas.texture,
-      transparent: true,
-      roughness: this.faceMat?.roughness ?? 0.35,
-      emissive: '#ffffff',
-      emissiveMap: atlas.texture,
-      emissiveIntensity: 0.35,
-    });
+    this.kimonFaceMat = wet(
+      new THREE.MeshStandardMaterial({
+        map: atlas.texture,
+        transparent: true,
+        roughness: this.faceMat?.roughness ?? 0.35,
+        emissive: '#ffffff',
+        emissiveMap: atlas.texture,
+        emissiveIntensity: 0.35,
+      }),
+    );
     return this.kimonFaceMat;
   }
 
@@ -1768,9 +2051,17 @@ export class Table3D {
       from: self ? undefined : { pos: tile.group.position.clone(), quat: tile.group.quaternion.clone(), scale: tile.group.scale.x },
       near: self,
       hand: this.lastSync?.view.slamHand !== false,
-      onPress: (at) => this.slamPress(ts.seat, at, to.scale),
-      onCharge: (at) => this.slamFx.charge(at, to.scale, SLAM_TIMING.charge),
-      onHit: (at) => this.slamImpact(ts.seat, ts.tile, at, ts.lily),
+      onPress: (at) => (ts.sea ? this.seaPress(ts.seat, at, to.scale) : this.slamPress(ts.seat, at, to.scale)),
+      // 衣的海底牌：立起来时聚的是月光
+      onCharge: (at) => this.slamFx.charge(at, to.scale, SLAM_TIMING.charge, ts.sea ? MOON_GLOW : undefined),
+      onHit: (at) => {
+        if (!ts.sea) return this.slamImpact(ts.seat, ts.tile, at, ts.lily);
+        // 衣的海底牌：不扬灰，炸开一阵蓝色的漩涡，把海水打散
+        const floor = at.clone().setY(0.02);
+        this.slamFx.swirl(floor, to.scale, 0.4, '#8fd0ff');
+        this.seaSlam(at, ts.seat);
+        this.reveal?.hops.push({ at: this.now, x: floor });
+      },
     });
     ts.hitAt = run.hitAt;
   }
@@ -1933,9 +2224,12 @@ export class Table3D {
         g.position.copy(to.pos);
         g.quaternion.copy(to.quat);
         g.scale.setScalar(to.scale);
-        this.galeBurst(to.pos.clone());
-        this.effects.ring(to.pos.clone().setY(0.05), '#ffffff', 3.5, 0.45);
-        this.effects.flash(to.pos.clone().setY(0.6), '#f6d8ff', 6, 0.35);
+        if (id === this.seaSlamTile) this.seaSlam(to.pos.clone(), e.seat);
+        else {
+          this.galeBurst(to.pos.clone());
+          this.effects.ring(to.pos.clone().setY(0.05), '#ffffff', 3.5, 0.45);
+          this.effects.flash(to.pos.clone().setY(0.6), '#f6d8ff', 6, 0.35);
+        }
         rv.hops.push({ at: this.now, x: to.pos.clone() });
       }
     }
@@ -2014,7 +2308,7 @@ export class Table3D {
     if (!levels) this.fadeMats.set(m, (levels = []));
     let f = levels[k];
     if (!f) {
-      f = m.clone();
+      f = wetLike(m, m.clone());
       f.transparent = true;
       f.opacity = k / FADE_STEPS;
       // 越淡越发白：幽灵是苍白地淡掉；不然金色牌背半透明盖在蓝桌布上会混成一块发暗的泥色
@@ -2056,8 +2350,8 @@ export class Table3D {
       this.sketch = {
         on: false,
         atlas,
-        body: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: matte || 0.6 }),
-        back: new THREE.MeshStandardMaterial({ color: '#ffffff', map: hatchTexture(), roughness: 0.8 }),
+        body: wet(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: matte || 0.6 })),
+        back: wet(new THREE.MeshStandardMaterial({ color: '#ffffff', map: hatchTexture(), roughness: 0.8 })),
         paper: paperTexture(),
         edges,
         normal: {
@@ -2439,7 +2733,7 @@ export class Table3D {
       const glow = (m: THREE.MeshStandardMaterial, k: number) => {
         m.emissive.set('#ff6a12');
         m.emissiveIntensity = k;
-        return m;
+        return wet(m);
       };
       this.burnMats = {
         body: glow(new THREE.MeshStandardMaterial({ color: '#ffd8a6', roughness: 0.5 }), 0.85),
@@ -2882,7 +3176,7 @@ export class Table3D {
 
   private glassBack: THREE.Material | null = null;
   private glassBackMat(): THREE.Material {
-    this.glassBack ??= new THREE.MeshStandardMaterial({ color: '#ffc4d4', emissive: '#ff8fb0', emissiveIntensity: 0.5, roughness: 0.3 });
+    this.glassBack ??= wet(new THREE.MeshStandardMaterial({ color: '#ffc4d4', emissive: '#ff8fb0', emissiveIntensity: 0.5, roughness: 0.3 }));
     return this.glassBack;
   }
 
@@ -2928,8 +3222,8 @@ export class Table3D {
       this.syncProjMap();
       return gr;
     }
-    this.projBackMat ??= new THREE.MeshBasicMaterial({ color: '#ffe1ea', transparent: true, opacity: 0.42, depthWrite: false, toneMapped: false });
-    this.projFaceMat ??= new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false });
+    this.projBackMat ??= wet(new THREE.MeshBasicMaterial({ color: '#ffe1ea', transparent: true, opacity: 0.42, depthWrite: false, toneMapped: false }));
+    this.projFaceMat ??= wet(new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false }));
     this.syncProjMap();
     gr = new THREE.Group();
     const back = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W, TILE_H), this.projBackMat);
@@ -3232,7 +3526,7 @@ export class Table3D {
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
       for (const w of rv.wins) {
         const slam = rv.slams.has(w.tile) ? this.tiles[w.tile].group.position.clone() : null;
-        this.winFx(w.seat, w.tsumo, slam ? '#c870ff' : FX_GOLD, slam);
+        this.winFx(w.seat, w.tsumo, slam ? (w.tile === this.seaSlamTile ? MOON_GLOW : '#c870ff') : FX_GOLD, slam);
       }
     }
     this.animateSlams(rv);
@@ -3277,6 +3571,8 @@ export class Table3D {
 
   // 画一帧。改良布局（ortho）时自己的手牌另外用没有透视的镜头画在最上面一层
   private draw(): void {
+    // 平静的水面照出牌：先从水面下对称的地方画一张倒影
+    this.water?.renderMirror(this.scene, this.camera);
     const moving = this.orthoMoving();
     const ids = this.orthoHand().filter((id) => !moving.includes(id));
     if (!ids.length && !moving.length) {
@@ -3319,7 +3615,11 @@ export class Table3D {
       g.scale.setScalar(keep.scale * k);
       return keep;
     });
+    // 单独一层的自己手牌不泡水（浮在眼前，水涨上来也看得清）
+    const sea = SEA.uSea.value.z;
+    SEA.uSea.value.z = 0;
     r.render(this.scene, this.orthoCam);
+    SEA.uSea.value.z = sea;
     flying.forEach((g, i) => {
       g.position.copy(saved[i].pos);
       g.scale.setScalar(saved[i].scale);
@@ -3372,6 +3672,9 @@ export class Table3D {
     const me = sync.view.me;
     const hand = sync.g.players[me].hand;
     const out = this.flights.filter((f) => hand.includes(f.tile) && (!f.fade || f.t >= DRAW_FADE_OUT)).map((f) => f.tile);
+    // 衣捞上来的海底牌：飞进手里那一段画在手牌这一层
+    const sc = this.scoop;
+    if (sc && sc.seat === me && sc.t >= SCOOP_TIME - SCOOP_FLY && hand.includes(sc.tile)) out.push(sc.tile);
     const hk = this.himekoDeal;
     if (hk?.seat === me) for (const t of hk.pending) if (this.tiles[t].group.visible && !out.includes(t)) out.push(t);
     return out;
@@ -3494,7 +3797,12 @@ export class Table3D {
         if (el.style.opacity !== veil) el.style.opacity = veil;
       }
     }
-    this.water?.update(dt);
+    if (this.water) {
+      const key = this.keyLight;
+      if (key) this.water.setKeyLight(key.position, key.color, key.intensity);
+      this.water.update(dt, this.camera.position);
+    }
+    this.animateScoop(dt);
     this.updateChains(dt);
     this.updateGhosts();
     this.updateGlows();
@@ -3632,7 +3940,7 @@ function stickMesh(): THREE.Mesh {
     ctx.fill();
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
-    stickMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.4 });
+    stickMat = wet(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.4 }));
   }
   const m = new THREE.Mesh(new RoundedBoxGeometry(STICK_LEN, 0.16, 0.36, 2, 0.07), stickMat);
   m.castShadow = true;
