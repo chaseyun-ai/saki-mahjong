@@ -156,6 +156,59 @@ export function playSlam(): void {
   src.start(now);
 }
 
+// 天江衣的海底捞月砸进海里：一记闷响，“哗”地一下水被拍开（滤过的噪声，高频很快收掉），后面一串零零落落的水珠落回水面
+export function playSplash(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(120, now);
+  osc.frequency.exponentialRampToValueAtTime(38, now + 0.25);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.5, now + 0.008);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+  osc.connect(gain).connect(a.destination);
+  osc.start(now);
+  osc.stop(now + 0.42);
+  // 水被拍开：噪声从亮到暗、慢慢收掉
+  const dur = 0.9;
+  const len = Math.floor(a.sampleRate * dur);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(5200, now);
+  filter.frequency.exponentialRampToValueAtTime(500, now + dur);
+  filter.Q.value = 0.6;
+  const g2 = a.createGain();
+  g2.gain.setValueAtTime(0.0001, now);
+  g2.gain.exponentialRampToValueAtTime(0.55, now + 0.015);
+  g2.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  src.connect(filter).connect(g2).connect(a.destination);
+  src.start(now);
+  // 水珠落回来：一个个往上滑的短音
+  for (let i = 0; i < 9; i++) {
+    const at = now + 0.25 + Math.random() * 0.7;
+    const f = 900 + Math.random() * 1600;
+    const o = a.createOscillator();
+    const gd = a.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f, at);
+    o.frequency.exponentialRampToValueAtTime(f * 1.8, at + 0.06);
+    gd.gain.setValueAtTime(0.0001, at);
+    gd.gain.exponentialRampToValueAtTime(0.05 * (1 - i / 12), at + 0.004);
+    gd.gain.exponentialRampToValueAtTime(0.0001, at + 0.08);
+    o.connect(gd).connect(a.destination);
+    o.start(at);
+    o.stop(at + 0.1);
+  }
+}
+
 // 宫永咲的岭上开花：百合开出来的那一下，一串很轻的高音铃往上走，后面拖一阵风声（花瓣飘起来）。big 0–1：和得越大铃越多、风越长
 export function playLily(big = 0): void {
   const a = audio();
