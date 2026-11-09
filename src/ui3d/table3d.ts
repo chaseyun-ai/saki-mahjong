@@ -3104,16 +3104,14 @@ export class Table3D {
 
   // 画一帧。改良布局（ortho）时自己的手牌另外用没有透视的镜头画在最上面一层
   private draw(): void {
-    const ids = this.orthoHand();
-    if (!ids.length) {
+    const moving = this.orthoMoving();
+    const ids = this.orthoHand().filter((id) => !moving.includes(id));
+    if (!ids.length && !moving.length) {
       this.renderer.render(this.scene, this.camera);
       return;
     }
-    // 自己摸的牌：整段飞行都画在手牌这一层（没有透视）。不然飞的时候用主镜头画、看得到侧面，
-    // 落进手里那一下换成没有透视的样子，看起来像牌在手里转了一下
     const me = this.lastSync?.view.me ?? 0;
-    const hand = this.lastSync?.g.players[me].hand ?? [];
-    const flying = this.flights.filter((f) => !f.fade && hand.includes(f.tile)).map((f) => this.tiles[f.tile].group);
+    const flying = moving.map((id) => this.tiles[id].group);
     const groups = [...ids.map((id) => this.tiles[id].group), ...flying];
     for (const g of groups) g.traverse((o) => o.layers.set(1));
     // 白水哩的锁链压在手牌上面：手牌那一层画完以后再用主镜头单独画一层（不然被手牌盖住，横着压过手牌的那条整条看不见）。
@@ -3172,20 +3170,38 @@ export class Table3D {
   // 从牌山飞过来的、打出去正在飞的、配牌时还在牌山上的都不算，照常用主镜头画。
   // 倒牌时还没开始倒的留在这一层，开始倒的那一刻换回主镜头，从眼前倒回桌上
   private orthoHand(): TileId[] {
-    if (!this.v2 || !this.view25.ortho || !this.lastSync) return [];
-    const me = this.lastSync.view.me;
-    const row = this.handRows[me];
-    if (!row) return [];
-    const rv = this.reveal;
-    // 倒牌前在桌上立起来以后，自己的手牌都回到桌上（主镜头）画
-    if (rv && ((rv.standAt !== null && this.now >= rv.standAt) || this.now >= rv.at)) return [];
+    const sync = this.lastSync;
+    const row = sync && this.handRows[sync.view.me];
+    if (!this.orthoOn() || !sync || !row) return [];
     const flying = new Set(this.flights.map((f) => f.tile));
-    return this.lastSync.g.players[me].hand.filter((id) => {
+    return sync.g.players[sync.view.me].hand.filter((id) => {
       const t = this.tiles[id];
       if (!t.group.visible || !t.target || flying.has(id)) return false;
       // 自己坐在 +z 那边，手牌那一排的 z 是 row.z：目标和现在的位置都在这一排上才算
       return Math.abs(t.target.pos.z - row.z) < 0.6 && Math.abs(t.group.position.z - row.z) < 0.6;
     });
+  }
+
+  private orthoOn(): boolean {
+    if (!this.v2 || !this.view25.ortho || !this.lastSync || !this.handRows[this.lastSync.view.me]) return false;
+    const rv = this.reveal;
+    // 倒牌前在桌上立起来以后，自己的手牌都回到桌上（主镜头）画
+    return !(rv && ((rv.standAt !== null && this.now >= rv.standAt) || this.now >= rv.at));
+  }
+
+  // 改良布局（ortho）：正往手里来的自己的牌：摸牌飞过来的（摸牌路径关掉时是在手里淡入的那一段）、
+  // 姬子配牌从天上砸下来的。整段都画在手牌这一层（draw 里挪到手牌那一排的远近、按远近缩放，
+  // 画面上的位置、大小和主镜头画的一样）。不然先用主镜头画、看得到侧面，到了手里那一下换成没有透视的样子，
+  // 看起来像牌在手里转了一下
+  private orthoMoving(): TileId[] {
+    const sync = this.lastSync;
+    if (!this.orthoOn() || !sync) return [];
+    const me = sync.view.me;
+    const hand = sync.g.players[me].hand;
+    const out = this.flights.filter((f) => hand.includes(f.tile) && (!f.fade || f.t >= DRAW_FADE_OUT)).map((f) => f.tile);
+    const hk = this.himekoDeal;
+    if (hk?.seat === me) for (const t of hk.pending) if (this.tiles[t].group.visible && !out.includes(t)) out.push(t);
+    return out;
   }
 
   // 新结算：这一家手牌（倒下的或者还立着的）在画面上的中心，相对牌桌容器的像素；没有牌时 null
