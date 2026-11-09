@@ -8237,6 +8237,12 @@ canvas.rii-sky {
   top: 12px;
 }
 
+/* 白水哩测试对局：技能框里带着换样子、试结算那几排，很高，放左上角会压住下面上家的头像。
+   挪到头像那一列的右边（和原版布局一样压着桌子左上角） */
+.stage3d.flat.v2 .hud .ability-panel.foresight-only:has(.rii-looks) {
+  left: calc(30px + var(--pw));
+}
+
 /* 横过来的手机：东西都缩小；理和鸣切、挂机左边放不下，还是放右下角 */
 @media (max-height: 500px) {
   .stage3d.flat.v2 .seat-frame.left,

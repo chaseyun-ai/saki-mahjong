@@ -83,6 +83,10 @@ export const HAND_STYLES_V2: Record<string, Partial<View25>> = {
 const V2_HAND_OUT = 0.9;
 // 改良布局：自己的手牌下沿可以出画面多少（牌高的几分之几），像雀魂那样手牌贴着画面底边
 const V2_HAND_CLIP = 0.12;
+// 改良布局：白水哩番缚时手牌扣下去，扣着的牌中心比原来的牌脚往里挪多少（半张牌高的几倍）；
+// 投影比平常多往上浮多少（牌高的几倍），浮在扣着的那一排上面、不和它叠在一起
+const V2_COVER_IN = 0.6;
+const V2_GHOST_UP = 0.45;
 const WALL_PITCH = TILE_W + 0.02;
 // 2.5D 时别家的第一组副露至少能摆到这里（座位本地 x，牌山末端附近），镜头取景按这个算
 const MELD_MIN_25D = 8 * (TILE_W + GAP) + 0.5;
@@ -1491,7 +1495,7 @@ export class Table3D {
       gr.position.copy(at.pos);
       gr.quaternion.copy(at.quat);
       // 浮在扣着的那一排的正上方，一张对一张
-      gr.translateY(TILE_H * (0.35 + 0.67 * e) * at.scale);
+      gr.translateY(TILE_H * (0.35 + (0.67 + (this.v2 ? V2_GHOST_UP : 0)) * e) * at.scale);
       if (riiLook.proj === 'out') gr.rotateY(Math.PI);
       gr.scale.setScalar(at.scale);
     }
@@ -2121,9 +2125,11 @@ export class Table3D {
       if (t !== null && p.hand.includes(t)) {
         if (cover) {
           // 番缚：和配牌理牌那一下一样，整排牌往前一倒扣下去（只绕着横轴转，不翻面不打转），上方浮起一排投影牌面
-          // （投影照平常手牌的样子摆，改良布局时也转过来正对镜头）
+          // （投影照平常手牌的样子摆，改良布局时也转过来正对镜头）。改良布局的手牌贴着画面底边，
+          // 往前倒会掉出画面，改成扣在原地往里一点（扣着的那一排在原来牌脚的里面，投影浮在它上方）
           this.ghostAt.set(t, this.toWorld(s, me, x, y, hz, r, yaw, hs * k));
-          out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * hs, hz + (TILE_H / 2) * hs, COVER_TILT, 0, hs));
+          const lie = this.v2 ? -(TILE_H / 2) * hs * V2_COVER_IN : (TILE_H / 2) * hs;
+          out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * hs, hz + lie, COVER_TILT, 0, hs));
         } else out.set(t, this.toWorld(s, me, x, y + lift, hz, r, yaw, hs * k));
       }
       x += step;
@@ -3091,8 +3097,13 @@ export class Table3D {
     }
     const groups = ids.map((id) => this.tiles[id].group);
     for (const g of groups) g.traverse((o) => o.layers.set(1));
+    // 白水哩的锁链压在手牌上面：手牌那一层画完以后再用主镜头单独画一层（不然被手牌盖住，横着压过手牌的那条整条看不见）
+    const over = this.chains.filter((c): c is ChainFx => !!c && !c.vanished).map((c) => c.group);
+    for (const g of over) g.traverse((o) => o.layers.set(2));
     this.scene.traverse((o) => {
-      if ((o as THREE.Light).isLight) o.layers.enable(1);
+      if (!(o as THREE.Light).isLight) return;
+      o.layers.enable(1);
+      o.layers.enable(2);
     });
     this.renderer.render(this.scene, this.camera);
     this.syncOrtho();
@@ -3105,10 +3116,18 @@ export class Table3D {
     const bg = this.scene.background;
     this.scene.background = null;
     r.render(this.scene, this.orthoCam);
+    if (over.length) {
+      r.clearDepth();
+      const mask = this.camera.layers.mask;
+      this.camera.layers.set(2);
+      r.render(this.scene, this.camera);
+      this.camera.layers.mask = mask;
+    }
     this.scene.background = bg;
     r.autoClear = auto;
     r.shadowMap.autoUpdate = true;
     for (const g of groups) g.traverse((o) => o.layers.set(0));
+    for (const g of over) g.traverse((o) => o.layers.set(0));
   }
 
   // 改良布局（ortho）：现在要单独画的自己的手牌：在手牌那一排上的（理牌时左右挪也算）；
