@@ -1,5 +1,5 @@
 import './himeko2d.css';
-import { beatFinal, beatHit, beatLength } from './himekoBeat';
+import { HIMEKO_SPEED, beatFinal, beatHit, beatLength } from './himekoBeat';
 
 // 鹤田姬子拿到钥匙的那一局（2D 牌桌）：和 3D 一样，配牌时她的牌东一张西一张错落着（himekoBeat.ts）裹着火、拖着火尾，
 // 从画面正上方的天上竖着砸进她手里（牌不打转），最后一张砸下来最重（推开一圈光、牌桌一震）；理完牌一团火从她右手边烧到左手边。
@@ -7,13 +7,17 @@ import { beatFinal, beatHit, beatLength } from './himekoBeat';
 // 用 translate/rotate/scale 摆（这样牌和火尾永远对得上），牌出现、发橙光、被火烧到时映橙色是 CSS 动画
 // （himeko2d.css，牌桌每次重画后 apply() 用负的 animation-delay 接着放）。
 
+// 时间都照 HIMEKO_SPEED 放快（himeko2d.css 里两段动画的长度在 apply() 里跟着改）
 const T = {
-  open: 0.2, // 她这一段从开始算第几秒起（之后照 himekoBeat.ts 的节奏落地）
-  drop: 0.32, // 一张牌从天上砸到手里要多久（himeko2d.css 的 hk-fall：0.8 秒里前 40%）
-  light: 0.2, // 最后一张之后再停多久点火（节奏里已经停过 settle）
-  sweep: 1.0, // 火从右烧到左
-  burn: 1.0, // 火头过去以后还烧多久
+  open: 0.2 / HIMEKO_SPEED, // 她这一段从开始算第几秒起（之后照 himekoBeat.ts 的节奏落地）
+  drop: 0.32 / HIMEKO_SPEED, // 一张牌从天上砸到手里要多久（himeko2d.css 的 hk-fall 前 40%）
+  light: 0.2 / HIMEKO_SPEED, // 最后一张之后再停多久点火（节奏里已经停过 settle）
+  sweep: 1.0 / HIMEKO_SPEED, // 火从右烧到左
+  burn: 1.0 / HIMEKO_SPEED, // 火头过去以后还烧多久
 };
+// himeko2d.css 里 hk-fall、hk-burn 原来的长度（秒）
+const CSS_FALL = 0.8;
+const CSS_BURN = 0.9;
 
 // 流星从哪个方向来：画面正上方，竖着砸下来
 const DIR = { x: 0, y: -1 };
@@ -222,6 +226,7 @@ export class Himeko2D {
       const fall = this.hitAt(i) - T.drop - t;
       const burn = this.fireAt + (1 - i / Math.max(1, this.spots.length - 1)) * T.sweep - t;
       el.style.animationDelay = `${fall.toFixed(3)}s, ${burn.toFixed(3)}s`;
+      el.style.animationDuration = `${(CSS_FALL / HIMEKO_SPEED).toFixed(3)}s, ${(CSS_BURN / HIMEKO_SPEED).toFixed(3)}s`;
     });
     if (this.calm) return;
     this.place(t);

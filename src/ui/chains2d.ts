@@ -1,4 +1,4 @@
-import { BREAK, ChainOutcome, FADE, FAINT, GOLD, LOCK, LinkSpot, QUICK_LOCK, chainLinks, chainPlan, clamp01, dissolveAt, easeIn, easeInOut, easeOut, lockTime, outcomeTime } from './riiChainPlan';
+import { BREAK, ChainEnd, FAINT, GOLD, LOCK, LinkSpot, QUICK_LOCK, chainLinks, chainPlan, clamp01, dissolveAt, easeIn, easeInOut, easeOut, lockTime, outcomeTime } from './riiChainPlan';
 import { ChainLook, chainLook } from './riiLook';
 
 // 白水哩的番缚（2D 牌桌）：同 3D 一样的锁链画在一张盖住整个画面的 canvas 上（只画在牌桌里，不挡点击）。
@@ -24,7 +24,7 @@ interface Spark {
   twinkle?: number; // 一闪一闪（崩断的粒子）
 }
 
-type Stage = { kind: 'lock'; t0: number; quick: boolean } | { kind: ChainOutcome; t0: number; shown: number };
+type Stage = { kind: 'lock'; t0: number; quick: boolean } | { kind: ChainEnd; t0: number; shown: number };
 
 interface Built {
   links: LinkSpot[];
@@ -97,7 +97,7 @@ export class Chains2D {
     this.kick();
   }
 
-  finish(seat: number, kind: ChainOutcome, delay = 0): void {
+  finish(seat: number, kind: ChainEnd, delay = 0): void {
     const sc = this.seats.get(seat);
     if (!sc) return;
     const go = () => {
@@ -113,7 +113,7 @@ export class Chains2D {
   // 正在画的那个座位的锁链样子
   private look: ChainLook = chainLook();
 
-  remainingMs(seat: number, kind: ChainOutcome): number {
+  remainingMs(seat: number, kind: ChainEnd): number {
     return this.seats.has(seat) ? outcomeTime(kind) * 1000 : 0;
   }
 
@@ -257,12 +257,6 @@ export class Chains2D {
         const j = since > 0 ? Math.exp(-since * 7) * Math.sin(since * 26) * link * 0.12 * Math.exp(-Math.abs(l.s - c.contactS) / (r.w * 0.4)) : 0;
         this.link(sx(l) + l.t[1] * j, sy(l) + l.t[0] * j, l.t[0], -l.t[1], link, k, op, 0, 0);
       });
-      return;
-    }
-    if (st.kind === 'fade') {
-      const op = FAINT * (1 - clamp01(t / FADE));
-      draw((l, k) => this.link(sx(l), sy(l), l.t[0], -l.t[1], link, k, op, 0, 0));
-      if (t > FADE) sc.done = true;
       return;
     }
     if (st.kind === 'key') {

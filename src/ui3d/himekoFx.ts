@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { HIMEKO_SPEED } from '../ui/himekoBeat';
 
 // 鹤田姬子拿到钥匙的那一局（3D、2.5D）：
 // 1. 配牌：她的每一张牌不从牌山飞过来，而是裹着一团火、拖着长长的橙色火尾，像流星一样从正上方的天上竖着砸进手里
@@ -10,12 +11,13 @@ import * as THREE from 'three';
 // 手法参考 Humpalumps/ultra-elements（MIT）：火尾是“白芯 + 橙色光晕”沿轴向朝镜头展开的光带，
 // 火是按出生时刻解析地算轨迹的粒子（温度从白热冷成暗红），见 THIRD_PARTY_NOTICES.md
 
+// 时间都照 HIMEKO_SPEED 放快
 export const HIMEKO_FX = {
-  drop: 0.34, // 流星从天上落到手里要多久（秒）；位置照 1 - s² 走（越落越快）
-  fade: 0.35, // 落地以后火尾收细、淡掉要多久
+  drop: 0.34 / HIMEKO_SPEED, // 流星从天上落到手里要多久（秒）；位置照 1 - s² 走（越落越快）
+  fade: 0.35 / HIMEKO_SPEED, // 落地以后火尾收细、淡掉要多久
   fall: 24, // 流星从多高（竖着的轨迹）落下来
-  sweep: 1.05, // 火头从右烧到左要多久
-  burn: 1.1, // 火头过去以后火还烧多久
+  sweep: 1.05 / HIMEKO_SPEED, // 火头从右烧到左要多久
+  burn: 1.1 / HIMEKO_SPEED, // 火头过去以后火还烧多久
 };
 
 const BEAM_MAX = 32;

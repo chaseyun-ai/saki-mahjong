@@ -5,7 +5,7 @@ import { riiBind } from '../abilities/rii';
 // 这里是共用的布局和时间。锁链的样子（几种可以挑）在 ui/riiLook.ts。
 // 缚几番就有几条锁链从四面八方射过来，一条条横七竖八地压在手牌上，两头都伸到画面外；
 // 这一局和出的番数够了：锁链变金，碎成金色碎片冲上天，天空放晴，钥匙缓缓落下来；
-// 没和成：锁链一节节像粒子一样消散，剩下的化成光冲上天；和了但番数不够：锁链悄悄淡掉。
+// 没和成、和了但番数不够：锁链绷紧发白，一节节碎成粒子散掉。
 
 // 一条锁链：压在手牌的哪里（x：手牌宽度的比例，0 是正中），从哪个方向射过来（和水平线的夹角），
 // 离牌面多远（z：牌厚度的比例，几条错开一点不打架）
@@ -85,7 +85,6 @@ export const goldTime = () => skyStart() + skyTime();
 // 崩断：先绷紧发白、抖一下，然后一节节碎成细细的粒子散掉（dissolve 秒内随机轮到每一节，
 // 每一节 crumble 秒里边缩小边碎开），粒子慢慢飘开、淡掉（drift 秒），不往天上冲
 export const BREAK = { show: 0.3, crack: 0.3, dissolve: 1.1, crumble: 0.22, drift: 1.2 };
-export const FADE = 0.8;
 
 // 别人的哩番缚没人看得见（只有她自己），所以结算时才现出锁链：快一点锁上
 export const QUICK_LOCK = 0.5;
@@ -94,12 +93,15 @@ export function lockTime(n: number): number {
   return (Math.max(1, n) - 1) * LOCK.stagger + LOCK.fly + LOCK.tense;
 }
 
-export type ChainOutcome = 'key' | 'broken' | 'fade';
+// 结算的结果：key 拿到钥匙，broken 没和成（破碎的钥匙），short 和了但番数不够（什么也没有）
+export type ChainOutcome = 'key' | 'broken' | 'short';
+// 画面上只分两种：番数够了锁链变金冲上天；没和成、番数不够都是锁链崩断、碎成粒子散掉
+export type ChainEnd = 'key' | 'broken';
+export const chainEnd = (kind: ChainOutcome): ChainEnd => (kind === 'key' ? 'key' : 'broken');
 
 export function outcomeTime(kind: ChainOutcome): number {
-  if (kind === 'key') return goldTime();
-  if (kind === 'broken') return BREAK.show + BREAK.crack + BREAK.dissolve + BREAK.crumble + BREAK.drift;
-  return FADE;
+  if (chainEnd(kind) === 'key') return goldTime();
+  return BREAK.show + BREAK.crack + BREAK.dissolve + BREAK.crumble + BREAK.drift;
 }
 
 // 这一局结束时每个番缚了的哩是哪种结果（和 rii.ts 的 onRoundEnd 一样的判法）
@@ -110,7 +112,7 @@ export function chainOutcomes(g: Game, result: RoundResult): { seat: number; bin
     const bind = riiBind(g, s);
     if (bind === null) continue;
     const win = result.wins.find((w) => w.seat === s);
-    out.push({ seat: s, bind, kind: !win ? 'broken' : win.result.han >= bind ? 'key' : 'fade' });
+    out.push({ seat: s, bind, kind: !win ? 'broken' : win.result.han >= bind ? 'key' : 'short' });
   }
   return out;
 }

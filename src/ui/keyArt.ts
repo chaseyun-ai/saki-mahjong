@@ -1,7 +1,7 @@
 // 白水哩番缚拿到的钥匙：照原作那把画（不用截图，canvas 上一笔笔画出来），3D 贴在一块面片上，2D 直接画。
 // 横着放，照原作姬子手上那一幕：从左到右是杆尾两组阶梯形的齿、长杆、带竖纹的喇叭形握柄、钥匙环（金框、两段红色珐琅、
-// 中间一颗红宝石和四个圆孔、四道金线箍）、细颈、吊牌。吊牌上的字朝着钥匙那头立着（字的“上”指向细颈），
-// 大大的番数在中间，局（比如 E-2-1）小小地写在番数下面。
+// 中间一颗红宝石和四个圆孔、四道金线箍）、细颈、吊牌。吊牌上的字朝着钥匙那头立着（字的“上”正对着细颈，顺着钥匙杆），
+// 大大的番数在中间，局（比如 E-2-1）小小地写在番数下面、贴着吊牌的边。
 
 export const KEY_ART = { w: 1024, h: 340 };
 
@@ -305,8 +305,8 @@ function drawKey(ctx: CanvasRenderingContext2D, bind: number, tag: string): void
     ctx.restore();
   }
   ctx.restore();
-  // 番数（衬线体的大字）和局：字的“上”朝着细颈（吊牌左边），再往上偏一点，
-  // 钥匙落定时斜斜地躺着，看起来和原作一样是往左上歪的“4”，局写在它右下
+  // 番数（衬线体的大字）和局：和原作一样，番数的“上”正对着细颈（顺着钥匙杆），
+  // 局写在番数脚下、贴着吊牌的边，顺着边的弧度再往下转一点
   ctx.save();
   ctx.translate(KEY_ART.w - tx, cy);
   ctx.rotate(TAG_TEXT_TURN);
@@ -315,12 +315,16 @@ function drawKey(ctx: CanvasRenderingContext2D, bind: number, tag: string): void
   ctx.textBaseline = 'middle';
   ctx.font = `bold 108px "Times New Roman", Georgia, serif`;
   ctx.fillText(String(bind), 0, -10);
+  ctx.translate(-4, 58);
+  ctx.rotate(TAG_RUN_TURN);
   ctx.font = `bold 25px "Times New Roman", Georgia, serif`;
-  ctx.fillText(tag, 12, 56);
+  ctx.fillText(tag, 0, 0);
   ctx.restore();
 }
 
-// 吊牌上的字转多少（弧度，逆时针为负）：字的“上”指向细颈、往上偏 15 度
-export const TAG_TEXT_TURN = -(Math.PI / 2 - (15 * Math.PI) / 180);
+// 吊牌上的字转多少（弧度，逆时针为负）：字的“上”正对着细颈
+export const TAG_TEXT_TURN = -Math.PI / 2;
+// 局（E-2-1）比番数再顺时针转多少：贴着吊牌的边写（原作量下来大约 13 度）
+export const TAG_RUN_TURN = (13 * Math.PI) / 180;
 // 钥匙环中心离图中心多远（占整把钥匙长的比例，往吊牌那头为正）：天上落下时在环上闪一下
 export const KEY_RING_AT = (KEY_ART.w - 385 - KEY_ART.w / 2) / KEY_ART.w;

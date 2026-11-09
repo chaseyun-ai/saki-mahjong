@@ -10,8 +10,7 @@ import { RiiSfxId, riiLook } from './riiLook';
 // 两套可以挑（riiLook.sfx）：写实（金属声多一点）/ 闪亮（更亮、更像动画的光效）。
 // 锁上：每条锁链甩过来“锵”地压上手牌；大锁落下“哐”一声、锁扣“咔哒”；锁链化开；锁挂到头像上。
 // 结算：拿到钥匙——变金时一股往上收的光、“叮”地碎成金片、一串金色的小叮往天上冲、放晴时风铃、钥匙“叮当”落下；
-// 没和成——锁链抖着哗啦作响、“锵”地崩断、碎片叮叮落开、一节节碎成细碎的光点慢慢散掉；
-// 番数不够——轻轻往下一沉（这一声是合成的）。
+// 没和成、番数不够——锁链抖着哗啦作响、“锵”地崩断、碎片叮叮落开、一节节碎成细碎的光点慢慢散掉。
 
 interface Cue {
   clip: RiiClip;
@@ -369,14 +368,10 @@ export function playLockSlam(delay = 0): void {
 }
 
 // 结算。delay 秒后锁链开始变金 / 崩断；fresh：锁链先重新射过来（锁好以后消散了，或者是别人的哩）
-export function playRiiOutcome(kind: 'key' | 'broken' | 'fade', n: number, delay: number, fresh: boolean): void {
+export function playRiiOutcome(kind: 'key' | 'broken', n: number, delay: number, fresh: boolean): void {
   const a = audio();
   if (!a) return;
   const now = a.currentTime + 0.01;
-  if (kind === 'fade') {
-    fadeSound(a, now + Math.max(0, delay));
-    return;
-  }
   const set = riiLook.sfx;
   const t = Math.max(0, delay);
   void schedule(a, now, [...(fresh ? volleyCues(set, n, true) : []), ...(kind === 'key' ? keyCues(set, t) : breakCues(set, n, t))]);
@@ -389,45 +384,10 @@ export function previewRiiSound(scene: 'lock' | 'key' | 'broken' = 'lock'): void
 }
 
 // 试听文件、测试用：把一整段排在给的 context 上（离线渲染）
-export function riiSoundScene(a: BaseAudioContext, scene: 'lock' | 'key' | 'broken' | 'fade', set: RiiSfxId, n: number, t0 = 0.05): Promise<void> {
-  if (scene === 'fade') {
-    fadeSound(a, t0);
-    return Promise.resolve();
-  }
+export function riiSoundScene(a: BaseAudioContext, scene: 'lock' | 'key' | 'broken', set: RiiSfxId, n: number, t0 = 0.05): Promise<void> {
   const cues =
     scene === 'lock'
       ? [...volleyCues(set, n, false), ...slamCues(set, padlockSlam(n) / 1000), ...settleCues(set, n)]
       : [...volleyCues(set, n, true), ...(scene === 'key' ? keyCues(set, 0.6) : breakCues(set, n, 0.6))];
   return schedule(a, t0, cues);
-}
-
-// 番数不够：轻轻往下一沉，淡掉（合成的）
-function fadeSound(a: BaseAudioContext, t: number): void {
-  const osc = a.createOscillator();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(494, t);
-  osc.frequency.exponentialRampToValueAtTime(247, t + 0.8);
-  const g = a.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.05, t + 0.006);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
-  osc.connect(g).connect(out(a));
-  osc.start(t);
-  osc.stop(t + 0.82);
-  const len = Math.floor(a.sampleRate * 0.85);
-  const buf = a.createBuffer(1, len, a.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-  const src = a.createBufferSource();
-  src.buffer = buf;
-  const f = a.createBiquadFilter();
-  f.type = 'lowpass';
-  f.frequency.setValueAtTime(1400, t);
-  f.frequency.exponentialRampToValueAtTime(300, t + 0.8);
-  const ng = a.createGain();
-  ng.gain.setValueAtTime(0.0001, t);
-  ng.gain.exponentialRampToValueAtTime(0.05, t + 0.2);
-  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
-  src.connect(f).connect(ng).connect(out(a));
-  src.start(t);
 }

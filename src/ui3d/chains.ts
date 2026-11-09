@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BREAK, ChainOutcome, FADE, FAINT, GOLD, LOCK, LinkSpot, PADLOCK, QUICK_LOCK, chainLinks, chainPlan, clamp01, dissolveAt, easeInOut, easeOut, lockTime, outcomeTime } from '../ui/riiChainPlan';
+import { BREAK, ChainEnd, FAINT, GOLD, LOCK, LinkSpot, PADLOCK, QUICK_LOCK, chainLinks, chainPlan, clamp01, dissolveAt, easeInOut, easeOut, lockTime, outcomeTime } from '../ui/riiChainPlan';
 import { ChainLook, chainLook } from '../ui/riiLook';
 
 // 白水哩的番缚（3D / 2.5D）：锁链从四面八方射过来压住手牌；结算时变金碎成碎片冲上天（天空放晴、钥匙落下在
@@ -44,7 +44,7 @@ interface Chain {
   clanks: number;
 }
 
-type Stage = { kind: 'lock'; t0: number; quick: boolean } | { kind: ChainOutcome; t0: number; shown: number } | { kind: 'idle' };
+type Stage = { kind: 'lock'; t0: number; quick: boolean } | { kind: ChainEnd; t0: number; shown: number } | { kind: 'idle' };
 
 export class ChainFx {
   readonly group = new THREE.Group();
@@ -144,7 +144,7 @@ export class ChainFx {
     this.lockedAt = this.now - 99;
   }
 
-  finish(kind: ChainOutcome): void {
+  finish(kind: ChainEnd): void {
     if (this.stage.kind !== 'lock') return;
     this.stage = { kind, t0: this.now, shown: this.opacityNow() };
   }
@@ -175,8 +175,7 @@ export class ChainFx {
     if (st.kind === 'idle' || this.done) return;
     if (st.kind === 'lock') this.updateLock(st.quick);
     else if (st.kind === 'key') this.updateKey(this.now - st.t0, st.shown);
-    else if (st.kind === 'broken') this.updateBroken(this.now - st.t0, st.shown);
-    else this.updateFade(this.now - st.t0);
+    else this.updateBroken(this.now - st.t0, st.shown);
     this.updateSparks(dt);
     this.updateDust();
   }
@@ -468,15 +467,6 @@ export class ChainFx {
     }
     pos.needsUpdate = true;
     al.needsUpdate = true;
-  }
-
-  private updateFade(t: number): void {
-    const op = FAINT * (1 - clamp01(t / FADE));
-    for (const c of this.chains) {
-      c.mat.opacity = op;
-      c.mat.depthWrite = false;
-    }
-    if (t > FADE) this.done = true;
   }
 
   // ---------- 火星 ----------

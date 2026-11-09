@@ -23,7 +23,7 @@ import { komakiActiveGod } from '../abilities/komaki';
 import { toyoneRedHidden } from '../abilities/toyone';
 import { RII, riiBind, riiCanBind, riiKeys } from '../abilities/rii';
 import { Chains2D } from './chains2d';
-import { ChainOutcome, FADE, chainOutcomes, outcomeTime, skyStart, skyTime } from './riiChainPlan';
+import { ChainOutcome, chainEnd, chainOutcomes, outcomeTime, skyStart, skyTime } from './riiChainPlan';
 import { ChainStyleId, PlockStyleId, RiiProj, RiiSfxId, lookChoices, riiLook, setRiiLook, useRiiLook } from './riiLook';
 import { RiiTestStart, riiSetPanelHtml, riiTestPanelHtml } from './riiSetup';
 import { riichiTsumoStage } from './riiStage';
@@ -1160,47 +1160,40 @@ export class App {
     return plockHtml(riiLook.plock, place, n, end?.kind ?? null, d, e);
   }
 
-  // 结算：哩番缚了的这一局，锁链变金冲上天、天空放晴、钥匙落下 / 崩断消散 / 淡掉（淡掉只有她自己看得到）
+  // 结算：哩番缚了的这一局，锁链变金冲上天、天空放晴、钥匙落下 / 没和成、番数不够时崩断碎成粒子散掉
   private riiFinish(result: RoundResult): void {
     const g = this.game!;
-    for (const o of chainOutcomes(g, result)) {
-      if (o.kind === 'fade' && o.seat !== this.me) continue;
-      this.riiOutcome(o);
-    }
+    for (const o of chainOutcomes(g, result)) this.riiOutcome(o);
   }
 
   // 一个哩的结算画面和声音；返回放完要多久（秒）
   private riiOutcome(o: { seat: number; bind: number; kind: ChainOutcome }): number {
     const g = this.game!;
     const tag = keyTag(g.roundWind, g.roundNumber, g.honba);
+    const end = chainEnd(o.kind);
     // 头像上的锁和锁链一起出结果（锁链开始变金 / 崩断的时候）
     const lockEnd = (sec: number) => {
-      this.riiLockEnd.set(o.seat, { kind: o.kind, at: Date.now() + sec * 1000, n: o.bind });
+      this.riiLockEnd.set(o.seat, { kind: end, at: Date.now() + sec * 1000, n: o.bind });
       window.setTimeout(() => this.render(), 30);
     };
     let delay = 0;
     let fresh = false;
     if (this.table3d) {
       fresh = this.table3d.riiFresh(o.seat);
-      delay = this.table3d.riiOutcome(o.seat, o.kind, o.bind, g, this.me);
+      delay = this.table3d.riiOutcome(o.seat, end, o.bind, g, this.me);
     } else {
       const host = document.querySelector<HTMLElement>('.stage');
       if (!host) return 0;
       this.chains2d ??= new Chains2D(host, () => document.querySelector('.stage .table')?.getBoundingClientRect() ?? null);
       fresh = !this.chains2d.has(o.seat) || this.chains2d.vanished(o.seat);
-      if (fresh && o.kind === 'fade') {
-        lockEnd(0);
-        playRiiOutcome('fade', o.bind, 0, true);
-        return FADE;
-      }
       if (fresh) this.chains2d.lock(o.seat, o.bind, () => this.handRect(o.seat), 'quick');
       delay = fresh ? 0.6 : 0.15;
-      this.chains2d.finish(o.seat, o.kind, delay * 1000);
+      this.chains2d.finish(o.seat, end, delay * 1000);
     }
-    lockEnd(o.kind === 'fade' ? 0 : delay + 0.3);
-    playRiiOutcome(o.kind, o.bind, o.kind === 'fade' && fresh ? 0 : delay, fresh);
+    lockEnd(delay + 0.3);
+    playRiiOutcome(end, o.bind, delay, fresh);
     let total = delay + outcomeTime(o.kind);
-    if (o.kind === 'key') {
+    if (end === 'key') {
       const at = this.table3d ? this.table3d.handScreenPoint(o.seat, this.me, g) : this.handPoint(o.seat);
       const root = document.querySelector<HTMLElement>('.stage3d') ?? document.querySelector<HTMLElement>('.stage');
       if (at && root) {
@@ -2400,7 +2393,7 @@ export class App {
     const tryBtn = (scene: string, label: string) => `<button class="rii-look try" data-ui="rii-look" data-try="${scene}">${label}</button>`;
     const sfxRow = row('音效', c.sfx.map((x) => btn(riiLook.sfx === x.id, `data-sfx="${x.id}"`, x.name)).join('') + `<span>试听</span>${tryBtn('lock', '锁上')}${tryBtn('key', '钥匙')}${tryBtn('broken', '崩断')}`);
     const endBtn = (kind: ChainOutcome, label: string) => `<button class="rii-look try" data-ui="rii-look" data-end="${kind}">${label}</button>`;
-    const endRow = picking ? '' : row('试结算', endBtn('key', '拿到钥匙') + endBtn('broken', '没和成') + endBtn('fade', '番数不够'));
+    const endRow = picking ? '' : row('试结算', endBtn('key', '拿到钥匙') + endBtn('broken', '没和成') + endBtn('short', '番数不够'));
     return projRow + chainRow + plockRow + sfxRow + endRow;
   }
 

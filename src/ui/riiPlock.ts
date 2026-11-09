@@ -4,10 +4,10 @@ import { padlockSvg } from './riiPadlock';
 // 白水哩缚上以后头像上挂的锁，几种样子（试看用，挑好以后留一种）：
 // 锁徽（角上一枚圆章）、锁链框（方链绕头像一圈，侧边扣一把锁）、交叉锁链（两道方链交叉，交叉处一把锁）、
 // 缚印（朱红方印「缚」）、光锁（头像一圈淡蓝的光，挂一把光做的锁）。
-// 大锁飞过来时落在 .rpl-lock 上（app.ts 量它的位置）；结算时的开锁变金 / 碎掉 / 淡掉在 style.css 的 .rii-plock.key / .broken / .fade
+// 大锁飞过来时落在 .rpl-lock 上（app.ts 量它的位置）；结算时的开锁变金 / 碎掉（没和成、番数不够）在 style.css 的 .rii-plock.key / .broken
 
 export type PlockPlace = 'seat' | 'net' | 'plate'; // 头像框、网络对战的头像卡、2D 的名牌
-export type PlockEnd = 'key' | 'broken' | 'fade';
+export type PlockEnd = 'key' | 'broken';
 
 // 头像里面多大（去掉边框），按这个比例画，不变形
 const BOX: Record<PlockPlace, { w: number; h: number; r: number; border: number }> = {

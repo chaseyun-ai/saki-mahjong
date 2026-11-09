@@ -8110,17 +8110,6 @@ canvas.rii-sky {
   }
 }
 
-/* 番数不够：悄悄淡掉 */
-.rii-plock.fade {
-  animation: rii-plock-fade 0.8s ease-in var(--e) both;
-}
-
-@keyframes rii-plock-fade {
-  to {
-    opacity: 0;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .rii-plock,
   .rii-plock *,

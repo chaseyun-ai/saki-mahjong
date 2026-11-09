@@ -6,7 +6,7 @@ import { Game } from '../src/engine/game';
 import { keyTag } from '../src/ui/keyArt';
 import { CHAIN_LOOKS, PLOCK_LOOKS, chainLook } from '../src/ui/riiLook';
 import { plockHtml } from '../src/ui/riiPlock';
-import { BREAK, chainLinks, chainOutcomes, chainPlan, dissolveAt, goldTime, lockTime, outcomeTime, skyStart, skyTime } from '../src/ui/riiChainPlan';
+import { BREAK, chainEnd, chainLinks, chainOutcomes, chainPlan, dissolveAt, goldTime, lockTime, outcomeTime, skyStart, skyTime } from '../src/ui/riiChainPlan';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -79,7 +79,10 @@ describe('白水哩番缚的锁链特效', () => {
     expect(outcomeTime('key')).toBe(goldTime());
     expect(goldTime()).toBeCloseTo(skyStart() + skyTime());
     expect(outcomeTime('key')).toBeGreaterThan(outcomeTime('broken'));
-    expect(outcomeTime('broken')).toBeGreaterThan(outcomeTime('fade'));
+    // 番数不够和没和成一样崩断
+    expect(outcomeTime('short')).toBe(outcomeTime('broken'));
+    expect(chainEnd('short')).toBe('broken');
+    expect(chainEnd('key')).toBe('key');
   });
 
   it('吊牌上的局：东 2 局 1 本场写成 E-2-1', () => {
@@ -106,7 +109,7 @@ describe('白水哩番缚的锁链特效', () => {
       expect(out).toHaveLength(1);
       const keys = riiKeys(g, 0);
       const kind = out[0].kind;
-      if (kind === 'fade') expect(keys).toHaveLength(0);
+      if (kind === 'short') expect(keys).toHaveLength(0);
       else {
         expect(keys).toHaveLength(1);
         expect(keys[0].broken).toBe(kind === 'broken');

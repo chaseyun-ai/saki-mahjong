@@ -4,13 +4,17 @@
 // 间隔有长有短；最后一张砸下来最重，砸之前稍微停一下，整个画面一震。
 // 顺序和间隔由种子定（beatSeed：每一局不一样，3D 和 2D 算出来一样）。时间都是秒，从她这一段开始算。
 
+// 她这一整段（节奏、每张砸下来、理完牌烧过去的火，3D 的 himekoFx.ts、2D 的 himeko2d.ts 都照这个）放快多少倍
+export const HIMEKO_SPEED = 1.1;
+const fast = (sec: number) => sec / HIMEKO_SPEED;
+
 export const HIMEKO_BEAT = {
-  lead: 0.3, // 开始以后多久砸下第一张
-  step: 0.16, // 平均每张隔多久
+  lead: fast(0.3), // 开始以后多久砸下第一张
+  step: fast(0.16), // 平均每张隔多久
   jitter: 0.55, // 每个间隔在 step × (1 ± jitter) 之间
   apart: 3, // 前后两张在手里最好隔几张（实在排不开时至少隔 2 张）
-  pause: 0.14, // 最后一张（重拍）之前多停多久
-  settle: 0.55, // 最后一张砸下来以后停多久再理牌
+  pause: fast(0.14), // 最后一张（重拍）之前多停多久
+  settle: fast(0.55), // 最后一张砸下来以后停多久再理牌
 };
 
 export interface BeatHit {

@@ -16,7 +16,7 @@ import { Gale } from './gale';
 import { StillWater } from './stillWater';
 import { ChainFx, ChainFrame } from './chains';
 import { riiLook } from '../ui/riiLook';
-import { ChainOutcome, outcomeTime } from '../ui/riiChainPlan';
+import { ChainEnd, outcomeTime } from '../ui/riiChainPlan';
 import { faceSvg, glowGlyph } from '../ui/tileArt';
 import { TileBeam } from './tileBeam';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
@@ -1457,9 +1457,9 @@ export class Table3D {
     }
   }
 
-  // 结算：哩拿到钥匙 / 破碎的钥匙 / 番数不够。别人的哩这时才现出锁链（缚没缚只有她自己知道）。
+  // 结算：哩拿到钥匙（锁链变金）/ 没和成、番数不够（锁链崩断）。别人的哩这时才现出锁链（缚没缚只有她自己知道）。
   // 返回再过多少秒锁链开始变金 / 崩断（天空放晴、钥匙落下由 app 照这个时间排在画面上）
-  riiOutcome(seat: number, kind: ChainOutcome, n: number, g: Game, me: number): number {
+  riiOutcome(seat: number, kind: ChainEnd, n: number, g: Game, me: number): number {
     let fx = this.chains[seat];
     // 自己的锁链锁好以后消散了：结算时重新射出来
     if (fx?.vanished) {
@@ -1468,7 +1468,6 @@ export class Table3D {
     }
     const fresh = !fx;
     if (!fx) {
-      if (kind === 'fade') return 0;
       fx = this.newChain(seat, n, g, me);
       fx.lock(true);
     }

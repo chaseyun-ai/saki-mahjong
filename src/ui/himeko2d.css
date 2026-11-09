@@ -1,6 +1,7 @@
 /* 鹤田姬子拿到钥匙的那一局（2D）：她的牌一张接一张裹着火从天上砸进手里；火烧过时牌映成橙色。
    两段动画的 animation-delay 由 himeko2d.ts 按开始的时刻算好（重画后接着放）。
-   hk-fall 0.8 秒：前 40%（0.32 秒，himeko2d.ts 的 T.drop）牌烧得通红往下砸（位置由 himeko2d.ts 每帧摆），后面是落地后火光褪掉 */
+   hk-fall 0.8 秒：前 40%（0.32 秒，himeko2d.ts 的 T.drop）牌烧得通红往下砸（位置由 himeko2d.ts 每帧摆），后面是落地后火光褪掉；
+   两段的长度在 himeko2d.ts 里照 HIMEKO_SPEED 放快 */
 .hk-tile {
   animation-name: hk-fall, hk-burn;
   animation-duration: 0.8s, 0.9s;
