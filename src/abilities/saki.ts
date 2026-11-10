@@ -25,6 +25,7 @@ import type { Ability } from './types';
 // - 天意（正负零）：她下意识地往 29500–30500 打。离得太远（落后）时天意发力，领先太多就收手
 // - 她的杠一般不给自己加宝牌：她开杠翻出的杠宝牌、她和牌时的里宝牌不指向她自己的牌（doraControl），岭上摸到赤宝牌照常可以
 // - 会被稳乃的深山削弱，满 6 个标记的稳乃在场时失效
+// - 加强版（SAKI.strong）：玩家自己用咲时可以在选人页切换（像透华的常态 / 治水），天意的手更重、连杠局更多；电脑的咲都是标准版
 // 强度参数（测试和平衡脚本会临时改它们）
 export const SAKI = {
   // 配牌时四张岭上牌各按这个权重抽一种（第一张到第四张）：越靠前越贴着她的配牌，越靠后越随便
@@ -53,6 +54,15 @@ export const SAKI = {
   calmAbove: 8000, // 比目标多这么多：收手
   push: { kanDeal: [1, 6], kanDraw: [2, 4], pairTile: 0.35, guide: 0.42 },
   calm: { kanDeal: [3, 10], kanDraw: [4, 8], pairTile: 0.07, guide: 0.09 },
+  // 加强版（选人页咲头像旁边的“标准 / 加强”切换，只管玩家自己用的咲；PlayerConfig.startForm）：暗里的助力更重、连杠局更多。
+  // 随机对手 400 半庄：岭上开花 18.5%/局、平均顺位 1.50（标准 15.7%、1.75）
+  strong: {
+    pairTile: 0.3,
+    guide: 0.35,
+    chain: 0.6,
+    push: { pairTile: 0.5, guide: 0.6 },
+    calm: { pairTile: 0.12, guide: 0.15 },
+  },
   // 电脑的咲：牌山剩这么多张以内不再留着杠等岭上，能杠就杠
   late: 12,
   advance: false, // 只有一个杠材时也拿它杠来进手（不留着等开花）
@@ -71,9 +81,17 @@ export function sakiMood(g: Game, seat: number): SakiMood {
   return 'even';
 }
 
+// 这一场她是不是加强版（对局设置里选的，整场不变）
+export function sakiStrong(g: Game, seat: number): boolean {
+  return !!g.startForm[seat];
+}
+
 function power(g: Game, seat: number) {
   const m = sakiMood(g, seat);
-  return m === 'push' ? SAKI.push : m === 'calm' ? SAKI.calm : SAKI;
+  const base = m === 'push' ? SAKI.push : m === 'calm' ? SAKI.calm : SAKI;
+  if (!sakiStrong(g, seat)) return base;
+  const up = m === 'push' ? SAKI.strong.push : m === 'calm' ? SAKI.strong.calm : SAKI.strong;
+  return { ...base, pairTile: up.pairTile, guide: up.guide };
 }
 
 interface SakiState {
@@ -290,10 +308,10 @@ function roleKinds(role: LineRole, c: readonly number[]): Kind[] {
 }
 
 // 连杠局：配牌有现成的刻子（它的第四张留在牌山里），另外还有对子或第二个刻子。挑出进岭上第一张的那种牌，不是连杠局是 null
-function chainKind(g: Game, c: readonly number[]): Kind | null {
+function chainKind(g: Game, seat: number, c: readonly number[]): Kind | null {
   const trips = c.flatMap((x, k) => (x >= 3 ? [k] : []));
   const pairs = c.flatMap((x, k) => (x === 2 ? [k] : []));
-  if (trips.length === 0 || trips.length + pairs.length < 2 || !g.rng.chance(SAKI.chain)) return null;
+  if (trips.length === 0 || trips.length + pairs.length < 2 || !g.rng.chance(sakiStrong(g, seat) ? SAKI.strong.chain : SAKI.chain)) return null;
   // 两个现成的刻子：一个留在牌山里先杠，另一个的第四张进岭上
   const from = trips.length >= 2 ? g.rng.shuffle(trips).slice(1) : pairs;
   return from[g.rng.int(from.length)];
@@ -311,7 +329,7 @@ function setLine(g: Game, seat: number): void {
   const allowed = (t: TileId) => c[kindOf(t)] < 2 && clean(t);
   const used = new Set<Kind>();
   const from = (j: number) => j >= 52;
-  const chain = chainKind(g, c);
+  const chain = chainKind(g, seat, c);
   w.rinshan.forEach((_, i) => {
     let done = false;
     if (chain !== null && i === 0) done = w.bringToRinshan((t) => kindOf(t) === chain && clean(t), g.rng, i, from);
@@ -365,7 +383,7 @@ function placeKan(g: Game, seat: number, first: number, dealt = false): void {
 export const sakiAbility: Ability = {
   id: 'saki',
   name: '岭上开花',
-  description: `岭上的线：四张岭上牌配牌时就定好、一直看得见（鼠标移到岭上牌上投影出来），开杠时不会变，杠了摸到的就是看到的那张；越靠前的越贴着她的配牌（搭子缺的那张、孤张的同种牌），靠后的会混进字牌、杂牌；配牌有现成刻子的局，有时第一张是她另一个对子的同种牌，可以连着开两杠。朝着“杠完正好听岭上那张”做牌，开杠就是岭上开花。杠材：手里成刻（或碰出来）时，牌山里的第四张落到她的摸牌路上（配牌就有的刻子：这一局第 ${SAKI.kanDeal[0]}–${SAKI.kanDeal[1]} 次摸牌；后来成的：之后第 ${SAKI.kanDraw[0]}–${SAKI.kanDraw[1]} 次摸牌），变透明、牌山前面投影出牌面；别人鸣牌会把它错开。天意的手：配牌偏对子，偶尔带现成的刻子，对子容易长成刻子，快做成时容易摸到要的牌。淡的时间迟滞只压到 ${SAKI.awaiLag} 向听。天意：往正负零（${SAKI.target - SAKI.band}–${SAKI.target + SAKI.band}）打，落后 ${SAKI.pushBelow} 以上时天意发力，领先 ${SAKI.calmAbove} 以上收手。她的杠一般不给自己加宝牌、里宝牌（岭上的赤宝牌照拿）。`,
+  description: `岭上的线：四张岭上牌配牌时就定好、一直看得见（鼠标移到岭上牌上投影出来），开杠时不会变，杠了摸到的就是看到的那张；越靠前的越贴着她的配牌（搭子缺的那张、孤张的同种牌），靠后的会混进字牌、杂牌；配牌有现成刻子的局，有时第一张是她另一个对子的同种牌，可以连着开两杠。朝着“杠完正好听岭上那张”做牌，开杠就是岭上开花。杠材：手里成刻（或碰出来）时，牌山里的第四张落到她的摸牌路上（配牌就有的刻子：这一局第 ${SAKI.kanDeal[0]}–${SAKI.kanDeal[1]} 次摸牌；后来成的：之后第 ${SAKI.kanDraw[0]}–${SAKI.kanDraw[1]} 次摸牌），变透明、牌山前面投影出牌面；别人鸣牌会把它错开。天意的手：配牌偏对子，偶尔带现成的刻子，对子容易长成刻子，快做成时容易摸到要的牌。淡的时间迟滞只压到 ${SAKI.awaiLag} 向听。天意：往正负零（${SAKI.target - SAKI.band}–${SAKI.target + SAKI.band}）打，落后 ${SAKI.pushBelow} 以上时天意发力，领先 ${SAKI.calmAbove} 以上收手。她的杠一般不给自己加宝牌、里宝牌（岭上的赤宝牌照拿）。自己用她时，选人页头像上可以切到“加强”：对子更容易成刻、快成时更容易摸到要的牌、连杠局更多。`,
 
   lagShanten: SAKI.awaiLag,
 
@@ -452,7 +470,8 @@ export const sakiAbility: Ability = {
     const kinds = sakiKanKinds(g, seat);
     const m = sakiMood(g, seat);
     const mood = m === 'push' ? '天意发力中（离正负零太远）' : m === 'calm' ? '领先太多，收着打' : '在正负零附近';
-    return [kinds.length ? `在等杠：${kinds.map(kindLabel).join('、')}` : '手里还没有能杠的刻子', '看得见岭上牌，朝着杠完正好听那一张做牌', mood];
+    const out = [kinds.length ? `在等杠：${kinds.map(kindLabel).join('、')}` : '手里还没有能杠的刻子', '看得见岭上牌，朝着杠完正好听那一张做牌', mood];
+    return sakiStrong(g, seat) ? [...out, '加强版：对子更容易长成刻子，快成时更容易摸到要的牌'] : out;
   },
 };
 
