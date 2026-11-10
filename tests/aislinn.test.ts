@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AISLINN, aislinnBrushes, aislinnCanBrush, aislinnPlan, findSketch } from '../src/abilities/aislinn';
+import { aislinnBrushes, aislinnCanBrush, aislinnPlan, findSketch } from '../src/abilities/aislinn';
 import { CHARACTERS } from '../src/abilities/characters';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
@@ -40,14 +40,16 @@ describe('爱丽丝', () => {
     expect(painted).toBeGreaterThan(15);
   });
 
-  it('牌山凑不出来时安排的牌最多 1 番（只有门清自摸、不立直）', () => {
+  it('牌山凑不出来时安排的牌役最多 1 番（只有门清自摸、不立直；宝牌另算）', () => {
     let arranged = 0;
     for (let seed = 1; seed <= 60; seed++) {
       const g = newGame(seed, PLAIN);
       const plan = aislinnPlan(g, 0);
       if (!plan?.arranged) continue;
       arranged++;
-      expect(plan.han).toBeLessThanOrEqual(AISLINN.maxHan);
+      expect(plan.yakuman).toBe(0);
+      // 役只有门前清自摸和；赤五、宝牌另外加番
+      expect(plan.yaku).toEqual(['门前清自摸和']);
     }
     expect(arranged).toBeGreaterThan(0);
   });

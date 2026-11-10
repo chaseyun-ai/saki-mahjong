@@ -8,7 +8,8 @@ import type { Ability } from './types';
 // 爱丽丝（宫守）：手绘板。
 // - 配完牌以后牌桌换成手绘板：照现在的牌山，假设谁都不鸣牌，她接下来一张张摸到的牌是定好的。
 //   在这些牌里找出她最早能自摸的那副牌（同样早的挑点数大的），画在手牌上面。
-//   牌山里凑不出来时，安排一下：换几张没公开的牌进她要摸的位置，凑一副 1 番的门清自摸（只有门前清自摸和）。
+//   牌山里凑不出来时，安排一下：换几张没公开的牌进她要摸的位置，凑一副役只有 1 番的门清自摸（门前清自摸和）；
+//   手里的赤五、宝牌照算，在这上面加番（宝牌不占这 1 番）。
 // - 她要摸的那几张锁住，别人的能力换不走。照着画的打，没人鸣牌就自然走到自摸。
 // - 有人鸣牌（吃、碰、明杠、加杠，她自己开杠也算）摸牌顺序就乱了，手绘板破碎、回到普通牌桌；
 //   她把画上要的牌打出去、摸到的不是画上的牌（别人暗杠挪走了海底之类）也一样碎掉。
@@ -17,7 +18,7 @@ import type { Ability } from './types';
 //   玄的能力还在时，画上不用别人摸不到的宝牌
 export const AISLINN = {
   brushes: 3, // 每场几支画笔
-  maxHan: 1, // 牌山凑不出来时安排的牌最多几番（不算立直）：只保底门前清自摸和 1 番
+  maxHan: 1, // 牌山凑不出来时安排的牌，役最多几番（不算立直；宝牌、赤宝牌另算）：只保底门前清自摸和 1 番
   tries: 40, // 安排时试几次
   spread: 4, // 安排的牌在接下来几张里摊开：最多比要的张数多摸几张才自摸
   leaves: 4000, // 找和牌时最多看多少种拆法
@@ -178,6 +179,7 @@ function finalsIn(counts: number[], melds: number, must: Kind, mustMin: number):
 interface Scored {
   final: TileId[];
   han: number;
+  yakuHan: number; // 只数役的番（宝牌、赤宝牌、里宝牌不算）
   yakuman: number;
   yaku: string[];
   points: number;
@@ -225,11 +227,11 @@ function score(g: Game, seat: number, want: number[], hand: TileId[], draws: Til
   });
   if (!g.minHanOk(r) || !r) return null;
   const points = seat === g.dealer ? r.tsumoOtherPays * 3 : r.tsumoDealerPays + r.tsumoOtherPays * 2;
-  return { final, han: r.han, yakuman: r.yakuman, yaku: r.yaku.map((y) => y.name), points, needed };
+  return { final, han: r.han, yakuHan: r.han - r.dora - r.aka - r.ura, yakuman: r.yakuman, yaku: r.yaku.map((y) => y.name), points, needed };
 }
 
 // 照现在的牌山，谁都不鸣牌的话她最早能自摸的那副牌（同样早的挑点数大的）。first：下一张 live[0] 谁摸
-// cap：只要不超过这么多番的（安排出来的牌），找不到再不管番数
+// cap：只要役不超过这么多番的（安排出来的牌，宝牌另算），找不到再不管番数
 export function findSketch(g: Game, seat: number, first: number, cap?: number): SketchPlan | null {
   const found = searchSketch(g, seat, first, cap);
   return found ?? (cap === undefined ? null : searchSketch(g, seat, first));
@@ -261,7 +263,7 @@ function searchSketch(g: Game, seat: number, first: number, cap?: number): Sketc
     let best: Scored | null = null;
     for (const want of finalsIn(now, melds, kind, before[kind] + 1)) {
       const s = score(g, seat, want, hand, fixed ? [t] : draws.slice(0, i + 1), last);
-      if (!s || (cap !== undefined && (s.yakuman > 0 || s.han > cap))) continue;
+      if (!s || (cap !== undefined && (s.yakuman > 0 || s.yakuHan > cap))) continue;
       if (!best || s.yakuman > best.yakuman || (s.yakuman === best.yakuman && (s.points > best.points || (s.points === best.points && s.han > best.han)))) best = s;
     }
     if (!best) continue;
@@ -273,7 +275,7 @@ function searchSketch(g: Game, seat: number, first: number, cap?: number): Sketc
 
 // ---------- 安排 ----------
 
-// 牌山凑不出来：从手里的牌出发，一步步换牌让向听前进（每步打掉一张、要一张），凑一副 maxHan 番以内的门清自摸，
+// 牌山凑不出来：从手里的牌出发，一步步换牌让向听前进（每步打掉一张、要一张），凑一副役在 maxHan 番以内的门清自摸（宝牌另算），
 // 再把要的牌换进她接下来要摸的位置。成功时返回已经换好、锁住的牌
 function arrange(g: Game, seat: number, first: number): boolean {
   const w = g.wall;
@@ -371,7 +373,7 @@ function composeTarget(g: Game, seat: number, usable: (t: TileId) => boolean): {
   return null;
 }
 
-// 这副听牌（counts 是门内 13 - 3 × 副露张）自摸 k 是几番，和不了是 null
+// 这副听牌（counts 是门内 13 - 3 × 副露张）自摸 k 役有几番（宝牌不算），和不了是 null
 function tsumoHan(g: Game, seat: number, counts: number[], k: Kind): number | null {
   const p = g.players[seat];
   const used = new Array<number>(KIND_COUNT).fill(0);
@@ -394,8 +396,7 @@ function tsumoHan(g: Game, seat: number, counts: number[], k: Kind): number | nu
     doraIndicators: g.wall.visibleDoraIndicators().map(kindOf),
   });
   const ok = g.minHanOk(r);
-  // 手里的赤宝牌也算进去（上面算番时没用赤五）
-  return ok ? (ok.yakuman ? 13 : ok.han + p.hand.filter(isRed).length) : null;
+  return ok ? (ok.yakuman ? 13 : ok.han - ok.dora - ok.aka - ok.ura) : null;
 }
 
 // ---------- 画、碎 ----------
@@ -498,7 +499,7 @@ export function aislinnDrawsLeft(plan: SketchPlan): number {
 export const aislinnAbility: Ability = {
   id: 'aislinn',
   name: '手绘板',
-  description: `配完牌以后牌桌变成手绘板：照现在的牌山，假设别人都不鸣牌，把她最早能自摸的那副牌画在手牌上面，画上要摸的牌锁住；牌山里凑不出来就安排一副保底 ${AISLINN.maxHan} 番的门清自摸。照着打，没人鸣牌就自然走到自摸。有人鸣牌，手绘板破碎、回到普通牌桌。每场比赛 ${AISLINN.brushes} 支画笔（不恢复）：手绘板碎了以后用一支，照现在的手牌和牌山再画一次。`,
+  description: `配完牌以后牌桌变成手绘板：照现在的牌山，假设别人都不鸣牌，把她最早能自摸的那副牌画在手牌上面，画上要摸的牌锁住；牌山里凑不出来就安排一副门清自摸，役保底 ${AISLINN.maxHan} 番，手里的赤五、宝牌另外加番。照着打，没人鸣牌就自然走到自摸。有人鸣牌，手绘板破碎、回到普通牌桌。每场比赛 ${AISLINN.brushes} 支画笔（不恢复）：手绘板碎了以后用一支，照现在的手牌和牌山再画一次。`,
 
   // 配完牌（配牌后的技能选好以后）、庄家摸第一张之前画
   afterDeal(g, seat) {
