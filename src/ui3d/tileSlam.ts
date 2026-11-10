@@ -36,14 +36,14 @@ export interface SlamSpec {
   tile: THREE.Object3D; // 要砸的那张牌（牌的整组）
   style?: SlamStyle; // 哪一套动作，不给是 press
   to: SlamPose; // 最后牌面朝上躺在桌上的样子
-  from?: SlamPose; // 牌现在在哪：手先伸过去拿起来。不给就是牌一开始就在手里，跟着手从画面外伸上来（press 自己拍牌时）
+  from?: SlamPose; // 牌现在在哪：手先伸过去拿起来（hisa：伸进来的路上飘到指甲盖上）。不给就是牌一开始就在手里，跟着手从画面外伸上来（自己拍牌时）
   order?: SlapOrder; // press：手牌什么时候倒（先倒、举牌时倒、拍下去时倒），不给是先倒
   side: THREE.Vector3; // 砸牌那一家的右手方向（世界坐标，水平）
   out: THREE.Vector3; // 那一家往外（朝她自己身体）的方向（世界坐标，水平）
   view?: SlamView; // 给了就是自己砸牌（镜头在她身后）
   cam?: SlamView; // 牌桌的镜头（不管是谁砸）：hisa 用它把弹到最高处的牌挪进画面
   arm?: Partial<ArmLook> | null; // null：不带手，牌从原处（from，不给就是落点）自己跳起来再拍下去
-  onPress?: (at: THREE.Vector3) => void; // 牌落到桌上那一刻（press 就是拍下去那一下，hisa 是翻过来落到桌上），at 是牌底下的桌面点
+  onPress?: (at: THREE.Vector3) => void; // “嗒”一声的那一刻（press 就是拍下去那一下，hisa 是大拇指弹出去那一下），at 是落点底下的桌面点
   onCharge?: (at: THREE.Vector3, dur: number) => void; // 开始亮光（hisa 弹到最高处；press 没有），at 是牌中心，dur 是亮多久就炸开
   onHit?: (at: THREE.Vector3) => void; // 炸开那一刻，at 是牌底下的桌面点
   onDone?: () => void; // 炸完、手也撤走以后

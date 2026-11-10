@@ -268,7 +268,7 @@ interface RevealState {
   spotsOn: boolean; // 聚光灯打开了没有
   // 改良布局的自摸砸牌：start 时手伸进来，hitAt 拍到桌上；lily 是咲的岭上开花（这一手的基本点），没有是 null
   // sea：天江衣从海里捞上来的海底牌，砸下去把海水打散。style：这个人砸牌用哪一套动作（looks.ts），
-  // hisa（竹井久）从手里那张拿起来，最后牌面朝上躺在倒牌后和了牌的位置，砸下去以后就一直躺在那里；她翻过来亮牌那一下（revealAt）手牌一起倒
+  // hisa（竹井久）握着拳把那张托在大拇指指甲盖上伸进来，最后牌面朝上躺在倒牌后和了牌的位置，砸下去以后就一直躺在那里；拳头停稳亮牌那一下（revealAt）手牌一起倒
   tsumoSlam: { seat: number; tile: TileId; start: number; hitAt: number; revealAt?: number; started: boolean; lily: number | null; sea: boolean; style: SlamStyle } | null;
 }
 
@@ -2047,7 +2047,8 @@ export class Table3D {
   }
 
   // 改良布局的自摸拍牌，到 ts.start 才动手：通用的（press）手夹着牌斜着举起来、牌面朝上拍在手牌右边（自己的牌一开始就在手里，
-  // 带着从画面下面伸上来；别人的伸过去把她手里那张夹起来）；竹井久（hisa）拿起手里那张拖、翻、弹、扣住砸下。
+  // 带着从画面下面伸上来；别人的伸过去把她手里那张夹起来）；竹井久（hisa）握着拳把牌托在大拇指指甲盖上伸进来，弹上去、扣住砸下
+  // （自己的牌一开始就在指甲盖上，别人的是手伸进来的路上从她手里飘到指甲盖上）。
   // 牌最后都牌面朝上躺在倒牌后和了牌的位置
   private startTsumoSlam(ts: NonNullable<RevealState['tsumoSlam']>, g: Game): void {
     ts.started = true;
@@ -2057,7 +2058,7 @@ export class Table3D {
     const hand = this.lastSync.view.slamHand !== false;
     const to = this.winLie(g, ts.seat, this.lastSync.view.me, ts.tile).at;
     // 自己拍牌带手时牌在手里跟着伸上来，不用拿
-    const carried = ts.style === 'press' && self && hand;
+    const carried = self && hand;
     const run = this.slamTile(ts.tile, ts.seat, {
       to,
       from: carried ? undefined : this.handSlot(g, ts.seat, ts.tile),
@@ -2086,9 +2087,9 @@ export class Table3D {
   // from 不给就是牌已经在手里、跟着手从画面外伸上来（自己自摸）；给了就是先伸过去在 from 夹起来。
   // near：自己拍牌（镜头在她身后），不给就是 seat 是自己时为 true。
   // hand: false 不带手：牌从原处（from，不给就是落点）自己跳起来再拍下去。order：手牌什么时候倒（动作只给时刻 revealAt）。
-  // style: 'hisa' 竹井久那一套（slamFlick.ts）：from 是要拿的那张现在在哪，拖过来、翻过来、握拳放在大拇指指甲盖上弹上去、扣住砸下。
+  // style: 'hisa' 竹井久那一套（slamFlick.ts）：握着拳把牌托在大拇指指甲盖上伸进来，弹上去、扣住砸下；from 是那张牌现在在哪（不给就是一开始就在指甲盖上）。
   // at：到这时候才动手（在那之前牌原样不动，算被拿着），不给就是马上。
-  // 牌落到桌上调 onPress，开始亮调 onCharge（只有 hisa），炸开调 onHit（at 是牌底下的桌面点）；
+  // 牌落到桌上调 onPress（hisa 是大拇指弹出去那一下），开始亮调 onCharge（只有 hisa），炸开调 onHit（at 是牌底下的桌面点）；
   // 扣牌的小震动、聚光、冲击波和旋风要自己在回调里叫 slamPress / slamFx.charge / slamImpact。
   // 返回什么时候扣到桌上、什么时候炸开、什么时候手撤走（和 now 同一个时钟，秒）
   slamTile(
