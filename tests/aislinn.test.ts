@@ -40,7 +40,7 @@ describe('爱丽丝', () => {
     expect(painted).toBeGreaterThan(15);
   });
 
-  it('牌山凑不出来时安排的牌最多 3 番（门清自摸、不立直）', () => {
+  it('牌山凑不出来时安排的牌最多 1 番（只有门清自摸、不立直）', () => {
     let arranged = 0;
     for (let seed = 1; seed <= 60; seed++) {
       const g = newGame(seed, PLAIN);
