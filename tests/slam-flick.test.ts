@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { FlickMotion } from '../src/ui3d/slamFlick';
+import { TILE_H } from '../src/ui3d/tableLayout';
 
-// 竹井久那一套（「自摸一气呵成」接管摸牌用）：从牌山上那张的样子开始，砸下去时正好躺在落点
+// 竹井久那一套：从拿的那张现在的样子开始（自摸时是手里那张；动作本身哪里都能拿，牌山上的也行），砸下去时正好躺在落点
 const side = new THREE.Vector3(1, 0, 0);
 const out = new THREE.Vector3(0, 0, 1);
 // 牌面朝上、牌顶朝桌子中间（-z）躺着
@@ -90,6 +91,22 @@ describe('竹井久的摔牌', () => {
   it('弹得够高：最高处比落点高十张牌宽以上', () => {
     const m = new FlickMotion({ to, from: wall(5, 9.45), side, out, hand: true, near: true });
     expect(m.chargePoint.y - to.pos.y).toBeGreaterThan(10);
+  });
+
+  it('自摸时从手里立着的那张拿起来：指肚按着牌顶，手在牌靠自己这边，不穿过牌', () => {
+    // 手牌右边隔开半张立着的那张（牌面朝自己）
+    const standing = { pos: new THREE.Vector3(7, TILE_H / 2, 11.2), quat: new THREE.Quaternion(), scale: 1 };
+    const m = new FlickMotion({ to, from: standing, side, out, hand: true, near: true });
+    expect(m.frame(0).tile.pos.distanceTo(standing.pos)).toBeLessThan(1e-6);
+    // 刚按住的时候：手掌在牌靠自己那边、比牌顶高
+    let k0 = 0;
+    while (m.frame(k0 + 0.005).tile.pos.distanceTo(standing.pos) < 1e-6) k0 += 0.005;
+    const h = m.frame(k0).hand!;
+    expect(h.pos.clone().sub(standing.pos).dot(out)).toBeGreaterThan(0);
+    expect(h.pos.y).toBeGreaterThan(TILE_H);
+    // 照样拖过来、翻过来亮牌、砸下去躺在落点
+    expect(m.frame(m.pressAt + 0.1).tile.quat.angleTo(to.quat)).toBeLessThan(1e-6);
+    expect(m.frame(m.hitAt + 0.01).tile.pos.distanceTo(to.pos)).toBeLessThan(1e-6);
   });
 
   it('不带手：没有手，牌照样从牌山上过来', () => {

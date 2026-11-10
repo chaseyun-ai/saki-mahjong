@@ -33,9 +33,6 @@ export interface MatchSettings {
   result: 'classic' | 'staged';
   // 改良布局的自摸砸牌：hand 一只手把牌举起来扣在桌上；tile 不带手，牌自己跳起来、翻身扣下去
   slam: 'hand' | 'tile';
-  // 自摸一气呵成（改良布局）：摸到就能自摸的那一张，程序先看出来，直接自摸（自己也不用点），不走摸牌路径，
-  // 摸牌那一下就接管成竹井久的摔牌（从牌山摸来、手牌直接倒下、翻过来弹上去扣住砸下）。hisa 只有竹井久，all 所有人，off 关
-  slamTake: 'off' | 'hisa' | 'all';
 }
 
 export const SEAT_NAMES = ['下家', '对家', '上家'];
@@ -57,7 +54,6 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   hand: 'B',
   result: 'classic',
   slam: 'hand',
-  slamTake: 'off',
 };
 
 const KEY = 'saki-match-settings';
@@ -172,16 +168,6 @@ const ROWS: Row[] = [
     options: [
       { label: '带手', value: 'hand' },
       { label: '不带手', value: 'tile' },
-    ],
-  },
-  {
-    key: 'slamTake',
-    name: '自摸一气呵成',
-    note: '开了以后能自摸就直接自摸（自己也不用点），不看摸牌路径：摸牌那一下就接管成竹井久的摔牌，从牌山摸来、手牌直接倒下、翻过来弹上去扣住砸下',
-    options: [
-      { label: '关', value: 'off' },
-      { label: '竹井久', value: 'hisa' },
-      { label: '所有人', value: 'all' },
     ],
   },
   {
@@ -346,6 +332,6 @@ export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMod
     return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="vis-mode" data-v="${m.id}">${m.name}</button>`;
   }).join('');
   const art = skins ? section('素材') + rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图 ›</button>', '只有页面主人看得到') : '';
-  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand', 'slam', 'slamTake', 'result'] : ['layout', 'result']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
+  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand', 'slam', 'result'] : ['layout', 'result']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
   return panelHtml('visual', '视觉设置', '改了马上生效', body, '');
 }

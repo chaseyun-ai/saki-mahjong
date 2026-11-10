@@ -5,7 +5,7 @@ import { MatchSettings, panelHtml, rowHtml, section, settingRows } from './match
 import { spare, swap } from './riiStage';
 
 // 「自摸动作测试」（右上角「更多」里）：挑一个人、坐哪一家，看她自摸时砸牌的动作（2.5D 改良布局才有砸牌；
-// 视觉设置「自摸一气呵成」开着时摸到 5s 那一下就接管成竹井久的摔牌，选「竹井久」时只有 looks.ts 里 slam 配了 hisa 的人，关着都是通用那一套）。
+// 每个人用哪一套动作在 looks.ts 的 slam，没配的都是通用那一套）。
 // 她每局坐庄（一直自摸就一直连庄），配牌是听牌的门清手 234m 567m 678p 22p 46s（坎张，只听 5s）：
 // 第一张摸到一张别人手里都没有的字牌（打掉；第一张就和就成了天和），第二张摸到 5s 自摸（断幺九、门前清自摸和）。
 // 她自摸之前别人手里没有 5s、也摸不到（她就荣和不了），别人也摸不到让自己和了的牌，配牌也凑不出九种九牌（流局）。
@@ -18,8 +18,8 @@ const HONORS = [27, 28, 29, 30, 31, 32, 33];
 const yaochu = (k: number) => k >= 27 || k % 9 === 0 || k % 9 === 8;
 
 export const SLAM_TEST_CHARS: { id: string; label: string; note: string }[] = [
-  { id: 'hisa', label: '竹井久', note: '一气呵成开着：摸到 5s 那一下就接管，手伸到牌山上摸来，背朝上斜着拖到手牌右边，手牌同时倒下，一下翻过来、弹上去，最高处牌面朝上，手扣住砸下去' },
-  { id: 'nodoka', label: '原村和', note: '一气呵成选「所有人」时也是久的摔牌；选「竹井久」或者关着是通用的（照雀魂，扣下去、翻起来、炸开）' },
+  { id: 'hisa', label: '竹井久', note: '原作的摔牌：从手里拿起那张，背朝上斜着拖到手牌右边，一下翻过来亮牌（手牌同时倒下），弹上去，最高处牌面朝上，手扣住砸下去' },
+  { id: 'nodoka', label: '其他人（通用）', note: '原村和来砸：照雀魂，扣下去、翻起来、炸开' },
 ];
 
 const SEATS = ['自己', '下家', '对家', '上家'];
@@ -103,14 +103,14 @@ export function slamStage(seat: number): Stage {
   };
 }
 
-// 测试窗口：每个人一行，点坐哪一家就开局；下面直接改「自摸一气呵成」「自摸动作」（和视觉设置里的是同一份）
+// 测试窗口：每个人一行，点坐哪一家就开局；下面直接改「自摸动作」（和视觉设置里的是同一份）
 export function slamTestPanelHtml(s: MatchSettings): string {
   const go = (id: string, rel: number) => `<button class="rii-go" data-ui="slam-test-go" data-v="${id}" data-seat="${rel}">${SEATS[rel]}</button>`;
   const body =
     section('她坐哪一家（每局第二张自摸，挂机看）') +
     SLAM_TEST_CHARS.map((c) => rowHtml(c.label, [0, 1, 2, 3].map((rel) => go(c.id, rel)).join(''), c.note)).join('') +
     section('看哪种') +
-    settingRows(s, ['slamTake', 'slam']) +
-    rowHtml('牌桌', '', '视觉设置里「牌桌视角」选 2.5D、布局选改良才有砸牌；摸牌路径开着关着都一样');
+    settingRows(s, ['slam']) +
+    rowHtml('牌桌', '', '视觉设置里「牌桌视角」选 2.5D、布局选改良才有砸牌');
   return panelHtml('slam-test', '自摸动作测试', '每个人自摸时砸牌的动作；对手不用能力', body, '');
 }

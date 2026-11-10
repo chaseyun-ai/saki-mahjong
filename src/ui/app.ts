@@ -50,7 +50,7 @@ import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiS
 import { paceOf, vary } from './vary';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
-import { FACES, Face, LOOKS, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
+import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
 import { backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
 import { FlowPage, PointSeat, ResultFlow, animatePoints, drawBannerHtml, pointsPageHtml, ranksOf } from './resultFlow';
 import { meldLayout } from './meldLayout';
@@ -84,10 +84,6 @@ const NET_WIND = '東南西北';
 // 算上出牌动作，电脑一回合（落桌到落桌）约 1.1 秒，和雀魂差不多。3D 的角色伸手要 0.3 秒，所以想得短一点
 const AI_TURN_DELAY_3D = 360;
 const AI_TURN_DELAY_25D = 620;
-// 「自摸一气呵成」接管的自摸：和牌的切入最多等牌砸下去这么久（毫秒，牌桌停着没在画时也会放）
-const TAKE_FX_MAX = 4500;
-// 砸下去以后过多久出「自摸」的切入（毫秒）
-const TAKE_FX_DELAY = 300;
 const AI_CALL_DELAY = 250;
 // 桃子隐身那一下要多久（毫秒，先停半拍再淡掉），和 style.css 里 .vanish 的动画一样长
 const VANISH_MS = 1150;
@@ -165,13 +161,6 @@ export class App {
   private toasts: Toast[] = [];
   private toastSeq = 0;
   private timer: number | null = null;
-  // 「自摸一气呵成」：第几次摸牌（每摸一张加一）、上一次看过能不能接管的是第几次；接管的那一手是谁（和牌事件里用）；
-  // 接管的自摸，和牌音效、「自摸」的切入等牌砸下去那一下再放；电脑这一手先替它想过了（看它要不要自摸），轮到它时直接用
-  private drawSeq = 0;
-  private takeSeq = -1;
-  private tookOver: number | null = null;
-  private takeWinFx: { run: () => void; timer: number } | null = null;
-  private preAction: { seat: number; seq: number; action: Action } | null = null;
   private showResult = false;
   // 刚打出的牌只在第一次画出来时播放落桌动画，之后重绘不再重播
   private freshDiscard: string | null = null;
@@ -804,8 +793,6 @@ export class App {
         }
         playSlam();
         if (lily !== null) playLily(lilyGrand(lily));
-        // 接管的自摸：砸下去炸开的光先看清，再出「自摸」
-        if (this.takeWinFx) window.setTimeout(() => this.flushTakeWinFx(), TAKE_FX_DELAY);
       };
       // 衣的海底牌砸进海里：水声
       this.table3d.onSeaSlam = () => playSplash();
@@ -888,8 +875,6 @@ export class App {
       }, wait);
       return;
     }
-    // 「自摸一气呵成」：刚摸到就能自摸，直接自摸，牌桌把这一下摸牌接管成竹井久的摔牌
-    if (g.phase === 'turn' && this.takeTsumo(g)) return;
     const waiting = g.waitingSeats();
     // 托管时自己的座位也由电脑打
     const ai = waiting.filter((s) => s !== this.me || this.auto);
@@ -922,10 +907,7 @@ export class App {
     }
     if (g.phase === 'turn' && (g.turn !== this.me || this.auto)) {
       this.timer = window.setTimeout(() => {
-        // 摸牌时已经替它想过了（看它要不要自摸）：直接用，不再想一遍（电脑想的时候会用到牌局的随机数）
-        const pre = this.preAction;
-        this.preAction = null;
-        g.act(g.turn, pre && pre.seat === g.turn && pre.seq === this.drawSeq ? pre.action : chooseAction(g, g.turn, this.chars[g.turn].ai));
+        g.act(g.turn, chooseAction(g, g.turn, this.chars[g.turn].ai));
         this.step();
       }, this.thinkMs(g, g.turn, this.mode === '25d' ? AI_TURN_DELAY_25D : this.mode === '3d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
       return;
@@ -940,37 +922,6 @@ export class App {
         this.timer = window.setTimeout(() => this.playerAct(legal[0]), wait);
       }
     }
-  }
-
-  // 「自摸一气呵成」（视觉设置，2.5D 改良布局）：刚摸到的这一张能自摸，程序先看出来——电脑要它自己也想自摸，自己（不托管时）直接替你自摸——
-  // 马上宣言自摸，牌桌不让这张飞进手里，接管成竹井久的摔牌（从牌山上摸起来砸下去）。每摸一张只看一次；
-  // 牌桌接不了（发牌动画里庄家的第一张、衣捞上来的海底牌、初美聚着风……）就照常
-  private takeTsumo(g: Game): boolean {
-    const s = g.turn;
-    const tile = g.players[s].drawn;
-    if (this.takeSeq === this.drawSeq || tile === null) return false;
-    this.takeSeq = this.drawSeq;
-    const t3 = this.table3d;
-    if (!t3 || t3.style !== '25d' || !t3.improved || this.vision || this.netView || !this.takes(s)) return false;
-    const tsumo = g.legalActions(s).find((a) => a.type === 'tsumo');
-    if (!tsumo) return false;
-    if (s !== this.me || this.auto) {
-      const a = chooseAction(g, s, this.chars[s].ai);
-      this.preAction = { seat: s, seq: this.drawSeq, action: a };
-      if (a.type !== 'tsumo') return false;
-    }
-    if (!t3.takeOver(s, tile)) return false;
-    this.preAction = null;
-    this.tookOver = s;
-    g.act(s, tsumo);
-    this.step();
-    return true;
-  }
-
-  // 「自摸一气呵成」管不管这个座位：所有人，或者只管 looks.ts 里配了竹井久那一套的人
-  private takes(seat: number): boolean {
-    const t = this.settings.slamTake;
-    return t === 'all' || (t === 'hisa' && LOOKS[this.chars[seat]?.id ?? '']?.slam === 'hisa');
   }
 
   // 理和鸣切里的“和”“鸣”“切”：轮到自己时能替玩家做的就排上计时器，返回 true
@@ -1098,10 +1049,7 @@ export class App {
   private onGameEvent(e: GameEvent): void {
     this.table3d?.onEvent(e, this.game!);
     this.updateFaces(e);
-    if (e.type === 'draw') this.drawSeq++;
-    if (e.type !== 'ability') this.preAction = null;
     if (e.type === 'roundStart') {
-      this.dropTakeWinFx();
       this.roundBanner();
       // 新的一局配牌先理好
       this.handOrder = null;
@@ -1169,6 +1117,7 @@ export class App {
       if (!(!this.cutinSeen.has(key) && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
       this.cutinSeen.add(key);
     } else if (e.type === 'roundEnd') {
+      if (e.result.wins.length) playWin();
       this.riiPicking = false;
       this.riiFinish(e.result);
       // 2D：初美聚着风和牌，紫光往上冲（3D、2.5D 在牌桌上放）
@@ -1178,44 +1127,19 @@ export class App {
         this.galeSlam = { seat: slam.seat, t0: performance.now() };
         window.setTimeout(() => this.galeBurst2d(), slamImpact2d(slam.hand.filter((t) => t !== slam.tile).length) * 1000);
       }
-      // 「自摸一气呵成」接管的自摸：和牌音效、「自摸」的切入等牌砸下去那一下（onSlam）再放，最多等 TAKE_FX_MAX
-      const took = this.tookOver !== null && e.result.wins.some((w) => w.seat === this.tookOver && w.from === null);
-      this.tookOver = null;
-      this.dropTakeWinFx();
-      if (took) this.takeWinFx = { run: () => this.winCutins(e.result), timer: window.setTimeout(() => this.flushTakeWinFx(), TAKE_FX_MAX) };
-      else this.winCutins(e.result);
+      for (const w of e.result.wins) {
+        // 郝慧宇和牌喊「食糊」，国标 24 番以上金色
+        if (this.gbWinFx(w)) continue;
+        // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
+        const c = this.chars[w.seat];
+        const word = w.from === null ? '自摸' : '荣和';
+        // 初美东北都鸣出来以后和牌：放里鬼门的和牌动画
+        const form = this.game!.active(w.seat)?.form?.(this.game!, w.seat) ?? (c.id === 'hatsumi' && this.game!.active(w.seat) && hatsumiOpen(this.game!, w.seat) ? 'kimon' : null);
+        const art = form ? skillArt(c.id, `${form}-win`) : undefined;
+        if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art, glyph: c.name.slice(-1) })) continue;
+        this.bigFx(w.seat, word, 'win');
+      }
     }
-  }
-
-  // 和牌音效、每个和了的人的大字 / 切入
-  private winCutins(r: RoundResult): void {
-    if (r.wins.length) playWin();
-    for (const w of r.wins) {
-      // 郝慧宇和牌喊「食糊」，国标 24 番以上金色
-      if (this.gbWinFx(w)) continue;
-      // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
-      const c = this.chars[w.seat];
-      const word = w.from === null ? '自摸' : '荣和';
-      // 初美东北都鸣出来以后和牌：放里鬼门的和牌动画
-      const form = this.game!.active(w.seat)?.form?.(this.game!, w.seat) ?? (c.id === 'hatsumi' && this.game!.active(w.seat) && hatsumiOpen(this.game!, w.seat) ? 'kimon' : null);
-      const art = form ? skillArt(c.id, `${form}-win`) : undefined;
-      if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art, glyph: c.name.slice(-1) })) continue;
-      this.bigFx(w.seat, word, 'win');
-    }
-  }
-
-  // 接管的自摸砸下去了：放和牌音效和切入
-  private flushTakeWinFx(): void {
-    const fx = this.takeWinFx;
-    if (!fx) return;
-    this.takeWinFx = null;
-    clearTimeout(fx.timer);
-    if (this.game) fx.run();
-  }
-
-  private dropTakeWinFx(): void {
-    if (this.takeWinFx) clearTimeout(this.takeWinFx.timer);
-    this.takeWinFx = null;
   }
 
   // 第二形态（天使和、治水）在素材页换了 `${形态}-${kind}` 的动画：放这一段，放了返回 true
@@ -1752,8 +1676,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、动画开关是别处的设置，留着
-      const { chisui, drawPath, vary, layout, hand, slam, slamTake } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary, layout, hand, slam, slamTake };
+      const { chisui, drawPath, vary, layout, hand, slam } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary, layout, hand, slam };
       saveSettings(this.settings);
       this.renderPanel();
       return;

@@ -3,20 +3,19 @@ import { TILE_H, TILE_T } from './tableLayout';
 import { Key, SlamMotion, V, basis, bezier, clamp01, easeIn, easeInOut, easeOut, smooth } from './slamMath';
 import type { SlamPose, SlamView } from './tileSlam';
 
-// 竹井久的自摸（照原作的摔牌）：手伸到牌山上摸牌（指肚按着牌背盲牌），拿起来一路不停：在半空拱过来、半路上落到桌上，
-// 落下去时牌背朝上、往自己这边仰 30 度，接着背朝上拖到手牌右边；一下子翻过来（牌面朝上），停一下亮牌——手牌同时倒下亮出来；
-// 手指一弹，牌翻着跟头飞上去，升到最高时总是牌面朝上；手从上面扣住，连手带牌砸到桌上，炸开。
-// 牌最后牌面朝上躺在手牌右边（就是倒牌以后和了牌躺的地方，倒牌时它不用再动）。
-// 「自摸一气呵成」：摸到就和的那一张不走摸牌路径，这一整段就是她的摸牌——from 是那张牌在牌山上的样子（哪一边的牌山都行）；
-// 隔着桌子的牌山手不伸过去，牌自己沿弧线飞过来落到桌上，手在落桌的地方接住接着拖。
+// 竹井久的自摸（照原作的摔牌）：宣言自摸以后，手伸过来按住摸到的那张（from，自摸时是手里立着的那张：指肚按着牌顶），
+// 拿起来一路不停：在半空拱过去、落到桌上，落下去时牌背朝上、往自己这边仰 30 度，接着背朝上拖到手牌右边；
+// 一下子翻过来（牌面朝上），停一下亮牌——手牌同时倒下亮出来（revealAt）；手指一弹，牌翻着跟头飞上去，升到最高时总是牌面朝上；
+// 手从上面扣住，连手带牌砸到桌上，炸开。牌最后牌面朝上躺在手牌右边（就是倒牌以后和了牌躺的地方，倒牌时它不用再动）。
+// from 哪里都行（牌山上的也行）：离得太远的（隔着桌子）手不伸过去，牌自己沿弧线飞过来落到桌上，手在落桌的地方接住接着拖。
 //
-// 从牌山到拖到手牌右边是一条连起来的路线（拱过去的弧线接上横着拖的那一段），按路程匀着走，只在起步、到头时快慢变化，中间不停。
+// 从拿起来到拖到手牌右边是一条连起来的路线（拱过去的弧线接上横着拖的那一段），按路程匀着走，只在起步、到头时快慢变化，中间不停。
 // 这里只算整段手和牌在哪（SlamMotion），手的模型、回调、影子都在 tileSlam.ts。
 // 牌的朝向从最后躺着的样子（to.quat：牌面朝上、牌顶朝桌子中间）绕这一家的右手方向（side）转出来：
 // 转 180° 是牌背朝上、牌顶朝自己；再转 30° 是牌背往自己这边仰 30 度（靠自己的那条边贴着桌面）。
 
 export interface FlickTiming {
-  reach: number; // 手伸到牌山上（远的照距离拉长）
+  reach: number; // 手伸到那张牌上（远的照距离拉长）
   take: number; // 指肚按住
   move: number; // 拿回来、落桌、拖到手牌右边（一口气，远的照路程拉长）
   flip: number; // 一下子翻过来
@@ -34,8 +33,8 @@ export interface FlickSpec {
   to: SlamPose; // 最后牌面朝上躺在桌上的样子
   side: THREE.Vector3; // 这一家的右手方向（世界坐标，水平）
   out: THREE.Vector3; // 这一家往外（朝她自己身体）的方向
-  from?: SlamPose; // 摸的那张现在在哪（牌山上，牌背朝上）。不给就当在落点前面三张牌远的牌山上
-  hand: boolean; // false：不带手，牌自己从牌山上冒出来、滑过来、翻、跳、砸
+  from?: SlamPose; // 要拿的那张现在在哪（自摸时是手里立着的那张；牌山上背朝上的也行）。不给就当在落点前面三张牌远的牌山上
+  hand: boolean; // false：不带手，牌自己从原处冒出来、滑过来、翻、跳、砸
   near?: boolean; // 自己砸牌（镜头就在她身后）
   cam?: SlamView; // 牌桌的镜头：最高处要在画面里（别家的牌在画面边上，往上弹会出画面，就往桌子中间挪、放低一点）
   timing?: Partial<FlickTiming>;
@@ -118,7 +117,7 @@ const TILT = Math.PI / 6;
 // 所以落在拖到的地方左边或者右边（牌是从哪边拿回来的就落在哪边）DRAG 张、往前 DRAG_IN 张，顺着那条缝横着拖过来
 const DRAG = 2.6;
 const DRAG_IN = 0.25;
-// 手伸到牌山上：离得是 REACH_REF 牌宽以内照 FLICK_TIMING，再远的照距离的平方根拉长，最多 REACH_MAX 倍
+// 手伸到那张牌上：离得是 REACH_REF 牌宽以内照 FLICK_TIMING，再远的照距离的平方根拉长，最多 REACH_MAX 倍
 const REACH_REF = 12;
 const REACH_MAX = 2.2;
 // 拿回来那一口气：路程 MOVE_REF 牌宽以内照 FLICK_TIMING，再远的照路程的平方根拉长，最多 MOVE_MAX 倍
@@ -190,11 +189,11 @@ export class FlickMotion implements SlamMotion {
   private readonly Fq: THREE.Quaternion;
   private readonly P1: THREE.Vector3; // 拖到这里（仰着，靠自己那条边贴着桌面，正好在最后那张牌靠桌子中间那条边上）
   private readonly W: THREE.Vector3; // 半路上落到桌面开始拖的地方（P1 的左边或者右边）
-  private readonly top: THREE.Vector3; // 牌山上那张（牌中心）
-  private readonly topQ: THREE.Quaternion; // 它在牌山上的朝向（牌背朝上）
-  private readonly topS: number; // 它在牌山上的大小
-  private readonly far: boolean; // 隔着桌子的牌山：牌自己飞过来，手在落桌的地方接住
-  private readonly path: Path; // 牌山 → 拱过去 → 落桌（W）→ 拖到 P1
+  private readonly top: THREE.Vector3; // 要拿的那张一开始在哪（牌中心）
+  private readonly topQ: THREE.Quaternion; // 它一开始的朝向
+  private readonly topS: number; // 它一开始的大小
+  private readonly far: boolean; // 隔着桌子的：牌自己飞过来，手在落桌的地方接住
+  private readonly path: Path; // 拿起来 → 拱过去 → 落桌（W）→ 拖到 P1
   private readonly landU: number; // 落桌那一下走了全程的几分之几
   private readonly landK: number; // 落桌是第几秒
   private readonly A: THREE.Vector3; // 最高处
@@ -226,18 +225,18 @@ export class FlickMotion implements SlamMotion {
     const farDir = V(0, 1, 0).applyQuaternion(q210).negate();
     const back = V(0, 0, 1).applyQuaternion(q210).negate();
     this.P1 = edge.clone().addScaledVector(farDir, h).addScaledVector(back, th);
-    // 牌山上那张：给了就是它现在的样子，不给就当在前面三张牌远、往左一点的牌山上
+    // 要拿的那张：给了就是它现在的样子，不给就当在前面三张牌远、往左一点的牌山上
     const from = o.from ?? { pos: this.P1.clone().addScaledVector(fwd, 3.2 * s).addScaledVector(side, -1.2 * s).setY(TILE_T * 1.5 * s), quat: this.q(Math.PI), scale: s };
     this.top = from.pos.clone();
     this.topQ = from.quat.clone();
     this.topS = from.scale;
-    // 落桌的地方：拖到的地方的左边或者右边（牌山上那张在哪边就落在哪边，正前方的从右边，手是右手）
+    // 落桌的地方：拖到的地方的左边或者右边（那张牌在哪边就落在哪边，正前方的、就在跟前的从右边，手是右手）
     const lateral = this.top.clone().sub(this.P1).dot(side) / s;
     this.W = this.P1.clone().addScaledVector(side, (lateral < -1 ? -1 : 1) * DRAG * s).addScaledVector(fwd, DRAG_IN * s);
     const flat = (v: THREE.Vector3) => v.clone().setY(0);
     const span = flat(this.top).distanceTo(flat(this.W));
     this.far = flat(this.top).distanceTo(flat(this.P1)) > FAR_WALL * s;
-    // 一路的点：从牌山上提起来、拱过去（越远拱得越高，不擦着牌河），顺着拖的方向斜着落到 W，接着拖到 P1
+    // 一路的点：提起来、拱过去（越远拱得越高，不擦着牌河），顺着拖的方向斜着落到 W，接着拖到 P1
     const dragDir = flat(this.P1.clone().sub(this.W)).normalize();
     const c1 = this.top.clone().addScaledVector(up, 1.0 * s + 0.12 * span);
     const c2 = this.W.clone().addScaledVector(dragDir, -Math.min(0.45 * span, 2.4 * s)).addScaledVector(up, 0.5 * s + 0.07 * span);
@@ -281,7 +280,7 @@ export class FlickMotion implements SlamMotion {
     const stretch = (d: number, ref: number, max: number) => Math.min(max, Math.max(1, Math.sqrt(d / (ref * s))));
     // 隔着桌子的：不伸手、不按，牌一开始就飞
     this.dur = {
-      reach: this.far ? 0 : t.reach * stretch(this.enter.pos.distanceTo(this.grip(this.top, this.topQ).pos), REACH_REF, REACH_MAX),
+      reach: this.far ? 0 : t.reach * stretch(this.enter.pos.distanceTo(this.hold(this.top, this.topQ).pos), REACH_REF, REACH_MAX),
       take: this.far ? 0 : t.take,
       move: t.move * stretch(this.path.length, MOVE_REF, MOVE_MAX),
     };
@@ -337,12 +336,25 @@ export class FlickMotion implements SlamMotion {
     return { pos: contact.sub(PAD.clone().multiplyScalar(this.hs).applyQuaternion(quat)), quat: quat.clone() };
   }
 
+  // 拿着牌走的时候指肚按在哪：牌背朝上（躺着、仰着）的按牌背（grip）；立着的（自摸时手里那张）按牌顶那条边，
+  // 手在牌靠自己这边、上面，不穿过牌。从立着倒成背朝上的路上慢慢换过去
+  private hold(pos: THREE.Vector3, tq: THREE.Quaternion): Key {
+    const lying = this.grip(pos, tq);
+    const back = V(0, 0, 1).applyQuaternion(tq).negate();
+    const w = smooth(0.55, 0.85, back.dot(this.up));
+    if (w >= 1) return lying;
+    const top = V(0, 1, 0).applyQuaternion(tq);
+    const contact = pos.clone().addScaledVector(top, (TILE_H / 2) * this.s).addScaledVector(this.side, 0.3 * this.s);
+    const edge = contact.sub(PAD.clone().multiplyScalar(this.hs).applyQuaternion(this.gripQ));
+    return { pos: edge.lerp(lying.pos, w), quat: lying.quat };
+  }
+
   // 手心扣着牌面朝上的牌：牌在 pos 时手在哪
   private palm(pos: THREE.Vector3, quat = this.catchQ): Key {
     return { pos: pos.clone().sub(PALM_TILE.clone().multiplyScalar(this.hs).applyQuaternion(quat)), quat: quat.clone() };
   }
 
-  // 拿回来那一口气里，走了全程 u 时牌的样子：落桌之前一边转成她这边的方向、仰成 30 度，一边从牌山的大小变成桌上的大小
+  // 拿回来那一口气里，走了全程 u 时牌的样子：落桌之前一边转成她这边的方向、仰成 30 度，一边从原来的大小变成桌上的大小
   private along(u: number): SlamPose {
     const f = clamp01(u / this.landU);
     const quat = this.topQ.clone().slerp(this.q(Math.PI), smooth(0, 0.55, f)).slerp(this.q(Math.PI + TILT), smooth(0.4, 0.95, f));
@@ -397,20 +409,20 @@ export class FlickMotion implements SlamMotion {
       return { pos: bezier(this.enter.pos, ctrl, at.pos, f), quat: this.enter.quat.clone().slerp(at.quat, smooth(0, 0.8, f)) };
     }
     if (k < c.reached) {
-      // 伸到牌山上：越远拱得越高
+      // 伸到那张牌上：越远拱得越高
       const f = easeOut(clamp01(k / this.dur.reach));
-      const at = this.grip(this.top, this.topQ);
+      const at = this.hold(this.top, this.topQ);
       const ctrl = this.enter.pos.clone().lerp(at.pos, 0.6).addScaledVector(up, 1.5 * s + 0.05 * this.enter.pos.distanceTo(at.pos));
       return { pos: bezier(this.enter.pos, ctrl, at.pos, f), quat: this.enter.quat.clone().slerp(at.quat, smooth(0, 0.8, f)) };
     }
     if (k < c.taken) {
       // 指肚按下去（盲牌）
       const f = clamp01((k - c.reached) / this.dur.take);
-      const at = this.grip(tile.pos, tile.quat);
+      const at = this.hold(tile.pos, tile.quat);
       at.pos.addScaledVector(up, -0.08 * s * Math.sin(Math.PI * f));
       return at;
     }
-    if (k < c.moved) return this.grip(tile.pos, tile.quat);
+    if (k < c.moved) return this.hold(tile.pos, tile.quat);
     // 弹牌前：指尖在牌靠自己的那个右下角，贴着桌面
     const ready = (() => {
       const q = this.flickQ;

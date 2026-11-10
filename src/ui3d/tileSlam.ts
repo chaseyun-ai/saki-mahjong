@@ -6,8 +6,7 @@ import { HAND_SCALE, Key, SlamMotion, SlamStyle, V, basis, bezier, clamp01, ease
 
 export type { SlamStyle } from './slamMath';
 
-// 自摸砸牌。平时都是通用的 press；视觉设置「自摸一气呵成」开着时，摸到就和的那一张直接接管成竹井久那一套（hisa，slamFlick.ts；
-// 开成「竹井久」时只有 looks.ts 里 slam 配了 hisa 的人这样）：
+// 自摸砸牌。每个角色用哪一套动作（style）在 looks.ts 里配，不配就是通用的 press；竹井久配的是 hisa（slamFlick.ts）：
 //   press（通用，照雀魂的节奏，画面和动作都是自己做的）：一只修长的手（手背朝着看的人）从这一家身前伸上来，食指、中指的指尖压着那张牌（牌背贴着指肚），举高停一下，
 // 往前一扫，把牌扣在桌上（牌面朝下）；手撤走，牌自己翻起来立住，亮一下光，再“砰”地炸开。
 // 自己自摸时手是从镜头跟前（画面左下）伸上来的，离镜头近，所以很大；扫下去的时候越来越远、越来越小。
