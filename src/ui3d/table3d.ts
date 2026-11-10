@@ -2086,7 +2086,7 @@ export class Table3D {
   // from 不给就是牌已经在手里、跟着手从画面外伸上来（自己自摸）；给了就是先伸过去在 from 夹起来。
   // near：自己拍牌（镜头在她身后），不给就是 seat 是自己时为 true。
   // hand: false 不带手：牌从原处（from，不给就是落点）自己跳起来再拍下去。order：手牌什么时候倒（动作只给时刻 revealAt）。
-  // style: 'hisa' 竹井久那一套（slamFlick.ts）：from 是要拿的那张现在在哪，拖过来、翻过来、弹上去、扣住砸下。
+  // style: 'hisa' 竹井久那一套（slamFlick.ts）：from 是要拿的那张现在在哪，拖过来、翻过来、握拳放在大拇指指甲盖上弹上去、扣住砸下。
   // at：到这时候才动手（在那之前牌原样不动，算被拿着），不给就是马上。
   // 牌落到桌上调 onPress，开始亮调 onCharge（只有 hisa），炸开调 onHit（at 是牌底下的桌面点）；
   // 扣牌的小震动、聚光、冲击波和旋风要自己在回调里叫 slamPress / slamFx.charge / slamImpact。

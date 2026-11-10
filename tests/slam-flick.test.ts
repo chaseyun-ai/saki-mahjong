@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { FlickMotion } from '../src/ui3d/slamFlick';
-import { TILE_H } from '../src/ui3d/tableLayout';
+import { FLICK_HAND, FlickMotion } from '../src/ui3d/slamFlick';
+import { COCKED, OPEN, thumbNail } from '../src/ui3d/slamHand';
+import { TILE_H, TILE_T } from '../src/ui3d/tableLayout';
 
-// 竹井久那一套：从拿的那张现在的样子开始（自摸时是手里那张；动作本身哪里都能拿，牌山上的也行），砸下去时正好躺在落点
+// 竹井久那一套：从拿的那张现在的样子开始（自摸时是手里那张；动作本身哪里都能拿，牌山上的也行），
+// 翻过来以后握拳放在大拇指指甲盖上弹上去，砸下去时正好躺在落点
 const side = new THREE.Vector3(1, 0, 0);
 const out = new THREE.Vector3(0, 0, 1);
 // 牌面朝上、牌顶朝桌子中间（-z）躺着
@@ -76,16 +78,69 @@ describe('竹井久的摔牌', () => {
     }
   });
 
-  it('弹上去之前先翻过来，牌面朝上在落点停一下', () => {
+  it('弹上去之前先翻过来，牌面朝上落在落点；不带手就在那里停一下', () => {
     const m = new FlickMotion({ to, from: wall(5, 9.45), side, out, hand: true, near: true });
     expect(m.revealAt).toBeLessThan(m.pressAt);
     // 翻之前牌背朝上
     expect(m.frame(m.revealAt - 0.01).tile.quat.angleTo(to.quat)).toBeGreaterThan(Math.PI * 0.75);
-    for (let k = m.pressAt + 0.001; k < m.pressAt + 0.25; k += 0.02) {
-      const p = m.frame(k).tile;
+    // 翻过来那一下正好牌面朝上躺在落点
+    const landed = m.frame(m.pressAt + 0.001).tile;
+    expect(landed.pos.distanceTo(to.pos)).toBeLessThan(1e-3);
+    expect(landed.quat.angleTo(to.quat)).toBeLessThan(1e-3);
+    const bare = new FlickMotion({ to, from: wall(5, 9.45), side, out, hand: false });
+    for (let k = bare.pressAt + 0.001; k < bare.pressAt + 0.25; k += 0.02) {
+      const p = bare.frame(k).tile;
       expect(p.pos.distanceTo(to.pos)).toBeLessThan(1e-6);
       expect(p.quat.angleTo(to.quat)).toBeLessThan(1e-6);
     }
+  });
+
+  it('握拳把牌放在大拇指指甲盖上：牌面朝上、稍微往前倾，停一下再弹', () => {
+    const m = new FlickMotion({ to, from: wall(5, 9.45), side, out, hand: true, near: true });
+    const up = new THREE.Vector3(0, 1, 0);
+    // 弹之前 0.3 秒到 0.15 秒：牌停在指甲盖上不动
+    const k0 = m.flickAt - 0.3;
+    const rest = m.frame(k0);
+    expect(m.frame(m.flickAt - 0.2).tile.pos.distanceTo(rest.tile.pos)).toBeLessThan(1e-6);
+    // 就在落点正上方，比桌上的手牌高
+    expect(rest.tile.pos.clone().setY(0).distanceTo(to.pos.clone().setY(0))).toBeLessThan(1e-6);
+    expect(rest.tile.pos.y - to.pos.y).toBeGreaterThan(1.5);
+    // 牌面朝上，靠桌子中间那条边低一点（往前倾 10 到 25 度）
+    const face = new THREE.Vector3(0, 0, 1).applyQuaternion(rest.tile.quat);
+    const top = new THREE.Vector3(0, 1, 0).applyQuaternion(rest.tile.quat);
+    expect(face.dot(up)).toBeGreaterThan(0.9);
+    const tilt = Math.asin(-top.dot(up));
+    expect(tilt).toBeGreaterThan((10 * Math.PI) / 180);
+    expect(tilt).toBeLessThan((25 * Math.PI) / 180);
+    // 手握着拳，大拇指指甲盖正好贴着牌底正中间，指甲朝上
+    const hand = rest.hand!;
+    expect(hand.pose).toBe(COCKED);
+    const nail = thumbNail(COCKED);
+    const at = nail.at.clone().multiplyScalar(FLICK_HAND).applyQuaternion(hand.quat).add(hand.pos);
+    const under = rest.tile.pos.clone().addScaledVector(face, -TILE_T / 2);
+    expect(at.distanceTo(under)).toBeLessThan(1e-6);
+    expect(nail.up.clone().applyQuaternion(hand.quat).dot(face)).toBeGreaterThan(0.95);
+    // 拳头立在桌面上，不钻到桌子底下：小指那边（手里坐标 +x）离手掌中心最远 1.2
+    expect(hand.pos.y - 1.2 * FLICK_HAND).toBeGreaterThan(to.pos.y - TILE_T / 2);
+  });
+
+  it('大拇指一弹牌才离手：弹之前之后牌不跳，弹完手张开去接', () => {
+    const m = new FlickMotion({ to, from: wall(5, 9.45), side, out, hand: true, near: true });
+    const before = m.frame(m.flickAt - 0.001).tile;
+    const after = m.frame(m.flickAt + 0.001).tile;
+    expect(after.pos.distanceTo(before.pos)).toBeLessThan(0.1);
+    expect(after.quat.angleTo(before.quat)).toBeLessThan(0.1);
+    // 弹出去那一下大拇指挑起来：指甲盖比弹之前高
+    const nailY = (k: number) => {
+      const h = m.frame(k).hand!;
+      return thumbNail(h.pose ?? OPEN).at.multiplyScalar(FLICK_HAND).applyQuaternion(h.quat).add(h.pos).y;
+    };
+    expect(nailY(m.flickAt + 0.06) - nailY(m.flickAt - 0.001)).toBeGreaterThan(0.8);
+    // 牌一直在大拇指上面，不穿过手
+    for (let k = m.flickAt; k < m.flickAt + 0.1; k += 0.005) expect(m.frame(k).tile.pos.y).toBeGreaterThan(nailY(k) - 0.05);
+    // 扣住的时候手已经张开了
+    expect(m.frame(m.chargeAt + 0.1).hand!.pose ?? OPEN).toBe(OPEN);
+    expect(m.frame(m.hitAt + 0.01).hand!.pose ?? OPEN).toBe(OPEN);
   });
 
   it('弹得够高：最高处比落点高十张牌宽以上', () => {
@@ -105,7 +160,7 @@ describe('竹井久的摔牌', () => {
     expect(h.pos.clone().sub(standing.pos).dot(out)).toBeGreaterThan(0);
     expect(h.pos.y).toBeGreaterThan(TILE_H);
     // 照样拖过来、翻过来亮牌、砸下去躺在落点
-    expect(m.frame(m.pressAt + 0.1).tile.quat.angleTo(to.quat)).toBeLessThan(1e-6);
+    expect(m.frame(m.pressAt + 0.001).tile.quat.angleTo(to.quat)).toBeLessThan(1e-3);
     expect(m.frame(m.hitAt + 0.01).tile.pos.distanceTo(to.pos)).toBeLessThan(1e-6);
   });
 

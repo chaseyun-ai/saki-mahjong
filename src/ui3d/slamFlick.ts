@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { TILE_H, TILE_T } from './tableLayout';
+import { COCKED, FLICKED, OPEN, mixPose, thumbNail } from './slamHand';
 import { Key, SlamMotion, V, basis, bezier, clamp01, easeIn, easeInOut, easeOut, smooth } from './slamMath';
 import type { SlamPose, SlamView } from './tileSlam';
 
 // 竹井久的自摸（照原作的摔牌）：宣言自摸以后，手伸过来按住摸到的那张（from，自摸时是手里立着的那张：指肚按着牌顶），
 // 拿起来一路不停：在半空拱过去、落到桌上，落下去时牌背朝上、往自己这边仰 30 度，接着背朝上拖到手牌右边；
-// 一下子翻过来（牌面朝上），停一下亮牌——手牌同时倒下亮出来（revealAt）；手指一弹，牌翻着跟头飞上去，升到最高时总是牌面朝上；
-// 手从上面扣住，连手带牌砸到桌上，炸开。牌最后牌面朝上躺在手牌右边（就是倒牌以后和了牌躺的地方，倒牌时它不用再动）。
+// 一下子翻过来（牌面朝上落在桌上）——手牌同时倒下亮出来（revealAt）；手握成拳、立起来（大拇指那边朝上），
+// 牌面朝上、稍微往前倾着放在大拇指指甲盖上（大拇指尖压在食指底下），停一下亮牌；大拇指一弹，牌翻着跟头飞上去，升到最高时总是牌面朝上；
+// 手张开从上面扣住，连手带牌砸到桌上，炸开。牌最后牌面朝上躺在手牌右边（就是倒牌以后和了牌躺的地方，倒牌时它不用再动）。
+// 不带手的时候牌不托起来，翻过来以后就在桌上停一下再自己跳上去。
 // from 哪里都行（牌山上的也行）：离得太远的（隔着桌子）手不伸过去，牌自己沿弧线飞过来落到桌上，手在落桌的地方接住接着拖。
 //
 // 从拿起来到拖到手牌右边是一条连起来的路线（拱过去的弧线接上横着拖的那一段），按路程匀着走，只在起步、到头时快慢变化，中间不停。
@@ -18,16 +21,17 @@ export interface FlickTiming {
   reach: number; // 手伸到那张牌上（远的照距离拉长）
   take: number; // 指肚按住
   move: number; // 拿回来、落桌、拖到手牌右边（一口气，远的照路程拉长）
-  flip: number; // 一下子翻过来
-  show: number; // 牌面朝上停一下亮牌（手牌同时倒下）
-  rise: number; // 弹上去：翻一个跟头升到最高
+  flip: number; // 一下子翻过来（手牌同时倒下）
+  perch: number; // 握拳，把牌托到大拇指指甲盖上（不带手时没有这一段）
+  show: number; // 牌面朝上在指甲盖上停一下亮牌
+  rise: number; // 大拇指一弹：翻一个跟头升到最高
   hang: number; // 停在最高处，手从上面扣住
   slam: number; // 连手带牌砸下去
   hold: number; // 手按着停一下
   leave: number; // 手撤走
 }
 
-export const FLICK_TIMING: FlickTiming = { reach: 0.22, take: 0.08, move: 0.46, flip: 0.15, show: 0.32, rise: 0.4, hang: 0.13, slam: 0.09, hold: 0.14, leave: 0.3 };
+export const FLICK_TIMING: FlickTiming = { reach: 0.22, take: 0.08, move: 0.46, flip: 0.15, perch: 0.26, show: 0.34, rise: 0.4, hang: 0.13, slam: 0.09, hold: 0.14, leave: 0.3 };
 
 export interface FlickSpec {
   to: SlamPose; // 最后牌面朝上躺在桌上的样子
@@ -99,8 +103,15 @@ const PALM_TILE = V(0, 0.55, -0.58);
 // 指肚按在牌背靠右的地方，手整个在牌的右边，自己看的时候不挡着牌
 const GRIP_PITCH = 0.55;
 const YAW = -0.6;
-// 弹牌前手指扎得更低（指尖在牌靠自己那个右下角）
+// 翻过来松手以后手指扎得更低（指尖在牌靠自己那个右下角），从这里握拳把牌托起来
 const FLICK_PITCH = 0.9;
+// 牌放在大拇指指甲盖上时往前倾多少（靠桌子中间那条边低，弧度）
+const PERCH_TILT = 0.3;
+// 拳头立在桌上：手掌中心离桌面多高（手模型的牌宽：小指那边到手掌中心，再留一条缝）
+const FIST_REST = 1.3;
+// 弹之前拳头往下沉一点蓄劲（牌宽），弹的时候往上一顿
+const COCK_DIP = 0.16;
+const FLICK_KICK = 0.55;
 // 手比通用那一套小一点（桌面上的动作，手太大会把牌整个盖住）
 export const FLICK_HAND = 1.25;
 // 弹上去多高、往自己这边飘多少（牌宽）；手在最高处的右边等着，往左一扣
@@ -170,6 +181,7 @@ export class FlickMotion implements SlamMotion {
   readonly hitAt: number;
   readonly doneAt: number;
   readonly revealAt: number;
+  readonly flickAt: number; // 大拇指弹出去的时刻
   readonly pressPoint: THREE.Vector3;
   readonly chargePoint: THREE.Vector3;
   readonly hitPoint: THREE.Vector3;
@@ -197,14 +209,16 @@ export class FlickMotion implements SlamMotion {
   private readonly landU: number; // 落桌那一下走了全程的几分之几
   private readonly landK: number; // 落桌是第几秒
   private readonly A: THREE.Vector3; // 最高处
+  private readonly P: THREE.Vector3; // 放在大拇指指甲盖上时牌中心在哪（不带手就是落点）
+  private readonly tilt: number; // 那时候往前倾多少
+  private readonly fistQ: THREE.Quaternion; // 拳头立着（大拇指那边朝上）、跟牌一样往前倾
   private readonly gripQ: THREE.Quaternion;
   private readonly flickQ: THREE.Quaternion;
-  private readonly snapQ: THREE.Quaternion;
   private readonly catchQ: THREE.Quaternion;
   private readonly enter: Key;
-  private readonly dur: { reach: number; take: number; move: number };
+  private readonly dur: { reach: number; take: number; move: number; perch: number };
   // 每一段结束的时刻
-  private readonly c: { reached: number; taken: number; moved: number; flipped: number; shown: number; risen: number; hung: number; hit: number; held: number; gone: number };
+  private readonly c: { reached: number; taken: number; moved: number; flipped: number; perched: number; shown: number; risen: number; hung: number; hit: number; held: number; gone: number };
 
   constructor(o: FlickSpec) {
     const t = (this.t = { ...FLICK_TIMING, ...o.timing });
@@ -272,8 +286,17 @@ export class FlickMotion implements SlamMotion {
     const pitched = (p: number) => yawed.clone().multiplyScalar(Math.cos(p)).addScaledVector(up, -Math.sin(p));
     this.gripQ = basis(pitched(GRIP_PITCH), up);
     this.flickQ = basis(pitched(FLICK_PITCH), up);
-    this.snapQ = basis(pitched(0.15), up);
     this.catchQ = basis(pitched(0.04), up);
+    // 拳头立着：手指那头朝前（照样往左偏），大拇指那边朝上，再跟牌一样往前倾
+    this.tilt = this.hand ? PERCH_TILT : 0;
+    const lean = new THREE.Quaternion().setFromAxisAngle(side, -this.tilt);
+    this.fistQ = lean.clone().multiply(basis(yawed, up.clone().negate().cross(yawed)));
+    // 牌放在指甲盖上的地方：就在落点正上方，高度是拳头立在桌上时指甲盖的高度
+    this.P = this.F.clone();
+    if (this.hand) {
+      const nailUp = thumbNail(COCKED).at.multiplyScalar(this.hs).applyQuaternion(this.fistQ).y;
+      this.P.y = this.F.y - th + FIST_REST * this.hs + nailUp + th * V(0, 0, 1).applyQuaternion(this.q(-this.tilt)).y;
+    }
     // 手从她身前（拖到的地方后面、右边一点）伸进来、撤回去
     const home = this.grip(this.P1, q210);
     this.enter = { pos: home.pos.clone().addScaledVector(out, 10 * s).addScaledVector(side, 3 * s).addScaledVector(up, 2 * s), quat: basis(pitched(0.2), up) };
@@ -283,6 +306,7 @@ export class FlickMotion implements SlamMotion {
       reach: this.far ? 0 : t.reach * stretch(this.enter.pos.distanceTo(this.hold(this.top, this.topQ).pos), REACH_REF, REACH_MAX),
       take: this.far ? 0 : t.take,
       move: t.move * stretch(this.path.length, MOVE_REF, MOVE_MAX),
+      perch: this.hand ? t.perch : 0,
     };
     let k = 0;
     const c = {
@@ -290,6 +314,7 @@ export class FlickMotion implements SlamMotion {
       taken: (k += this.dur.take),
       moved: (k += this.dur.move),
       flipped: (k += t.flip),
+      perched: (k += this.dur.perch),
       shown: (k += t.show),
       risen: (k += t.rise),
       hung: (k += t.hang),
@@ -310,6 +335,7 @@ export class FlickMotion implements SlamMotion {
     // 翻过来落到桌上“嗒”一声，手牌同时倒下
     this.pressAt = c.flipped;
     this.revealAt = c.moved;
+    this.flickAt = c.shown;
     // 升到最高那一下亮一下（手扣上去之前就亮完）
     this.chargeAt = c.risen - 0.08;
     this.chargeDur = 0.07;
@@ -349,6 +375,28 @@ export class FlickMotion implements SlamMotion {
     return { pos: edge.lerp(lying.pos, w), quat: lying.quat };
   }
 
+  // 握着拳、牌放在大拇指指甲盖上：牌在 pos、朝向 tq 时手在哪（指甲盖贴着牌底正中间）
+  private fist(pos: THREE.Vector3, tq: THREE.Quaternion): Key {
+    const under = pos.clone().addScaledVector(V(0, 0, 1).applyQuaternion(tq), -(TILE_T / 2) * this.s);
+    return { pos: under.sub(thumbNail(COCKED).at.multiplyScalar(this.hs).applyQuaternion(this.fistQ)), quat: this.fistQ.clone(), pose: COCKED };
+  }
+
+  // 托起来那一段走了多少（f 是这一段过了几分之几）：牌先在桌上停一下，手握上来才离桌
+  private lift(f: number): number {
+    return smooth(0.22, 1, f);
+  }
+
+  // 放在指甲盖上的牌：托起来 e（0 在桌上，1 托到位），再往下沉 dip（牌宽）
+  private perched(e: number, dip = 0): SlamPose {
+    const pos = this.F.clone().lerp(this.P, e).addScaledVector(this.up, -dip * this.s);
+    return { pos, quat: this.q(-this.tilt * e), scale: this.s };
+  }
+
+  // 弹之前蓄劲往下沉多少（f 是亮牌那一段过了几分之几）
+  private dip(f: number): number {
+    return this.hand ? COCK_DIP * smooth(0.5, 1, f) : 0;
+  }
+
   // 手心扣着牌面朝上的牌：牌在 pos 时手在哪
   private palm(pos: THREE.Vector3, quat = this.catchQ): Key {
     return { pos: pos.clone().sub(PALM_TILE.clone().multiplyScalar(this.hs).applyQuaternion(quat)), quat: quat.clone() };
@@ -371,13 +419,17 @@ export class FlickMotion implements SlamMotion {
       const e = easeInOut(clamp01((k - c.moved) / t.flip));
       return { pos: this.flipPos(e), quat: this.q(Math.PI + TILT + (Math.PI - TILT) * e), scale: s };
     }
-    if (k < c.shown) return { pos: this.F.clone(), quat: this.q(0), scale: s };
+    // 握拳把牌托到大拇指指甲盖上：牌面朝上、稍微往前倾
+    if (k < c.perched) return this.perched(this.lift(clamp01((k - c.flipped) / this.dur.perch)));
+    // 托着停一下亮牌，最后往下沉一点蓄劲
+    if (k < c.shown) return this.perched(1, this.dip(clamp01((k - c.perched) / t.show)));
     if (k < c.risen) {
       // 弹上去：靠自己那条边先翻起来，翻一整个跟头，升到最高时正好牌面朝上（越往上越慢）
       const f = clamp01((k - c.shown) / t.rise);
       const lift = 1 - (1 - f) ** 2;
-      const pos = this.F.clone().lerp(this.A, f).setY(THREE.MathUtils.lerp(this.F.y, this.A.y, lift));
-      return { pos, quat: this.q(-Math.PI * 2 * f), scale: s };
+      const from = this.perched(1, this.dip(1)).pos;
+      const pos = from.clone().lerp(this.A, f).setY(THREE.MathUtils.lerp(from.y, this.A.y, lift));
+      return { pos, quat: this.q(-this.tilt - (Math.PI * 2 - this.tilt) * f), scale: s };
     }
     if (k < c.hung) {
       const f = clamp01((k - c.risen) / t.hang);
@@ -423,7 +475,7 @@ export class FlickMotion implements SlamMotion {
       return at;
     }
     if (k < c.moved) return this.hold(tile.pos, tile.quat);
-    // 弹牌前：指尖在牌靠自己的那个右下角，贴着桌面
+    // 翻过来松手以后：指尖在牌靠自己的那个右下角，贴着桌面
     const ready = (() => {
       const q = this.flickQ;
       const contact = this.F.clone().addScaledVector(out, h * 0.8).addScaledVector(this.side, 0.55 * s).setY(this.F.y + 0.05 * s);
@@ -438,23 +490,33 @@ export class FlickMotion implements SlamMotion {
       const pos = follow.pos.lerp(ready.pos, w).addScaledVector(up, 1.2 * s * Math.sin(Math.PI * w));
       return { pos, quat: follow.quat.slerp(ready.quat, w) };
     }
-    // 亮牌：指尖抵着牌角，蓄一下劲（手往后收一点点）
-    if (k < c.shown) {
-      const f = clamp01((k - c.flipped) / t.show);
-      return { pos: ready.pos.clone().addScaledVector(out, 0.12 * s * smooth(0.5, 1, f)), quat: ready.quat };
+    if (k < c.perched) {
+      // 握拳、立起来，把牌托到大拇指指甲盖上：手指先卷起来，手跟着牌一起抬到位
+      const f = clamp01((k - c.flipped) / this.dur.perch);
+      const e = this.lift(f);
+      const tile0 = this.perched(e);
+      const at = this.fist(tile0.pos, tile0.quat);
+      const w = smooth(0, 0.85, f);
+      const pos = ready.pos.clone().lerp(at.pos, w).addScaledVector(up, 0.5 * s * Math.sin(Math.PI * w));
+      return { pos, quat: ready.quat.clone().slerp(at.quat, w), pose: mixPose(OPEN, COCKED, smooth(0, 0.7, f)) };
     }
+    // 亮牌：牌在指甲盖上，拳头立着不动，最后跟着牌往下沉一点蓄劲
+    if (k < c.shown) return this.fist(tile.pos, tile.quat);
     // 接牌的地方：在最高处的右边、高一点（牌升上去时手不挡着它）
     const side = this.side;
     const above = this.palm(this.A.clone().addScaledVector(up, this.waitUp * s).addScaledVector(side, this.waitSide * s));
     if (k < c.risen) {
-      // 一弹：指尖往上一挑（手指甩上去），再升到最高处的上方，转成手心朝下
+      // 一弹：大拇指一下子挑直，拳头跟着往上一顿；停一下，再张开手升到最高处的上方，转成手心朝下
       const f = clamp01((k - c.shown) / t.rise);
-      const start = ready.pos.clone().addScaledVector(out, 0.12 * s);
-      const ctrl = start.clone().addScaledVector(up, 3.2 * s).addScaledVector(side, 1.5 * s);
-      const pos = bezier(start, ctrl, above.pos, easeOut(f));
-      const snap = smooth(0, 0.22, f);
-      const quat = ready.quat.clone().slerp(this.snapQ, snap).slerp(above.quat, smooth(0.22, 0.85, f));
-      return { pos, quat };
+      const cocked = this.perched(1, this.dip(1));
+      const start = this.fist(cocked.pos, cocked.quat);
+      const kicked = start.pos.clone().addScaledVector(up, FLICK_KICK * s * easeOut(clamp01(f / 0.16)));
+      const ctrl = kicked.clone().addScaledVector(up, 3.2 * s).addScaledVector(side, 1.5 * s);
+      const go = smooth(0.3, 1, f);
+      const pos = bezier(kicked, ctrl, above.pos, go);
+      const quat = start.quat.clone().slerp(above.quat, smooth(0.3, 0.9, f));
+      const snap = easeOut(clamp01(f / 0.12));
+      return { pos, quat, pose: mixPose(mixPose(COCKED, FLICKED, snap), OPEN, smooth(0.32, 0.75, f)) };
     }
     if (k < c.hung) {
       // 扣住：从右边、上面盖到牌上
