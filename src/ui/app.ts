@@ -1676,8 +1676,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、动画开关是别处的设置，留着
-      const { chisui, drawPath, vary, layout, hand, slam } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary, layout, hand, slam };
+      const { chisui, drawPath, vary, layout, hand, slam, slamOrder } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary, layout, hand, slam, slamOrder };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -2029,6 +2029,7 @@ export class App {
       openHands: this.openHands(),
       drawPath: this.settings.drawPath,
       slamHand: this.settings.slam !== 'tile',
+      slamOrder: this.settings.slamOrder,
       mist: this.mistLevel(),
       sketch: this.sketchShown(),
       gale: this.galeView(),

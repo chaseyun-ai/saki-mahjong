@@ -19,7 +19,7 @@ const yaochu = (k: number) => k >= 27 || k % 9 === 0 || k % 9 === 8;
 
 export const SLAM_TEST_CHARS: { id: string; label: string; note: string }[] = [
   { id: 'hisa', label: '竹井久', note: '原作的摔牌：从手里拿起那张，背朝上斜着拖到手牌右边，一下翻过来亮牌（手牌同时倒下），弹上去，最高处牌面朝上，手扣住砸下去' },
-  { id: 'nodoka', label: '其他人（通用）', note: '原村和来砸：照雀魂，扣下去、翻起来、炸开' },
+  { id: 'nodoka', label: '其他人（通用）', note: '原村和来拍：夹着牌斜着举起来，牌面朝上拍在手牌右边' },
 ];
 
 const SEATS = ['自己', '下家', '对家', '上家'];
@@ -103,14 +103,14 @@ export function slamStage(seat: number): Stage {
   };
 }
 
-// 测试窗口：每个人一行，点坐哪一家就开局；下面直接改「自摸动作」（和视觉设置里的是同一份）
+// 测试窗口：每个人一行，点坐哪一家就开局；下面直接改「自摸动作」「自摸顺序」（和视觉设置里的是同一份）
 export function slamTestPanelHtml(s: MatchSettings): string {
   const go = (id: string, rel: number) => `<button class="rii-go" data-ui="slam-test-go" data-v="${id}" data-seat="${rel}">${SEATS[rel]}</button>`;
   const body =
     section('她坐哪一家（每局第二张自摸，挂机看）') +
     SLAM_TEST_CHARS.map((c) => rowHtml(c.label, [0, 1, 2, 3].map((rel) => go(c.id, rel)).join(''), c.note)).join('') +
     section('看哪种') +
-    settingRows(s, ['slam']) +
+    settingRows(s, ['slam', 'slamOrder']) +
     rowHtml('牌桌', '', '视觉设置里「牌桌视角」选 2.5D、布局选改良才有砸牌');
   return panelHtml('slam-test', '自摸动作测试', '每个人自摸时砸牌的动作；对手不用能力', body, '');
 }

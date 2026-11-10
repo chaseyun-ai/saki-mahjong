@@ -24,11 +24,12 @@ import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TIL
 import { TableMaterials, buildTableModel } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 import { TableColors, tableColors } from '../ui/theme';
-import { pondJitter, varyDiscard, vary } from '../ui/vary';
+import { hash01, pondJitter, varyDiscard, vary } from '../ui/vary';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
 import { BeatHit, beatFinal, beatHit, beatLength, beatSeed } from '../ui/himekoBeat';
-import { SlamRun, SlamSpec, SlamStyle, TileSlam, slamHitOffset } from './tileSlam';
+import { SlamRun, SlamStyle, TileSlam } from './tileSlam';
+import type { SlapOrder } from './slamSlap';
 import { SlamFx } from './slamFx';
 import { LilyFx, lilyGrand } from './lilyFx';
 
@@ -364,7 +365,8 @@ export interface SyncView {
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
-  slamHand?: boolean; // 改良布局的自摸砸牌带不带手（false：牌自己跳起来扣下去），不给就带手
+  slamHand?: boolean; // 改良布局的自摸砸牌带不带手（false：牌自己跳起来拍下去），不给就带手
+  slamOrder?: SlapOrder; // 通用的拍牌：手牌什么时候倒（first 先倒再拍、lift 举牌时倒、slap 拍下去时倒），不给是先倒
   mist?: number; // 高鸭稳乃的深山：牌山上的雾有几级（0 没有）
   sketch?: boolean; // 爱丽丝的手绘板：牌、桌布换成手绘风格
   gale?: { seat: number; level: number } | null; // 薄墨初美的里鬼门：紫色的风聚得多浓（0–1），和牌时那张牌上紫光往上冲
@@ -1377,23 +1379,22 @@ export class Table3D {
     // 改良布局里自己要倒牌：先在桌上立起来、自摸那张落好，再倒（倒牌时刻往后推）
     const stand = [...shown.keys()].some((s) => this.fallsBack(s));
     const selfTsumo = r.wins.some((w) => w.from === null && this.fallsBack(w.seat));
-    // 改良布局的自摸：一只手把那张牌砸在桌上（初美聚着风的另有一套：倒完再砸）。自己的是手牌立起来的同时带着牌伸进来，
-    // 别人的是宣言后 V2_STAND 秒伸过去捏起来。咲的岭上开花（岭上牌自摸，役满时役里不写岭上开花，看这一张是不是岭上摸的）砸下去开百合
+    // 改良布局的自摸：一只手把那张牌牌面朝上拍在桌上（初美聚着风的另有一套：倒完再砸）。自己的是手牌在桌上立起来的同时带着牌伸进来，
+    // 别人的是宣言后 V2_STAND 秒伸过去夹起来。咲的岭上开花（岭上牌自摸，役满时役里不写岭上开花，看这一张是不是岭上摸的）拍下去开百合
     const tw = this.v2 ? r.wins.find((w) => w.from === null && !this.galeWin(w.seat)) : undefined;
     const standAt = stand ? this.now + (r.wins.length ? V2_STAND : V2_STAND_DRAW) : null;
     let tsumoSlam: RevealState['tsumoSlam'] = null;
     if (tw) {
       const self = this.fallsBack(tw.seat);
       const start = self && standAt !== null ? standAt : this.now + V2_STAND;
-      const hand = this.lastSync?.view.slamHand !== false;
       const rinshan = g.rinshanDraw || tw.result.yaku.some((y) => y.name === '岭上开花');
       const lily = this.lastSync?.view.ids[tw.seat] === 'saki' && rinshan ? tw.result.base : null;
       const style = this.slamStyle(tw.seat);
-      tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt: start + slamHitOffset(self || !hand), started: false, lily, sea: tw.tile === this.seaSlamTile, style };
-      // 竹井久那一套现在就排上（到 start 才动手）：从手里那张拿起来，节奏照远近定，这里才知道什么时候翻过来亮牌、什么时候砸下去
-      if (style === 'hisa') this.startTsumoSlam(tsumoSlam, this.handSlot(g, tw.seat, tw.tile));
+      tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt: start, started: false, lily, sea: tw.tile === this.seaSlamTile, style };
+      // 现在就排上（到 start 才动手）：这里才知道手牌什么时候倒（动作给的 revealAt）、什么时候拍下去
+      this.startTsumoSlam(tsumoSlam, g);
     }
-    // 竹井久：翻过来亮牌那一下手牌一起倒（自己的先在桌上立起来），砸下去、停够了再放和牌特效
+    // 手牌在动作里给的时刻倒（自己的先在桌上立起来），拍下去、停够了再放和牌特效
     const flickReveal = tsumoSlam?.revealAt ?? null;
     const placeAt = standAt !== null && selfTsumo && !tsumoSlam ? standAt + V2_PLACE : null;
     const slamDone = tsumoSlam ? tsumoSlam.hitAt + (tsumoSlam.lily !== null ? V2_LILY_HOLD : tsumoSlam.sea ? V2_SEA_HOLD : V2_SLAM_HOLD) : 0;
@@ -2045,24 +2046,26 @@ export class Table3D {
     window.setTimeout(() => flash.remove(), 1400);
   }
 
-  // 改良布局的自摸砸牌：手伸上来（自己的带着牌从镜头跟前，别人的伸过去拿起那张），举高、往前扫下去把牌扣在桌上，
-  // 牌翻起来立在落点、亮一下光、炸开。竹井久那一套（hisa）从 from（手里那张）拿起来，到 ts.start 才动手
-  private startTsumoSlam(ts: NonNullable<RevealState['tsumoSlam']>, from: Placement | null = null): void {
+  // 改良布局的自摸拍牌，到 ts.start 才动手：通用的（press）手夹着牌斜着举起来、牌面朝上拍在手牌右边（自己的牌一开始就在手里，
+  // 带着从画面下面伸上来；别人的伸过去把她手里那张夹起来）；竹井久（hisa）拿起手里那张拖、翻、弹、扣住砸下。
+  // 牌最后都牌面朝上躺在倒牌后和了牌的位置
+  private startTsumoSlam(ts: NonNullable<RevealState['tsumoSlam']>, g: Game): void {
     ts.started = true;
     const tile = this.tiles[ts.tile];
-    const hisa = ts.style === 'hisa';
-    if (!this.lastSync || !tile.shown || (!hisa && !tile.target)) return;
+    if (!this.lastSync || !tile.shown) return;
     const self = this.fallsBack(ts.seat);
-    const here = { pos: tile.group.position.clone(), quat: tile.group.quaternion.clone(), scale: tile.group.scale.x };
-    // 竹井久最后牌面朝上躺在倒牌后和了牌的位置
-    const to = hisa ? this.winLie(this.lastSync.g, ts.seat, this.lastSync.view.me, ts.tile).at : tile.target!;
+    const hand = this.lastSync.view.slamHand !== false;
+    const to = this.winLie(g, ts.seat, this.lastSync.view.me, ts.tile).at;
+    // 自己拍牌带手时牌在手里跟着伸上来，不用拿
+    const carried = ts.style === 'press' && self && hand;
     const run = this.slamTile(ts.tile, ts.seat, {
       to,
-      from: hisa ? (from ?? here) : self ? undefined : here,
+      from: carried ? undefined : this.handSlot(g, ts.seat, ts.tile),
       near: self,
-      hand: this.lastSync.view.slamHand !== false,
+      hand,
       style: ts.style,
-      at: hisa ? Math.max(this.now, ts.start) : undefined,
+      order: this.lastSync.view.slamOrder,
+      at: Math.max(this.now, ts.start),
       onPress: (at) => (ts.sea ? this.seaPress(ts.seat, at, to.scale) : this.slamPress(ts.seat, at, to.scale)),
       // 衣的海底牌：立起来时聚的是月光
       onCharge: (at, dur) => this.slamFx.charge(at, to.scale, dur, ts.sea ? MOON_GLOW : undefined),
@@ -2079,13 +2082,13 @@ export class Table3D {
     ts.revealAt = run.revealAt;
   }
 
-  // 砸一张牌（可以给别的特效用，比如天江衣的海底捞月）：一只手把 id 这张牌举起来、往前扫下去扣在桌上，牌自己翻起来立在 to，炸开。
-  // from 不给就是牌已经在手里、跟着手从画面外伸上来（自己自摸）；给了就是先伸过去在 from 拿起来。
-  // near：手在镜头跟前举起来（第一人称，自己砸牌时用），不给就是 seat 是自己时为 true。
-  // hand: false 不带手：牌从原处（from，不给就是落点）自己跳起来、翻身亮出牌背，再扣下去，后面一样翻起来炸开。
-  // style: 'hisa' 竹井久那一套（slamFlick.ts）：to 是最后牌面朝上躺着的样子，from 是要拿的那张现在在哪（手先伸到那里拿起来）。
+  // 拍一张牌（可以给别的特效用，比如天江衣的海底捞月）：一只手把 id 这张牌夹起来斜着举高，牌面朝上拍在 to（slamSlap.ts）。
+  // from 不给就是牌已经在手里、跟着手从画面外伸上来（自己自摸）；给了就是先伸过去在 from 夹起来。
+  // near：自己拍牌（镜头在她身后），不给就是 seat 是自己时为 true。
+  // hand: false 不带手：牌从原处（from，不给就是落点）自己跳起来再拍下去。order：手牌什么时候倒（动作只给时刻 revealAt）。
+  // style: 'hisa' 竹井久那一套（slamFlick.ts）：from 是要拿的那张现在在哪，拖过来、翻过来、弹上去、扣住砸下。
   // at：到这时候才动手（在那之前牌原样不动，算被拿着），不给就是马上。
-  // 牌扣到桌上调 onPress，立好开始亮调 onCharge，炸开调 onHit（at 是牌底下的桌面点）；
+  // 牌落到桌上调 onPress，开始亮调 onCharge（只有 hisa），炸开调 onHit（at 是牌底下的桌面点）；
   // 扣牌的小震动、聚光、冲击波和旋风要自己在回调里叫 slamPress / slamFx.charge / slamImpact。
   // 返回什么时候扣到桌上、什么时候炸开、什么时候手撤走（和 now 同一个时钟，秒）
   slamTile(
@@ -2098,7 +2101,7 @@ export class Table3D {
       hand?: boolean;
       style?: SlamStyle;
       at?: number;
-      timing?: SlamSpec['timing'];
+      order?: SlapOrder;
       onPress?: (at: THREE.Vector3) => void;
       onCharge?: (at: THREE.Vector3, dur: number) => void;
       onHit?: (at: THREE.Vector3) => void;
@@ -2121,7 +2124,7 @@ export class Table3D {
         view: near ? camView : undefined,
         cam: camView,
         arm: o.hand === false ? null : undefined,
-        timing: o.timing,
+        order: o.order,
         onPress: o.onPress,
         onCharge: o.onCharge,
         onHit: o.onHit,
@@ -2163,8 +2166,11 @@ export class Table3D {
     this.shake = Math.max(this.shake, lily !== null ? 0.75 : 0.55);
     const floor = at.clone().setY(0.02);
     const mid = g.position.clone();
-    this.slamFx.swirl(floor, s, big);
-    this.effects.ring(floor, '#ffffff', 3.2 * s, 0.45, 0.6);
+    // 贴着桌面卷出去的旋风、冲击波一圈是咲的岭上开花才有（雀魂也是岭上的特效带的），平常只有白光、灰、光点
+    if (lily !== null) {
+      this.slamFx.swirl(floor, s, big);
+      this.effects.ring(floor, '#ffffff', 3.2 * s, 0.45, 0.6);
+    }
     this.effects.flash(mid, '#f4fbff', 3.2 * s, 0.4, true);
     this.effects.sparks(floor, '#e9e4da', {
       count: 22,
@@ -2674,8 +2680,8 @@ export class Table3D {
       // 改良布局的自己：手牌是放大、挪到眼前的，先在桌面上手牌那条线立起来（桌上牌的大小），再照常往前倒（雀魂那样）
       const back = this.fallsBack(s);
       const row = back ? this.tableRow(s, tiles.length + 1) : this.handRows[s] ?? { x0: 0, step: TILE_W + GAP, hs: 1, z: this.dim.handZ };
-      // 竹井久砸下去的那张：一开始砸就一直摆在倒牌后躺的地方（砸的时候手拿着它，砸完正好躺在这里，倒牌时不用动）
-      const lying = win !== null && rv.tsumoSlam?.tile === win && rv.tsumoSlam.style === 'hisa' && rv.tsumoSlam.started;
+      // 拍下去的那张：一开始拍就一直摆在倒牌后躺的地方（拍的时候手拿着它，拍完正好躺在这里，倒牌时不用动）
+      const lying = win !== null && rv.tsumoSlam?.tile === win && rv.tsumoSlam.started;
       if (this.now < rv.at) {
         if (back && rv.standAt !== null && this.now >= rv.standAt) this.placeStanding(g, s, me, win, tiles, row, out);
         if (lying) out.set(win, this.winLie(g, s, me, win).at);
@@ -2713,8 +2719,11 @@ export class Table3D {
     const n = g.players[s].hand.filter((t) => t !== win).length;
     const row = this.fallsBack(s) ? this.tableRow(s, n + 1) : this.handRows[s] ?? { x0: 0, step: TILE_W + GAP, hs: 1, z: this.dim.handZ };
     const facing = (s - me + 4) % 4 === 2 && !!this.lastSync?.view.openHands;
-    const x = facing ? row.x0 : row.x0 + n * row.step + 0.5;
-    return { at: this.toWorld(s, me, x, (TILE_T / 2) * row.hs, row.z + 0.3 * row.hs, FACE_UP, facing ? Math.PI : 0, row.hs), x };
+    // 改良布局的自摸：那张是手拍下去的，不和手牌对齐：隔得远一点近一点、往前往后偏一点、歪一点（同一局重摆时不变）
+    const j = this.v2 && g.players[s].hand.includes(win) ? { gap: 0.1 + 0.35 * hash01(this.pondSalt, win, 1), dz: 0.7 * (hash01(this.pondSalt, win, 2) - 0.5), yaw: 0.28 * (hash01(this.pondSalt, win, 3) - 0.5) } : { gap: 0, dz: 0, yaw: 0 };
+    const x = facing ? row.x0 - j.gap * row.hs : row.x0 + n * row.step + 0.5 + j.gap * row.hs;
+    const yaw = (facing ? Math.PI : 0) + j.yaw;
+    return { at: this.toWorld(s, me, x, (TILE_T / 2) * row.hs, row.z + (0.3 + j.dz) * row.hs, FACE_UP, yaw, row.hs), x };
   }
 
   // 这个座位的人砸牌用哪一套动作（looks.ts 里没配的是通用的 press）
@@ -3549,7 +3558,7 @@ export class Table3D {
       }
     }
     const ts = rv.tsumoSlam;
-    if (ts && !ts.started && this.now >= ts.start) this.startTsumoSlam(ts);
+    if (ts && !ts.started && this.now >= ts.start && this.lastSync) this.startTsumoSlam(ts, this.lastSync.g);
     if (ts?.started && this.slam.holds(this.tiles[ts.tile].group)) this.held.add(ts.tile);
     if (rv.boltAt !== null && this.now >= rv.boltAt) {
       rv.boltAt = null;

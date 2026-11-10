@@ -31,8 +31,10 @@ export interface MatchSettings {
   hand: 'B' | 'C';
   // 一局结束以后的画面：classic 原版结算弹窗；staged 新结算（试做，照雀魂分几页：和牌、点数移动），只在 3D、2.5D 牌桌上
   result: 'classic' | 'staged';
-  // 改良布局的自摸砸牌：hand 一只手把牌举起来扣在桌上；tile 不带手，牌自己跳起来、翻身扣下去
+  // 改良布局的自摸拍牌：hand 一只手夹着牌斜着举起来、牌面朝上拍在桌上；tile 不带手，牌自己跳起来拍下去
   slam: 'hand' | 'tile';
+  // 通用拍牌时手牌什么时候倒：first 先倒再拍，lift 举牌的同时倒，slap 拍下去那一下跟着倒（试做，几种对比着看）
+  slamOrder: 'first' | 'lift' | 'slap';
 }
 
 export const SEAT_NAMES = ['下家', '对家', '上家'];
@@ -54,6 +56,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   hand: 'B',
   result: 'classic',
   slam: 'hand',
+  slamOrder: 'first',
 };
 
 const KEY = 'saki-match-settings';
@@ -164,10 +167,20 @@ const ROWS: Row[] = [
   {
     key: 'slam',
     name: '自摸动作',
-    note: '改良布局自摸时：带手是一只手把牌举起来扣在桌上；不带手是牌自己跳起来扣下去',
+    note: '改良布局自摸时：带手是一只手夹着牌斜着举起来、牌面朝上拍在桌上；不带手是牌自己跳起来拍下去',
     options: [
       { label: '带手', value: 'hand' },
       { label: '不带手', value: 'tile' },
+    ],
+  },
+  {
+    key: 'slamOrder',
+    name: '自摸顺序',
+    note: '通用拍牌时手牌什么时候倒（竹井久的照她自己那套，翻过来亮牌时倒）',
+    options: [
+      { label: '先倒后拍', value: 'first' },
+      { label: '边举边倒', value: 'lift' },
+      { label: '拍了再倒', value: 'slap' },
     ],
   },
   {
@@ -332,6 +345,6 @@ export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMod
     return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="vis-mode" data-v="${m.id}">${m.name}</button>`;
   }).join('');
   const art = skins ? section('素材') + rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图 ›</button>', '只有页面主人看得到') : '';
-  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand', 'slam', 'result'] : ['layout', 'result']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
+  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand', 'slam', 'slamOrder', 'result'] : ['layout', 'result']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
   return panelHtml('visual', '视觉设置', '改了马上生效', body, '');
 }
