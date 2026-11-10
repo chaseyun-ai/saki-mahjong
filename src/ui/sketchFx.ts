@@ -166,3 +166,116 @@ export function playRebuild(rect: DOMRect, onCover: () => void): void {
     root.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 520, delay: 120, easing: 'ease-out', fill: 'forwards' }).onfinish = () => root.remove();
   }, cover);
 }
+
+// 掉线：画上要摸的牌被花田煌换掉，手绘板像信号突然断掉。碎掉那一刻的手绘板切成一条条横带，
+// 左右乱跳、红蓝错开、闪雪花，中间跳出「信号中断」，最后像老电视关机一样压成一条线黑掉。后面的牌桌已经换回普通的
+export function playGlitch(rect: DOMRect, source: ShatterSource, done?: () => void): void {
+  const root = layer(rect, 'glitch');
+  const w = rect.width;
+  const h = rect.height;
+  const copyOf = (): HTMLElement => {
+    const box = document.createElement('div');
+    box.className = 'gl-copy';
+    if ('image' in source) {
+      box.style.backgroundImage = `url(${source.image})`;
+      box.style.backgroundSize = `${w}px ${h}px`;
+    } else {
+      const copy = source.dom.cloneNode(true) as HTMLElement;
+      copy.removeAttribute('id');
+      copy.classList.add('shard-copy');
+      copy.style.left = `${(w - source.dom.offsetWidth) / 2}px`;
+      copy.style.top = `${(h - source.dom.offsetHeight) / 2}px`;
+      box.appendChild(copy);
+    }
+    return box;
+  };
+  const screen = document.createElement('div');
+  screen.className = 'gl-screen';
+  root.appendChild(screen);
+  if (reduced()) {
+    screen.appendChild(copyOf());
+    root.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 500, fill: 'forwards' }).onfinish = () => {
+      root.remove();
+      done?.();
+    };
+    return;
+  }
+  // 横带：高矮不一，从上到下铺满
+  const cuts = [0];
+  while (cuts[cuts.length - 1] < 100) cuts.push(Math.min(100, cuts[cuts.length - 1] + 3 + Math.random() * 11));
+  const bands: HTMLDivElement[] = [];
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const band = document.createElement('div');
+    band.className = 'gl-band';
+    band.style.clipPath = `inset(${cuts[i].toFixed(2)}% 0 ${(100 - cuts[i + 1]).toFixed(2)}% 0)`;
+    band.appendChild(copyOf());
+    screen.appendChild(band);
+    bands.push(band);
+  }
+  // 雪花、扫描线、乱色块
+  const noise = document.createElement('div');
+  noise.className = 'gl-noise';
+  screen.appendChild(noise);
+  const blocks: HTMLDivElement[] = [];
+  for (let i = 0; i < 9; i++) {
+    const b = document.createElement('div');
+    b.className = 'gl-block';
+    screen.appendChild(b);
+    blocks.push(b);
+  }
+  const label = document.createElement('div');
+  label.className = 'gl-label';
+  label.innerHTML = '<b>信号中断</b><span>SKETCH LINK LOST</span>';
+  screen.appendChild(label);
+  const glitchMs = 1100;
+  const t0 = performance.now();
+  let timer = 0;
+  const jolt = () => {
+    const t = performance.now() - t0;
+    // 越到后面跳得越凶
+    const k = Math.min(1, 0.35 + t / glitchMs);
+    for (const b of bands) {
+      const off = Math.random() < 0.45 * k ? (Math.random() - 0.5) * w * 0.16 * k : 0;
+      b.style.transform = `translateX(${off.toFixed(1)}px)`;
+      b.style.filter = Math.random() < 0.2 * k ? `hue-rotate(${Math.round(Math.random() * 360)}deg) saturate(3)` : '';
+    }
+    for (const b of blocks) {
+      const on = Math.random() < 0.55 * k;
+      b.style.display = on ? 'block' : 'none';
+      if (!on) continue;
+      Object.assign(b.style, {
+        left: `${Math.random() * 90}%`,
+        top: `${Math.random() * 95}%`,
+        width: `${4 + Math.random() * 30}%`,
+        height: `${0.6 + Math.random() * 4}%`,
+        background: ['#ff2a6d', '#05d9e8', '#f5f5f5', '#111', '#d1f7ff', '#ffe600'][Math.floor(Math.random() * 6)],
+      });
+    }
+    screen.style.setProperty('--gl-split', `${(2 + Math.random() * 7 * k).toFixed(1)}px`);
+    label.style.opacity = t > 260 && Math.random() < 0.85 ? '1' : '0';
+    label.style.transform = `translate(-50%, -50%) translateX(${((Math.random() - 0.5) * 14 * k).toFixed(1)}px)`;
+    noise.style.backgroundPosition = `${Math.floor(Math.random() * 200)}px ${Math.floor(Math.random() * 200)}px`;
+    if (t < glitchMs) timer = window.setTimeout(jolt, 45 + Math.random() * 45);
+  };
+  jolt();
+  // 关机：压成一条亮线，再缩成一个点
+  setTimeout(() => {
+    clearTimeout(timer);
+    for (const b of blocks) b.style.display = 'none';
+    label.style.opacity = '0';
+    root.classList.add('off');
+    screen.animate(
+      [
+        { transform: 'scale(1, 1)', filter: 'brightness(1)' },
+        { transform: 'scale(1, 0.012)', filter: 'brightness(4)', offset: 0.55 },
+        { transform: 'scale(0, 0.012)', filter: 'brightness(6)' },
+      ],
+      { duration: 380, easing: 'ease-in', fill: 'forwards' },
+    ).onfinish = () => {
+      root.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' }).onfinish = () => {
+        root.remove();
+        done?.();
+      };
+    };
+  }, glitchMs);
+}

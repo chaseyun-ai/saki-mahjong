@@ -6371,6 +6371,84 @@ html:root .tm-draft .tmd-go {
   stroke: #fbfaf5;
   stroke-width: 17;
 }
+.sketch-fx.glitch {
+  background: #050508;
+}
+.sketch-fx.glitch .gl-screen {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  --gl-split: 4px;
+  filter: drop-shadow(calc(-1 * var(--gl-split)) 0 rgba(255, 42, 109, 0.75)) drop-shadow(var(--gl-split) 0 rgba(5, 217, 232, 0.75));
+}
+.sketch-fx.glitch.off .gl-screen {
+  filter: none;
+  background: #fff;
+}
+.sketch-fx.glitch .gl-band,
+.sketch-fx.glitch .gl-copy {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-color: #fbfaf5;
+}
+.sketch-fx.glitch .gl-noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.32;
+  mix-blend-mode: multiply;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0 1px, transparent 1px 3px),
+    repeating-radial-gradient(circle at 17% 31%, #000 0 1px, #fff 1px 2px, #888 2px 3px);
+}
+.sketch-fx.glitch .gl-block {
+  position: absolute;
+  display: none;
+  mix-blend-mode: difference;
+}
+.sketch-fx.glitch .gl-label {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 26px;
+  background: rgba(5, 5, 8, 0.82);
+  color: #f5f5f5;
+  font-family: ui-monospace, 'Courier New', monospace;
+  text-shadow: -2px 0 #ff2a6d, 2px 0 #05d9e8;
+  opacity: 0;
+}
+.sketch-fx.glitch .gl-label b {
+  font-size: 30px;
+  letter-spacing: 0.3em;
+}
+.sketch-fx.glitch .gl-label span {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  opacity: 0.8;
+}
+/* 手绘板掉线：画上的牌乱跳、字是乱码，红蓝错开 */
+.sketch-plan.glitch {
+  animation: none;
+  filter: drop-shadow(-2px 0 rgba(255, 42, 109, 0.8)) drop-shadow(2px 0 rgba(5, 217, 232, 0.8));
+}
+.sketch-plan.glitch .sp-head b,
+.sketch-plan.glitch .sp-head span {
+  font-family: ui-monospace, 'Courier New', monospace;
+}
+.sketch-plan.glitch .sp-tiles > * {
+  transition: none;
+}
+.sketch-plan.glitch .sp-tiles .gl-skew {
+  transform: translateY(-3px) skewX(-12deg);
+  filter: hue-rotate(160deg) saturate(3);
+}
+.sketch-plan.glitch .sp-tiles .gl-hide {
+  visibility: hidden;
+}
 /* 2D：手绘板占了提示字的位置，提示字先不显示 */
 .table .sketch-plan ~ .hint {
   display: none;

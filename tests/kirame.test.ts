@@ -71,3 +71,28 @@ describe('花田煌', () => {
     expect(g.players.reduce((n, p) => n + p.score, 0)).toBe(total);
   });
 });
+
+describe('花田煌和锁住的牌', () => {
+  it('爱丽丝画上要摸的牌、咲看得见的岭上牌锁着也挡不住：和优希、爱丽丝、咲同桌不会被击飞', () => {
+    let forced = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const g = play(seed, ['kirame', 'yuuki', 'aislinn', 'saki'], 2000 + (seed % 3) * 1000, (g) => {
+        if (g.bustForced !== null) forced++;
+      });
+      expect(g.players[0].score).toBeGreaterThanOrEqual(0);
+    }
+    expect(forced).toBeGreaterThan(0);
+  }, 120000);
+
+  it('锁着的下一张硬换掉时，锁留在那个位置上，换走的那张不再锁', () => {
+    const g = new Game({ seed: 5, players: [byId('kirame'), byId('izumi'), byId('izumi'), byId('izumi')].map((c) => ({ name: c.id, ability: c.ability })) });
+    const w = g.wall;
+    const old = w.live[0];
+    w.locked.add(old, 'aislinn');
+    expect(w.forceNext(false, (t) => t !== old, g.rng)).toBe(true);
+    expect(w.live[0]).not.toBe(old);
+    expect(w.locked.ownersOf(w.live[0])).toEqual(['aislinn']);
+    expect(w.locked.has(old)).toBe(false);
+    expect(new Set(w.allTiles()).size).toBe(w.allTiles().length);
+  });
+});

@@ -12,9 +12,9 @@ import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
 import { Gale2D } from './gale2d';
-import { aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
+import { AISLINN_DROP, aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
 import { type HuiyuCard, huiyuBar, huiyuCards, huiyuMissedRon, huiyuReady, huiyuWinGb } from '../abilities/huiyu';
-import { playRebuild, playShatter } from './sketchFx';
+import { playGlitch, playRebuild, playShatter } from './sketchFx';
 import { playNetWipe } from './netFx';
 import { kuroLost } from '../abilities/kuro';
 import { angelDanger, nodokaAngel } from '../abilities/nodoka';
@@ -198,6 +198,9 @@ export class App {
   // 爱丽丝的手绘板：牌桌现在是不是画成手绘板（重组特效刷满时才换过去，破碎时马上换回）
   private sketchView = false;
   private sketchTimer: number | null = null;
+  // 手绘板掉线：到这个时间（performance.now）之前，手牌上面的手绘板画面是乱码
+  private sketchGlitchUntil = 0;
+  private sketchGlitchTimer: number | null = null;
   // 原村和变成天使和：牌桌换成她脑子里的网络麻将（2D 网麻牌桌，三种视角都一样）。
   // netFrom 是换过去之前的视角（2.5D、3D 时临时把 mode 改成 2d，变回来或离开牌桌时还原）
   private netView = false;
@@ -1036,6 +1039,7 @@ export class App {
     this.gone.clear();
     this.vanishAt.clear();
     this.sketchView = false;
+    this.sketchGlitchUntil = 0;
     this.riiPicking = false;
     this.chains2d?.clear();
     this.skyKey?.clear();
@@ -1342,7 +1346,8 @@ export class App {
   // 牌桌现在画成手绘板（自己是爱丽丝、这一局画着、重组特效已经刷满）
   private sketchShown(): boolean {
     const g = this.game;
-    return !!g && !this.vision && this.sketchView && this.chars[this.me]?.id === 'aislinn' && aislinnSketch(g, this.me);
+    // 掉线的乱码那一段：手绘板已经碎了，牌桌先还画成手绘板
+    return !!g && !this.vision && this.sketchView && this.chars[this.me]?.id === 'aislinn' && (aislinnSketch(g, this.me) || performance.now() < this.sketchGlitchUntil);
   }
 
   // 牌桌在页面上的位置（特效盖在这上面）
@@ -1354,6 +1359,10 @@ export class App {
   private sketchFx(text: string): void {
     if (this.sketchTimer !== null) clearTimeout(this.sketchTimer);
     this.sketchTimer = null;
+    if (text === AISLINN_DROP) {
+      this.sketchDrop();
+      return;
+    }
     if (text === '画板破碎') {
       const rect = this.stageRect();
       if (rect && this.sketchView) {
@@ -1467,10 +1476,57 @@ export class App {
       ${scores}`;
   }
 
+  // 手绘板掉线（画上要摸的牌被花田煌换掉）：先是手牌上面的手绘板画面乱成乱码（牌桌还是手绘板），
+  // 一会儿以后整张牌桌横着乱跳、跳出「信号中断」，像老电视关机一样黑掉，换回普通牌桌
+  private sketchDrop(): void {
+    if (!this.sketchView) return;
+    const garbleMs = 1100;
+    this.sketchGlitchUntil = performance.now() + garbleMs;
+    if (this.sketchGlitchTimer !== null) clearInterval(this.sketchGlitchTimer);
+    // 乱码自己一直换（不用整个重画）
+    this.sketchGlitchTimer = window.setInterval(() => {
+      if (performance.now() < this.sketchGlitchUntil) {
+        const el = this.root.querySelector<HTMLElement>('.sketch-plan.glitch');
+        if (el) el.innerHTML = this.sketchGlitchInner();
+        return;
+      }
+      clearInterval(this.sketchGlitchTimer!);
+      this.sketchGlitchTimer = null;
+      if (!this.sketchView) return;
+      const rect = this.stageRect();
+      if (rect) {
+        const table = this.root.querySelector<HTMLElement>('.stage .table');
+        const source = this.table3d ? { image: this.table3d.snapshot() } : table ? { dom: table } : null;
+        if (source) playGlitch(rect, source);
+      }
+      this.sketchView = false;
+      this.render();
+    }, 70);
+    this.render();
+  }
+
+  // 乱码的手绘板：乱七八糟的牌、乱码字、有的牌歪了、有的闪没了
+  private sketchGlitchInner(): string {
+    const junk = '▒░▓█#@%&$?!¿¤§¶ΞΨЖЯ※〓◆◇□■手绘板掉线信号';
+    const garble = (n: number) => Array.from({ length: n }, () => junk[Math.floor(Math.random() * junk.length)]).join('');
+    const n = 10 + Math.floor(Math.random() * 5);
+    const tiles = Array.from({ length: n }, () => {
+      const html = tileHtml(Math.floor(Math.random() * 136), { size: 'pond', sketch: true });
+      const r = Math.random();
+      const cls = r < 0.18 ? 'gl-skew' : r < 0.3 ? 'gl-hide' : '';
+      return cls ? `<span class="${cls}">${html}</span>` : html;
+    }).join('');
+    return `<div class="sp-head"><b>${garble(3)}</b><span>${garble(5 + Math.floor(Math.random() * 5))}</span></div><div class="sp-tiles">${tiles}<span class="sp-win">${tileHtml(Math.floor(Math.random() * 136), { size: 'pond', sketch: true })}</span></div>`;
+  }
+
   // 手绘板画在手牌上面：画上的整副牌（自摸的那张隔开放在最右边），写着再摸几张自摸、几番
   private sketchPlanKey = '';
   private sketchPlanHtml(): string {
     const g = this.game!;
+    if (!this.vision && performance.now() < this.sketchGlitchUntil && this.chars[this.me]?.id === 'aislinn') {
+      this.sketchPlanKey = '';
+      return `<div class="sketch-plan glitch">${this.sketchGlitchInner()}</div>`;
+    }
     if (!this.sketchShown()) {
       this.sketchPlanKey = '';
       return '';

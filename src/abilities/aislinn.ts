@@ -41,6 +41,7 @@ export interface SketchPlan {
 interface RoundState {
   plan?: SketchPlan | null;
   broken?: boolean; // 手绘板碎了（这一局画过、现在是普通牌桌）
+  dropped?: boolean; // 碎法是「掉线」：画上要摸的牌被花田煌换掉了（照画的自摸会把她击飞）
   locks?: TileId[];
 }
 
@@ -430,16 +431,22 @@ function paint(g: Game, seat: number, first: number): SketchPlan | null {
   st.locks = locks;
   st.plan = plan;
   st.broken = false;
+  st.dropped = false;
   return plan;
 }
 
-function shatter(g: Game, seat: number): void {
+// dropped：画上要摸的牌被花田煌换掉（照画自摸会把她击飞），手绘板像突然掉线一样，画面乱成一团再黑掉
+function shatter(g: Game, seat: number, dropped = false): void {
   const st = roundOf(g, seat);
   if (!st.plan || st.broken) return;
   st.broken = true;
+  st.dropped = dropped;
   unlock(g, seat);
-  g.emit({ type: 'ability', seat, ability: 'aislinn', text: '画板破碎' });
+  g.emit({ type: 'ability', seat, ability: 'aislinn', text: dropped ? AISLINN_DROP : '画板破碎' });
 }
+
+// 手绘板掉线的事件文字
+export const AISLINN_DROP = '画板掉线';
 
 // 画上要的牌她还拿得到：手里的牌加上还没摸的画上的牌，盖得住整副牌
 function stillReachable(g: Game, seat: number, plan: SketchPlan): boolean {
@@ -517,7 +524,7 @@ export const aislinnAbility: Ability = {
     if (!plan) return;
     const drawn = g.players[seat].drawn;
     if (g.rinshanDraw || (plan.needed[plan.step] && drawn !== plan.draws[plan.step])) {
-      shatter(g, seat);
+      shatter(g, seat, !g.rinshanDraw && g.bustForced === seat);
       return;
     }
     plan.step++;
@@ -544,10 +551,12 @@ export const aislinnAbility: Ability = {
       ? `手绘板：再摸 ${aislinnDrawsLeft(plan)} 张自摸`
       : st.broken
         ? ready
-          ? '手绘板碎了：点一支画笔再画一次'
+          ? `${st.dropped ? '手绘板掉线了' : '手绘板碎了'}：点一支画笔再画一次`
           : left <= 0
-            ? '手绘板碎了，画笔用完了'
-            : '手绘板碎了'
+            ? `${st.dropped ? '手绘板掉线了' : '手绘板碎了'}，画笔用完了`
+            : st.dropped
+              ? '手绘板掉线了'
+              : '手绘板碎了'
         : controls(g, seat)
           ? '这一局没画出来'
           : '这一局画不了';
@@ -566,7 +575,7 @@ export const aislinnAbility: Ability = {
     const plan = aislinnPlan(g, seat);
     const lines = [`画笔还剩 ${aislinnBrushes(g, seat)} 支`];
     if (plan) lines.push(`手绘板：再摸 ${aislinnDrawsLeft(plan)} 张自摸，${plan.yakuman ? '役满' : `${plan.han} 番`}${plan.arranged ? '（安排出来的）' : ''}`);
-    else if (roundOf(g, seat).broken) lines.push('手绘板碎了');
+    else if (roundOf(g, seat).broken) lines.push(roundOf(g, seat).dropped ? '手绘板掉线了：照画自摸会把花田煌击飞，画上的牌被换掉了' : '手绘板碎了');
     return lines;
   },
 };

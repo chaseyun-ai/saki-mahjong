@@ -185,6 +185,35 @@ export class Wall {
     return true;
   }
 
+  // 不会被击飞的人（花田煌）的规矩比锁大：下一张要摸的牌（rinshan 时是第一张岭上牌）锁着也照换。
+  // 先从牌山里找没锁、符合条件的牌，牌山里没有再从王牌（后面的岭上牌、还没翻开的里宝牌指示牌）里找。
+  // 锁跟着位置走：原来那张的锁转到换进来的牌上（爱丽丝画上要摸的、咲看得见的那个位置还是锁着的），换走的那张不再锁
+  forceNext(rinshan: boolean, pred: (t: TileId) => boolean, rng: Rng): boolean {
+    const dst = rinshan ? this.rinshan : this.live;
+    if (dst.length === 0) return false;
+    const free = (t: TileId) => !this.locked.has(t) && pred(t);
+    const pick = (cands: { src: TileId[]; i: number }[]) => (cands.length ? cands[rng.int(cands.length)] : null);
+    const live: { src: TileId[]; i: number }[] = [];
+    this.live.forEach((t, i) => {
+      if ((rinshan || i > 0) && free(t)) live.push({ src: this.live, i });
+    });
+    const dead: { src: TileId[]; i: number }[] = [];
+    this.rinshan.forEach((t, i) => {
+      if ((!rinshan || i > 0) && free(t)) dead.push({ src: this.rinshan, i });
+    });
+    this.uraIndicators.forEach((t, i) => {
+      if (free(t)) dead.push({ src: this.uraIndicators, i });
+    });
+    const c = pick(live) ?? pick(dead);
+    if (!c) return false;
+    const old = dst[0];
+    const owners = this.locked.ownersOf(old);
+    [dst[0], c.src[c.i]] = [c.src[c.i], dst[0]];
+    this.locked.delete(old);
+    for (const o of owners) this.locked.add(dst[0], o);
+    return true;
+  }
+
   // 把符合条件的牌换成第 i 张里宝牌指示牌（还没翻开，和了时才看得到）。来源是牌山、岭上牌和后面的里宝牌指示牌
   // from：牌山里只从这些位置找。spare：和牌结算时用（玄挡里宝牌），还没翻开的宝牌指示牌（再也不会翻了）、锁着的岭上牌也能拿来换
   bringToUra(i: number, pred: (t: TileId) => boolean, rng: Rng, from?: (j: number) => boolean, spare = false): boolean {

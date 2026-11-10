@@ -191,6 +191,8 @@ export class Game {
   pendingDora = 0;
   // 正在给谁摸牌（摸牌前的能力在动的时候），摸完是 null。淡的巨引力源看这一张在不在引力圆里
   drawing: { seat: number; rinshan: boolean } | null = null;
+  // 这一次摸牌，不会被击飞的人（花田煌）把锁着的下一张硬换掉了：摸牌的人是谁（爱丽丝的手绘板这样碎掉是「掉线」）。每次摸牌重新算
+  bustForced: number | null = null;
   kanBy: number[] = [];
   noCallsYet = true;
   roundResult: RoundResult | null = null;
@@ -542,6 +544,56 @@ export class Game {
     }
   }
 
+  // seat 开杠以后（手牌、副露换成 hand、melds）摸现在的第一张岭上牌能不能自摸。
+  // 杠宝牌按现在翻开的算，开完杠接着再杠不算（真算多了结算时还有兜底）
+  private bloomWith(seat: number, hand: TileId[], melds: Meld[]): WinResult | null {
+    const r = this.wall.rinshan[0];
+    if (r === undefined) return null;
+    const p = this.players[seat];
+    const keep = { hand: p.hand, melds: p.melds };
+    p.hand = hand;
+    p.melds = melds;
+    try {
+      return this.tsumoWith(seat, r, true);
+    } finally {
+      p.hand = keep.hand;
+      p.melds = keep.melds;
+    }
+  }
+
+  // seat 摸到 tile 能开杠（暗杠、加杠）的话，杠完摸岭上牌能不能自摸（还没摸的时候算）
+  private kanBloomWith(seat: number, tile: TileId): WinResult | null {
+    const p = this.players[seat];
+    if (this.wall.remaining <= 1 || this.totalKans() >= 4) return null;
+    const k = kindOf(tile);
+    const same = p.hand.filter((t) => kindOf(t) === k);
+    if (same.length === 3) return this.bloomWith(seat, p.hand.filter((t) => kindOf(t) !== k), [...p.melds, { type: 'ankan', tiles: [...same, tile] }]);
+    const pon = p.riichi ? undefined : p.melds.find((m) => m.type === 'pon' && kindOf(m.tiles[0]) === k);
+    if (pon) return this.bloomWith(seat, p.hand, p.melds.map((m) => (m === pon ? { ...m, type: 'kakan', tiles: [...m.tiles, tile] } : m)));
+    return null;
+  }
+
+  // seat 开这个杠、摸岭上牌自摸的话，会不会击飞不会被击飞的人（宫永咲杠上开花打不出来：这个杠开不了）
+  // from：明杠的牌是谁打的（明杠没有门清自摸，点数也不一样）
+  private kanBusts(seat: number, action: Action, from?: number): boolean {
+    if (!this.rules.tobi || ![0, 1, 2, 3].some((k) => k !== seat && this.abilities[k]?.unbustable)) return false;
+    const p = this.players[seat];
+    let r: WinResult | null = null;
+    if (action.type === 'ankan') {
+      const ids = p.hand.filter((t) => kindOf(t) === action.kind);
+      r = this.bloomWith(seat, p.hand.filter((t) => kindOf(t) !== action.kind), [...p.melds, { type: 'ankan', tiles: ids }]);
+    } else if (action.type === 'kakan') {
+      const k = kindOf(action.tile);
+      r = this.bloomWith(seat, p.hand.filter((t) => t !== action.tile), p.melds.map((m) => (m.type === 'pon' && kindOf(m.tiles[0]) === k ? { ...m, type: 'kakan', tiles: [...m.tiles, action.tile] } : m)));
+    } else if (action.type === 'daiminkan' && this.lastDiscard) {
+      const tile = this.lastDiscard.tile;
+      const ids = p.hand.filter((t) => kindOf(t) === kindOf(tile));
+      r = this.bloomWith(seat, p.hand.filter((t) => kindOf(t) !== kindOf(tile)), [...p.melds, { type: 'minkan', tiles: [...ids, tile], calledTile: tile, from: from ?? this.lastDiscard.seat }]);
+    }
+    if (!r) return false;
+    return [0, 1, 2, 3].some((k) => k !== seat && this.abilities[k]?.unbustable && this.players[k].score < (k === this.dealer ? r!.tsumoDealerPays : r!.tsumoOtherPays) + 100 * this.honba);
+  }
+
   // 不会被击飞的人对这一次摸牌定的规矩：别人摸不到自摸了会把她击飞的牌；
   // 她自己摸牌时，摸到以后要么能自摸，要么手里至少还有一张打得出去的牌
   private bustRules(drawer: number, rinshan: boolean): DrawRule[] {
@@ -561,10 +613,9 @@ export class Game {
           ...base,
           deny: (t) =>
             once(t, () => {
-              const r = this.tsumoWith(drawer, t, rinshan);
-              if (!r) return false;
-              const pay = (k === this.dealer ? r.tsumoDealerPays : r.tsumoOtherPays) + 100 * this.honba;
-              return this.players[k].score < pay;
+              const busts = (r: WinResult | null) => !!r && this.players[k].score < (k === this.dealer ? r.tsumoDealerPays : r.tsumoOtherPays) + 100 * this.honba;
+              // 摸到就自摸，或者摸到的是杠材（宫永咲那样开杠摸岭上牌自摸）
+              return busts(this.tsumoWith(drawer, t, rinshan)) || busts(this.kanBloomWith(drawer, t));
             }),
         });
         continue;
@@ -585,13 +636,38 @@ export class Game {
     return out;
   }
 
-  // 牌山里换不出不击飞她的牌（海底只剩一张之类）：从王牌里换
+  // 上面换不出不击飞她的牌时：
+  // - 下一张锁着（爱丽丝画上要摸的、咲看得见的岭上牌、衣的海底之类）：她的规矩比锁大，锁着也照换（锁留在那个位置上）
+  // - 牌山里换不出来（海底只剩一张之类）：从王牌里换
   private bustFallback(drawer: number, rinshan: boolean, bust: DrawRule[]): void {
     const next = rinshan ? this.wall.rinshan[0] : this.wall.live[0];
     if (next === undefined) return;
     const hit = bust.filter((r) => r.deny(next));
-    if (hit.length === 0 || !this.wall.bringFromDead(rinshan, (t) => !bust.some((r) => r.deny(t)), this.rng)) return;
+    if (hit.length === 0) return;
+    const ok = (t: TileId) => !bust.some((r) => r.deny(t));
+    const locked = this.wall.locked.has(next);
+    const moved = locked ? this.wall.forceNext(rinshan, ok, this.rng) : this.wall.bringFromDead(rinshan, ok, this.rng);
+    if (!moved) return;
+    if (locked) this.bustForced = drawer;
     for (const r of hit) this.emit({ type: 'ability', seat: r.seat, ability: r.ability, text: r.text, target: drawer });
+  }
+
+  // 结算兜底：不会被击飞的人这一次最多付到 0 点。摸牌、打牌时是按当时的宝牌、里宝牌算的，
+  // 和牌时控里宝牌的能力（爽的海神威、涅莉之类）、杠宝牌翻开前一刻的控制还会改，万一算多了就在这里截住。
+  // 少付的从收她点数的人那里扣回来（一炮双响从后面的人先扣）。payees：她的点数付给了谁（按头跳顺序）
+  private capBust(deltas: number[], payer: number, payees: number[]): void {
+    if (!this.rules.tobi || !this.abilities[payer]?.unbustable) return;
+    let short = -(this.players[payer].score + deltas[payer]);
+    if (short <= 0) return;
+    deltas[payer] += short;
+    for (const s of [...payees].reverse()) {
+      const back = Math.min(short, deltas[s]);
+      deltas[s] -= back;
+      short -= back;
+      if (short <= 0) break;
+    }
+    const a = this.abilities[payer]!;
+    this.emit({ type: 'ability', seat: payer, ability: a.id, text: a.name });
   }
 
   // 这一手牌鸣了以后还打得出去牌（不会被击飞的人才用得上）
@@ -713,6 +789,7 @@ export class Game {
       return;
     }
     this.drawing = { seat, rinshan };
+    this.bustForced = null;
     const bust = this.bustRules(seat, rinshan);
     this.applyDrawAbilities(seat, rinshan, bust);
     if (!rinshan && seat === this.dealer && this.isFirstTurn(seat)) this.denyTenhou(seat, bust);
@@ -786,7 +863,9 @@ export class Game {
   legalActions(seat: number): Action[] {
     if (this.phase === 'calls') return this.responses.has(seat) ? [] : this.pending.get(seat) ?? [];
     if (this.phase !== 'turn' || seat !== this.turn) return [];
-    const out = this.turnActions(seat);
+    const all = this.turnActions(seat);
+    // 开杠摸岭上牌自摸会击飞不会被击飞的人：这个杠开不了
+    const out = all.some((a) => a.type === 'ankan' || a.type === 'kakan') ? all.filter((a) => !this.kanBusts(seat, a)) : all;
     if (!this.abilities[seat]?.unbustable) return out;
     // 不会被击飞的人：放铳会被击飞的牌打不出去、加杠不了。一张都打不出去又自摸不了时（很少见）照常
     const memo = new Map<string, boolean>();
@@ -977,6 +1056,12 @@ export class Game {
             for (const x of as) for (const y of bs) opts.push({ type: 'chi', tiles: [x, y] });
           }
         }
+      }
+      // 明杠摸岭上牌自摸会击飞不会被击飞的人：不能明杠
+      if (opts.some((a) => a.type === 'daiminkan')) {
+        const keep = opts.filter((a) => a.type !== 'daiminkan' || !this.kanBusts(o, a));
+        opts.length = 0;
+        opts.push(...keep);
       }
       // 不会被击飞的人：鸣了以后一张都打不出去的不能鸣
       if (this.abilities[o]?.unbustable) {
@@ -1196,6 +1281,7 @@ export class Game {
       deltas[o] -= pay;
       deltas[seat] += pay;
     }
+    for (let o = 0; o < 4; o++) if (o !== seat) this.capBust(deltas, o, [seat]);
     deltas[seat] += 1000 * this.riichiSticks;
     this.riichiSticks = 0;
     this.endRound({
@@ -1218,12 +1304,11 @@ export class Game {
       const pay = r.ron + (i === 0 ? 300 * this.honba : 0);
       deltas[from] -= pay;
       deltas[s] += pay;
-      if (i === 0) {
-        deltas[s] += 1000 * this.riichiSticks;
-        this.riichiSticks = 0;
-      }
       wins.push(this.winInfo(s, from, tile, [...this.players[s].hand, tile], r));
     });
+    this.capBust(deltas, from, seats);
+    deltas[seats[0]] += 1000 * this.riichiSticks;
+    this.riichiSticks = 0;
     this.endRound({ kind: 'win', wins, tenpai: [false, false, false, false], deltas });
   }
 
