@@ -74,7 +74,7 @@ export function settleUra(g: Game, winners: number[], winTile?: TileId): void {
   const blocked = winners.filter((s) => s !== kuro && g.players[s].riichi);
   if (kuro !== null && blocked.length) {
     const theirs = toCounts(blocked.flatMap((s) => tilesOf(g, s, winTile)));
-    // 牌山摸光了、岭上牌又被咲看着（锁住）时没有牌可换：没翻开的宝牌指示牌也拿来换
+    // 牌山快摸光时没有牌可换：没翻开的宝牌指示牌、岭上牌（这一局已经打完，咲看着的也不再有人摸）也拿来换
     for (let i = 0; i < w.doraRevealed; i++) steerAway(w.uraIndicators[i], theirs, null, (pred) => w.bringToUra(i, pred, g.rng, undefined, true));
     return;
   }

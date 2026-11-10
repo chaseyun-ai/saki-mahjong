@@ -21,7 +21,7 @@ const st = {
   rounds: 0, wins: 0, rs: 0, rankSum: 0, first: 0, last: 0, dealIns: 0, pts: 0, score: 0,
   awaiWins: 0, awaiRounds: 0, band: 0, absDev: 0, dealSh: 0, dealPairs: 0,
   kans: 0, tenpaiKans: 0, rinshanDraws: 0, rinshanUseful: 0, rinshanWin: 0,
-  kanMine: 0, kanStolen: 0, seenChanged: 0, seenDrawn: 0,
+  kanMine: 0, kanStolen: 0, seenChanged: 0, seenDrawn: 0, dealTrip1: 0, dealTrip2: 0, kanShown: 0,
 };
 // 14 张时打一张以后最好的向听（-1 是和了）
 const best14 = (hand: TileId[], melds: number) => {
@@ -54,6 +54,9 @@ for (let seed = from; seed < from + games; seed++) {
       const c = toCounts(g.players[mine].hand);
       st.dealSh += shanten(c);
       st.dealPairs += c.filter((x) => x >= 2).length;
+      const trips = c.filter((x) => x >= 3).length;
+      if (trips >= 1) st.dealTrip1++;
+      if (trips >= 2) st.dealTrip2++;
       seenRinshan = null;
     }
     if (e.type === 'draw') {
@@ -78,6 +81,7 @@ for (let seed = from; seed < from + games; seed++) {
         }
       }
     }
+    if (e.type === 'ability' && e.seat === mine && e.text === '杠的气息') st.kanShown++;
     if (e.type === 'call' && e.seat === mine && e.call.includes('杠')) {
       st.kans++;
       const p = g.players[mine];
@@ -137,6 +141,7 @@ if (process.env.SAKI_RAW) {
       `放铳 ${pct(st.dealIns, st.rounds)}`,
       `杠/局 ${(st.kans / st.rounds).toFixed(2)}（听牌杠 ${pct(st.tenpaiKans, st.kans)}）`,
       `第四张：她摸到 ${st.kanMine} 被别人摸走 ${st.kanStolen}`,
+      `配牌有刻子 ${pct(st.dealTrip1, st.rounds)}（两个 ${pct(st.dealTrip2, st.rounds)}）`,
       `岭上牌有用 ${pct(st.rinshanUseful, st.rinshanDraws)}（${st.rinshanDraws} 张）`,
       `看见的岭上牌变了 ${st.seenChanged}/${st.seenDrawn}`,
       `正负零 ${st.band} 场`,

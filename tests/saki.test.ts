@@ -145,6 +145,45 @@ describe('宫永咲', () => {
     expect(paired).toBeGreaterThan(deals * 0.9);
   }, 60000);
 
+  it('配牌偶尔带现成的刻子：比自然发牌（约 9%）多，但不是每局都有；刻子的第四张不在岭上，开局就落在牌山里现出来', () => {
+    let deals = 0;
+    let one = 0;
+    let two = 0;
+    let trips = 0;
+    let shown = 0;
+    for (let seed = 1; seed <= 45; seed++) {
+      play(seed, ['saki', 'nodoka', 'mihoko', 'hisa'], (g, me) => {
+        // 第一局在挂上来之前已经开打了，从第二局看起
+        let fresh = false;
+        g.onEvent((e) => {
+          if (e.type === 'roundStart') fresh = true;
+          // 开局第一次摸牌时看：这时配牌发完了，开局的杠材也落位了
+          if (e.type !== 'draw' || !fresh) return;
+          fresh = false;
+          const p = g.players[me];
+          const c = toCounts(p.hand.filter((t) => t !== p.drawn));
+          const kinds = c.flatMap((x, k) => (x >= 3 ? [k] : []));
+          deals++;
+          if (kinds.length >= 1) one++;
+          if (kinds.length >= 2) two++;
+          const seen = [...sakiKanTiles(g, me)].map(kindOf);
+          for (const k of kinds) {
+            trips++;
+            expect(g.wall.rinshan.some((t) => kindOf(t) === k)).toBe(false);
+            if (seen.includes(k)) shown++;
+          }
+        });
+      });
+    }
+    console.log({ deals, one, two, trips, shown });
+    expect(deals).toBeGreaterThan(150);
+    expect(one / deals).toBeGreaterThan(0.15);
+    expect(one / deals).toBeLessThan(0.4);
+    expect(two / deals).toBeLessThan(0.1);
+    // 第四张被别人抓进配牌、翻成宝牌指示牌的时候现不出来，其余的开局就看得见
+    expect(shown).toBeGreaterThan(trips * 0.7);
+  }, 120000);
+
   it('天意：离正负零（30000）远了发力，领先太多收手', () => {
     const g = new Game({ seed: 1, players: [byId('saki'), byId('nodoka'), byId('mihoko'), byId('hisa')].map((c) => ({ name: c.id, ability: c.ability })) });
     g.players[0].score = 30000;

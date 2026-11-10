@@ -157,7 +157,17 @@ describe('江口夕', () => {
     let wins = 0;
     for (let seed = 1; seed <= 12; seed++) {
       play(seed, ['sera', 'saki', 'kuro', 'mako'], (g) => {
+        // 她决定和不和的那一刻看到的牌值。里宝牌是和牌时才定的：玄的宝牌还在时会被挡掉，实际拿到的可能比看到的少
+        let saw = 0;
         g.onEvent((e) => {
+          if (e.type === 'draw' && e.seat === 0) {
+            const r = g.winResult(0, g.players[0].drawn!, true);
+            saw = r ? teruWinValue(r, true, g.dealer === 0) : 0;
+          }
+          if (e.type === 'discard' && e.seat !== 0) {
+            const r = g.winResult(0, e.tile, false);
+            saw = r ? teruWinValue(r, false, g.dealer === 0) : 0;
+          }
           if (e.type === 'roundStart') {
             const kuro = g.players.findIndex((p) => p.name === 'kuro');
             // 玄的宝牌在时别人拿不到宝牌，只数役牌
@@ -170,7 +180,7 @@ describe('江口夕', () => {
               if (w.seat !== 0) continue;
               wins++;
               const pay = teruWinValue(w.result, w.from === null, g.dealer === 0);
-              if (g.wall.remaining > SERA.holdLate) expect(pay).toBeGreaterThanOrEqual(g.dealer === 0 ? SERA.mangan * 1.5 : SERA.mangan);
+              if (g.wall.remaining > SERA.holdLate) expect(Math.max(pay, saw)).toBeGreaterThanOrEqual(g.dealer === 0 ? SERA.mangan * 1.5 : SERA.mangan);
             }
           }
           if (e.type === 'discard' && e.seat === 0 && !e.riichi && !g.players[0].riichi) {
