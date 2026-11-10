@@ -1,6 +1,7 @@
 import { kuroSeat, settleUra } from '../src/abilities/doraControl';
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
+import { sakiKanTiles } from '../src/abilities/saki';
 import { sawayaOn, sawayaPlagueTarget, sawayaRedTarget } from '../src/abilities/sawaya';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
@@ -185,11 +186,16 @@ describe('狮子原爽', () => {
     let pushed = { honors: 0, draws: 0 };
     let others = { honors: 0, draws: 0 };
     for (let seed = 1; seed <= 12; seed++) {
+      const ids = LINEUPS[seed % 4];
       play(
         seed,
-        LINEUPS[seed % 4],
+        ids,
         (g, me) => {
+          // 咲成刻以后看见的第四张是锁着的，红云挪不走：被鸣牌错到别人那里时不算
+          const saki = ids.indexOf('saki');
+          const seen = new Set<number>();
           g.onEvent((e) => {
+            if (saki >= 0) for (const t of sakiKanTiles(g, saki)) seen.add(t);
             const red = sawayaRedTarget(g, me);
             if (red === null) return;
             if (e.type === 'dealt') {
@@ -197,9 +203,11 @@ describe('狮子原爽', () => {
               for (let s = 0; s < 4; s++) if (s !== red && g.rulesBind(me, s) && g.abilities[s]?.id !== 'koromo') expect(g.players[s].hand.some((t) => isHonor(kindOf(t)))).toBe(false);
             }
             if (e.type !== 'draw' || g.rinshanDraw || g.wall.remaining < 20) return;
+            if (seen.has(g.players[e.seat].drawn!)) return;
             const honor = isHonor(kindOf(g.players[e.seat].drawn!));
-            // 字牌只流给一家，别的牌被摸光以后牌山里只剩字牌：挡也挡不住，不算
-            if (honor && !g.wall.live.some((t) => !isHonor(kindOf(t)))) return;
+            // 字牌只流给一家，别的牌快被摸光时牌山里几乎只剩字牌：剩下的几张数牌又被先定的规矩
+            // （衣的一向听地狱、玄的宝牌、锁住的海底牌）挡着，换不来，不算
+            if (honor && g.wall.live.filter((t) => !isHonor(kindOf(t)) && !g.wall.locked.has(t)).length < 8) return;
             if (red === me) {
               if (e.seat !== me && g.rulesBind(me, e.seat) && g.abilities[e.seat]?.id !== 'koromo') {
                 selfDraws++;

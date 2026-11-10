@@ -1,3 +1,4 @@
+import { sakiReleaseLine } from '../abilities/saki';
 import type { Game, Stage } from '../engine/game';
 import { EAST, Kind, TileId, doraFromIndicator, isRed, kindOf } from '../engine/tiles';
 import { panelHtml, rowHtml, section } from './matchSetup';
@@ -71,7 +72,10 @@ function arrange(g: Game, list: TileId[], at: number[], want: Kind[], ok: (j: nu
   for (const i of extra) {
     const k = need.shift();
     if (k === undefined) return;
-    const from = spare(g, k, ok);
+    // 配牌前开局宝牌指示牌还没亮出来：要的牌正好是它也能换（换完 clearDora 再把指示牌挪开）
+    const w = g.wall;
+    const dora = w.live.length > 70 && kindOf(w.doraIndicators[0]) === k && !isRed(w.doraIndicators[0]) && !w.locked.has(w.doraIndicators[0]);
+    const from = spare(g, k, ok) ?? (dora ? ([w.doraIndicators, 0] as [TileId[], number]) : null);
     if (from) swap(list, i, from[0], from[1]);
   }
 }
@@ -81,7 +85,8 @@ function arrange(g: Game, list: TileId[], at: number[], want: Kind[], ok: (j: nu
 function put(g: Game, k: Kind, list: TileId[], i: number, mine: Set<number>): void {
   const w = g.wall;
   const fit = (t: TileId) => kindOf(t) === k && !isRed(t) && !w.locked.has(t);
-  if (i < list.length && fit(list[i])) return;
+  // 已经是这种牌了（她看见、锁住的也算）：不动
+  if (i < list.length && kindOf(list[i]) === k && !isRed(list[i])) return;
   // 配牌前（live 还是满的）：开局宝牌指示牌还没亮出来，也能换（换完 clearDora 再挪开）
   const dealing = w.live.length > 70;
   const sources: [TileId[], (j: number) => boolean][] = [
@@ -125,6 +130,8 @@ export function rinshanStage(me: number, tier: RinshanTier | 'cycle'): Stage {
       const guest = winds.find((k) => k !== g.seatWind(me) && k !== EAST + g.roundWind) ?? 30;
       cur = rinshanHand(t, guest);
       const mine = new Set(g.dealIndices(me));
+      // 岭上牌由测试局来摆：她配牌时定好、锁住的先松开（开局时她照摆好的重新看见、锁上）
+      sakiReleaseLine(g, me);
       arrange(g, g.wall.live, [...mine], cur.hand, (j) => !mine.has(j));
       // 她坐庄，配完牌第一张摸的是 live[52]：暗刻的第四张（没坐庄时放深一点，别人先摸不走，轮到她再挪到最前面）；岭上牌放和了牌
       put(g, cur.kan, g.wall.live, g.dealer === me ? 52 : 64, mine);
@@ -143,7 +150,10 @@ export function rinshanStage(me: number, tier: RinshanTier | 'cycle'): Stage {
       // 第一张：暗刻的第四张（配牌以后有能力换过她的手牌就再摆回去）
       if (p.discards.length || p.melds.length) return;
       arrange(g, p.hand, [...p.hand.keys()], h.hand, (j) => j > 0);
-      put(g, h.kan, g.wall.live, 0, new Set());
+      // 第四张她成刻时就看见、锁住了（咲的杠材）：不在最前面就直接挪过来
+      const at = g.wall.live.findIndex((t) => kindOf(t) === h.kan && !isRed(t));
+      if (at > 0) swap(g.wall.live, 0, g.wall.live, at);
+      else put(g, h.kan, g.wall.live, 0, new Set());
     },
   };
 }

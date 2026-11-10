@@ -260,11 +260,12 @@ describe('大星淡：主动技能', () => {
       g.act(0, chooseAction(g, 0, chars[0].ai));
       const before = honorPairs();
       if (!runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0 && p.drawn !== null)) break;
-      // 还缺的字牌被别人摸走了（咲的对子长成刻子也会拿走字牌）、牌山里没有了时摸不到
+      // 还缺的字牌被别人摸走了（咲的对子长成刻子也会拿走字牌）、牌山里没有了时摸不到。
+      // 咲看见的牌（岭上牌、杠材的第四张）是锁着的，换不来
       const need = [27, 28, 29, 30, 31, 32, 33].filter((k) => toCounts(p.hand.filter((t) => t !== p.drawn))[k] < 2);
       const left = before < 14 && need.length > 0;
       if (left && honorPairs() !== before + 1) {
-        expect(g.wall.live.concat(g.wall.rinshan).some((t) => need.includes(kindOf(t)))).toBe(false);
+        expect(g.wall.live.concat(g.wall.rinshan).some((t) => need.includes(kindOf(t)) && !g.wall.locked.has(t))).toBe(false);
       } else if (before < 14) expect(honorPairs()).toBe(before + 1);
       draws++;
     }

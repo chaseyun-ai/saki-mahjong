@@ -85,7 +85,7 @@ describe('园城寺怜的立直', () => {
   it('立直后只要没人鸣牌，下一巡一定能自摸', () => {
     const toki = CHARACTERS.findIndex((c) => c.id === 'toki');
     let riichis = 0;
-    for (let seed = 1; seed <= 12; seed++) {
+    for (let seed = 1; seed <= 30; seed++) {
       const g = new Game({ seed, players: CHARACTERS.map((c) => ({ name: c.name, ability: c.ability })) });
       let watching = false;
       g.onEvent((e) => {

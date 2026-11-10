@@ -51,7 +51,8 @@ function steerAway(current: TileId, avoid: number[], prefer: number[] | null, br
 export function settleKanDora(g: Game, i: number, kanner: number | undefined): void {
   const w = g.wall;
   if (i >= w.doraIndicators.length) return;
-  const bring = (pred: (t: TileId) => boolean) => w.bringToDora(i, pred, g.rng);
+  // 不拿下一张要摸的牌来换：指示牌是打完牌才翻的，那一刻没有人看得到牌山动了（能力回放只在摸牌时对账）
+  const bring = (pred: (t: TileId) => boolean) => w.bringToDora(i, pred, g.rng, (j) => j > 0);
   const kuro = kuroSeat(g);
   if (kuro !== null) {
     const others = toCounts([0, 1, 2, 3].filter((s) => s !== kuro).flatMap((s) => tilesOf(g, s)));
@@ -73,7 +74,8 @@ export function settleUra(g: Game, winners: number[], winTile?: TileId): void {
   const blocked = winners.filter((s) => s !== kuro && g.players[s].riichi);
   if (kuro !== null && blocked.length) {
     const theirs = toCounts(blocked.flatMap((s) => tilesOf(g, s, winTile)));
-    for (let i = 0; i < w.doraRevealed; i++) steerAway(w.uraIndicators[i], theirs, null, (pred) => w.bringToUra(i, pred, g.rng));
+    // 牌山摸光了、岭上牌又被咲看着（锁住）时没有牌可换：没翻开的宝牌指示牌也拿来换
+    for (let i = 0; i < w.doraRevealed; i++) steerAway(w.uraIndicators[i], theirs, null, (pred) => w.bringToUra(i, pred, g.rng, undefined, true));
     return;
   }
   const winner = winners[0];

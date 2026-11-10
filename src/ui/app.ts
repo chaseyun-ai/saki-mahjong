@@ -6,7 +6,7 @@ import { HIROKO_NOTES } from '../abilities/hiroko';
 import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored } from '../abilities/teru';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
-import { sakiKanKinds, sakiKanTiles, sakiSeesThrough } from '../abilities/saki';
+import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
@@ -2022,7 +2022,7 @@ export class App {
       tintBacks: this.eyeOpen() && !this.vision ? new Set([1, 2, 3].flatMap((d) => g.players[(this.me + d) % 4].hand)) : undefined,
       akaBacks: this.vision ? undefined : this.akaSpots(),
       kanSeen: this.sakiSees() && sakiKanTiles(this.game!, this.me),
-      rinshanSeen: this.sakiSees() && new Set(this.game!.wall.rinshan),
+      rinshanSeen: this.sakiSees() && new Set(sakiRinshan(this.game!, this.me)),
       waveBacks: this.vision || (g.phase !== 'turn' && g.phase !== 'calls') ? undefined : awaiWaveTiles(g, this.me),
       gravity: (g.phase === 'turn' || g.phase === 'calls') && awaiSourceOn(g),
       handOrder: this.myHand(),
@@ -2460,13 +2460,18 @@ export class App {
       ${scores}`;
   }
 
-  // 宫永咲的王牌感知（2D）：中间放 4 张岭上牌的牌背，鼠标移到上面牌背变透明看得到牌；杠材在牌山第几张一直写着
+  // 宫永咲的王牌感知（2D）：中间放 4 张岭上牌的牌背，鼠标移到上面牌背变透明看得到牌；成刻以后杠材的第四张在牌山第几张、轮到谁摸一直写着
   private sakiPeekHtml(): string {
     const see = this.sakiSees();
     if (!see) return '';
     const g = this.game!;
-    const tiles = g.wall.rinshan.map((t) => tileHtml(t, { size: 'mini', classes: ['peek'] })).join('');
-    const kan = [...sakiKanTiles(g, this.me)].map((t) => `${kindLabel(kindOf(t))}（再摸 ${g.wall.live.indexOf(t) + 1} 张）`);
+    const tiles = sakiRinshan(g, this.me).map((t) => tileHtml(t, { size: 'mini', classes: ['peek'] })).join('');
+    // 第四张现在轮到谁摸（没人鸣牌的话）：被鸣牌错开了就写出来
+    const kan = [...sakiKanTiles(g, this.me)].map((t) => {
+      const i = g.wall.live.indexOf(t);
+      const who = g.drawerOf(i);
+      return `${kindLabel(kindOf(t))}（再摸 ${i + 1} 张，${who === this.me ? '轮到你' : `错开了，轮到${this.chars[who].name}`}）`;
+    });
     const note = kan.length ? `杠材：${kan.join('、')}` : sakiKanKinds(g, this.me).length ? '杠材不在牌山里' : '';
     return `<div class="rinshan-peek" title="王牌感知"><span>岭上</span>${tiles}</div>${note ? `<div class="kan-peek">${note}</div>` : ''}`;
   }

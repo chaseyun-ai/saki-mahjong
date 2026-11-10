@@ -83,7 +83,8 @@ export type GameEvent =
   | { type: 'discard'; seat: number; tile: TileId; riichi: boolean }
   | { type: 'call'; seat: number; call: string }
   // target：能力作用在谁的摸牌上（没写就是发动能力的人自己）
-  | { type: 'ability'; seat: number; ability: string; text: string; target?: number }
+  // moved：不是换下一张要摸的牌，是在摸牌以外的时刻挪了牌山里的牌（咲成刻时杠材的第四张落位）
+  | { type: 'ability'; seat: number; ability: string; text: string; target?: number; moved?: boolean }
   | { type: 'roundEnd'; result: RoundResult };
 
 export interface PlayerConfig {
@@ -699,7 +700,10 @@ export class Game {
       this.dealtWall = { live: this.wall.live.slice(), rinshan: this.wall.rinshan.slice() };
       this.emit({ type: 'dealt' });
     }
+    const before = this.wall.live.join();
     for (const s of this.abilityOrder()) this.active(s)!.onRoundStart?.(this, s);
+    // 开局时又挪过牌山（咲配牌就有暗刻，第四张落位）：留的底跟着改
+    if (this.wall.live.join() !== before) this.dealtWall = { live: this.wall.live.slice(), rinshan: this.wall.rinshan.slice() };
     this.drawFor(this.dealer, false);
   }
 

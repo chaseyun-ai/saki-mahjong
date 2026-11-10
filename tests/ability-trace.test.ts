@@ -26,7 +26,8 @@ beforeAll(() => {
   Wall.prototype.bringToRinshan = function (this: Wall, ...args: Parameters<Wall['bringToRinshan']>) {
     const before = this.rinshan[0];
     const ok = origRinshan.apply(this, args);
-    if (this.rinshan[0] !== before) swaps.push({ wall: this, before, after: this.rinshan[0] });
+    // 配牌时定岭上牌（咲）不算
+    if (this.rinshan[0] !== before && !this.guard) swaps.push({ wall: this, before, after: this.rinshan[0] });
     return ok;
   };
 });
@@ -108,13 +109,14 @@ describe('能力痕迹', () => {
     expect(firstDraw).toBeGreaterThan(0);
   }, 120000);
 
-  it('松实玄换来的牌都是宝牌，宫永咲的岭上开花换来的都是和了牌', () => {
+  it('松实玄换来的牌都是宝牌；宫永咲的岭上牌从来不换，岭上开花只记一句', () => {
     let kuro = 0;
     let rinshan = 0;
-    // 岭上开花要咲听牌时开杠才会发动，多打几场才碰得到
     for (let seed = 1; seed <= 45; seed++) {
       for (const r of play(seed).rounds) {
         for (const x of r.entries) {
+          // 岭上开花：摸上来的就是配牌时定好的那张，不是换来的
+          if (x.kind === 'note' && x.ability === 'saki' && x.text === '岭上开花') rinshan++;
           if (x.kind !== 'swap') continue;
           if (x.ability === 'kuro') {
             // 宝牌聚集换来的是宝牌；打出过宝牌以后（整场失效）悄悄换走宝牌，换来的不是宝牌
@@ -131,13 +133,8 @@ describe('能力痕迹', () => {
               expect(isDora).toBe(false);
             }
           }
-          // 玄把岭上的宝牌从别人手边换走的不算
-          if (x.rinshan && x.ability !== 'kuro') {
-            rinshan++;
-            expect(x.ability).toBe('saki');
-            expect(x.text).toBe('岭上开花');
-            expect(x.madeWin).toBe(true);
-          }
+          // 岭上牌咲都看着、锁着：谁也换不了
+          expect(x.rinshan).toBe(false);
         }
       }
     }
@@ -185,7 +182,7 @@ describe('能力痕迹', () => {
 
   it('每条记录都能写成一句完整的解说', () => {
     const tags = new Set<string>();
-    for (let seed = 1; seed <= 10; seed++) {
+    for (let seed = 1; seed <= 20; seed++) {
       for (const r of play(seed).rounds) {
         for (const x of r.entries) {
           const l = traceLine(x, (s) => CHARACTERS[s].name, (t) => `[${t}]`);

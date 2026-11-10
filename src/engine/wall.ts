@@ -137,22 +137,33 @@ export class Wall {
     return true;
   }
 
-  // 把符合条件的牌换成下一张岭上牌（来源可以是牌山或其他岭上牌）
-  bringToRinshan(pred: (t: TileId) => boolean, rng: Rng): boolean {
-    if (this.rinshan.length === 0 || this.locked.has(this.rinshan[0])) return false;
-    const ok = (t: TileId) => pred(t) && !this.deny?.(t);
-    if (ok(this.rinshan[0])) return true;
+  // live 里两张牌对换位置（两张都没锁才换）。不是换下一张要摸的牌，是摸牌以外的时刻挪牌山用的（咲的杠材落位）
+  swapLive(a: number, b: number): boolean {
+    if (a === b) return true;
+    if (a < 0 || b < 0 || a >= this.live.length || b >= this.live.length) return false;
+    if (this.locked.has(this.live[a]) || this.locked.has(this.live[b])) return false;
+    [this.live[a], this.live[b]] = [this.live[b], this.live[a]];
+    return true;
+  }
+
+  // 把符合条件的牌换成第 at 张岭上牌（默认是下一张）。来源是牌山（from：只从这些位置找）和它后面的岭上牌
+  bringToRinshan(pred: (t: TileId) => boolean, rng: Rng, at = 0, from?: (i: number) => boolean): boolean {
+    if (at >= this.rinshan.length || this.locked.has(this.rinshan[at])) return false;
+    const deny = at === 0 ? this.deny : null;
+    const ok = (t: TileId) => pred(t) && !deny?.(t);
+    if (ok(this.rinshan[at])) return true;
     const cands: { from: 'live' | 'rinshan'; i: number }[] = [];
     this.live.forEach((t, i) => {
-      if (!this.locked.has(t) && ok(t) && (!this.guard || this.guard([[i, this.rinshan[0]]]))) cands.push({ from: 'live', i });
+      if (from && !from(i)) return;
+      if (!this.locked.has(t) && ok(t) && (!this.guard || this.guard([[i, this.rinshan[at]]]))) cands.push({ from: 'live', i });
     });
     this.rinshan.forEach((t, i) => {
-      if (i > 0 && !this.locked.has(t) && ok(t)) cands.push({ from: 'rinshan', i });
+      if (i > at && !this.locked.has(t) && ok(t)) cands.push({ from: 'rinshan', i });
     });
     if (cands.length === 0) return false;
     const c = cands[rng.int(cands.length)];
     const src = c.from === 'live' ? this.live : this.rinshan;
-    [this.rinshan[0], src[c.i]] = [src[c.i], this.rinshan[0]];
+    [this.rinshan[at], src[c.i]] = [src[c.i], this.rinshan[at]];
     return true;
   }
 
@@ -175,14 +186,19 @@ export class Wall {
   }
 
   // 把符合条件的牌换成第 i 张里宝牌指示牌（还没翻开，和了时才看得到）。来源是牌山、岭上牌和后面的里宝牌指示牌
-  // from：牌山里只从这些位置找
-  bringToUra(i: number, pred: (t: TileId) => boolean, rng: Rng, from?: (j: number) => boolean): boolean {
+  // from：牌山里只从这些位置找。spare：和牌结算时用，还没翻开的宝牌指示牌（再也不会翻了）也能拿来换
+  bringToUra(i: number, pred: (t: TileId) => boolean, rng: Rng, from?: (j: number) => boolean, spare = false): boolean {
     if (i >= this.uraIndicators.length || this.locked.has(this.uraIndicators[i])) return false;
     if (pred(this.uraIndicators[i])) return true;
     const cands: { src: TileId[]; i: number }[] = [];
     this.uraIndicators.forEach((t, j) => {
       if (j > i && !this.locked.has(t) && pred(t)) cands.push({ src: this.uraIndicators, i: j });
     });
+    if (spare) {
+      this.doraIndicators.forEach((t, j) => {
+        if (j >= this.doraRevealed && !this.locked.has(t) && pred(t)) cands.push({ src: this.doraIndicators, i: j });
+      });
+    }
     this.live.forEach((t, j) => {
       if (this.locked.has(t) || (from && !from(j)) || !pred(t)) return;
       if (this.guard && !this.guard([[j, this.uraIndicators[i]]])) return;

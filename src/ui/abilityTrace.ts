@@ -62,6 +62,8 @@ export class AbilityTrace {
   private rinshan: TileId[] = [];
   // 摸牌前发出的能力消息，等摸牌的那家摸完牌一起记
   private pending: Pending[] = [];
+  // 正在补看挂上之前的事件
+  private replaying = false;
 
   // 牌局建好时（第一局已经发完牌、庄家摸了第一张）挂上。第一局本来的牌山用规则引擎发完牌时留的底
   constructor(private g: Game) {
@@ -69,7 +71,9 @@ export class AbilityTrace {
     this.live = g.dealtWall.live.slice();
     this.rinshan = g.dealtWall.rinshan.slice();
     g.onEvent((e) => this.onEvent(e));
+    this.replaying = true;
     for (const e of past) if (e.type !== 'roundStart') this.onEvent(e);
+    this.replaying = false;
   }
 
   private onEvent(e: GameEvent): void {
@@ -78,6 +82,13 @@ export class AbilityTrace {
       this.entries = [];
       this.pending = [];
       this.snapshot();
+      return;
+    }
+    if (e.type === 'ability' && e.moved) {
+      // 摸牌以外的时刻挪了牌山（咲的杠材落位）：记一条，牌山本来的顺序从这里重新算。
+      // 补看过去的事件时不重拍：留的底（dealtWall）已经是挪完的样子
+      this.entries.push({ kind: 'note', seat: e.seat, turn: this.turn(), ability: e.ability, text: e.text });
+      if (!this.replaying) this.snapshot();
       return;
     }
     if (e.type === 'ability') {
@@ -205,6 +216,8 @@ const NOTE_TEXT: Record<string, (who: string) => string> = {
   ...Object.fromEntries(
     MOON_PHASES.map((m) => [`koromo-${m.name}`, (who: string) => `今晚是${m.name}${m.icon}，别人的能力有 ${Math.round(KOROMO.resist * m.power * 100)}% 干扰不到${who}。`]),
   ),
+  'saki-杠的气息': (who) => `${who}手里成了刻子：第四张落在她摸牌的路上，从这一刻起她看得见它。`,
+  'saki-岭上开花': (who) => `${who}开杠，岭上牌正是她等的那一张。这张岭上牌配牌时就定好了，没有换过。`,
   'hatsumi-鬼门': (who) => `${who}坐北家：鬼门打开，配牌里东风、北风各两张。`,
   'hatsumi-里鬼门': (who) => `${who}把东风、北风都鸣了出来：里鬼门，西风、南风会接着来。`,
   'hatsumi-西风': (who) => `${who}的里鬼门：摸到西风。`,
@@ -257,7 +270,7 @@ export function traceLine(x: TraceEntry, name: (seat: number) => string, tile: (
             : tile(x.got);
     html = `${who}本来该摸 ${tile(x.expected)}，摸到的却是${got}。${from}`;
     if (x.by !== null) html = `${name(x.by)}的「${x.text}」：${html}`;
-    if (x.ability === 'saki' && x.text === null) html += '对子悄悄长成了刻子，没有人察觉。';
+    if (x.ability === 'saki' && x.text === null) html += '天意悄悄推了一把：对子长成刻子，或者手牌往岭上牌靠，没有人察觉。';
     if (x.ability === 'awai' && x.text === null) html += '她在等转角暗杠，和了牌先往后放一放。';
     if (x.ability === 'kuro' && x.text === null) html += '她打出过宝牌，宝牌再也不来了。';
   }

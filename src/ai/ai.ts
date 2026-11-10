@@ -33,7 +33,7 @@ import { kaoriYakuman } from '../abilities/kaori';
 import { hirokoBias, hirokoDisrupt } from '../abilities/hiroko';
 import { haruRush } from '../abilities/haru';
 import { aislinnAiBrush, aislinnExtra, aislinnPlan } from '../abilities/aislinn';
-import { sakiAwaiFeed, sakiKanOk } from '../abilities/saki';
+import { SAKI, sakiAwaiFeed, sakiKanOk, sakiLine, sakiLineShanten } from '../abilities/saki';
 import { HUIYU, type HuiyuPlan, huiyuCallOk, huiyuMinFanOn, huiyuMissingAfter, huiyuPlan, huiyuWaitFans } from '../abilities/huiyu';
 import type { Action, Game } from '../engine/game';
 import { evaluateWin } from '../engine/score';
@@ -457,7 +457,21 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     seen.add(key);
     const c = counts.slice();
     c[kindOf(a.tile)]--;
-    const sh = shOf(c, p.melds.length);
+    let sh = shOf(c, p.melds.length);
+    // 咲：朝着岭上做牌（杠完正好听岭上那张）不比一般的做法慢，就按它算向听和进张
+    const bloom = style.rinshan && !sealed ? sakiLineShanten(g, seat, c) : null;
+    let bloomUke = -1;
+    if (bloom && bloom.sh <= sh + SAKI.lineLead) {
+      // 岭上那张她看得见：算进手里，也算进看得见的牌里（进张里不再数它）
+      const x = sakiLine(g, seat)[0];
+      const r = bloom.src.rest.slice();
+      const seenToo = visible.slice();
+      r[x]++;
+      seenToo[x]++;
+      bloomUke = ukeire(r, bloom.src.melds, seenToo);
+      if (bloom.sh === sh) bloomUke = Math.max(bloomUke, ukeire(c, p.melds.length, visible));
+      sh = Math.min(sh, bloom.sh - SAKI.lineLead);
+    }
     let val = tileValue(g, seat, kindOf(a.tile), counts);
     if (style.keepDora && isDoraTile(g, a.tile)) val += 20;
     // 咲：留着还没开的杠（第四张）和淡要送来的岭上牌的对子、刻子
@@ -493,7 +507,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const kanHand = style.rinshan && !sealed;
     const std = kanHand ? standardShanten(c, p.melds.length) : 0;
     const trip = kanHand && counts[kindOf(a.tile)] >= 3 ? 1 : 0;
-    cands.push({ a, sh, sh2, uke: kimonGoal ? ukeire(withWinds(c, kimonGoal), p.melds.length, visible) : sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl, feed, std, trip });
+    cands.push({ a, sh, sh2, uke: bloomUke >= 0 ? bloomUke : kimonGoal ? ukeire(withWinds(c, kimonGoal), p.melds.length, visible) : sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl, feed, std, trip });
   }
 
   // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌；涅莉的宣言局也一样，留下做的那门花色
@@ -655,6 +669,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     }
     // 胡桃：从不立直，默听才有能力
     if (style.dama && !sealed) return best.a;
+    // 咲：有杠材、离岭上开花不远时默听（立直了就改不了听，杠也可能开不了）
+    if (style.rinshan && !sealed && (sakiLineShanten(g, seat, c)?.sh ?? 9) <= SAKI.damaWithin) return best.a;
     // 春：别人立直以后不立直，小牌快和
     if (style.kuromame && !sealed && haruRush(g, seat)) return best.a;
     // 夕从不默听

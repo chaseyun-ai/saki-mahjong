@@ -210,7 +210,9 @@ function install() {
       for (const { t, at, owners } of locked0) {
         if (t === rec.drawn) continue;
         const shifted = /^牌山\[(\d+)\]$/.exec(at);
-        const expectAt = shifted && !rinshan ? `牌山[${+shifted[1] - 1}]` : at;
+        // 摸岭上牌时，后面的岭上牌往前挪一格（咲看见的岭上牌是锁着的）
+        const dead = /^岭上\[(\d+)\]$/.exec(at);
+        const expectAt = shifted && !rinshan ? `牌山[${+shifted[1] - 1}]` : dead && rinshan ? `岭上[${+dead[1] - 1}]` : at;
         const now = pos1.get(t)!;
         if (now === expectAt) continue;
         if (rinshan && now.startsWith('补进王牌')) continue;

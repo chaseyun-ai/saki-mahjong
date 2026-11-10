@@ -96,7 +96,7 @@ describe('宝牌控制：宫永咲', () => {
     ];
     let flips = 0;
     let clean = 0;
-    for (let seed = 1; seed <= 16; seed++) {
+    for (let seed = 1; seed <= 28; seed++) {
       const ids = LINEUPS[seed % 4];
       const saki = ids.indexOf('saki');
       play(seed, ids, (g) => {
