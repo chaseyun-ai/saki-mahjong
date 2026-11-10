@@ -50,11 +50,46 @@ describe('竹井久的摔牌', () => {
     for (const from of [wall(5, 9.45), wall(-6, 9.45), wall(-3, -9.45), wall(10.45, 0)]) {
       const m = new FlickMotion({ to, from, side, out, hand: true });
       // 翻过来之前（拖牌那一段）牌离落点往桌子中间最多一张牌高多一点
-      for (let k = m.pressAt - 0.3; k < m.pressAt - 0.13; k += 0.01) {
+      for (let k = m.revealAt - 0.15; k < m.revealAt; k += 0.01) {
         const p = m.frame(k).tile.pos;
         expect(to.pos.z - p.z).toBeLessThan(1.7);
       }
     }
+  });
+
+  it('从牌山到拖到手牌右边一路不停：中间没有停下来的时候', () => {
+    for (const from of [wall(5, 9.45), wall(-6, 9.45), wall(-3, -9.45), wall(10.45, 0)]) {
+      for (const hand of [true, false]) {
+        const m = new FlickMotion({ to, from, side, out, hand });
+        const dt = 0.005;
+        // 牌开始动的时刻
+        let k0 = 0;
+        while (m.frame(k0 + dt).tile.pos.distanceTo(from.pos) < 1e-6) k0 += dt;
+        const speeds: number[] = [];
+        for (let k = k0; k < m.revealAt - dt; k += dt) speeds.push(m.frame(k + dt).tile.pos.distanceTo(m.frame(k).tile.pos) / dt);
+        const mean = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+        // 起步、到头可以慢，中间一直走着（不到平均一半就算停顿）
+        const mid = speeds.slice(Math.floor(speeds.length * 0.2), Math.floor(speeds.length * 0.65));
+        expect(Math.min(...mid)).toBeGreaterThan(mean * 0.5);
+      }
+    }
+  });
+
+  it('弹上去之前先翻过来，牌面朝上在落点停一下', () => {
+    const m = new FlickMotion({ to, from: wall(5, 9.45), side, out, hand: true, near: true });
+    expect(m.revealAt).toBeLessThan(m.pressAt);
+    // 翻之前牌背朝上
+    expect(m.frame(m.revealAt - 0.01).tile.quat.angleTo(to.quat)).toBeGreaterThan(Math.PI * 0.75);
+    for (let k = m.pressAt + 0.001; k < m.pressAt + 0.25; k += 0.02) {
+      const p = m.frame(k).tile;
+      expect(p.pos.distanceTo(to.pos)).toBeLessThan(1e-6);
+      expect(p.quat.angleTo(to.quat)).toBeLessThan(1e-6);
+    }
+  });
+
+  it('弹得够高：最高处比落点高十张牌宽以上', () => {
+    const m = new FlickMotion({ to, from: wall(5, 9.45), side, out, hand: true, near: true });
+    expect(m.chargePoint.y - to.pos.y).toBeGreaterThan(10);
   });
 
   it('不带手：没有手，牌照样从牌山上过来', () => {

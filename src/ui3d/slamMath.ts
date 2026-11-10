@@ -22,6 +22,7 @@ export interface SlamMotion {
   readonly chargeDur: number;
   readonly hitAt: number;
   readonly doneAt: number;
+  readonly revealAt?: number; // 手牌该倒下亮出来的时刻（不给就照扣到桌上那一下）
   readonly pressPoint: THREE.Vector3; // 扣到桌上那一下，牌底下的桌面点
   readonly chargePoint: THREE.Vector3; // 开始亮光的地方
   readonly hitPoint: THREE.Vector3; // 炸开那一下，牌底下的桌面点

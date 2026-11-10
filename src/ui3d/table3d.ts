@@ -28,7 +28,7 @@ import { pondJitter, varyDiscard, vary } from '../ui/vary';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
 import { BeatHit, beatFinal, beatHit, beatLength, beatSeed } from '../ui/himekoBeat';
-import { SlamSpec, SlamStyle, TileSlam, slamHitOffset } from './tileSlam';
+import { SlamRun, SlamSpec, SlamStyle, TileSlam, slamHitOffset } from './tileSlam';
 import { SlamFx } from './slamFx';
 import { LilyFx, lilyGrand } from './lilyFx';
 
@@ -140,7 +140,8 @@ const V2_STAND = 0.75;
 const V2_STAND_DRAW = 0.2;
 const V2_PLACE = 0.3;
 const V2_HOLD = 0.6;
-// 「自摸一气呵成」：手伸出去的同时眼前的大手牌换成桌上立着的一排，停这么久就往前倒（牌拿回来时手牌已经摊开了）
+// 「自摸一气呵成」：手伸出去的同时眼前的大手牌换成桌上立着的一排，摸的那张翻过来亮牌时一起往前倒；
+// 动作没给亮牌时刻的（照理不会）就伸手以后停这么久倒
 const V2_TAKE_TOPPLE = 0.12;
 // 倒牌前立着的那一排，牌底边离画面底边留多少（画面高度的几分之几）
 const V2_STAND_MARGIN = 0.03;
@@ -270,7 +271,7 @@ interface RevealState {
   // 改良布局的自摸砸牌：start 时手伸进来，hitAt 拍到桌上；lily 是咲的岭上开花（这一手的基本点），没有是 null
   // sea：天江衣从海里捞上来的海底牌，砸下去把海水打散。style：用哪一套动作，「自摸一气呵成」接管的是 hisa（竹井久那一套，
   // 从牌山上摸起来），最后牌面朝上躺在倒牌后和了牌的位置，砸下去以后就一直躺在那里
-  tsumoSlam: { seat: number; tile: TileId; start: number; hitAt: number; started: boolean; lily: number | null; sea: boolean; style: SlamStyle } | null;
+  tsumoSlam: { seat: number; tile: TileId; start: number; hitAt: number; revealAt?: number; started: boolean; lily: number | null; sea: boolean; style: SlamStyle } | null;
 }
 
 interface Flight {
@@ -1412,7 +1413,7 @@ export class Table3D {
     // 改良布局的自摸：一只手把那张牌砸在桌上（初美聚着风的另有一套：倒完再砸）。自己的是手牌立起来的同时带着牌伸进来，
     // 别人的是宣言后 V2_STAND 秒伸过去捏起来。咲的岭上开花（岭上牌自摸，役满时役里不写岭上开花，看这一张是不是岭上摸的）砸下去开百合
     const tw = this.v2 ? r.wins.find((w) => w.from === null && !this.galeWin(w.seat)) : undefined;
-    // 「自摸一气呵成」接管的那张（takeOver）：竹井久那一套从牌山上摸起来，手伸出去的同时手牌直接倒下（自己的先换成桌上立着的一排）
+    // 「自摸一气呵成」接管的那张（takeOver）：竹井久那一套从牌山上摸起来，手伸出去的同时自己的手牌先换成桌上立着的一排，那张翻过来亮牌时手牌一起倒下
     const take = tw && this.takeDraw?.tile === tw.tile && this.takeDraw.seat === tw.seat ? this.takeDraw : null;
     this.takeDraw = null;
     const takeAt = take ? Math.max(this.now, take.at) : null;
@@ -1433,7 +1434,7 @@ export class Table3D {
     const slamDone = tsumoSlam ? tsumoSlam.hitAt + (tsumoSlam.lily !== null ? V2_LILY_HOLD : tsumoSlam.sea ? V2_SEA_HOLD : V2_SLAM_HOLD) : 0;
     const at =
       takeAt !== null
-        ? takeAt + V2_TAKE_TOPPLE
+        ? (tsumoSlam?.revealAt ?? takeAt + V2_TAKE_TOPPLE)
         : Math.max(this.now + (r.wins.length ? (flat ? REVEAL_DELAY_25D : REVEAL_DELAY) : 0.3), standAt !== null ? (placeAt ?? standAt) + V2_HOLD : 0, slamDone);
     const stagger = flat ? TOPPLE_STAGGER_25D : TOPPLE_STAGGER;
     // 接管的：手牌早就倒了，砸下去、停够了再放和牌特效
@@ -2111,6 +2112,7 @@ export class Table3D {
       },
     });
     ts.hitAt = run.hitAt;
+    ts.revealAt = run.revealAt;
   }
 
   // 砸一张牌（可以给别的特效用，比如天江衣的海底捞月）：一只手把 id 这张牌举起来、往前扫下去扣在桌上，牌自己翻起来立在 to，炸开。
@@ -2138,7 +2140,7 @@ export class Table3D {
       onHit?: (at: THREE.Vector3) => void;
       onDone?: () => void;
     },
-  ): { pressAt: number; hitAt: number; doneAt: number } {
+  ): SlamRun {
     const tile = this.tiles[id];
     tile.group.visible = true;
     const near = o.near ?? seat === (this.lastSync?.view.me ?? 0);

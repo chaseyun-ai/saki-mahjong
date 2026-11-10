@@ -92,6 +92,7 @@ export interface SlamSpec {
 // start 返回这一下什么时候扣到桌上、什么时候炸开、什么时候整段做完（和 now 同一个时钟）
 export interface SlamRun {
   pressAt: number;
+  revealAt?: number; // 这一套里手牌该倒下的时刻（不给就照 pressAt）
   hitAt: number;
   doneAt: number;
 }
@@ -304,7 +305,7 @@ export class TileSlam {
       const m: MotionActive = { kind: 'motion', spec, t0: at, arm: this.newArm(spec, motion.handScale), motion, pressed: false, charged: false, hit: false, shadows: this.shadowsOff(spec.tile) };
       this.list.push(m);
       this.poseMotion(m, now);
-      return { pressAt: at + motion.pressAt, hitAt: at + motion.hitAt, doneAt: at + motion.doneAt };
+      return { pressAt: at + motion.pressAt, revealAt: at + (motion.revealAt ?? motion.pressAt), hitAt: at + motion.hitAt, doneAt: at + motion.doneAt };
     }
     const timing = { ...SLAM_TIMING, ...spec.timing };
     const s = spec.to.scale;
