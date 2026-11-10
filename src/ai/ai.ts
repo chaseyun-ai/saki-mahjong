@@ -20,7 +20,7 @@ import { KYOUKO, kyoukoTargets } from '../abilities/kyouko';
 import { takamiHarvest, takamiSeeds } from '../abilities/takami';
 import { NELLY, nellyBigDiscard, nellyBigReady, nellyDue, nellyFlush, nellyLiveWaits, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier, nellyTurn } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
-import { komakiActiveGod } from '../abilities/komaki';
+import { harvestShanten, komakiActiveGod, komakiHarvestSuit } from '../abilities/komaki';
 import { toyoneLurks, toyoneMode } from '../abilities/toyone';
 import { TERU, teruDanger, teruFits, teruLadder, teruMirrored, teruTier, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
@@ -75,6 +75,12 @@ function keepRed(legal: Action[], a: Action): Action {
 }
 
 // 神代小莳：按附身的神换打法
+// - 木花咲耶姬：能杠就杠；同样向听时不拆暗刻（杠材）；听牌了手里还有杠材就不弃和
+// - 须佐之男：能碰就碰（每碰一次进张更好）
+// - 天照：读得出铳牌
+// - 稻荷神：向听、进张只按手里最多的那门算，别的花色的搭子先打掉；听的牌里没有那一门就不立直；不鸣牌
+// - 建御雷神：立直了才有威压，不鸣牌，听牌就立直
+// 另外，听的牌一张不剩时（自己杠掉了、河里打光了）不当听牌，换听
 function komakiStyle(g: Game, seat: number, style: AiStyle): AiStyle {
   switch (komakiActiveGod(g, seat)) {
     case 'sakuya':
@@ -373,6 +379,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     }
   }
 
+  // 小莳这一局附身的神（醒着、被封印是 null）
+  const god = style.gods ? komakiActiveGod(g, seat) : null;
   const discards = legal.filter((a): a is Extract<Action, { type: 'discard' }> => a.type === 'discard');
   // 花田煌：手里的牌打出去全会击飞自己时只剩自摸（或杠）
   if (discards.length === 0) return tsumo ?? legal[0];
@@ -447,6 +455,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 初美坐北家、西南还留给她：别人手里没有西南（她自己知道），打西南不会放铳（管不到的人除外）
   const safeWinds = style.winds && !sealed && !g.quelled(seat) && hatsumiSafeWinds(g, seat);
   const riskOf = (t: number, k: Kind) => (safeWinds && (k === WEST || k === SOUTH) && g.binds(seat, t) ? Math.min(1, eyeRisk(t, k)) : eyeRisk(t, k));
+  // 小莳的稻荷神：进张几乎都是手里最多的那一门。别的花色的搭子、单张的字牌等不来，
+  // 向听只按这一门的进张算（别处现成的面子、雀头照用），进张也只数这一门的
+  const harvest = style.gods ? komakiHarvestSuit(g, seat) : null;
   const cands: Cand[] = [];
   const seen = new Set<string>();
   for (const a of discards) {
@@ -484,7 +495,6 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (style.firepower && (isDoraTile(g, a.tile) || (seraYakuhai(g, seat, kindOf(a.tile)) && counts[kindOf(a.tile)] >= 2))) val += 15;
     const ts = threats(g, seat);
     const risk = ts.length ? Math.max(...ts.map((t) => riskOf(t, kindOf(a.tile)))) : 0;
-    const sh2 = sh;
     const hit = readDanger?.has(kindOf(a.tile)) || aimed?.has(kindOf(a.tile)) ? 1 : 0;
     const aim = marks?.size && sh === 0 && waitingKinds(c, p.melds.length).some((w) => marks.has(w)) ? 1 : 0;
     const fit = style.streak && sh === 0 && teruMirrored(g, seat) && teruHandFits(g, seat, p.hand.filter((t) => t !== a.tile)) ? 1 : 0;
@@ -504,10 +514,32 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const feed = style.scout && !sealed ? Math.max(0, ...[0, 1, 2, 3].map((o) => hirokoBias(g, seat, o, kindOf(a.tile)))) : 0;
     // 咲：同样向听时往一般型做、不拆暗刻（第四张也不打）。七对子开不了杠，她的能力又一直把对子长成刻子：
     // 按七对子的进张去打，摸到的第三张全成了废牌，只能一张张摸切掉
-    const kanHand = style.rinshan && !sealed;
-    const std = kanHand ? standardShanten(c, p.melds.length) : 0;
+    // 小莳的木花咲耶姬也一样：暗刻是杠材，第四张多半会来
+    const kanHand = (style.rinshan && !sealed) || god === 'sakuya';
+    let std = kanHand ? standardShanten(c, p.melds.length) : 0;
     const trip = kanHand && counts[kindOf(a.tile)] >= 3 ? 1 : 0;
-    cands.push({ a, sh, sh2, uke: bloomUke >= 0 ? bloomUke : kimonGoal ? ukeire(withWinds(c, kimonGoal), p.melds.length, visible) : sh <= cur ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl, feed, std, trip });
+    let harvestUke = -1;
+    if (harvest !== null) {
+      // 同样差几张时，留着照一般算法向听少的（别的花色的搭子还没碍事就先不拆）
+      std = sh;
+      const h = harvestShanten(c, p.melds.length, harvest);
+      harvestUke = 0;
+      for (let k = harvest * 9; k < harvest * 9 + 9; k++) {
+        if (visible[k] >= 4) continue;
+        c[k]++;
+        if (harvestShanten(c, p.melds.length, harvest) < h) harvestUke += 4 - visible[k];
+        c[k]--;
+      }
+      // 听的牌里这一门的已经没有了：不算听牌
+      sh = h === 0 && harvestUke === 0 ? 1 : h;
+    }
+    // 小莳：听的牌一张都不剩了（木花咲耶姬自己杠掉的、河里打光的）不算听牌，换听
+    if (style.gods && harvest === null && sh === 0 && ukeire(c, p.melds.length, visible) === 0) {
+      sh = 1;
+      std = Math.max(std, 1);
+    }
+    const sh2 = sh;
+    cands.push({ a, sh, sh2, uke: harvestUke >= 0 ? harvestUke : bloomUke >= 0 ? bloomUke : kimonGoal ? ukeire(withWinds(c, kimonGoal), p.melds.length, visible) : sh <= cur || (style.gods && sh <= 1) ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl, feed, std, trip });
   }
 
   // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌；涅莉的宣言局也一样，留下做的那门花色
@@ -521,9 +553,10 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const focus = style.clouds ? sawayaFocus(g, seat) : null;
   // 涅莉押 3 点做染手：别的牌先打，宁可退向听（进张都是那几种牌）
   const flush = style.waves && !sealed ? nellyFlush(g, seat) : null;
-  const inFlush = (k: Kind) => (flush ? (k >= 27 ? flush.honors : Math.floor(k / 9) === flush.suit) : false);
+  const inFlush = (k: Kind) =>
+    flush ? (k >= 27 ? flush.honors : Math.floor(k / 9) === flush.suit) : harvest !== null ? (k >= 27 ? counts[k] >= 2 : Math.floor(k / 9) === harvest) : false;
   const keep = (c: Cand) =>
-    (flush ? inFlush(kindOf(c.a.tile)) : suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) ||
+    (flush || harvest !== null ? inFlush(kindOf(c.a.tile)) : suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) ||
     (style.warm && warmKind(kindOf(c.a.tile))) ||
     (style.bowling && !sealed && isPin(kindOf(c.a.tile))) ||
     (style.pin1 && !sealed && kindOf(c.a.tile) === 9) ||
@@ -615,6 +648,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       (style.harvest && !sealed && takamiHarvest(g, seat) && best.sh <= 1) ||
       // 夕从不弃和
       style.firepower ||
+      // 小莳的木花咲耶姬：听牌了、手里还有杠材，摸到第四张就岭上开花，不弃和
+      (god === 'sakuya' && best.sh === 0 && sakuyaKanReady(g, seat, counts, visible)) ||
       // 丰音的先负发动了：追上去，不弃和
       (style.rokuyou && toyoneMode(g, seat) === 'senbu' && best.sh <= 1) ||
       // 初美鸣出东北以后奔小四喜（西南会送来），离听牌不远就不弃和
@@ -673,8 +708,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (style.rinshan && !sealed && (sakiLineShanten(g, seat, c)?.sh ?? 9) <= SAKI.damaWithin) return best.a;
     // 春：别人立直以后不立直，小牌快和
     if (style.kuromame && !sealed && haruRush(g, seat)) return best.a;
-    // 夕从不默听
-    if (style.firepower) return ukeire(c, p.melds.length, visible) > 0 ? riichi : best.a;
+    // 夕从不默听；小莳的建御雷神立直了才有威压，听牌就立直
+    if (style.firepower || god === 'take') return ukeire(c, p.melds.length, visible) > 0 ? riichi : best.a;
     // 堇：有役就默听，只等目标打
     if (style.sniper && sumireTarget(g, seat) !== null && damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) > 0) return best.a;
     if (style.foresightRiichi && !sealed) {
@@ -720,6 +755,14 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (ukeire(c, p.melds.length, visible) > 0) return riichi;
   }
   return best.a;
+}
+
+// 小莳的木花咲耶姬：手里有暗刻、碰过的牌，第四张还没露面（能力会把它送来）
+function sakuyaKanReady(g: Game, seat: number, counts: number[], visible: number[]): boolean {
+  if (g.totalKans() >= 4) return false;
+  const kinds = [...counts.keys()].filter((k) => counts[k] === 3);
+  for (const m of g.players[seat].melds) if (m.type === 'pon') kinds.push(kindOf(m.tiles[0]));
+  return kinds.some((k) => visible[k] < 4);
 }
 
 // 丰音的先负等着时，没役的听牌听到这么多张（自己看不到的）才立直
@@ -1095,6 +1138,9 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false)) && !growHolds(g, seat, style, false) && !seraHolds(g, seat, style, false) && !koromoHolds(g, seat, style, false) && !hatsumiHolds(g, seat, style, false) && !sumireSkips(g, seat, style) && !allLastHold(g, seat, false)) return ron;
   // 涅莉押了运势的局不鸣牌，门清做大
   if (style.waves && nellyTier(g, seat) > 0) return pass;
+  // 小莳的建御雷神：门清立直才有威压，不鸣牌。稻荷神：进张几乎张张有用，门清立直多半一发自摸，也不鸣
+  const god = style.gods ? komakiActiveGod(g, seat) : null;
+  if (god === 'take' || god === 'inari') return pass;
   // 透华治水：牌局平静如水，自己也不鸣
   if (tokaChisui(g, seat)) return pass;
   // 郝慧宇：番种的面子才鸣，而且鸣了日麻还有役（不然和不了）

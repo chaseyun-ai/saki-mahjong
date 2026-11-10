@@ -190,6 +190,120 @@ function bondKinds(counts: number[]): Set<Kind> {
   return out;
 }
 
+// 稻荷神：手里万子、筒子、索子哪门最多（一样多取靠前的）
+function harvestSuit(hand: TileId[]): number {
+  const per = [0, 0, 0];
+  for (const t of hand) if (!isHonor(kindOf(t))) per[suitOf(kindOf(t))]++;
+  return per.indexOf(Math.max(...per));
+}
+
+// 稻荷神附身的局：进张几乎都是这一门（别的神、醒着、被封印是 null）
+export function komakiHarvestSuit(g: Game, seat: number): number | null {
+  return komakiActiveGod(g, seat) === 'inari' ? harvestSuit(g.players[seat].hand) : null;
+}
+
+// 一组牌（一门数牌的 9 种，或者 7 种字牌）最多拆出几组面子
+function maxSets(c: number[], runs: boolean, i = 0): number {
+  while (i < c.length && c[i] === 0) i++;
+  if (i >= c.length) return 0;
+  let best = 0;
+  if (c[i] >= 3) {
+    c[i] -= 3;
+    best = Math.max(best, 1 + maxSets(c, runs, i));
+    c[i] += 3;
+  }
+  if (runs && i + 2 < c.length && c[i + 1] > 0 && c[i + 2] > 0) {
+    c[i]--, c[i + 1]--, c[i + 2]--;
+    best = Math.max(best, 1 + maxSets(c, runs, i));
+    c[i]++, c[i + 1]++, c[i + 2]++;
+  }
+  const n = c[i];
+  c[i] = 0;
+  best = Math.max(best, maxSets(c, runs, i + 1));
+  c[i] = n;
+  return best;
+}
+
+// 一门数牌拆成面子、搭子（对子也算）以后最好的向听：已经有 fixed 组面子（副露、别的花色里现成的），head：雀头已经有了
+// 四组面子齐了、还没雀头时，手里要有这一门的单张才算听牌（单骑）
+const suitMemo = new Map<string, number>();
+function suitShanten(c: number[], fixed: number, head: boolean): number {
+  const key = `${c.join('')}${fixed}${head ? 'h' : ''}`;
+  const hit = suitMemo.get(key);
+  if (hit !== undefined) return hit;
+  if (suitMemo.size > 50000) suitMemo.clear();
+  const sh = suitShapes(c, fixed, head);
+  suitMemo.set(key, sh);
+  return sh;
+}
+function suitShapes(c: number[], fixed: number, head: boolean): number {
+  const limit = 4 - fixed;
+  let best = 8;
+  const walk = (i: number, sets: number, tatsu: number, pair: boolean, spare: number) => {
+    while (i < 9 && c[i] === 0) i++;
+    if (i >= 9) {
+      const m = Math.min(sets, limit);
+      const t = Math.min(tatsu, limit - m);
+      let sh = 8 - 2 * (fixed + m) - t - (pair ? 1 : 0);
+      if (sh === 0 && !pair && spare + (sets - m) * 3 + (tatsu - t) * 2 === 0) sh = 1;
+      best = Math.min(best, sh);
+      return;
+    }
+    if (c[i] >= 3) {
+      c[i] -= 3;
+      walk(i, sets + 1, tatsu, pair, spare);
+      c[i] += 3;
+    }
+    if (i <= 6 && c[i + 1] > 0 && c[i + 2] > 0) {
+      c[i]--, c[i + 1]--, c[i + 2]--;
+      walk(i, sets + 1, tatsu, pair, spare);
+      c[i]++, c[i + 1]++, c[i + 2]++;
+    }
+    if (c[i] >= 2) {
+      c[i] -= 2;
+      if (!pair) walk(i, sets, tatsu, true, spare);
+      walk(i, sets, tatsu + 1, pair, spare);
+      c[i] += 2;
+    }
+    for (const d of [1, 2]) {
+      if (i + d > 8 || c[i + d] === 0) continue;
+      c[i]--, c[i + d]--;
+      walk(i, sets, tatsu + 1, pair, spare);
+      c[i]++, c[i + d]++;
+    }
+    c[i]--;
+    walk(i, sets, tatsu, pair, spare + 1);
+    c[i]++;
+  };
+  walk(0, 0, 0, head, 0);
+  return best;
+}
+
+// 稻荷神：只靠 suit 这一门的进张，离听牌还差几张。别的花色、字牌里现成的面子和一个雀头留着用，
+// 剩下的（搭子、单张）等不来，当废牌。听牌（0）是说听的牌里有这一门的
+export function harvestShanten(counts: readonly number[], melds: number, suit: number): number {
+  const mine = counts.slice(suit * 9, suit * 9 + 9);
+  const groups = [0, 1, 2, 3].filter((x) => x !== suit).map((x) => ({ c: counts.slice(x * 9, x === 3 ? KIND_COUNT : x * 9 + 9), runs: x < 3 }));
+  const plain = groups.map((x) => maxSets(x.c, x.runs));
+  const total = plain.reduce((a, b) => a + b, 0);
+  let best = suitShanten(mine, Math.min(4, melds + total), false);
+  // 雀头从别的花色、字牌里出
+  groups.forEach((x, i) => {
+    for (let k = 0; k < x.c.length; k++) {
+      if (x.c[k] < 2) continue;
+      x.c[k] -= 2;
+      const sets = total - plain[i] + maxSets(x.c, x.runs);
+      x.c[k] += 2;
+      best = Math.min(best, suitShanten(mine, Math.min(4, melds + sets), true));
+    }
+  });
+  if (melds > 0) return best;
+  // 七对子：对子哪一门的都行，还差的对子要靠这一门的单张来凑
+  const pairs = counts.filter((n) => n >= 2).length;
+  const singles = mine.filter((n) => n === 1 || n === 3).length;
+  return Math.min(best, 6 - pairs + Math.max(0, 7 - pairs - singles));
+}
+
 // 木花咲耶姬：手里的暗刻、碰过的牌（第四张能杠）
 function kanKinds(g: Game, seat: number): Kind[] {
   const p = g.players[seat];
@@ -409,9 +523,7 @@ export const komakiAbility: Ability = {
       const pons = p.melds.filter((m) => m.type === 'pon').length;
       boost(g, seat, Math.min(KOMAKI.susanooMax, KOMAKI.susanooBase + KOMAKI.susanooPerPon * pons));
     } else if (god === 'inari') {
-      const per = [0, 0, 0];
-      for (const t of p.hand) if (!isHonor(kindOf(t))) per[suitOf(kindOf(t))]++;
-      const suit = per.indexOf(Math.max(...per));
+      const suit = harvestSuit(p.hand);
       const inSuit = (k: Kind) => suitOf(k) === suit;
       if (!g.rng.chance(KOMAKI.inari)) return;
       if (!boost(g, seat, 1, inSuit, true) && !inSuit(kindOf(w.live[0]))) w.bringToLive(0, (t) => inSuit(kindOf(t)), g.rng);

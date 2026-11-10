@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { KOMAKI, bigHand, komakiAsleep, komakiGod, type GodId } from '../src/abilities/komaki';
+import { KOMAKI, bigHand, harvestShanten, komakiAsleep, komakiGod, type GodId } from '../src/abilities/komaki';
 import { chooseAction } from '../src/ai/ai';
-import { Game, type RoundResult } from '../src/engine/game';
+import { Game, type Action, type RoundResult } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
 import { isHonor, isYaochu, kindOf, parseTiles, suitOf, toCounts } from '../src/engine/tiles';
 
@@ -266,3 +266,97 @@ describe('神代小莳', () => {
     expect(ippatsu / riichis).toBeGreaterThan(KOMAKI.takeIppatsu * 0.5);
   }, 120000);
 });
+
+// 电脑的小莳会不会用附身的神。失误关掉，只看她本来想怎么打
+describe('电脑的神代小莳', () => {
+  const ai = { ...byId('komaki').ai, mistakeRate: 0 };
+
+  // 轮到她出牌：手里是 hand（最后一张是刚摸的），melds 是已经开的暗杠
+  function turn(god: GodId, hand: string, kans: string[] = []): { g: Game; a: Action } {
+    const g = newGame(seedsFor(god, WEAK, 1)[0], WEAK);
+    for (const p of g.players) {
+      p.melds = [];
+      p.discards = [];
+      p.riichi = false;
+    }
+    const p = g.players[0];
+    // 手牌和杠出去的牌一起排，免得用到同一张
+    const all = parseTiles(hand + kans.join(''));
+    p.hand = all.slice(0, all.length - kans.length * 4);
+    p.melds = kans.map((_, i) => ({ type: 'ankan' as const, tiles: all.slice(p.hand.length + i * 4, p.hand.length + i * 4 + 4) }));
+    p.drawn = p.hand[p.hand.length - 1];
+    g.phase = 'turn';
+    g.turn = 0;
+    return { g, a: chooseAction(g, 0, ai) };
+  }
+  const out = (a: Action) => (a.type === 'discard' ? kindOf(a.tile) : a.type);
+  const kind = (s: string) => kindOf(parseTiles(s)[0]);
+
+  it('稻荷神：只靠那一门的进张算向听，别处现成的面子、雀头照用，搭子不算', () => {
+    const sh = (hand: string, suit: number) => harvestShanten(toCounts(parseTiles(hand)), 0, suit);
+    // 一般算法是听牌（嵌七筒），可七筒不是万子，等不来
+    expect(shanten(toCounts(parseTiles('111334455m68p11s')))).toBe(0);
+    expect(sh('111334455m68p11s', 0)).toBe(1);
+    // 听九万、一索：九万等得来
+    expect(sh('11133445599m11s', 0)).toBe(0);
+    // 筒子、索子现成的面子照用
+    expect(sh('2345678m456p789s', 0)).toBe(0);
+    // 四五筒的搭子等不来：两组面子、一个搭子、雀头，还差两张
+    expect(sh('12345678m45p9s11z', 0)).toBe(2);
+    // 四组面子齐了，单骑的那张不是这一门的：摸一张这一门的换掉才听得到
+    expect(sh('123456789m111z5p', 0)).toBe(1);
+    expect(sh('123456789m111z5m', 0)).toBe(0);
+  });
+
+  it('稻荷神：听的牌里没有那一门的就不立直，拆掉别的花色的搭子换听；听得到那一门才立直', () => {
+    // 打五索是嵌七筒听牌，她不这么立直
+    const off = turn('inari', '111334455m68p11s5s').a;
+    expect(off.type === 'discard' && !off.riichi).toBe(true);
+    // 听九万、一索：打六筒立直
+    const on = turn('inari', '11133445599m11s6p').a;
+    expect(on).toMatchObject({ type: 'discard', riichi: true });
+    expect(out(on)).toBe(kind('6p'));
+    // 万子一向听、筒子有个两面搭子：一般会留着搭子打孤张的万子，她先拆筒子
+    const tatsu = turn('inari', '123456m79m2m45p11z6s').a;
+    expect([kind('4p'), kind('5p'), kind('6s')]).toContain(out(tatsu));
+  });
+
+  it('稻荷神、建御雷神：整场不吃不碰不明杠', () => {
+    for (const god of ['inari', 'take'] as GodId[]) {
+      let calls = 0;
+      let rounds = 0;
+      for (const seed of seedsFor(god, WEAK, 3)) {
+        const g = newGame(seed, WEAK);
+        g.onEvent((e) => {
+          if (e.type === 'roundEnd') rounds++;
+          if (e.type === 'call' && e.seat === 0 && e.call !== '暗杠') calls++;
+        });
+        run(g, WEAK);
+      }
+      expect(rounds).toBeGreaterThan(10);
+      expect(calls).toBe(0);
+    }
+  }, 120000);
+
+  it('建御雷神：门清听牌就立直', () => {
+    const a = turn('take', '123456m234p5578s1z').a;
+    expect(a).toMatchObject({ type: 'discard', riichi: true });
+  });
+
+  it('木花咲耶姬：听牌时不拆暗刻（杠材），宁可单骑', () => {
+    // 打西是嵌三万（四张），打二万、四万是单骑（三张）：进张少也留着西的暗刻
+    const a = turn('sakuya', '24m789p345s333z111p').a;
+    expect([kind('2m'), kind('4m')]).toContain(out(a));
+    // 别的神照进张多的打
+    const b = turn('okuni', '24m789p345s333z111p').a;
+    expect([kind('3z'), kind('1p')]).toContain(out(b));
+  });
+
+  it('听的牌自己杠光了不算听牌：不再摸什么打什么，换听', () => {
+    // 四五六万、五筒对子、八九筒，听的七筒四张全在自己的暗杠里
+    const { a } = turn('sakuya', '456m55p89p9s', ['7777p', '1111p']);
+    expect(a.type).toBe('discard');
+    expect(out(a)).not.toBe(kind('9s'));
+  });
+});
+
