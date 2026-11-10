@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import type { HandPose } from './slamHand';
 
 // 自摸砸牌几套动作（tileSlam.ts 的通用一套、slamFlick.ts 竹井久的一套……）共用的小工具和接口。
 
-// 自摸砸牌的动作：press 通用的一套（照雀魂，扣下去再翻起来炸开），hisa 竹井久的（拿起来、背朝上拖过来、翻过来亮牌、弹上天、扣住砸下去）
+// 自摸砸牌的动作：press 通用的一套（照雀魂，扣下去再翻起来炸开），hisa 竹井久的（拿起来、背朝上拖过来、翻过来亮牌、握拳把牌放在大拇指指甲盖上弹上天、扣住砸下去）
 export type SlamStyle = 'press' | 'hisa';
 
 // 手比照着牌放大多少（手的模型是按牌宽量的；放大一点，扣牌时离镜头远也看得清）
@@ -11,6 +12,7 @@ export const HAND_SCALE = 1.5;
 export interface Key {
   pos: THREE.Vector3;
   quat: THREE.Quaternion;
+  pose?: HandPose; // 手型（slamHand.ts），不给是张开的手
 }
 
 // 一套“自己算好整段”的砸牌动作：开始以后第 k 秒手在哪（null 是看不见）、牌在哪，
