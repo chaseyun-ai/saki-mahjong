@@ -115,7 +115,7 @@ describe('宝牌控制：宫永咲', () => {
   it('满 6 个标记的稳乃在场时，咲的杠有时会给自己杠出宝牌', () => {
     let flips = 0;
     let hit = 0;
-    for (let seed = 1; seed <= 24; seed++) {
+    for (let seed = 1; seed <= 48; seed++) {
       const ids = seed % 2 ? ['saki', 'shizuno', 'nodoka', 'yuuki'] : ['shizuno', 'saki', 'mako', 'hisa'];
       const saki = ids.indexOf('saki');
       play(seed, ids, (g) => {

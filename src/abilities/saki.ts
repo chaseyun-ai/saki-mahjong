@@ -13,7 +13,8 @@ import type { Ability } from './types';
 //   开杠那一刻不换牌：杠了摸到的就是看到的那张。玩家和电脑都朝着“杠完正好听岭上那张”做牌
 // - 杠材：刻子形成之前，第四张在哪不显示、也不安排。手里成刻（或者碰出来）的那一刻，第四张还在牌山里的话，
 //   落到她接下来某一次摸牌的位置上（隔几次随机），从此看得见（透明、牌山前面投影）、不再动。别人鸣牌把它错开就错开
-// - 天意的手（看不见的引导）：配牌偏对子，对子的另外两张留在牌山里（不发进别人的配牌）；对子容易长成刻子；
+// - 天意的手（看不见的引导）：配牌偏对子，偶尔带一两个现成的刻子（SAKI.dealTrip，第四张留在牌山里、不进岭上）；
+//   对子的另外两张留在牌山里（不发进别人的配牌）；对子容易长成刻子；
 //   有杠材、快做成的时候，容易摸到让手牌正好听岭上那张的牌
 // - 淡的时间迟滞只把她压到 SAKI.awaiLag 向听（原作里别人五向听，她七对子四向听）。淡等着转角暗杠时，
 //   她留着淡要摸的那张岭上牌的对子、刻子，等淡打出来大明杠
@@ -26,20 +27,22 @@ export const SAKI = {
   line: { kan: 3, shape: 4, single: 2, honor: 2, free: 2 },
   lineMin: 2, // 四张里至少几张贴着她的手牌（再杠牌、搭子牌、孤张牌）
   keepPairs: 1, // 配牌时把她对子的另外两张留在牌山里（发到别人配牌里的换出来）
-  kanReach: [1, 4], // 成刻时第四张落在她接下来第几次摸牌上（这个范围里随机）
+  kanReach: [1, 8], // 成刻时第四张落在她接下来第几次摸牌上（这个范围里随机）
   pairTile: 0.3, // 没立直时，对子长成刻子
   guide: 0.35, // 有杠材时，摸到让手牌往“听岭上那张”前进的牌
   guideWithin: 2, // 离“开杠就和”还差这么几张以内才引导
   dealPairs: 2, // 配牌至少几个对子（刻子也算）
   dealPairExtra: 0.4, // 再多一个对子的概率
+  dealTrip: 0.25, // 配牌里有现成的刻子的概率（一个对子多发一张；自然发牌大约 9%）
+  dealTripTwo: 0.04, // 其中有两个刻子的概率（自然发牌不到 0.2%）
   awaiLag: 4, // 淡的时间迟滞只压到几向听
   // 天意：正负零的目标
   target: 30000,
   band: 500,
   pushBelow: 8000, // 比目标少这么多：天意发力
   calmAbove: 8000, // 比目标多这么多：收手
-  push: { kanReach: [1, 2], pairTile: 0.5, guide: 0.6 },
-  calm: { kanReach: [2, 5], pairTile: 0.12, guide: 0.15 },
+  push: { kanReach: [1, 4], pairTile: 0.5, guide: 0.6 },
+  calm: { kanReach: [3, 10], pairTile: 0.12, guide: 0.15 },
   // 电脑的咲：牌山剩这么多张以内不再留着杠等岭上，能杠就杠
   late: 12,
   advance: false, // 只有一个杠材时也拿它杠来进手（不留着等开花）
@@ -216,6 +219,20 @@ function pairUp(g: Game, seat: number, want: number): void {
   }
 }
 
+// 配牌里偶尔有现成的刻子：把一张孤张换成她某个对子的第三张，凑到 want 个刻子（本来就有的也算）
+function tripUp(g: Game, seat: number, want: number): void {
+  const w = g.wall;
+  const mine = g.dealIndices(seat);
+  for (let n = 0; n < want; n++) {
+    const counts = toCounts(mine.map((i) => w.live[i]));
+    if (counts.filter((c) => c >= 3).length >= want) return;
+    const singles = g.rng.shuffle(mine.filter((i) => counts[kindOf(w.live[i])] === 1));
+    const pairs = g.rng.shuffle(counts.flatMap((c, k) => (c === 2 ? [k] : [])));
+    const done = pairs.some((k) => singles.some((i) => w.bringToLive(i, (t) => kindOf(t) === k, g.rng, (j) => j >= 52)));
+    if (!done) return;
+  }
+}
+
 // 她对子的另外两张留在牌山里：发到别人配牌里的换出来
 function keepPairs(g: Game, seat: number): void {
   const w = g.wall;
@@ -247,7 +264,8 @@ function roleKinds(role: LineRole, c: readonly number[]): Kind[] {
   const has = (k: Kind, d: number) => k % 9 + d >= 0 && k % 9 + d <= 8 && c[k + d] > 0;
   for (let k = 0; k < 34; k++) {
     if (role === 'kan') {
-      if (c[k] >= 2) out.push(k);
+      // 现成的刻子不算：它的第四张留在牌山里，等着落到她的摸牌路上
+      if (c[k] === 2) out.push(k);
     } else if (role === 'shape') {
       if (k >= 27 || c[k] >= 3) continue;
       if ((has(k, -1) && has(k, 1)) || (has(k, -2) && has(k, -1)) || (has(k, 1) && has(k, 2))) out.push(k);
@@ -277,7 +295,8 @@ function setLine(g: Game, seat: number): void {
   // 玄在场：宝牌只给玄，岭上不放宝牌
   const kuro = [0, 1, 2, 3].some((s) => s !== seat && g.isAbsolute(s));
   const dora = new Set(w.visibleDoraIndicators().map((t) => doraFromIndicator(kindOf(t))));
-  const allowed = (t: TileId) => !kuro || (!isRed(t) && !dora.has(kindOf(t)));
+  // 现成刻子的第四张不放进岭上：它留在牌山里，等着落到她的摸牌路上
+  const allowed = (t: TileId) => c[kindOf(t)] < 3 && (!kuro || (!isRed(t) && !dora.has(kindOf(t))));
   const used = new Set<Kind>();
   const from = (j: number) => j >= 52;
   roles.forEach((role, i) => {
@@ -325,12 +344,14 @@ function placeKan(g: Game, seat: number, first: number): void {
 export const sakiAbility: Ability = {
   id: 'saki',
   name: '岭上开花',
-  description: `岭上的线：四张岭上牌配牌时就定好、一直看得见（鼠标移到岭上牌上投影出来），开杠时不会变，杠了摸到的就是看到的那张；它们多半贴着她的配牌（对子的同种牌、搭子缺的那张、孤张的同种牌），也会混进字牌。朝着“杠完正好听岭上那张”做牌，开杠就是岭上开花。杠材：手里成刻（或碰出来）时，牌山里的第四张落到她接下来第 ${SAKI.kanReach[0]}–${SAKI.kanReach[1]} 次摸牌的位置，变透明、牌山前面投影出牌面；别人鸣牌会把它错开。天意的手：配牌偏对子，对子容易长成刻子，快做成时容易摸到要的牌。淡的时间迟滞只压到 ${SAKI.awaiLag} 向听。天意：往正负零（${SAKI.target - SAKI.band}–${SAKI.target + SAKI.band}）打，落后 ${SAKI.pushBelow} 以上时天意发力，领先 ${SAKI.calmAbove} 以上收手。她的杠一般不给自己加宝牌、里宝牌（岭上的赤宝牌照拿）。`,
+  description: `岭上的线：四张岭上牌配牌时就定好、一直看得见（鼠标移到岭上牌上投影出来），开杠时不会变，杠了摸到的就是看到的那张；它们多半贴着她的配牌（对子的同种牌、搭子缺的那张、孤张的同种牌），也会混进字牌。朝着“杠完正好听岭上那张”做牌，开杠就是岭上开花。杠材：手里成刻（或碰出来）时，牌山里的第四张落到她接下来第 ${SAKI.kanReach[0]}–${SAKI.kanReach[1]} 次摸牌的位置，变透明、牌山前面投影出牌面；别人鸣牌会把它错开。天意的手：配牌偏对子，偶尔带现成的刻子，对子容易长成刻子，快做成时容易摸到要的牌。淡的时间迟滞只压到 ${SAKI.awaiLag} 向听。天意：往正负零（${SAKI.target - SAKI.band}–${SAKI.target + SAKI.band}）打，落后 ${SAKI.pushBelow} 以上时天意发力，领先 ${SAKI.calmAbove} 以上收手。她的杠一般不给自己加宝牌、里宝牌（岭上的赤宝牌照拿）。`,
 
   lagShanten: SAKI.awaiLag,
 
   beforeDeal(g, seat) {
     pairUp(g, seat, SAKI.dealPairs + (g.rng.chance(SAKI.dealPairExtra) ? 1 : 0));
+    const r = g.rng.next();
+    tripUp(g, seat, r < SAKI.dealTripTwo ? 2 : r < SAKI.dealTrip ? 1 : 0);
     keepPairs(g, seat);
     setLine(g, seat);
   },

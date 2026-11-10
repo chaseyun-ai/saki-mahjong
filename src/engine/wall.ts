@@ -186,7 +186,7 @@ export class Wall {
   }
 
   // 把符合条件的牌换成第 i 张里宝牌指示牌（还没翻开，和了时才看得到）。来源是牌山、岭上牌和后面的里宝牌指示牌
-  // from：牌山里只从这些位置找。spare：和牌结算时用，还没翻开的宝牌指示牌（再也不会翻了）也能拿来换
+  // from：牌山里只从这些位置找。spare：和牌结算时用（玄挡里宝牌），还没翻开的宝牌指示牌（再也不会翻了）、锁着的岭上牌也能拿来换
   bringToUra(i: number, pred: (t: TileId) => boolean, rng: Rng, from?: (j: number) => boolean, spare = false): boolean {
     if (i >= this.uraIndicators.length || this.locked.has(this.uraIndicators[i])) return false;
     if (pred(this.uraIndicators[i])) return true;
@@ -204,8 +204,9 @@ export class Wall {
       if (this.guard && !this.guard([[j, this.uraIndicators[i]]])) return;
       cands.push({ src: this.live, i: j });
     });
+    // spare：这一局已经打完，岭上牌不会再有人摸，锁（咲看见的岭上牌）不再拦着
     this.rinshan.forEach((t, j) => {
-      if (!this.locked.has(t) && pred(t)) cands.push({ src: this.rinshan, i: j });
+      if ((spare || !this.locked.has(t)) && pred(t)) cands.push({ src: this.rinshan, i: j });
     });
     if (cands.length === 0) return false;
     const c = cands[rng.int(cands.length)];
