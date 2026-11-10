@@ -17,7 +17,7 @@ export interface Look {
   pose?: RestPose;
   // 牌河和副露倒过来摆，方便对手看（松实玄、松实宥）
   upsideDown?: boolean;
-  // 自摸砸牌用哪一套动作（tileSlam.ts）：不配就是通用的 press；hisa 是竹井久的摔牌
+  // 自摸砸牌用哪一套动作（tileSlam.ts）：不配就是通用的 press；hisa 是竹井久的摔牌（视觉设置「自摸一气呵成」选「竹井久」时，配了 hisa 的人才接管）
   slam?: SlamStyle;
   // 先占位、借别人的模型：头像、切入不用这个模型渲染的图，显示名字的最后一个字（素材页换了图的照样显示）
   borrowed?: boolean;

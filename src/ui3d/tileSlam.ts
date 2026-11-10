@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { TILE_H, TILE_T } from './tableLayout';
-import { FlickMotion, flickHitOffset, flickPressOffset } from './slamFlick';
+import { FlickMotion } from './slamFlick';
 import { HAND_SCALE, Key, SlamMotion, SlamStyle, V, basis, bezier, clamp01, easeInOut, easeOut, smooth } from './slamMath';
 
 export type { SlamStyle } from './slamMath';
 
-// 自摸砸牌。每个角色用哪一套动作（style）在 looks.ts 里配，不配就是通用的 press：
+// 自摸砸牌。平时都是通用的 press；视觉设置「自摸一气呵成」开着时，摸到就和的那一张直接接管成竹井久那一套（hisa，slamFlick.ts；
+// 开成「竹井久」时只有 looks.ts 里 slam 配了 hisa 的人这样）：
 //   press（通用，照雀魂的节奏，画面和动作都是自己做的）：一只修长的手（手背朝着看的人）从这一家身前伸上来，食指、中指的指尖压着那张牌（牌背贴着指肚），举高停一下，
 // 往前一扫，把牌扣在桌上（牌面朝下）；手撤走，牌自己翻起来立住，亮一下光，再“砰”地炸开。
 // 自己自摸时手是从镜头跟前（画面左下）伸上来的，离镜头近，所以很大；扫下去的时候越来越远、越来越小。
@@ -40,16 +41,14 @@ export interface SlamTiming {
 
 export const SLAM_TIMING: SlamTiming = { reach: 0.26, rise: 0.24, show: 0.12, sweep: 0.2, flat: 0.14, flip: 0.12, charge: 0.2, leave: 0.26 };
 
-// 从开始到牌扣到桌上、到炸开各要多久（carried：牌一开始就在手里，没有 reach）。
-// 竹井久那一套（hisa）的节奏在 slamFlick.ts，不看 carried、timing
-export function slamPressOffset(carried: boolean, timing: Partial<SlamTiming> = {}, style: SlamStyle = 'press'): number {
-  if (style === 'hisa') return flickPressOffset();
+// 通用那一套（press）从开始到牌扣到桌上、到炸开各要多久（carried：牌一开始就在手里，没有 reach）。
+// 竹井久那一套（hisa）照牌山远近定节奏，start 的时候才知道
+export function slamPressOffset(carried: boolean, timing: Partial<SlamTiming> = {}): number {
   const t = { ...SLAM_TIMING, ...timing };
   return (carried ? 0 : t.reach) + t.rise + t.show + t.sweep;
 }
 
-export function slamHitOffset(carried: boolean, timing: Partial<SlamTiming> = {}, style: SlamStyle = 'press'): number {
-  if (style === 'hisa') return flickHitOffset();
+export function slamHitOffset(carried: boolean, timing: Partial<SlamTiming> = {}): number {
   const t = { ...SLAM_TIMING, ...timing };
   return slamPressOffset(carried, t) + t.flat + t.flip + t.charge;
 }
@@ -77,14 +76,13 @@ export interface SlamSpec {
   tile: THREE.Object3D; // 要砸的那张牌（牌的整组）
   style?: SlamStyle; // 哪一套动作，不给是 press
   to: SlamPose; // 最后的样子：press 是立在桌上，hisa 是牌面朝上躺在桌上
-  from?: SlamPose; // 牌现在在哪：手先伸过去拿起来。不给（carried）就是牌一开始就在手里，跟着手从画面外伸上来
+  from?: SlamPose; // 牌现在在哪：手先伸过去拿起来。不给（carried）就是牌一开始就在手里，跟着手从画面外伸上来。hisa 是牌山上摸的那张
   side: THREE.Vector3; // 砸牌那一家的右手方向（世界坐标，水平）
   out: THREE.Vector3; // 那一家往外（朝她自己身体）的方向（世界坐标，水平）
   view?: SlamView; // 给了就是第一人称：手在这个镜头跟前举起来（自己砸牌）
   cam?: SlamView; // 牌桌的镜头（不管是谁砸）：hisa 用它把弹到最高处的牌挪进画面
   timing?: Partial<SlamTiming>;
   arm?: Partial<ArmLook> | null; // null：不带手，牌从原处（from，不给就是落点）自己跳起来、转一圈亮出牌背，再扣下去
-  wall?: THREE.Vector3; // hisa：她面前那段牌山顶上（手先伸到这里摸牌）
   onPress?: (at: THREE.Vector3) => void; // 牌扣到桌上那一刻（hisa 是翻过来落到桌上），at 是牌底下的桌面点
   onCharge?: (at: THREE.Vector3, dur: number) => void; // 开始亮光（press 是牌立好，hisa 是弹到最高处），at 是牌中心，dur 是亮多久就炸开
   onHit?: (at: THREE.Vector3) => void; // 炸开那一刻，at 是牌底下的桌面点
@@ -297,15 +295,16 @@ export class TileSlam {
   readonly group = new THREE.Group();
   private list: (Active | MotionActive)[] = [];
 
-  // 开始砸一张牌，返回什么时候扣到桌上、什么时候炸开、什么时候做完
-  start(spec: SlamSpec, now: number): SlamRun {
+  // 开始砸一张牌，返回什么时候扣到桌上、什么时候炸开、什么时候做完。
+  // at 给了（hisa）就是到那时才动手：在那之前牌原样不动（算这张牌被拿着，别处别挪它），手也不出来
+  start(spec: SlamSpec, now: number, at = now): SlamRun {
     this.cancel(spec.tile);
     if (spec.style === 'hisa') {
-      const motion = new FlickMotion({ to: spec.to, side: spec.side, out: spec.out, wall: spec.wall, cam: spec.cam, near: !!spec.view, hand: spec.arm !== null });
-      const m: MotionActive = { kind: 'motion', spec, t0: now, arm: this.newArm(spec, motion.handScale), motion, pressed: false, charged: false, hit: false, shadows: this.shadowsOff(spec.tile) };
+      const motion = new FlickMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, cam: spec.cam, near: !!spec.view, hand: spec.arm !== null });
+      const m: MotionActive = { kind: 'motion', spec, t0: at, arm: this.newArm(spec, motion.handScale), motion, pressed: false, charged: false, hit: false, shadows: this.shadowsOff(spec.tile) };
       this.list.push(m);
       this.poseMotion(m, now);
-      return { pressAt: now + motion.pressAt, hitAt: now + motion.hitAt, doneAt: now + motion.doneAt };
+      return { pressAt: at + motion.pressAt, hitAt: at + motion.hitAt, doneAt: at + motion.doneAt };
     }
     const timing = { ...SLAM_TIMING, ...spec.timing };
     const s = spec.to.scale;
@@ -424,6 +423,10 @@ export class TileSlam {
   private poseMotion(a: MotionActive, now: number): void {
     const { spec, motion: m } = a;
     const k = now - a.t0;
+    if (k < 0) {
+      if (a.arm) a.arm.visible = false;
+      return;
+    }
     const fr = m.frame(k);
     if (a.arm) {
       a.arm.visible = fr.hand !== null;
