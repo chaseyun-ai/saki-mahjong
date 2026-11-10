@@ -8,11 +8,15 @@ import type { Ability } from './types';
 
 // 宫永咲（清澄）：岭上开花。
 // - 岭上的线：配牌那一刻（谁都还没看到牌）四张岭上牌就定下来，之后谁也换不走（锁住），她一直看得见
-//   （界面上鼠标移到岭上牌上投影出来）。每一张随机是：再杠牌（她某个对子的同种牌：双碰能和，对子长成暗刻时摸到它接着再杠）、
-//   搭子牌（补上她配牌里一个搭子：嵌张、两面）、孤张牌（她一张孤张的同种牌：单骑）、字牌（多半是废牌，留一张也能单骑）、不安排。
+//   （界面上鼠标移到岭上牌上投影出来）。每一张按位置抽一种（SAKI.line，越靠前越贴着她的配牌，越靠后越随便）：
+//   搭子牌（补上她配牌里一个搭子：嵌张、两面、边张）、孤张牌（她一张孤张的同种牌：单骑）、字牌（多半是废牌，留一张也能单骑）、不安排。
+//   她的对子、刻子的同种牌平时不进岭上（进了岭上，那个刻子的第四张就不在牌山里，开不了杠）。
+//   连杠局：配牌有现成的刻子、另外还有对子（或第二个刻子）时，有 SAKI.chain 的机会第一张岭上牌是那个对子的同种牌，
+//   第二张是搭子牌、孤张牌：杠了现成的刻子摸到它，对子已经长成暗刻的话接着再杠，再摸第二张开花。
 //   开杠那一刻不换牌：杠了摸到的就是看到的那张。玩家和电脑都朝着“杠完正好听岭上那张”做牌
 // - 杠材：刻子形成之前，第四张在哪不显示、也不安排。手里成刻（或者碰出来）的那一刻，第四张还在牌山里的话，
-//   落到她接下来某一次摸牌的位置上（隔几次随机），从此看得见（透明、牌山前面投影）、不再动。别人鸣牌把它错开就错开
+//   落到她的摸牌路上：配牌就有的刻子落在这一局她第 2–8 次摸牌，后来摸成（碰成）的落在之后第 3–6 次摸牌（范围里随机），
+//   从此看得见（透明、牌山前面投影）、不再动。别人鸣牌把它错开就错开
 // - 天意的手（看不见的引导）：配牌偏对子，偶尔带一两个现成的刻子（SAKI.dealTrip，第四张留在牌山里、不进岭上）；
 //   对子的另外两张留在牌山里（不发进别人的配牌）；对子容易长成刻子；
 //   有杠材、快做成的时候，容易摸到让手牌正好听岭上那张的牌
@@ -23,13 +27,19 @@ import type { Ability } from './types';
 // - 会被稳乃的深山削弱，满 6 个标记的稳乃在场时失效
 // 强度参数（测试和平衡脚本会临时改它们）
 export const SAKI = {
-  // 配牌时每一张岭上牌按这个权重抽一种
-  line: { kan: 3, shape: 4, single: 2, honor: 2, free: 2 },
-  lineMin: 2, // 四张里至少几张贴着她的手牌（再杠牌、搭子牌、孤张牌）
+  // 配牌时四张岭上牌各按这个权重抽一种（第一张到第四张）：越靠前越贴着她的配牌，越靠后越随便
+  line: [
+    { shape: 7, single: 2, honor: 1, free: 0 },
+    { shape: 5, single: 2, honor: 1, free: 1 },
+    { shape: 3, single: 2, honor: 2, free: 2 },
+    { shape: 2, single: 1, honor: 2, free: 4 },
+  ],
+  chain: 0.5, // 配牌有现成的刻子、另外还有对子时，这一局是连杠局的概率
   keepPairs: 1, // 配牌时把她对子的另外两张留在牌山里（发到别人配牌里的换出来）
-  kanReach: [1, 8], // 成刻时第四张落在她接下来第几次摸牌上（这个范围里随机）
-  pairTile: 0.3, // 没立直时，对子长成刻子
-  guide: 0.35, // 有杠材时，摸到让手牌往“听岭上那张”前进的牌
+  kanDeal: [2, 8], // 配牌就有的刻子：第四张落在这一局她第几次摸牌上（这个范围里随机）
+  kanDraw: [3, 6], // 后来摸成、碰成的刻子：第四张落在她之后第几次摸牌上
+  pairTile: 0.2, // 没立直时，对子长成刻子
+  guide: 0.22, // 有杠材时，摸到让手牌往“听岭上那张”前进的牌
   guideWithin: 2, // 离“开杠就和”还差这么几张以内才引导
   dealPairs: 2, // 配牌至少几个对子（刻子也算）
   dealPairExtra: 0.4, // 再多一个对子的概率
@@ -41,8 +51,8 @@ export const SAKI = {
   band: 500,
   pushBelow: 8000, // 比目标少这么多：天意发力
   calmAbove: 8000, // 比目标多这么多：收手
-  push: { kanReach: [1, 4], pairTile: 0.5, guide: 0.6 },
-  calm: { kanReach: [3, 10], pairTile: 0.12, guide: 0.15 },
+  push: { kanDeal: [1, 6], kanDraw: [2, 4], pairTile: 0.35, guide: 0.42 },
+  calm: { kanDeal: [3, 10], kanDraw: [4, 8], pairTile: 0.07, guide: 0.09 },
   // 电脑的咲：牌山剩这么多张以内不再留着杠等岭上，能杠就杠
   late: 12,
   advance: false, // 只有一个杠材时也拿它杠来进手（不留着等开花）
@@ -244,15 +254,15 @@ function keepPairs(g: Game, seat: number): void {
   }
 }
 
-type LineRole = keyof typeof SAKI.line;
-const NEAR: LineRole[] = ['kan', 'shape', 'single'];
+type LineRole = keyof (typeof SAKI.line)[number];
+const ROLES: LineRole[] = ['shape', 'single', 'honor', 'free'];
 
-function pickRole(rng: Rng, roles: LineRole[]): LineRole {
-  const total = roles.reduce((s, r) => s + SAKI.line[r], 0);
-  if (total <= 0) return 'free';
+function pickRole(rng: Rng, weights: Record<LineRole, number>, roles: LineRole[] = ROLES): LineRole {
+  const total = roles.reduce((s, r) => s + weights[r], 0);
+  if (total <= 0) return roles[0];
   let x = rng.next() * total;
   for (const r of roles) {
-    x -= SAKI.line[r];
+    x -= weights[r];
     if (x < 0) return r;
   }
   return roles[roles.length - 1];
@@ -263,11 +273,9 @@ function roleKinds(role: LineRole, c: readonly number[]): Kind[] {
   const out: Kind[] = [];
   const has = (k: Kind, d: number) => k % 9 + d >= 0 && k % 9 + d <= 8 && c[k + d] > 0;
   for (let k = 0; k < 34; k++) {
-    if (role === 'kan') {
-      // 现成的刻子不算：它的第四张留在牌山里，等着落到她的摸牌路上
-      if (c[k] === 2) out.push(k);
-    } else if (role === 'shape') {
-      if (k >= 27 || c[k] >= 3) continue;
+    if (role === 'shape') {
+      // 她手里没有、补上一个搭子的牌：嵌张，两面、边张
+      if (k >= 27 || c[k] > 0) continue;
       if ((has(k, -1) && has(k, 1)) || (has(k, -2) && has(k, -1)) || (has(k, 1) && has(k, 2))) out.push(k);
     } else if (role === 'single') {
       if (c[k] === 1) out.push(k);
@@ -281,29 +289,40 @@ function roleKinds(role: LineRole, c: readonly number[]): Kind[] {
   return lone.length ? lone : out;
 }
 
+// 连杠局：配牌有现成的刻子（它的第四张留在牌山里），另外还有对子或第二个刻子。挑出进岭上第一张的那种牌，不是连杠局是 null
+function chainKind(g: Game, c: readonly number[]): Kind | null {
+  const trips = c.flatMap((x, k) => (x >= 3 ? [k] : []));
+  const pairs = c.flatMap((x, k) => (x === 2 ? [k] : []));
+  if (trips.length === 0 || trips.length + pairs.length < 2 || !g.rng.chance(SAKI.chain)) return null;
+  // 两个现成的刻子：一个留在牌山里先杠，另一个的第四张进岭上
+  const from = trips.length >= 2 ? g.rng.shuffle(trips).slice(1) : pairs;
+  return from[g.rng.int(from.length)];
+}
+
 // 配牌时定岭上的线：四张岭上牌各抽一种，从牌山后面（不动任何人的配牌）换进来，然后锁住
 function setLine(g: Game, seat: number): void {
   const w = g.wall;
   const c = toCounts(g.dealHand(seat));
-  const all = Object.keys(SAKI.line) as LineRole[];
-  const roles = w.rinshan.map(() => pickRole(g.rng, all));
-  const slots = g.rng.shuffle(roles.map((_, i) => i));
-  for (const i of slots) {
-    if (roles.filter((r) => NEAR.includes(r)).length >= SAKI.lineMin) break;
-    if (!NEAR.includes(roles[i])) roles[i] = pickRole(g.rng, NEAR);
-  }
   // 玄在场：宝牌只给玄，岭上不放宝牌
   const kuro = [0, 1, 2, 3].some((s) => s !== seat && g.isAbsolute(s));
   const dora = new Set(w.visibleDoraIndicators().map((t) => doraFromIndicator(kindOf(t))));
-  // 现成刻子的第四张不放进岭上：它留在牌山里，等着落到她的摸牌路上
-  const allowed = (t: TileId) => c[kindOf(t)] < 3 && (!kuro || (!isRed(t) && !dora.has(kindOf(t))));
+  const clean = (t: TileId) => !kuro || (!isRed(t) && !dora.has(kindOf(t)));
+  // 她的对子、刻子的同种牌不放进岭上：留在牌山里，成了刻子第四张才落得到她的摸牌路上
+  const allowed = (t: TileId) => c[kindOf(t)] < 2 && clean(t);
   const used = new Set<Kind>();
   const from = (j: number) => j >= 52;
-  roles.forEach((role, i) => {
-    const kinds = roleKinds(role, c);
-    const fresh = kinds.filter((k) => !used.has(k));
-    const want = new Set(fresh.length ? fresh : kinds);
-    if (!(want.size && w.bringToRinshan((t) => want.has(kindOf(t)) && allowed(t), g.rng, i, from))) w.bringToRinshan(allowed, g.rng, i, from);
+  const chain = chainKind(g, c);
+  w.rinshan.forEach((_, i) => {
+    let done = false;
+    if (chain !== null && i === 0) done = w.bringToRinshan((t) => kindOf(t) === chain && clean(t), g.rng, i, from);
+    if (!done) {
+      // 连杠局的第二张、没排成连杠牌的第一张：贴着她的配牌
+      const role = pickRole(g.rng, SAKI.line[i] ?? SAKI.line[SAKI.line.length - 1], chain !== null && i <= 1 ? ['shape', 'single'] : ROLES);
+      const kinds = roleKinds(role, c);
+      const fresh = kinds.filter((k) => !used.has(k));
+      const want = new Set(fresh.length ? fresh : kinds);
+      if (!(want.size && w.bringToRinshan((t) => want.has(kindOf(t)) && allowed(t), g.rng, i, from))) w.bringToRinshan(allowed, g.rng, i, from);
+    }
     used.add(kindOf(w.rinshan[i]));
     w.locked.add(w.rinshan[i], lockOf(seat));
   });
@@ -312,8 +331,8 @@ function setLine(g: Game, seat: number): void {
 // ---------- 杠材 ----------
 
 // 手里成刻了（或者碰出来了）：第四张还在牌山里的话，落到她接下来某一次摸牌的位置上，从此看得见、不再动。
-// first：假设没人鸣牌，她下一次摸的是 live 的第几张。被压住、削弱时不挪，在原来的位置现出来
-function placeKan(g: Game, seat: number, first: number): void {
+// first：假设没人鸣牌，她下一次摸的是 live 的第几张。dealt：配牌就有的刻子（开局时）。被压住、削弱时不挪，在原来的位置现出来
+function placeKan(g: Game, seat: number, first: number, dealt = false): void {
   const st = stateOf(g, seat);
   st.placed ??= [];
   const w = g.wall;
@@ -323,13 +342,15 @@ function placeKan(g: Game, seat: number, first: number): void {
     const at = w.live.findIndex((t) => kindOf(t) === k);
     if (at < 0) continue;
     const t = w.live[at];
-    const [lo, hi] = power(g, seat).kanReach;
+    const pw = power(g, seat);
+    const [lo, hi] = dealt ? pw.kanDeal : pw.kanDraw;
     // 本来就在她这几次摸牌的路上：不动
     const near = at >= first && (at - first) % 4 === 0 && (at - first) / 4 < hi;
     if (!near && !w.locked.has(t) && !g.quelled(seat) && !g.damped(seat)) {
       const n = lo + g.rng.int(hi - lo + 1);
-      // 抽到的那一次摸牌的位置换不了（锁着、牌山不够长）就往近处找，再往远处找
-      const tries = [n, ...Array.from({ length: n - 1 }, (_, i) => n - 1 - i), n + 1, n + 2];
+      // 抽到的那一次摸牌的位置换不了（锁着、牌山不够长）：先在范围里往近处、往远处找，再出范围找
+      const down = (a: number, b: number) => Array.from({ length: Math.max(0, a - b + 1) }, (_, i) => a - i);
+      const tries = [n, ...down(n - 1, lo), ...down(hi, n + 1).reverse(), ...down(lo - 1, 1), hi + 1, hi + 2];
       for (const d of tries) {
         const j = first + 4 * (d - 1);
         if (j >= w.live.length - 1) continue;
@@ -344,7 +365,7 @@ function placeKan(g: Game, seat: number, first: number): void {
 export const sakiAbility: Ability = {
   id: 'saki',
   name: '岭上开花',
-  description: `岭上的线：四张岭上牌配牌时就定好、一直看得见（鼠标移到岭上牌上投影出来），开杠时不会变，杠了摸到的就是看到的那张；它们多半贴着她的配牌（对子的同种牌、搭子缺的那张、孤张的同种牌），也会混进字牌。朝着“杠完正好听岭上那张”做牌，开杠就是岭上开花。杠材：手里成刻（或碰出来）时，牌山里的第四张落到她接下来第 ${SAKI.kanReach[0]}–${SAKI.kanReach[1]} 次摸牌的位置，变透明、牌山前面投影出牌面；别人鸣牌会把它错开。天意的手：配牌偏对子，偶尔带现成的刻子，对子容易长成刻子，快做成时容易摸到要的牌。淡的时间迟滞只压到 ${SAKI.awaiLag} 向听。天意：往正负零（${SAKI.target - SAKI.band}–${SAKI.target + SAKI.band}）打，落后 ${SAKI.pushBelow} 以上时天意发力，领先 ${SAKI.calmAbove} 以上收手。她的杠一般不给自己加宝牌、里宝牌（岭上的赤宝牌照拿）。`,
+  description: `岭上的线：四张岭上牌配牌时就定好、一直看得见（鼠标移到岭上牌上投影出来），开杠时不会变，杠了摸到的就是看到的那张；越靠前的越贴着她的配牌（搭子缺的那张、孤张的同种牌），靠后的会混进字牌、杂牌；配牌有现成刻子的局，有时第一张是她另一个对子的同种牌，可以连着开两杠。朝着“杠完正好听岭上那张”做牌，开杠就是岭上开花。杠材：手里成刻（或碰出来）时，牌山里的第四张落到她的摸牌路上（配牌就有的刻子：这一局第 ${SAKI.kanDeal[0]}–${SAKI.kanDeal[1]} 次摸牌；后来成的：之后第 ${SAKI.kanDraw[0]}–${SAKI.kanDraw[1]} 次摸牌），变透明、牌山前面投影出牌面；别人鸣牌会把它错开。天意的手：配牌偏对子，偶尔带现成的刻子，对子容易长成刻子，快做成时容易摸到要的牌。淡的时间迟滞只压到 ${SAKI.awaiLag} 向听。天意：往正负零（${SAKI.target - SAKI.band}–${SAKI.target + SAKI.band}）打，落后 ${SAKI.pushBelow} 以上时天意发力，领先 ${SAKI.calmAbove} 以上收手。她的杠一般不给自己加宝牌、里宝牌（岭上的赤宝牌照拿）。`,
 
   lagShanten: SAKI.awaiLag,
 
@@ -360,7 +381,7 @@ export const sakiAbility: Ability = {
     // 配牌时被深山削弱、线没排成：岭上牌照样看得见，看见了就不再变
     for (const t of g.wall.rinshan) g.wall.locked.add(t, lockOf(seat));
     // 配牌就有暗刻
-    placeKan(g, seat, (seat - g.dealer + 4) % 4);
+    placeKan(g, seat, (seat - g.dealer + 4) % 4, true);
   },
 
   // 摸成了刻子：打完这张，别人各摸一张，她再摸的是 live[3]
@@ -385,13 +406,16 @@ export const sakiAbility: Ability = {
     if (g.totalKans() >= 4 || g.wall.remaining <= 1) return;
     const counts = toCounts(p.hand);
     // 对子容易长成刻子，为开杠做准备。淡等着转角暗杠时，先长岭上那张牌的对子（等淡打出来大明杠）；
-    // 再先长岭上有同种牌的对子（长成暗刻，杠上摸到它接着再杠）
     const pairs = handKinds(g, seat, 2);
     if (!p.riichi && pairs.length > 0 && g.rng.chance(pw.pairTile)) {
       const feed = sakiAwaiFeed(g, seat);
       if (feed !== null && pairs.includes(feed) && g.wall.bringToLive(0, (t) => kindOf(t) === feed, g.rng)) return;
-      const chain = pairs.filter((k) => line.includes(k));
+      // 连杠：第一张岭上牌是这个对子的同种牌，手里另有杠材时先长它（杠完摸到第四张接着再杠）
+      const chain = pairs.filter((k) => k === line[0] && sakiKanKinds(g, seat).length > 0);
       if (chain.length && g.wall.bringToLive(0, (t) => chain.includes(kindOf(t)), g.rng)) return;
+      // 再长岭上没有同种牌的对子（第四张在牌山里，成了刻子开得了杠）
+      const open = pairs.filter((k) => !g.wall.rinshan.some((t) => kindOf(t) === k));
+      if (open.length && g.wall.bringToLive(0, (t) => open.includes(kindOf(t)), g.rng)) return;
       if (g.wall.bringToLive(0, (t) => pairs.includes(kindOf(t)), g.rng)) return;
     }
     // 天意的手：有杠材、离开花不远时，摸到让手牌往“听岭上那张”前进的牌
