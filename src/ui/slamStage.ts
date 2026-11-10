@@ -18,7 +18,7 @@ const HONORS = [27, 28, 29, 30, 31, 32, 33];
 const yaochu = (k: number) => k >= 27 || k % 9 === 0 || k % 9 === 8;
 
 export const SLAM_TEST_CHARS: { id: string; label: string; note: string }[] = [
-  { id: 'hisa', label: '竹井久', note: '原作的摔牌：从手里拿起那张，背朝上斜着拖到手牌右边，一下翻过来（手牌同时倒下），握拳把牌放在大拇指指甲盖上亮牌，大拇指一弹，最高处牌面朝上，手扣住砸下去' },
+  { id: 'hisa', label: '竹井久', note: '原作的摔牌：握着拳把牌放在大拇指指甲盖上伸进来亮牌（手牌同时倒下），大拇指一弹，最高处牌面朝上，手扣住砸下去' },
   { id: 'nodoka', label: '其他人（通用）', note: '原村和来拍：夹着牌斜着举起来，牌面朝上拍在手牌右边' },
 ];
 
