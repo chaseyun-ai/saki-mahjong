@@ -145,7 +145,7 @@ describe('宫永咲', () => {
     expect(paired).toBeGreaterThan(deals * 0.9);
   }, 60000);
 
-  it('配牌偶尔带现成的刻子：比自然发牌（约 9%）多，但不是每局都有；刻子的第四张不在岭上，开局就落在牌山里现出来', () => {
+  it('配牌偶尔带现成的刻子：比自然发牌（约 9%）多，但不是每局都有；第四张开局就落在牌山里现出来（连杠局里第二个刻子的第四张在岭上第一张）', () => {
     let deals = 0;
     let one = 0;
     let two = 0;
@@ -167,9 +167,13 @@ describe('宫永咲', () => {
           if (kinds.length >= 1) one++;
           if (kinds.length >= 2) two++;
           const seen = [...sakiKanTiles(g, me)].map(kindOf);
+          // 进了岭上的第四张：只会是连杠局的第一张岭上牌，而且另外还有一个刻子留在牌山里
+          const inRinshan = kinds.filter((k) => g.wall.rinshan.some((t) => kindOf(t) === k));
+          expect(inRinshan.length).toBeLessThanOrEqual(Math.max(0, kinds.length - 1));
+          for (const k of inRinshan) expect(kindOf(g.wall.rinshan[0])).toBe(k);
           for (const k of kinds) {
+            if (inRinshan.includes(k)) continue;
             trips++;
-            expect(g.wall.rinshan.some((t) => kindOf(t) === k)).toBe(false);
             if (seen.includes(k)) shown++;
           }
         });
@@ -182,6 +186,85 @@ describe('宫永咲', () => {
     expect(two / deals).toBeLessThan(0.1);
     // 第四张被别人抓进配牌、翻成宝牌指示牌的时候现不出来，其余的开局就看得见
     expect(shown).toBeGreaterThan(trips * 0.7);
+  }, 120000);
+
+  it('岭上牌的分工：第一张多半贴着配牌；她对子的同种牌只在连杠局（配牌有现成刻子）排在第一张', () => {
+    let deals = 0;
+    let firstNear = 0;
+    let chains = 0;
+    let junk3 = 0;
+    for (let seed = 1; seed <= 45; seed++) {
+      play(seed, ['saki', 'nodoka', 'mihoko', 'hisa'], (g, me) => {
+        let fresh = false;
+        g.onEvent((e) => {
+          if (e.type === 'roundStart') fresh = true;
+          if (e.type !== 'draw' || !fresh) return;
+          fresh = false;
+          const p = g.players[me];
+          const c = toCounts(p.hand.filter((t) => t !== p.drawn));
+          const line = sakiLine(g, me);
+          expect(line).toHaveLength(4);
+          deals++;
+          const has = (k: number, d: number) => k < 27 && (k % 9) + d >= 0 && (k % 9) + d <= 8 && c[k + d] > 0;
+          const near = (k: number) => c[k] === 1 || (c[k] === 0 && ((has(k, -1) && has(k, 1)) || (has(k, -2) && has(k, -1)) || (has(k, 1) && has(k, 2))));
+          line.forEach((k, i) => {
+            if (c[k] < 2) return;
+            // 对子、刻子的同种牌：只在第一张，而且配牌里另有一个现成的刻子
+            expect(i).toBe(0);
+            expect(c.some((x, j) => x >= 3 && j !== k)).toBe(true);
+            chains++;
+          });
+          if (near(line[0]) || c[line[0]] >= 2) firstNear++;
+          junk3 += line.slice(0, 3).filter((k) => c[k] < 2 && !near(k)).length;
+        });
+      });
+    }
+    console.log({ deals, firstNear, chains, junk3 });
+    expect(deals).toBeGreaterThan(150);
+    expect(firstNear).toBeGreaterThan(deals * 0.75);
+    expect(chains).toBeGreaterThan(0);
+    expect(chains).toBeLessThan(deals * 0.3);
+    // 前三张里废牌平均不到一张
+    expect(junk3).toBeLessThan(deals);
+  }, 120000);
+
+  it('第四张落在哪：配牌就有的刻子在这一局第 2–8 次摸牌，后来成的在之后第 3–6 次摸牌', () => {
+    const dealt = { n: 0, ok: 0 };
+    const later = { n: 0, ok: 0 };
+    for (let seed = 1; seed <= 30; seed++) {
+      play(seed, ['saki', 'nodoka', 'mihoko', 'hisa'], (g, me) => {
+        let draws = -1;
+        const known = new Set<number>();
+        g.onEvent((e) => {
+          if (e.type === 'roundStart') {
+            draws = 0;
+            known.clear();
+          }
+          if (draws < 0) return;
+          if (e.type === 'draw') draws++;
+          if (e.type !== 'ability' || e.seat !== me || e.text !== '杠的气息' || sakiMood(g, me) !== 'even') return;
+          // 开局（还没人摸牌）：她第一次摸的是 live 的第 (座位 − 庄家) 张；摸完牌、碰完：下一次摸的是 live[3]
+          const start = draws === 0;
+          const first = start ? (me - g.dealer + 4) % 4 : 3;
+          for (const t of sakiKanTiles(g, me)) {
+            if (known.has(t)) continue;
+            known.add(t);
+            const at = g.wall.live.indexOf(t);
+            const [lo, hi] = start ? SAKI.kanDeal : SAKI.kanDraw;
+            const d = (at - first) / 4 + 1;
+            const bucket = start ? dealt : later;
+            bucket.n++;
+            if (Number.isInteger(d) && d >= lo && d <= hi) bucket.ok++;
+          }
+        });
+      });
+    }
+    console.log({ dealt, later });
+    expect(dealt.n).toBeGreaterThan(10);
+    expect(later.n).toBeGreaterThan(30);
+    // 牌山快摸完、位置被别人锁着、本来就在更近的地方时落不进范围，其余的都在范围里
+    expect(dealt.ok).toBeGreaterThan(dealt.n * 0.8);
+    expect(later.ok).toBeGreaterThan(later.n * 0.7);
   }, 120000);
 
   it('天意：离正负零（30000）远了发力，领先太多收手', () => {

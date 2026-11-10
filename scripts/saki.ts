@@ -21,7 +21,7 @@ const st = {
   rounds: 0, wins: 0, rs: 0, rankSum: 0, first: 0, last: 0, dealIns: 0, pts: 0, score: 0,
   awaiWins: 0, awaiRounds: 0, band: 0, absDev: 0, dealSh: 0, dealPairs: 0,
   kans: 0, tenpaiKans: 0, rinshanDraws: 0, rinshanUseful: 0, rinshanWin: 0,
-  kanMine: 0, kanStolen: 0, seenChanged: 0, seenDrawn: 0, dealTrip1: 0, dealTrip2: 0, kanShown: 0,
+  kanMine: 0, kanStolen: 0, seenChanged: 0, seenDrawn: 0, dealTrip1: 0, dealTrip2: 0, kanShown: 0, multiKan: 0, chainBloom: 0,
 };
 // 14 张时打一张以后最好的向听（-1 是和了）
 const best14 = (hand: TileId[], melds: number) => {
@@ -44,6 +44,7 @@ for (let seed = from; seed < from + games; seed++) {
   const g = new Game({ seed, format: 'south', players: order.map((c) => ({ name: c.name, ability: c.ability })) });
   let before = 99;
   let seenRinshan: TileId | null = null;
+  let roundKans = 0;
   const look = () => {
     // 她这一刻看得见的第一张岭上牌（看不见就不记）
     const r0 = g.wall.rinshan[0];
@@ -58,6 +59,7 @@ for (let seed = from; seed < from + games; seed++) {
       if (trips >= 1) st.dealTrip1++;
       if (trips >= 2) st.dealTrip2++;
       seenRinshan = null;
+      roundKans = 0;
     }
     if (e.type === 'draw') {
       const p = g.players[e.seat];
@@ -84,6 +86,7 @@ for (let seed = from; seed < from + games; seed++) {
     if (e.type === 'ability' && e.seat === mine && e.text === '杠的气息') st.kanShown++;
     if (e.type === 'call' && e.seat === mine && e.call.includes('杠')) {
       st.kans++;
+      roundKans++;
       const p = g.players[mine];
       before = shanten(toCounts(p.hand), p.melds.length);
       if (before === 0) st.tenpaiKans++;
@@ -94,6 +97,7 @@ for (let seed = from; seed < from + games; seed++) {
       return;
     }
     st.rounds++;
+    if (roundKans >= 2) st.multiKan++;
     if (awai >= 0) st.awaiRounds++;
     for (const w of e.result.wins) {
       if (w.from === mine) st.dealIns++;
@@ -101,7 +105,10 @@ for (let seed = from; seed < from + games; seed++) {
       if (w.seat === mine) {
         st.wins++;
         st.pts += e.result.deltas[mine];
-        if (w.result.yaku.some((y) => y.name === '岭上开花')) st.rs++;
+        if (w.result.yaku.some((y) => y.name === '岭上开花')) {
+          st.rs++;
+          if (roundKans >= 2) st.chainBloom++;
+        }
       }
     }
   });
@@ -142,6 +149,7 @@ if (process.env.SAKI_RAW) {
       `杠/局 ${(st.kans / st.rounds).toFixed(2)}（听牌杠 ${pct(st.tenpaiKans, st.kans)}）`,
       `第四张：她摸到 ${st.kanMine} 被别人摸走 ${st.kanStolen}`,
       `配牌有刻子 ${pct(st.dealTrip1, st.rounds)}（两个 ${pct(st.dealTrip2, st.rounds)}）`,
+      `一局开两杠以上 ${pct(st.multiKan, st.rounds)}，连杠开花 ${st.chainBloom} 次`,
       `岭上牌有用 ${pct(st.rinshanUseful, st.rinshanDraws)}（${st.rinshanDraws} 张）`,
       `看见的岭上牌变了 ${st.seenChanged}/${st.seenDrawn}`,
       `正负零 ${st.band} 场`,
