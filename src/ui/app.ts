@@ -496,6 +496,10 @@ export class App {
 
   // 卡片头像角上的小开关（点它只切换，不选人）
   private formSwitchHtml(id: string): string {
+    if (id === 'saki') {
+      const on = this.settings.sakiStrong;
+      return `<span class="form-switch saki${on ? ' on' : ''}" role="switch" aria-checked="${on}" aria-label="强度：${on ? '加强' : '标准'}" title="点一下切换标准 / 加强" data-ui="saki-form">${on ? '加强' : '标准'}</span>`;
+    }
     if (id !== 'toka') return '';
     const on = this.settings.chisui;
     return `<span class="form-switch${on ? ' on' : ''}" role="switch" aria-checked="${on}" aria-label="开局状态：${on ? '治水' : '常态'}" title="点一下切换常态 / 治水" data-ui="toka-form">${on ? '治水' : '常态'}</span>`;
@@ -509,21 +513,25 @@ export class App {
 
   // 大立绘面板上的两段切换
   private formToggleHtml(id: string): string {
-    if (id !== 'toka') return '';
-    const on = this.settings.chisui;
+    if (id !== 'toka' && id !== 'saki') return '';
+    const on = id === 'saki' ? this.settings.sakiStrong : this.settings.chisui;
     const btn = (v: boolean, label: string, note: string) =>
-      `<button class="${on === v ? 'on' : ''}" aria-pressed="${on === v}" data-ui="toka-form" data-v="${v}">${label}<small>${note}</small></button>`;
+      `<button class="${on === v ? 'on' : ''}" aria-pressed="${on === v}" data-ui="${id}-form" data-v="${v}">${label}<small>${note}</small></button>`;
+    // 宫永咲：标准 / 加强（MatchSettings.sakiStrong），只管自己用的咲
+    if (id === 'saki') return `<div class="form-toggle saki">${btn(false, '标准', '强度和别人差不多')}${btn(true, '加强', '更容易成刻、开花、连杠')}</div>`;
     return `<div class="form-toggle">${btn(false, '常态', '点数变动 10 万后治水')}${btn(true, '治水', '开局就是治水')}</div>`;
   }
 
-  private toggleTokaForm(v?: string): void {
-    this.settings.chisui = v === undefined ? !this.settings.chisui : v === 'true';
+  // 透华的常态 / 治水、咲的标准 / 加强：v 没给就来回切
+  private toggleForm(id: 'toka' | 'saki', v?: string): void {
+    const key = id === 'saki' ? 'sakiStrong' : 'chisui';
+    this.settings[key] = v === undefined ? !this.settings[key] : v === 'true';
     saveSettings(this.settings);
     const page = this.root.querySelector('.school-page');
     if (page) page.innerHTML = this.schoolPageHtml();
-    // 大立绘面板、介绍浮窗还停在透华身上的话一起重画
-    if (this.tipFor === 'toka' || this.heroTip()) {
-      const card = this.root.querySelector<HTMLElement>(`.char-card[data-pick="${this.tipFor ?? 'toka'}"]`);
+    // 大立绘面板、介绍浮窗还停在她身上的话一起重画
+    if (this.tipFor === id || this.heroTip()) {
+      const card = this.root.querySelector<HTMLElement>(`.char-card[data-pick="${this.tipFor ?? id}"]`);
       if (card) this.showCharTip(card);
     }
   }
@@ -692,7 +700,7 @@ export class App {
     const st = this.settings;
     const chisui = opts.chisui ?? st.chisui;
     const firstDealer = opts.dealer ?? Math.floor(Math.random() * 4);
-    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer, players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me, startForm: i === this.me && c.id === 'toka' && chisui })), stage }));
+    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer, players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me, startForm: i === this.me && ((c.id === 'toka' && chisui) || (c.id === 'saki' && !stage && st.sakiStrong)) })), stage }));
   }
 
   // 公开手牌：单人对局按设置，团体赛不公开
@@ -1663,8 +1671,8 @@ export class App {
       el.textContent = open ? '收起' : '展开全文';
       return;
     }
-    if (el.dataset.ui === 'toka-form') {
-      this.toggleTokaForm(el.dataset.v);
+    if (el.dataset.ui === 'toka-form' || el.dataset.ui === 'saki-form') {
+      this.toggleForm(el.dataset.ui === 'saki-form' ? 'saki' : 'toka', el.dataset.v);
       return;
     }
     if (el.dataset.ui === 'setup-opt' && el.dataset.k && el.dataset.v) {
@@ -1675,9 +1683,9 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'match-reset') {
-      // 只换规则和对手；透华的常态 / 治水、动画开关是别处的设置，留着
-      const { chisui, drawPath, vary, layout, hand, slam, slamOrder } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, drawPath, vary, layout, hand, slam, slamOrder };
+      // 只换规则和对手；透华的常态 / 治水、咲的标准 / 加强、动画开关是别处的设置，留着
+      const { chisui, sakiStrong, drawPath, vary, layout, hand, slam, slamOrder } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, drawPath, vary, layout, hand, slam, slamOrder };
       saveSettings(this.settings);
       this.renderPanel();
       return;

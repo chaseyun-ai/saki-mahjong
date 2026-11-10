@@ -1,5 +1,5 @@
 // 宫永咲的岭上开花统计：随机对手或决赛大将桌（咲、稳乃、涅莉、淡），可以用 SAKI_JSON 临时改 SAKI 参数
-// 用法：npx vite-node scripts/saki.ts [场数] [rand|final] [起始种子]
+// 用法：npx vite-node scripts/saki.ts [场数] [rand|final] [起始种子]（SAKI_STRONG=1 是加强版）
 // 除了和了率、顺位，还数：
 // - 杠材：她手里有刻子（或碰了）时，第四张被别人摸走几次、她自己摸到几次
 // - 岭上牌：她摸的岭上牌有几张让手牌前进（或者直接和了）
@@ -41,7 +41,7 @@ for (let seed = from; seed < from + games; seed++) {
   const order = table ? rng.shuffle(table.map((id) => CHARACTERS.find((c) => c.id === id)!)) : rng.shuffle([me, ...rng.shuffle(CHARACTERS.filter((c) => c.id !== 'saki')).slice(0, 3)]);
   const mine = order.indexOf(me);
   const awai = order.findIndex((c) => c.id === 'awai');
-  const g = new Game({ seed, format: 'south', players: order.map((c) => ({ name: c.name, ability: c.ability })) });
+  const g = new Game({ seed, format: 'south', players: order.map((c) => ({ name: c.name, ability: c.ability, startForm: c.id === 'saki' && !!process.env.SAKI_STRONG })) });
   let before = 99;
   let seenRinshan: TileId | null = null;
   let roundKans = 0;

@@ -25,6 +25,8 @@ export interface MatchSettings {
   opponents: string[];
   // 自己用龙门渊透华时开局就是治水（不用等点数变动 10 万）：选人页透华头像旁边的“常态 / 治水”切换
   chisui: boolean;
+  // 自己用宫永咲时用加强版（暗里的助力更重、连杠局更多）：选人页咲头像旁边的“标准 / 加强”切换
+  sakiStrong: boolean;
   // 2.5D 牌桌的布局：classic 是原版；improved 是参考雀魂的试做版（只在改良里改，原版不动，试砸了就换回原版）
   layout: 'classic' | 'improved';
   // 改良布局里自己手牌的画法：B 没有透视、单独一层（雀魂那样）；C 同 B，牌往前倾、牌顶露得多
@@ -52,6 +54,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   vary: true,
   opponents: ['', '', ''],
   chisui: false,
+  sakiStrong: false,
   layout: 'classic',
   hand: 'B',
   result: 'classic',
@@ -222,6 +225,7 @@ function sanitize(s: MatchSettings): MatchSettings {
   const ids = Array.isArray(s.opponents) ? s.opponents : [];
   out.opponents = [0, 1, 2].map((i) => (CHARACTERS.some((c) => c.id === ids[i]) ? ids[i] : ''));
   out.chisui = s.chisui === true;
+  out.sakiStrong = s.sakiStrong === true;
   return out;
 }
 

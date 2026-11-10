@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { SAKI, bloomGap, sakiKanKinds, sakiKanOk, sakiKanTiles, sakiLine, sakiMood, sakiRinshan, sakiSeesThrough } from '../src/abilities/saki';
+import { SAKI, bloomGap, sakiKanKinds, sakiKanOk, sakiKanTiles, sakiLine, sakiMood, sakiRinshan, sakiSeesThrough, sakiStrong } from '../src/abilities/saki';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { kindOf, parseKinds, parseTiles, toCounts } from '../src/engine/tiles';
@@ -265,6 +265,44 @@ describe('宫永咲', () => {
     // 牌山快摸完、位置被别人锁着、本来就在更近的地方时落不进范围，其余的都在范围里
     expect(dealt.ok).toBeGreaterThan(dealt.n * 0.8);
     expect(later.ok).toBeGreaterThan(later.n * 0.7);
+  }, 120000);
+
+  it('加强版：对局设置里选了才是（PlayerConfig.startForm），整场下来对子长成刻子比标准版多', () => {
+    const run = (strong: boolean) => {
+      let grown = 0;
+      let draws = 0;
+      for (let seed = 1; seed <= 16; seed++) {
+        const ids = ['saki', 'nodoka', 'mihoko', 'hisa'];
+        const seats = ids.map(byId);
+        const g = new Game({ seed, players: seats.map((c, i) => ({ name: c.id, ability: c.ability, startForm: strong && i === 0 })) });
+        expect(sakiStrong(g, 0)).toBe(strong);
+        expect(sakiStrong(g, 1)).toBe(false);
+        expect(g.abilities[0]!.insight!(g, 0).some((x) => x.includes('加强版'))).toBe(strong);
+        g.onEvent((e) => {
+          if (e.type !== 'draw' || e.seat !== 0 || g.rinshanDraw) return;
+          const p = g.players[0];
+          if (p.riichi) return;
+          const c = toCounts(p.hand.filter((t) => t !== p.drawn));
+          if (!c.some((x) => x === 2)) return;
+          draws++;
+          if (c[kindOf(p.drawn!)] === 2) grown++;
+        });
+        let steps = 0;
+        while (g.phase !== 'gameEnd' && ++steps < 20000) {
+          if (g.phase === 'roundEnd') {
+            g.nextRound();
+            continue;
+          }
+          const s = g.waitingSeats()[0];
+          g.act(s, chooseAction(g, s, seats[s].ai));
+        }
+      }
+      return grown / draws;
+    };
+    const normal = run(false);
+    const strong = run(true);
+    console.log({ normal, strong });
+    expect(strong).toBeGreaterThan(normal * 1.15);
   }, 120000);
 
   it('天意：离正负零（30000）远了发力，领先太多收手', () => {

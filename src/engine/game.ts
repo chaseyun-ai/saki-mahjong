@@ -92,7 +92,7 @@ export interface PlayerConfig {
   ability?: Ability | null;
   // 玩家操作的座位：能主动开关技能的能力听玩家的，不替玩家做决定
   manual?: boolean;
-  // 开局就是第二形态（对局设置里选了“开局就治水”的透华）
+  // 开局就是第二形态（对局设置里选了“开局就治水”的透华；选了“加强”的咲整场是加强版）
   startForm?: boolean;
 }
 

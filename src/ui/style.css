@@ -7312,6 +7312,11 @@ html:root .tm-draft .tmd-go {
   background: linear-gradient(135deg, #5fb4ee, #2f6fb8);
   box-shadow: 0 0 10px rgba(110, 190, 255, 0.8);
 }
+/* 宫永咲的“加强”：百合的粉色 */
+.char-portrait .form-switch.saki.on {
+  background: linear-gradient(135deg, #f08fb0, #c24a78);
+  box-shadow: 0 0 10px rgba(255, 150, 190, 0.8);
+}
 .char-portrait .form-switch:hover {
   filter: brightness(1.15);
 }
@@ -7344,6 +7349,10 @@ html:root .tm-draft .tmd-go {
   background: linear-gradient(135deg, #5fb4ee, #2f6fb8);
   border-color: #9fd4ff;
   color: #fff;
+}
+.form-toggle.saki button.on {
+  background: linear-gradient(135deg, #f08fb0, #c24a78);
+  border-color: #ffc2d8;
 }
 
 /* 宫永咲的王牌感知（2D）：4 张岭上牌平时是牌背，鼠标移到上面牌背变透明，看得到是什么牌；杠材在牌山第几张一直写着 */
