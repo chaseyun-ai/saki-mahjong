@@ -46,6 +46,7 @@ export const OPEN: HandPose = {
 
 // 夹牌：牌平着在手指底下（牌面和手掌平行，比手掌低一截），中指伸出去、指肚平放在牌面上（指根往下探，后两节放平），
 // 食指、无名指从两边往下弯、指尖夹着牌的左右两条边，小指松松地垂着。牌放在哪见 slamSlap.ts 的 TILE_AT
+// 大拇指收在手掌底下、贴着食指根往前：张开那样往外伸的话，手从立着的手牌旁边过时会戳进牌里
 export const GRIP: HandPose = {
   curl: [
     [0.3, 0.15, 0.1],
@@ -54,8 +55,8 @@ export const GRIP: HandPose = {
     [0.3, 0.22, 0.16],
   ],
   spread: [0.07, 0, -0.065, -0.16],
-  thumb: [dir(-0.62, 0.52, -0.3), dir(-0.3, 0.68, -0.22), dir(-0.1, 0.6, -0.14)],
-  nail: dir(-0.55, 0, 0.83),
+  thumb: [dir(0.15, 0.8, -0.55), dir(0.35, 0.85, -0.3), dir(0.45, 0.85, -0.1)],
+  nail: dir(-0.6, 0, -0.8),
 };
 
 // 握拳：四根手指卷进手心；食指卷得松一点，留出地方压住大拇指尖
@@ -273,6 +274,16 @@ export function fingerBones(pose: HandPose, f: number): { from: THREE.Vector3; t
     const from = p;
     p = p.clone().addScaledVector(V(0, 1, 0).applyQuaternion(q), FINGERS[f].len * seg);
     return { from, to: p, r: FINGERS[f].r * TAPER[i] };
+  });
+}
+
+// 这个手型下大拇指三节各从哪到哪、多粗（手里坐标）
+export function thumbBones(pose: HandPose): { from: THREE.Vector3; to: THREE.Vector3; r: number }[] {
+  let p = THUMB_BASE.clone();
+  return THUMB_LEN.map((len, i) => {
+    const from = p;
+    p = p.clone().addScaledVector(pose.thumb[i], len);
+    return { from, to: p, r: THUMB_R[i] };
   });
 }
 
