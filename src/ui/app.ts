@@ -59,6 +59,8 @@ import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
+import { preloadVoices, sayVoice, stopVoices } from './voice';
+import { VoiceCue, cueKeys } from './voiceLines';
 import { TeamFlow } from './teamFlow';
 import { THEMES, ThemeId, currentTheme, setTheme } from './theme';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
@@ -77,6 +79,10 @@ const POS = ['bottom', 'right', 'top', 'left'];
 const AI_TURN_DELAY = 550;
 // 天使和的网络麻将：变身那一局开局后多久换牌桌（先让天使形态动画放完），平时补换等多久，顶上标题栏多高
 const NET_DELAY = 1800;
+// 角色说了台词的那一下，提示音（立直的滑音、吃碰杠的两声、能力的叮、和牌的琶音）压到这么大
+const VOICED_CUE = 0.5;
+// 一炮多响：几个人的「荣和」错开这么多秒
+const WIN_VOICE_GAP = 0.35;
 const NET_CATCHUP = 400;
 const NET_BAR = 26;
 const NET_WIND = '東南西北';
@@ -196,6 +202,8 @@ export class App {
   private flow: ResultFlow | null = null;
   private flowTimer: number | null = null;
   private cutinSeen = new Set<string>();
+  // 这一局已经说过台词的能力（同一个能力一局只说第一次）
+  private voiceSeen = new Set<string>();
   // 爱丽丝的手绘板：牌桌现在是不是画成手绘板（重组特效刷满时才换过去，破碎时马上换回）
   private sketchView = false;
   private sketchTimer: number | null = null;
@@ -317,6 +325,7 @@ export class App {
     this.timer = null;
     this.closeFlow();
     this.game = null;
+    stopVoices();
     this.cutins?.clear();
     this.table3d?.dispose();
     this.table3d = null;
@@ -733,6 +742,9 @@ export class App {
     useRiiLook(this.riiTest ? 'test' : 'main');
     this.chars = chars;
     this.game = game;
+    // 桌上四个人的语音先解码好（第一局在这里取，之后每局开始再看一眼有没有新放的）
+    this.voiceSeen.clear();
+    preloadVoices(chars.map((c) => c?.id));
     // 随机微变化（落桌声、电脑想多久、出牌动作、牌河）：种子跟着牌局走，设置里能关
     vary.reset(game.seed, this.settings.vary);
     this.trace = new AbilityTrace(this.game);
@@ -1075,6 +1087,9 @@ export class App {
       this.clearRoundFx();
       // 桌上有哩：先把番缚的音效解码好
       if (this.chars.some((c) => c?.id === 'rii')) preloadRiiSound();
+      // 桌上四个人的语音（素材页里放了的）先解码好
+      this.voiceSeen.clear();
+      preloadVoices(this.chars.map((c) => c?.id));
     }
     if (e.type === 'discard') {
       // 隐身的桃子打的牌：看不见也听不见。刚隐身的那一张照常打出去，牌河和手牌慢慢淡掉（不放立直特效）
@@ -1090,14 +1105,14 @@ export class App {
       if (!this.table3d) playClick({ pan: this.clickPan(e.seat), varied: true });
       this.gbSigh(e.seat, e.tile);
       if (e.riichi) {
-        playRiichi();
+        playRiichi(this.speak(e.seat, { kind: 'riichi' }) ? VOICED_CUE : 1);
         // 第二形态（透华的治水）在素材页换了立直动画：放这一段
         if (!this.formCutin(e.seat, 'riichi', '立直')) this.bigFx(e.seat, '立直', 'riichi');
       }
     } else if (e.type === 'call') {
       // 隐身的桃子鸣牌：看不见也听不见
       if (this.game!.stealthed(e.seat, this.me)) return;
-      playCall();
+      playCall(this.speak(e.seat, { kind: 'call', call: e.call }) ? VOICED_CUE : 1);
       this.bigFx(e.seat, e.call, e.call.includes('杠') ? 'kan' : 'call');
     } else if (e.type === 'ability') {
       // 玄的宝牌聚集、怜的一巡先见像被动一样一直开着（原作里大家都知道），不放切入也不出字；
@@ -1111,12 +1126,15 @@ export class App {
       // 自己是原村和、变成天使和：天使形态动画放完，牌桌换成网络麻将
       if (e.ability === 'nodoka' && e.seat === this.me) this.syncNet(Math.max(NET_DELAY, this.busyMs() + 400));
       if (e.ability === 'kuro') {
-        if (e.text !== '宝牌聚集') this.toast(e.seat, e.text, false);
+        if (e.text !== '宝牌聚集') {
+          this.sayAbility(e.seat, e.text);
+          this.toast(e.seat, e.text, false);
+        }
         return;
       }
       // 白水哩的钥匙：锁链变金汇成钥匙 / 崩断，在结算时放（见 roundEnd），这里不放切入
       if (e.ability === 'rii') return;
-      playChime();
+      playChime(this.sayAbility(e.seat, e.text) ? VOICED_CUE : 1);
       // 臼泽塞的镜片：狙击镜落到被盯上的人的头像上（等这一下重画完再找头像）
       if (e.ability === 'sae') {
         const t = this.game!.abilityState[e.seat].target as number | undefined;
@@ -1131,7 +1149,12 @@ export class App {
       if (!(!this.cutinSeen.has(key) && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
       this.cutinSeen.add(key);
     } else if (e.type === 'roundEnd') {
-      if (e.result.wins.length) playWin();
+      // 和牌的人喊「荣和」「自摸」：一炮多响时错开；她刚说完和牌的能力台词（岭上开花、海底捞月）就不再补
+      let voiced = false;
+      e.result.wins.forEach((w, i) => {
+        if (this.speak(w.seat, { kind: 'win', tsumo: w.from === null }, { polite: true, delay: i * WIN_VOICE_GAP })) voiced = true;
+      });
+      if (e.result.wins.length) playWin(voiced ? VOICED_CUE : 1);
       this.riiPicking = false;
       this.riiFinish(e.result);
       // 2D：初美聚着风和牌，紫光往上冲（3D、2.5D 在牌桌上放）
@@ -1154,6 +1177,21 @@ export class App {
         this.bigFx(w.seat, word, 'win');
       }
     }
+  }
+
+  // 角色语音（src/ui/voice.ts）：这个座位的人说一句，说了返回 true。没放音频、设置里关了就不说
+  private speak(seat: number, cue: VoiceCue, opts: { polite?: boolean; delay?: number } = {}): boolean {
+    const c = this.chars[seat];
+    if (!c) return false;
+    return sayVoice(c.id, cueKeys(c.id, cue), { seat, pan: this.clickPan(seat), ...opts });
+  }
+
+  // 能力台词：同一个能力一局只说第一次
+  private sayAbility(seat: number, text: string): boolean {
+    const key = `${seat}-${text}`;
+    if (this.voiceSeen.has(key)) return false;
+    this.voiceSeen.add(key);
+    return this.speak(seat, { kind: 'ability', text });
   }
 
   // 第二形态（天使和、治水）在素材页换了 `${形态}-${kind}` 的动画：放这一段，放了返回 true

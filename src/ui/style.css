@@ -2315,6 +2315,92 @@ button {
   clip-path: inset(50%);
 }
 
+/* 素材页的语音：每句台词一行（名字、建议台词在左，试听、放音频、清除在右） */
+.voice-head {
+  max-width: 1100px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 26px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+}
+
+.voice-head h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.voice-head > span {
+  flex: 1;
+  font-size: 13px;
+  color: var(--ink-quiet);
+}
+
+.voice-head > span b {
+  color: var(--gold);
+}
+
+.voice-rows {
+  max-width: 1100px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 8px;
+}
+
+.voice-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.voice-row.own {
+  border-color: var(--gold);
+}
+
+.voice-row.drop,
+.voice-head.drop {
+  border: 1px dashed var(--gold);
+  background: color-mix(in srgb, var(--gold) 16%, rgba(0, 0, 0, 0.3));
+}
+
+.voice-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.voice-row .skin-label {
+  margin-top: 0;
+}
+
+.voice-row .skin-btns {
+  flex: none;
+  flex-wrap: nowrap;
+  margin-top: 0;
+}
+
+.voice-row .skin-btn {
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+.skin-count.voice {
+  background: none;
+  color: var(--gold);
+  border: 1px solid color-mix(in srgb, var(--gold) 50%, transparent);
+}
+
+@media (max-width: 700px) {
+  .voice-row {
+    flex-wrap: wrap;
+  }
+}
+
 /* 手机上拖不了图，不提 */
 @media (hover: none) {
   .skin-drag {

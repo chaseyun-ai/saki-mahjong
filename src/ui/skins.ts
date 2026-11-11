@@ -1,10 +1,15 @@
 import { CHARACTERS, type Character } from '../abilities/characters';
 import { APPEARANCE, SCHOOLS, membersOf } from './schools';
 import { SkinSlot, cutinArt, defaultCutinArt, defaultPortraitUrl, defaultPowerPortraitUrl, portraitUrl, powerPortraitUrl, setSkins, skinOf } from '../ui3d/looks';
+import { VOICE_MAX_SECONDS, VoiceFileError, clipFromFile, forgetVoicePack, previewVoiceBytes, setVoiceRefs } from './voice';
+import { matchVoiceFile, voiceSlotsOf } from './voiceLines';
+import { VoicePack, VoiceRef, base64ToBytes, emptyPack, packLines, packText, parsePack, withClip } from './voicePack';
 
 // 素材页：页面主人在试玩页里给每个角色换头像、切入图、结算图，不用改代码。
 // 图存在试玩页自己的存储里（assets），哪个格子用哪张图记在 db 的 skins/<角色 id> 里：
 //   { face: { id, w, h }, riichi: { id, w, h }, ... }
+// 角色的语音也在这里放（游戏本身不带语音）：一个角色的所有台词装成一个语音包（voicePack.ts）存成一个素材，
+// 记在同一条记录的 voice 里：{ voice: { id, lines: ['riichi', 'pon', ...] } }
 // 所有人打开试玩页都读这些记录；只有能编辑这个页面的人（页面主人）能上传、换回默认。
 // 不在试玩页里（本地开发）时 window.claude 不存在，全部用默认图。
 
@@ -14,7 +19,7 @@ interface Stored {
   h: number;
   video?: boolean;
 }
-type Doc = Partial<Record<SkinSlot, Stored>>;
+type Doc = Partial<Record<SkinSlot, Stored>> & { voice?: VoiceRef };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface Runtime {
@@ -72,11 +77,17 @@ let started: Promise<any> | null = null;
 
 function apply(): void {
   const out: Parameters<typeof setSkins>[0] = {};
+  const voices: Record<string, VoiceRef> = {};
   for (const [id, doc] of Object.entries(docs)) {
     out[id] = {};
-    for (const [slot, v] of Object.entries(doc)) if (v?.id) out[id][slot as SkinSlot] = { url: '/_blob/' + v.id, w: v.w, h: v.h, video: v.video };
+    for (const [slot, v] of Object.entries(doc) as [string, Stored | undefined][]) {
+      if (slot !== 'voice' && v?.id) out[id][slot as SkinSlot] = { url: '/_blob/' + v.id, w: v.w, h: v.h, video: v.video };
+    }
+    const voice = doc.voice;
+    if (voice && typeof voice.id === 'string' && Array.isArray(voice.lines)) voices[id] = { id: voice.id, lines: voice.lines.filter((k) => typeof k === 'string') };
   }
   setSkins(out);
+  setVoiceRefs(voices);
   for (const f of listeners) f();
 }
 
@@ -139,6 +150,21 @@ function saveSel(id: string): void {
 // 换了图、别人改了推过来时只重画名单和右边，名单的滚动位置、搜索框里的字都不动。电脑上可以直接把图拖到格子上
 const ROLES = ['先锋', '次锋', '中坚', '副将', '大将'];
 const ownCount = (c: Character) => slotsOf(c).filter(({ slot }) => docs[c.id]?.[slot]).length;
+// 这个角色放了几句语音（只数现在还有格子的）
+const voiceCount = (c: Character) => {
+  const have = new Set(docs[c.id]?.voice?.lines ?? []);
+  return voiceSlotsOf(c).filter((l) => have.has(l.key)).length;
+};
+const AUDIO_ACCEPT = 'audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus,.webm';
+const isAudio = (f: File) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac|opus|webm)$/i.test(f.name);
+const VOICE_ERRORS: Record<VoiceFileError, string> = {
+  no_audio: '这个浏览器放不了声音',
+  undecodable: '这个文件浏览器读不出来，换成 MP3 或 WAV 再试',
+  silent: '这段音频里没有声音',
+  too_long: `太长了，一句最多 ${VOICE_MAX_SECONDS} 秒`,
+};
+// 一个语音包最大这么多字节（试玩页一个素材最多 20 MB，留一点余地）
+const PACK_MAX_BYTES = 18 * 1024 * 1024;
 const faceImg = (id: string) => `<img src="${portraitUrl(id, 'neutral')}" alt="" onerror="this.remove()" />`;
 
 export class SkinEditor {
@@ -154,6 +180,8 @@ export class SkinEditor {
     ['dragleave', (e) => this.onDragLeave(e as DragEvent)],
     ['drop', (e) => this.onDrop(e as DragEvent)],
   ];
+  // 取下来的语音包（照包的 id 记），试听、加一句时用
+  private packCache = new Map<string, Promise<VoicePack>>();
 
   constructor(
     private root: HTMLElement,
@@ -215,7 +243,7 @@ export class SkinEditor {
           const on = c.id === this.sel;
           return `<button class="skin-item${on ? ' on' : ''}" data-skin-tab="${c.id}" style="--c:${c.color}"${on ? ' aria-current="true"' : ''}>
               <span class="skin-item-face">${faceImg(c.id)}</span>
-              <span class="skin-item-name">${c.name}</span>${k ? `<span class="skin-count" title="已换 ${k} 张">${k}</span>` : ''}
+              <span class="skin-item-name">${c.name}</span>${voiceCount(c) ? `<span class="skin-count voice" title="已放 ${voiceCount(c)} 句语音">♪${voiceCount(c)}</span>` : ''}${k ? `<span class="skin-count" title="已换 ${k} 张">${k}</span>` : ''}
             </button>`;
         })
         .join('');
@@ -276,8 +304,42 @@ export class SkinEditor {
         </div>
       </div>
       <p class="skin-tip">点「换图」<span class="skin-drag">或把图拖到格子上</span>就换，马上生效，打开试玩页的人都看得到；「恢复默认」换回原图。PNG、JPG、WebP、GIF 都行，透明背景用 PNG，技能动画格还能放 MP4、WebM。</p>
-      <div class="skin-cells">${cells}</div>`;
+      <div class="skin-cells">${cells}</div>
+      ${this.voiceHtml(c)}`;
     box.scrollTop = top;
+  }
+
+  // 语音：每句台词一行，试听、放音频、清除；上面一个「一次放多句」照文件名对上
+  private voiceHtml(c: Character): string {
+    const lines = voiceSlotsOf(c);
+    const have = new Set(docs[c.id]?.voice?.lines ?? []);
+    const off = this.busy ? ' disabled' : '';
+    const rows = lines
+      .map(({ key, label, hint }) => {
+        const mine = have.has(key);
+        return `
+          <div class="voice-row${mine ? ' own' : ''}" data-voice-row="${key}">
+            <div class="voice-text">
+              <div class="skin-label">${esc(label)}${mine ? '<span class="skin-mark">已放</span>' : ''}</div>
+              <div class="skin-hint">${esc(hint)}</div>
+            </div>
+            <div class="skin-btns">
+              ${mine ? `<button class="skin-btn" data-voice-play="${c.id}:${key}"${off}>▶ 试听</button>` : ''}
+              <label class="skin-btn${this.busy ? ' off' : ''}">${mine ? '换音频' : '放音频'}<input type="file" accept="${AUDIO_ACCEPT}" data-voice-char="${c.id}" data-voice-key="${key}"${off} /></label>
+              ${mine ? `<button class="skin-btn ghost" data-voice-clear="${c.id}:${key}"${off}>清除</button>` : ''}
+            </div>
+          </div>`;
+      })
+      .join('');
+    const n = voiceCount(c);
+    return `
+      <div class="voice-head">
+        <h3>语音</h3>
+        <span>${n ? `<b>已放 ${n}</b> / ${lines.length} 句` : `${lines.length} 句都还没放`}</span>
+        <label class="skin-btn${this.busy ? ' off' : ''}">一次放多句<input type="file" accept="${AUDIO_ACCEPT}" multiple data-voice-char="${c.id}"${off} /></label>
+      </div>
+      <p class="skin-tip">游戏本身不带语音：给哪一句放了音频，牌局里她就在那一下说出来，没放的不出声。MP3、WAV、OGG、M4A 都行，一句最长 ${VOICE_MAX_SECONDS} 秒，前后的空白会自动跳过、响度自动拉齐。「一次放多句」照文件名对上：立直、碰、吃、杠、荣和、自摸（或 riichi、pon、chi、kan、ron、tsumo），能力台词用格子上的名字，比如「${esc(lines.find((l) => l.texts)?.label ?? '能力发动')}.mp3」。每行的小字是建议的台词，只供参考。</p>
+      <div class="voice-rows">${rows}</div>`;
   }
 
   private choose(id: string): void {
@@ -312,8 +374,18 @@ export class SkinEditor {
   }
 
   private onClick(e: Event): void {
-    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-skin-back],[data-skin-reset],[data-skin-tab],[data-skin-step]');
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-skin-back],[data-skin-reset],[data-skin-tab],[data-skin-step],[data-voice-play],[data-voice-clear]');
     if (!el) return;
+    if (el.dataset.voicePlay) {
+      const [id, key] = el.dataset.voicePlay.split(':');
+      void this.playVoice(id, key);
+      return;
+    }
+    if (el.dataset.voiceClear) {
+      const [id, key] = el.dataset.voiceClear.split(':');
+      void this.saveVoice(id, [{ key, file: null }]);
+      return;
+    }
     if (el.dataset.skinBack !== undefined) {
       this.close();
       return;
@@ -337,6 +409,11 @@ export class SkinEditor {
 
   private onChange(e: Event): void {
     const input = e.target as HTMLInputElement;
+    if (input.dataset.voiceChar && input.files?.length) {
+      this.addVoiceFiles(input.dataset.voiceChar, [...input.files], input.dataset.voiceKey);
+      input.value = '';
+      return;
+    }
     if (!input.dataset.skinChar || !input.files?.[0]) return;
     void this.save(input.dataset.skinChar, input.dataset.skinSlot as SkinSlot, input.files[0]);
   }
@@ -356,25 +433,30 @@ export class SkinEditor {
   private onDrag(e: DragEvent): void {
     if (!this.dragging(e)) return;
     e.preventDefault();
-    const slot = this.busy ? null : (e.target as HTMLElement).closest<HTMLElement>('.skin-slot');
+    const slot = this.busy ? null : (e.target as HTMLElement).closest<HTMLElement>('.skin-slot,.voice-row,.voice-head');
     e.dataTransfer!.dropEffect = slot ? 'copy' : 'none';
-    this.root.querySelectorAll('.skin-slot.drop').forEach((x) => x !== slot && x.classList.remove('drop'));
+    this.root.querySelectorAll('.drop').forEach((x) => x !== slot && x.classList.remove('drop'));
     slot?.classList.add('drop');
   }
 
   private onDragLeave(e: DragEvent): void {
-    const slot = (e.target as HTMLElement).closest('.skin-slot');
+    const slot = (e.target as HTMLElement).closest('.skin-slot,.voice-row,.voice-head');
     if (slot && !slot.contains(e.relatedTarget as Node | null)) slot.classList.remove('drop');
   }
 
   private onDrop(e: DragEvent): void {
     if (!this.dragging(e)) return;
     e.preventDefault();
-    const slot = (e.target as HTMLElement).closest<HTMLElement>('.skin-slot');
+    const slot = (e.target as HTMLElement).closest<HTMLElement>('.skin-slot,.voice-row,.voice-head');
     slot?.classList.remove('drop');
     const input = slot?.querySelector<HTMLInputElement>('input[type=file]');
     const file = e.dataTransfer!.files[0];
     if (!input || !file || this.busy) return;
+    // 拖到语音那一行：放进这一句；拖到「语音」标题上：几个文件照文件名对上
+    if (input.dataset.voiceChar) {
+      this.addVoiceFiles(input.dataset.voiceChar, [...e.dataTransfer!.files], input.dataset.voiceKey);
+      return;
+    }
     if (!input.accept.split(',').includes(file.type)) {
       this.status = input.accept.includes('video') ? '这一格只能放 PNG、JPG、WebP、GIF 图或 MP4、WebM 视频。' : '这一格只能放 PNG、JPG、WebP、GIF 图。';
       this.renderStatus();
@@ -382,6 +464,134 @@ export class SkinEditor {
     }
     void this.save(input.dataset.skinChar!, input.dataset.skinSlot as SkinSlot, file);
   }
+  // ---------- 语音 ----------
+
+  // 选了（拖了）音频文件：指定了哪一句就放进那一句，没指定就照文件名一个个对上
+  private addVoiceFiles(id: string, files: File[], key?: string): void {
+    const c = CHARACTERS.find((x) => x.id === id);
+    if (!c || this.busy) return;
+    const audioFiles = files.filter(isAudio);
+    if (!audioFiles.length) {
+      this.status = '语音只能放音频文件（MP3、WAV、OGG、M4A）。';
+      this.renderStatus();
+      return;
+    }
+    if (key) {
+      void this.saveVoice(id, [{ key, file: audioFiles[0] }]);
+      return;
+    }
+    const items: { key: string; file: File }[] = [];
+    const lost: string[] = [];
+    for (const f of audioFiles) {
+      const k = matchVoiceFile(c, f.name);
+      if (k) items.push({ key: k, file: f });
+      else lost.push(f.name);
+    }
+    if (!items.length) {
+      this.status = `文件名对不上哪一句：${lost.join('、')}。文件名用格子上的名字，比如「立直.mp3」。`;
+      this.renderStatus();
+      return;
+    }
+    void this.saveVoice(id, items, lost);
+  }
+
+  // 这个角色现在的语音包（没有就是空的）
+  private packOf(id: string): Promise<VoicePack> {
+    const ref = docs[id]?.voice;
+    if (!ref?.id) return Promise.resolve(emptyPack());
+    let p = this.packCache.get(ref.id);
+    if (!p) {
+      p = fetch('/_blob/' + ref.id).then((r) => {
+        // 素材已经不在了（被删了）：当成空的，重新放就行
+        if (r.status === 404) return emptyPack();
+        if (!r.ok) throw new Error('语音包取不到');
+        return r.text().then(parsePack);
+      });
+      p.catch(() => this.packCache.delete(ref.id));
+      this.packCache.set(ref.id, p);
+    }
+    return p;
+  }
+
+  private async playVoice(id: string, key: string): Promise<void> {
+    try {
+      const clip = (await this.packOf(id)).clips[key];
+      if (!clip || (await previewVoiceBytes(base64ToBytes(clip.data))) === null) throw new Error('放不了');
+    } catch {
+      this.status = '这一句放不出来，重新放一次音频试试。';
+      this.renderStatus();
+    }
+  }
+
+  // 放进（file）或清除（null）几句：取下现在的包，改好，存成新的素材，记录指过去，旧的删掉
+  private async saveVoice(id: string, items: { key: string; file: File | null }[], lost: string[] = []): Promise<void> {
+    const c = CHARACTERS.find((x) => x.id === id);
+    const name = c?.name ?? id;
+    const labelOf = (key: string) => (c ? voiceSlotsOf(c) : []).find((l) => l.key === key)?.label ?? key;
+    const assets = await assetsApi();
+    const db = await connect();
+    if (!assets || !db) {
+      this.status = '这里放不了语音：只有页面主人在试玩页里能放。';
+      this.renderStatus();
+      return;
+    }
+    this.busy = true;
+    this.status = `正在保存 ${name} 的语音……`;
+    this.refresh();
+    const old = docs[id]?.voice?.id;
+    const done: string[] = [];
+    const failed: string[] = [];
+    try {
+      let pack = await this.packOf(id);
+      for (const { key, file } of items) {
+        if (!file) {
+          pack = withClip(pack, key, null);
+          done.push(labelOf(key));
+          continue;
+        }
+        try {
+          pack = withClip(pack, key, await clipFromFile(file));
+          done.push(labelOf(key));
+        } catch (err) {
+          failed.push(`${labelOf(key)}（${VOICE_ERRORS[err as VoiceFileError] ?? '读不出来'}）`);
+        }
+      }
+      if (done.length) {
+        const next: Doc = { ...(docs[id] ?? {}) };
+        const lines = packLines(pack);
+        if (lines.length) {
+          const text = packText(pack);
+          if (text.length > PACK_MAX_BYTES) throw { code: 'too_large' };
+          const up = await assets.upload(new Blob([text], { type: 'application/json' }), { type: 'application/json' });
+          next.voice = { id: up.id, lines };
+          this.packCache.set(up.id, Promise.resolve(pack));
+        } else delete next.voice;
+        await db.doc('skins/' + id).set(next);
+        if (old) {
+          await assets.delete(old).catch(() => {});
+          this.packCache.delete(old);
+          forgetVoicePack(old);
+        }
+      }
+      const cleared = items.every((x) => !x.file);
+      const parts: string[] = [];
+      if (done.length) parts.push(`${name} 的${done.join('、')}${cleared ? '已清除' : '放好了'}。`);
+      if (failed.length) parts.push(`没放成：${failed.join('；')}。`);
+      if (lost.length) parts.push(`文件名对不上、没有放：${lost.join('、')}。`);
+      this.status = parts.join('');
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      this.status =
+        code === 'too_large'
+          ? '这个角色的语音加起来太大了（最多 18 MB），把长的那几句压缩一下再试。'
+          : code === 'quota_or_state'
+            ? '试玩页的存储满了，先清掉不用的图或语音再试。'
+            : `语音没存成（${code ?? '语音包取不到'}），过一会儿再试一次。`;
+    }
+    this.busy = false;
+    this.refresh();
+  }
+
   // 换图（file）或换回默认（null）
   private async save(id: string, slot: SkinSlot, file: File | null): Promise<void> {
     const name = CHARACTERS.find((c) => c.id === id)?.name ?? id;

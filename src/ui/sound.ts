@@ -45,8 +45,8 @@ export function playClick(opts: { pan?: number; varied?: boolean } = {}): void {
   src.start();
 }
 
-// 能力发动的提示音
-export function playChime(): void {
+// 能力发动的提示音。vol：角色同时说了台词时压低一点（下面吃碰杠、立直、和牌的也一样）
+export function playChime(vol = 1): void {
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
@@ -56,7 +56,7 @@ export function playChime(): void {
     osc.type = 'sine';
     osc.frequency.value = f;
     gain.gain.setValueAtTime(0.0001, now + i * 0.08);
-    gain.gain.exponentialRampToValueAtTime(0.15, now + i * 0.08 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.15 * vol, now + i * 0.08 + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.08 + 0.5);
     osc.connect(gain).connect(bus('sfx', a));
     osc.start(now + i * 0.08);
@@ -78,17 +78,17 @@ function tone(a: AudioContext, f: number, start: number, dur: number, vol: numbe
 }
 
 // 吃碰杠：短促有力的两声
-export function playCall(): void {
+export function playCall(vol = 1): void {
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
-  tone(a, 196, now, 0.25, 0.25, 'triangle');
-  tone(a, 392, now + 0.06, 0.3, 0.18, 'square');
+  tone(a, 196, now, 0.25, 0.25 * vol, 'triangle');
+  tone(a, 392, now + 0.06, 0.3, 0.18 * vol, 'square');
   playClick();
 }
 
 // 立直：低音加上扬的滑音
-export function playRiichi(): void {
+export function playRiichi(vol = 1): void {
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
@@ -98,21 +98,21 @@ export function playRiichi(): void {
   osc.frequency.setValueAtTime(220, now);
   osc.frequency.exponentialRampToValueAtTime(880, now + 0.35);
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.12, now + 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.12 * vol, now + 0.03);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
   osc.connect(gain).connect(bus('sfx', a));
   osc.start(now);
   osc.stop(now + 0.65);
-  tone(a, 110, now, 0.5, 0.3, 'triangle');
+  tone(a, 110, now, 0.5, 0.3 * vol, 'triangle');
 }
 
 // 和牌：上行琶音
-export function playWin(): void {
+export function playWin(vol = 1): void {
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
-  [523, 659, 784, 1047, 1319].forEach((f, i) => tone(a, f, now + i * 0.07, 0.9, 0.14, 'triangle'));
-  tone(a, 131, now, 1.2, 0.25, 'sine');
+  [523, 659, 784, 1047, 1319].forEach((f, i) => tone(a, f, now + i * 0.07, 0.9, 0.14 * vol, 'triangle'));
+  tone(a, 131, now, 1.2, 0.25 * vol, 'sine');
 }
 
 // 自摸砸牌：牌翻起来炸开的“砰”。一记往下沉的闷响（桌子被震了一下），一声更重、更闷的“啪”，后面卷一阵风

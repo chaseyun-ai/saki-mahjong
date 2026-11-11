@@ -2,6 +2,7 @@ import './soundPanel.css';
 import { AudioSettings, DEFAULT_AUDIO, audioSettings, onAudioSettings, setAudioSetting } from './audioBus';
 import { optsHtml, panelHtml, rowHtml, section } from './matchSetup';
 import { playClick } from './sound';
+import { sampleVoice } from './voice';
 
 // 声音设置：总音量、音乐、音效、语音四条滑杆，一键静音，演出时压低音乐。
 // 选人页顶栏的「声音设置」和对局里的喇叭按钮开的是同一个面板。面板挂在 <body> 上，不跟着牌桌重画，
@@ -33,7 +34,7 @@ const SLIDERS: { key: Volume; name: string; note?: string }[] = [
   { key: 'master', name: '总音量' },
   { key: 'music', name: '音乐', note: '拉到 0 就是关掉音乐' },
   { key: 'sfx', name: '音效', note: '打牌、吃碰杠、立直、和牌、能力演出' },
-  { key: 'voice', name: '语音' },
+  { key: 'voice', name: '语音', note: '角色喊牌、发动能力时说的台词' },
 ];
 
 const pct = (v: number) => Math.round(v * 100);
@@ -45,6 +46,13 @@ function sliderHtml(key: Volume, name: string): string {
   return `<input class="snd-range" type="range" min="0" max="100" step="1" value="${v}" data-snd="${key}" aria-label="${name}" style="--v:${v}%" /><output class="snd-val" data-snd-val="${key}">${v}</output>${mute}`;
 }
 
+// 角色语音放哪些（语音本身在素材页里放，见 voice.ts）
+const VOICE_MODES = [
+  { label: '全部', value: 'on' },
+  { label: '只喊牌', value: 'calls' },
+  { label: '关闭', value: 'off' },
+];
+
 const ON_OFF = [
   { label: '开启', value: 'true' },
   { label: '关闭', value: 'false' },
@@ -53,8 +61,8 @@ const ON_OFF = [
 export function soundPanelHtml(): string {
   const sliders = SLIDERS.map((s) => rowHtml(s.name, sliderHtml(s.key, s.name), s.note, 'snd-row')).join('');
   const duck = rowHtml('演出时压低音乐', optsHtml('snd-opt', 'duck', ON_OFF, String(audioSettings.duck)), '能力演出、和牌、语音响的时候音乐自动小下去');
-  // 语音放哪些（audioSettings.voiceMode）那一行由语音那边加在这里
-  const body = section('音量') + sliders + section('音乐') + duck;
+  const voice = rowHtml('角色语音', optsHtml('snd-opt', 'voiceMode', VOICE_MODES, audioSettings.voiceMode), '「只喊牌」只留立直、吃碰杠、荣和、自摸，不说能力台词');
+  const body = section('音量') + sliders + section('语音') + voice + section('音乐') + duck;
   return panelHtml('sound', '声音设置', '改了马上生效', body, '<button data-ui="snd-reset">恢复默认</button>');
 }
 
@@ -127,8 +135,9 @@ export function installSoundPanel(): void {
     if (ui === 'panel-close') closeSoundPanel();
     else if (ui === 'snd-mute') setAudioSetting('mute', !audioSettings.mute);
     else if (ui === 'snd-opt' && el.dataset.k === 'duck') setAudioSetting('duck', el.dataset.v === 'true');
+    else if (ui === 'snd-opt' && el.dataset.k === 'voiceMode') setAudioSetting('voiceMode', el.dataset.v as AudioSettings['voiceMode']);
     else if (ui === 'snd-reset') {
-      for (const k of ['master', 'music', 'sfx', 'voice', 'mute', 'duck'] as const) setAudioSetting(k, DEFAULT_AUDIO[k] as AudioSettings[typeof k]);
+      for (const k of ['master', 'music', 'sfx', 'voice', 'mute', 'duck', 'voiceMode'] as const) setAudioSetting(k, DEFAULT_AUDIO[k] as AudioSettings[typeof k]);
     }
   });
   // 拖滑杆：边拖边改音量（不重画面板，不然滑杆会从手里掉）
@@ -151,6 +160,8 @@ export function installSoundPanel(): void {
     const key = el.dataset?.snd;
     if (!host || !key || !host.contains(el)) return;
     if (key === 'master' || key === 'sfx') playClick();
+    // 语音：有解码好的台词就说一句
+    else if (key === 'voice') sampleVoice();
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && host) {
