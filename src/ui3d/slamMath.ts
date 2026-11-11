@@ -3,8 +3,9 @@ import type { HandPose } from './slamHand';
 
 // 自摸砸牌几套动作（tileSlam.ts 的通用一套、slamFlick.ts 竹井久的一套……）共用的小工具和接口。
 
-// 自摸砸牌的动作：press 通用的一套（照雀魂，扣下去再翻起来炸开），hisa 竹井久的（握拳把牌放在大拇指指甲盖上亮牌、弹上天、扣住砸下去）
-export type SlamStyle = 'press' | 'hisa';
+// 自摸砸牌的动作：press 通用的一套（照雀魂，扣下去再翻起来炸开），edge 通用的另一套“桌切”（按着牌往自己这边划、磕桌框弹回来），
+// hisa 竹井久的（握拳把牌放在大拇指指甲盖上亮牌、弹上天、扣住砸下去）
+export type SlamStyle = 'press' | 'edge' | 'hisa';
 
 // 手比照着牌放大多少（手的模型是按牌宽量的；放大一点，扣牌时离镜头远也看得清）
 export const HAND_SCALE = 1.5;
@@ -15,6 +16,15 @@ export interface Key {
   pose?: HandPose; // 手型（slamHand.ts），不给是张开的手
 }
 
+// 镜头要照顾的地方（桌切磕桌框那一下在自己这边的桌沿，横屏时在画面外）：from 开始带过去，peak 带到，until 之前停着，end 回到原处
+export interface SlamFocus {
+  at: THREE.Vector3;
+  from: number;
+  peak: number;
+  until: number;
+  end: number;
+}
+
 // 一套“自己算好整段”的砸牌动作：开始以后第 k 秒手在哪（null 是看不见）、牌在哪，
 // 以及什么时候扣到桌上（press）、开始亮（charge，亮多久）、炸开（hit）、整段做完（done）。时间都是从开始算的秒数
 export interface SlamMotion {
@@ -23,6 +33,8 @@ export interface SlamMotion {
   readonly chargeDur: number;
   readonly hitAt: number;
   readonly doneAt: number;
+  readonly restAt?: number; // 炸开以后牌还要自己动到什么时候（桌切弹回来那一段）；不给就是炸开那一下牌已经落定
+  readonly focus?: SlamFocus; // 镜头要照顾的地方，不给就不动镜头
   readonly revealAt?: number; // 手牌该倒下亮出来的时刻（不给就照扣到桌上那一下）
   readonly pressPoint: THREE.Vector3; // 扣到桌上那一下，牌底下的桌面点
   readonly chargePoint: THREE.Vector3; // 开始亮光的地方
