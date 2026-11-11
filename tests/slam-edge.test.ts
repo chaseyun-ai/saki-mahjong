@@ -1,22 +1,24 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { AHEAD, EdgeMotion } from '../src/ui3d/slamEdge';
+import { AHEAD, AHEAD_MAX, EdgeMotion } from '../src/ui3d/slamEdge';
+import { OPEN, fingerTip } from '../src/ui3d/slamHand';
+import { SLAP_HAND, TILE_AT } from '../src/ui3d/slamSlap';
 import { TILE_H, TILE_T } from '../src/ui3d/tableLayout';
 
-// 桌切：按着牌放在比落点靠桌子中间的地方，往自己这边划、磕在桌框上，弹回来停在落点
+// 边缘切（桌切）：按着牌放在比落点靠桌子中间的地方，往自己这边划、磕在边上，弹回来停在落点
 const side = new THREE.Vector3(1, 0, 0);
 const out = new THREE.Vector3(0, 0, 1);
 // 牌面朝上、牌顶朝桌子中间（-z）躺着
 const faceUp = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 const to = { pos: new THREE.Vector3(7, TILE_T / 2, 12.2), quat: faceUp, scale: 1 };
-// 桌框内沿在 z = 14
+// 磕的那条边（桌框内沿 / 画面底边）在 z = 14
 const rim = 14 - to.pos.z;
 // 她手里立着的那张（手牌右边隔开半张，牌面朝自己）
 const standing = { pos: new THREE.Vector3(7, TILE_H / 2, 11.2), quat: new THREE.Quaternion(), scale: 1 };
 const up = new THREE.Vector3(0, 1, 0);
 const faceOf = (q: THREE.Quaternion) => new THREE.Vector3(0, 0, 1).applyQuaternion(q);
 
-describe('桌切', () => {
+describe('边缘切', () => {
   it('自己自摸：放在比手牌靠桌子中间的地方，贴着桌面往自己这边划，越划越快', () => {
     const m = new EdgeMotion({ to, side, out, rim, hand: true });
     // 一开始手带着牌在她身前（比落点靠外）
@@ -55,11 +57,6 @@ describe('桌切', () => {
     expect(m.revealAt!).toBeGreaterThan(m.hitAt);
     expect(m.pressAt).toBeLessThan(m.pullAt);
     expect(m.pullAt).toBeLessThan(m.hitAt);
-    // 镜头在磕之前带到、磕完才回
-    expect(m.focus.from).toBeGreaterThanOrEqual(m.pressAt);
-    expect(m.focus.peak).toBeLessThanOrEqual(m.hitAt);
-    expect(m.focus.until).toBeGreaterThan(m.hitAt);
-    expect(m.focus.end).toBeGreaterThan(m.focus.until);
   });
 
   it('弹回来：跳起来、不钻进桌子，停在落点，手往后上方甩开撤走', () => {
@@ -123,6 +120,30 @@ describe('桌切', () => {
     expect(m.frame(m.hitAt - 1e-6).tile.pos.dot(out) + TILE_H / 2).toBeGreaterThan(14 - 0.05);
     expect(m.frame(m.restAt + 0.01).tile.pos.distanceTo(to.pos)).toBeLessThan(1e-6);
     expect(m.doneAt).toBeGreaterThanOrEqual(m.restAt);
+  });
+
+  it('前面没东西挡着：从更远的地方开始划，划得久一点，照样磕在边上', () => {
+    const near = new EdgeMotion({ to, side, out, rim, hand: true });
+    const far = new EdgeMotion({ to, side, out, rim, ahead: AHEAD_MAX, hand: true });
+    expect(far.frame(far.pressAt + 0.01).tile.pos.clone().sub(to.pos).dot(out)).toBeCloseTo(-AHEAD_MAX, 6);
+    expect(far.hitAt - far.pullAt).toBeGreaterThan(near.hitAt - near.pullAt);
+    expect(far.hitAt - far.pullAt).toBeLessThan(0.4);
+    expect(far.frame(far.hitAt - 1e-6).tile.pos.dot(out) + TILE_H / 2).toBeGreaterThan(14 - 0.05);
+    expect(far.frame(far.restAt + 0.01).tile.pos.distanceTo(to.pos)).toBeLessThan(1e-6);
+  });
+
+  it('夹牌的手：中指盖过半张牌，牌顶露在指尖外面', () => {
+    // 牌在手里竖着（牌顶朝指尖）：牌底、牌顶在手里坐标的 y
+    const h = TILE_H / SLAP_HAND;
+    const bottom = TILE_AT.y - h / 2;
+    const cover = (fingerTip(OPEN, 1).y - bottom) / h;
+    expect(cover).toBeGreaterThan(0.55);
+    expect(cover).toBeLessThan(0.85);
+    // 食指、无名指的指尖在牌的两边、够得着牌
+    expect(fingerTip(OPEN, 0).y).toBeGreaterThan(bottom + 0.2);
+    expect(fingerTip(OPEN, 2).y).toBeGreaterThan(bottom + 0.2);
+    expect(fingerTip(OPEN, 0).x).toBeLessThan(TILE_AT.x);
+    expect(fingerTip(OPEN, 2).x).toBeGreaterThan(TILE_AT.x);
   });
 
   it('落点紧挨着桌框、前面顶着牌山：划得短一点，照样磕、照样停在落点', () => {

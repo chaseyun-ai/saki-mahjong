@@ -85,7 +85,7 @@ export function mixPose(a: HandPose, b: HandPose, t: number): HandPose {
 // 手指：根部在哪、多长、多粗（食指到小指）；三节各占多长、各比根部细多少
 const FINGERS: { base: THREE.Vector3; len: number; r: number }[] = [
   { base: V(-0.8, 1.2, 0.02), len: 2.45, r: 0.25 },
-  { base: V(-0.27, 1.32, 0.04), len: 2.72, r: 0.26 },
+  { base: V(-0.27, 1.32, 0.04), len: 2.87, r: 0.26 },
   { base: V(0.27, 1.24, 0.02), len: 2.52, r: 0.24 },
   { base: V(0.75, 1.06, -0.02), len: 1.98, r: 0.21 },
 ];
@@ -247,6 +247,18 @@ export function buildArm(look: Partial<ArmLook> = {}): THREE.Group {
   g.userData.rig = rig;
   poseArm(g, OPEN);
   return g;
+}
+
+// 这个手型下第 f 根手指（0 食指、1 中指、2 无名指、3 小指）的指尖在哪（手里坐标）
+export function fingerTip(pose: HandPose, f: number): THREE.Vector3 {
+  const p = FINGERS[f].base.clone();
+  let bend = 0;
+  SEGS.forEach((seg, i) => {
+    bend += pose.curl[f][i];
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-bend, 0, pose.spread[f], 'ZXY'));
+    p.addScaledVector(V(0, 1, 0).applyQuaternion(q), FINGERS[f].len * seg);
+  });
+  return p;
 }
 
 // 把手摆成这个手型（同一个手型不重摆）

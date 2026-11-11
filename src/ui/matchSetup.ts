@@ -37,7 +37,7 @@ export interface MatchSettings {
   slam: 'hand' | 'tile';
   // 通用拍牌时手牌什么时候倒：first 先倒再拍，lift 举牌的同时倒，slap 拍下去那一下跟着倒（试做，几种对比着看）
   slamOrder: 'first' | 'lift' | 'slap';
-  // 通用的自摸动作用哪一套（各人自己有招牌动作的不管）：slap 拍牌；edge 桌切（按着牌往自己这边划、磕桌框弹回来，手牌跟着倒）
+  // 通用的自摸动作用哪一套（各人自己有招牌动作的不管）：slap 拍牌；edge 边缘切（现实里的桌切：按着牌往自己这边划、磕在边上弹回来，手牌跟着倒）
   slamStyle: 'slap' | 'edge';
 }
 
@@ -182,16 +182,16 @@ const ROWS: Row[] = [
   {
     key: 'slamStyle',
     name: '通用自摸',
-    note: '没有自己招牌动作的人自摸时：拍牌是举起来拍在桌上；桌切是按着牌往自己这边一划、磕在桌框上弹回来，手牌跟着倒',
+    note: '没有自己招牌动作的人自摸时：拍牌是举起来拍在桌上；边缘切是按着牌往自己这边一划、磕在边上（画面底边 / 桌框）弹回来，手牌跟着倒',
     options: [
       { label: '拍牌', value: 'slap' },
-      { label: '桌切', value: 'edge' },
+      { label: '边缘切', value: 'edge' },
     ],
   },
   {
     key: 'slamOrder',
     name: '自摸顺序',
-    note: '通用拍牌时手牌什么时候倒（桌切是磕完就倒；竹井久的照她自己那套，亮牌时倒）',
+    note: '通用拍牌时手牌什么时候倒（边缘切是磕完就倒；竹井久的照她自己那套，亮牌时倒）',
     options: [
       { label: '先倒后拍', value: 'first' },
       { label: '边举边倒', value: 'lift' },

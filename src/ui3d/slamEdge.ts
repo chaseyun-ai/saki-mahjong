@@ -1,15 +1,16 @@
 import * as THREE from 'three';
 import { TILE_H, TILE_T } from './tableLayout';
-import { Key, SlamFocus, SlamMotion, V, basis, bezier, clamp01, easeInOut, easeOut, smooth } from './slamMath';
+import { Key, SlamMotion, V, basis, bezier, clamp01, easeInOut, easeOut, smooth } from './slamMath';
 import { SLAP_HAND, TILE_AT } from './slamSlap';
 import type { SlamPose } from './tileSlam';
 
-// 桌切（现实里很常见的自摸动作，通用的另一套）：手牌倒下之前，食指、无名指夹住牌的两边、中指指肚按着牌面，
-// 把和了牌牌面朝上放在桌上，比手牌那条线靠桌子中间一点；手带着牌贴着桌面往自己这边划，越划越快，
-// 牌靠自己的那条边猛磕在桌框上（hitAt：放光、震屏、声音），手顺势往后上方甩开，
+// 边缘切（现实里的“桌切”，很常见的自摸动作，通用的另一套）：手牌倒下之前，食指、无名指夹住牌的两边、中指指肚按着牌面，
+// 把和了牌牌面朝上放在桌上，比手牌那条线靠桌子中间（前面没东西挡着就放远一点）；手带着牌贴着桌面往自己这边划，越划越快，
+// 牌靠自己的那条边猛磕在边上（hitAt：放光、震屏、声音；边是桌框内沿，自己的桌框横屏时在画面外，就磕在画面底边上——table3d.ts 算），
+// 手顺势往后上方甩开，
 // 牌被弹回来、跳两下，牌面朝上停在手牌右边（restAt）；磕完手牌跟着倒下（revealAt）。
 // 自己的牌一开始就在手里，手带着牌从画面下面伸进来；别人的手先伸过去把她手里立着的那张夹起来。
-// 不带手：牌自己跳到桌上、滑过去磕桌框、弹回来。
+// 不带手：牌自己跳到桌上、滑过去磕在边上、弹回来。
 // 手的样子和通用拍牌一样（slamSlap.ts：牌在指尖底下，牌顶朝指尖）。这里只算整段手和牌在哪（SlamMotion）。
 
 export interface EdgeTiming {
@@ -17,8 +18,8 @@ export interface EdgeTiming {
   grab: number; // 夹住
   enter: number; // 带着牌过来，牌面朝上放到桌上（自己的：从画面下面伸进来）
   set: number; // 按着停一下
-  pull: number; // 往自己这边划，越划越快
-  rebound: number; // 磕了桌框以后牌弹回来、跳两下停住
+  pull: number; // 往自己这边划，越划越快（划得远就照 PULL_MORE 加长）
+  rebound: number; // 磕了以后牌弹回来、跳两下停住
   leave: number; // 手往后上方甩开、撤走
 }
 
@@ -28,15 +29,20 @@ export interface EdgeSpec {
   to: SlamPose; // 最后牌面朝上躺在桌上的样子（牌顶朝桌子中间）
   side: THREE.Vector3; // 这一家的右手方向（世界坐标，水平）
   out: THREE.Vector3; // 这一家往外（朝她自己身体）的方向
-  rim: number; // 落点（牌中心）到桌框内沿有多远（顺着 out，世界单位）
+  rim: number; // 落点（牌中心）到磕的那条边有多远（顺着 out，世界单位）
   ahead?: number; // 一开始放在比落点靠桌子中间多少的地方（牌宽），不给是 AHEAD
   from?: SlamPose; // 要拿的那张现在在哪；不给就是牌一开始就在手里（自己自摸），跟着手从画面外伸进来
   hand: boolean; // false：不带手
   timing?: Partial<EdgeTiming>;
 }
 
-// 一开始放在比落点靠桌子中间多少的地方（牌宽）
+// 一开始放在比落点靠桌子中间多少的地方（牌宽）；前面没东西挡着时最多放这么远（table3d.ts 看着牌山、别人的牌定）
 export const AHEAD = 1.5;
+export const AHEAD_MAX = 3.2;
+// 划得比 PULL_NEAR（牌宽）远时，每多一张牌宽多花多少秒，最多多花多少
+const PULL_NEAR = 1.6;
+const PULL_MORE = 0.045;
+const PULL_MORE_MAX = 0.12;
 // 别人的手夹她手里那张时手指往下扎多少（弧度）
 const GRAB_PITCH = 0.5;
 // 弹回来：第一下跳多高、第二下跳多高（牌宽），第一下占多少时间、第二下到什么时候落定
@@ -47,7 +53,7 @@ const HOP_END = 0.88;
 // 弹起来时靠自己那条边翘多少（弧度），第二下反着晃一点
 const KICK = 0.5;
 const KICK2 = 0.1;
-// 磕上去以后牌顶着桌框停多久才弹开（秒；不停的话一帧都看不到牌挨着桌框）
+// 磕上去以后牌顶着那条边停多久才弹开（秒；不停的话一帧都看不到牌挨着边）
 const CONTACT = 0.035;
 // 磕完手牌隔多久倒
 const REVEAL_AFTER = 0.12;
@@ -64,7 +70,6 @@ export class EdgeMotion implements SlamMotion {
   readonly pressPoint: THREE.Vector3;
   readonly chargePoint: THREE.Vector3;
   readonly hitPoint: THREE.Vector3;
-  readonly focus: SlamFocus;
   readonly handScale = SLAP_HAND;
 
   private readonly t: EdgeTiming;
@@ -76,7 +81,7 @@ export class EdgeMotion implements SlamMotion {
   private readonly up = V(0, 1, 0);
   private readonly side: THREE.Vector3;
   private readonly S: THREE.Vector3; // 一开始放在桌上的地方（牌中心）
-  private readonly R: THREE.Vector3; // 磕到桌框时牌中心在哪
+  private readonly R: THREE.Vector3; // 磕到边上时牌中心在哪
   private readonly enterK: Key; // 手从哪伸进来
   private readonly exitK: Key; // 磕完手甩到哪
   private readonly grabK: Key | null; // 夹住她手里那张的手
@@ -94,7 +99,7 @@ export class EdgeMotion implements SlamMotion {
     const { up } = this;
     const half = (TILE_H / 2) * s;
     const th = (TILE_T / 2) * s;
-    // 磕到桌框：牌靠自己的那条边顶着桌框内沿（落点离桌框不到半张牌时就在落点磕）
+    // 磕到边上：牌靠自己的那条边顶着那条边（落点离它不到半张牌时就在落点磕）
     const back = Math.max(0, o.rim - half - 0.02 * s);
     this.S = this.to.pos.clone().addScaledVector(out, -(o.ahead ?? AHEAD) * s);
     this.R = this.to.pos.clone().addScaledVector(out, back);
@@ -111,6 +116,7 @@ export class EdgeMotion implements SlamMotion {
       this.grabK = { pos: this.from.pos.clone().sub(this.attach(gq)).addScaledVector(up, 0.08 * s), quat: gq };
     }
     // 自己的（牌一开始在手里）、不带手：不用伸手去夹
+    t.pull += Math.min(PULL_MORE_MAX, PULL_MORE * Math.max(0, this.S.distanceTo(this.R) / s - PULL_NEAR));
     const reach = this.grabK ? t.reach : 0;
     const grab = this.grabK ? t.grab : 0;
     let k = 0;
@@ -123,7 +129,7 @@ export class EdgeMotion implements SlamMotion {
       rested: k + t.rebound,
       gone: k + t.leave,
     });
-    // 放到桌上“嗒”一声；磕桌框那一下炸开，手牌跟着倒
+    // 放到桌上“嗒”一声；磕的那一下炸开，手牌跟着倒
     this.pressAt = c.placed;
     this.pullAt = c.set;
     this.chargeAt = c.hit;
@@ -135,8 +141,6 @@ export class EdgeMotion implements SlamMotion {
     // 磕的地方：牌靠自己那条边底下的桌面
     this.hitPoint = this.R.clone().addScaledVector(out, half).addScaledVector(up, -th);
     this.chargePoint = this.R.clone();
-    // 镜头照顾一下磕的地方：按着停的时候开始带过去，磕完停一下再回来
-    this.focus = { at: this.hitPoint.clone(), from: c.placed + t.set * 0.2, peak: c.hit - 0.03, until: c.hit + 0.3, end: c.hit + 0.85 };
   }
 
   // 牌在手里的位置换到世界里（手的朝向是 q）
@@ -168,7 +172,7 @@ export class EdgeMotion implements SlamMotion {
   private bounced(u: number): SlamPose {
     const { s, up } = this;
     if (u >= 1) return this.lying(this.to.pos.clone());
-    // 先顶着桌框停一瞬
+    // 先顶着边停一瞬
     const c = CONTACT / this.t.rebound;
     if (u <= c) return this.lying(this.R.clone());
     u = (u - c) / (1 - c);
