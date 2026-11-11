@@ -41,7 +41,7 @@ export interface SlapSpec {
 export const SLAP_HAND = 1.15;
 // 牌在手里（手里坐标，单位是手模型的牌宽）：捏在指尖，牌的下半截在中指指肚底下（食指、无名指的指尖在左右两边），
 // 上半截露在指尖外面（从上面看得见牌）；牌面朝 +z（贴着中指指肚），牌顶朝指尖
-const TILE_AT = V(-0.27, 4.05, -0.5);
+export const TILE_AT = V(-0.27, 4.05, -0.5);
 // 举起来时手指往上翘多少（弧度），蓄劲时再翘多少
 const LIFT_PITCH = 0.6;
 const COCK_PITCH = 0.2;

@@ -28,7 +28,7 @@ import { hash01, pondJitter, varyDiscard, vary } from '../ui/vary';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
 import { BeatHit, beatFinal, beatHit, beatLength, beatSeed } from '../ui/himekoBeat';
-import { SlamRun, SlamStyle, TileSlam } from './tileSlam';
+import { SlamFocus, SlamRun, SlamStyle, TileSlam } from './tileSlam';
 import type { SlapOrder } from './slamSlap';
 import { SlamFx } from './slamFx';
 import { LilyFx, lilyGrand } from './lilyFx';
@@ -166,6 +166,10 @@ const SLAM_HOP = 0.32; // 砸下去以后桌上的牌跟着震一下
 // 往前扫下去扣在手牌右边隔开一点的地方，牌自己翻起来立住、亮一下光再炸开（别人自摸是伸过去拿起那张，扣回原处再翻起来）。
 // 炸开以后停 V2_SLAM_HOLD 秒才倒牌（咲的岭上开花停 V2_LILY_HOLD 秒，让百合开完）
 const V2_SLAM_HOLD = 0.75;
+// 自己桌切时镜头把桌框带进画面：要看见磕的地方外面多远的桌框顶（世界单位）、它至少在画面多高（NDC，-1 是画面底）、镜头最多平移多少
+const FOCUS_RIM = 0.7;
+const FOCUS_Y = -0.8;
+const FOCUS_MAX = 6;
 const V2_LILY_HOLD = 1.05;
 // 天江衣的海底捞月砸下去：等水花落下、海水退干净再倒牌
 const V2_SEA_HOLD = 0.95;
@@ -367,6 +371,7 @@ export interface SyncView {
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
   slamHand?: boolean; // 改良布局的自摸砸牌带不带手（false：牌自己跳起来拍下去），不给就带手
   slamOrder?: SlapOrder; // 通用的拍牌：手牌什么时候倒（first 先倒再拍、lift 举牌时倒、slap 拍下去时倒），不给是先倒
+  slamStyle?: 'slap' | 'edge'; // 通用的自摸动作用哪一套：slap 拍牌，edge 桌切（按着牌往自己这边划、磕桌框弹回来），不给是拍牌
   mist?: number; // 高鸭稳乃的深山：牌山上的雾有几级（0 没有）
   sketch?: boolean; // 爱丽丝的手绘板：牌、桌布换成手绘风格
   gale?: { seat: number; level: number } | null; // 薄墨初美的里鬼门：紫色的风聚得多浓（0–1），和牌时那张牌上紫光往上冲
@@ -521,6 +526,8 @@ export class Table3D {
   private kimonFaceMat: THREE.MeshStandardMaterial | null = null;
   private overlayGroup: THREE.Group | null = null;
   private zoom = { t: -1, target: new THREE.Vector3() };
+  // 自己桌切时镜头要照顾的地方（磕桌框那一下），没有是 null
+  private slamFocus: SlamFocus | null = null;
   private held = new Set<TileId>();
   private reveal: RevealState | null = null;
   // 每家手牌上一次的摆法；打牌时先按这个摆，牌落进牌河后再理牌
@@ -907,6 +914,7 @@ export class Table3D {
   // 怜的演算退出：牌桌直接摆回现在的牌局（不播动画），演算里的倒牌、拉开的抽屉都收掉。先 sync 真的牌局再调
   restore(): void {
     this.reveal = null;
+    this.slamFocus = null;
     for (const d of this.drawers) d.open = 0;
     this.snap();
   }
@@ -960,6 +968,7 @@ export class Table3D {
   // 上一局的倒牌、哩的锁链、隐身淡掉的牌收掉：新的一局开始时，以及发牌前选技能时（这时桌上的牌已经收走，下一次 sync 全部藏起来）
   clearRound(): void {
     this.reveal = null;
+    this.slamFocus = null;
     this.slam.clear();
     this.slamFx.clear();
     this.lily.clear();
@@ -1389,8 +1398,10 @@ export class Table3D {
       const start = self && standAt !== null ? standAt : this.now + V2_STAND;
       const rinshan = g.rinshanDraw || tw.result.yaku.some((y) => y.name === '岭上开花');
       const lily = this.lastSync?.view.ids[tw.seat] === 'saki' && rinshan ? tw.result.base : null;
-      const style = this.slamStyle(tw.seat);
-      tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt: start, started: false, lily, sea: tw.tile === this.seaSlamTile, style };
+      const sea = tw.tile === this.seaSlamTile;
+      // 咲的岭上开花、衣的海底牌是照着拍牌做的特效（百合从拍下去的牌顶上开、海水从落点打散），不换成桌切
+      const style = this.slamStyle(tw.seat, lily === null && !sea);
+      tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt: start, started: false, lily, sea, style };
       // 现在就排上（到 start 才动手）：这里才知道手牌什么时候倒（动作给的 revealAt）、什么时候拍下去
       this.startTsumoSlam(tsumoSlam, g);
     }
@@ -2048,7 +2059,9 @@ export class Table3D {
 
   // 改良布局的自摸拍牌，到 ts.start 才动手：通用的（press）手夹着牌斜着举起来、牌面朝上拍在手牌右边（自己的牌一开始就在手里，
   // 带着从画面下面伸上来；别人的伸过去把她手里那张夹起来）；竹井久（hisa）握着拳把牌托在大拇指指甲盖上伸进来，弹上去、扣住砸下
-  // （自己的牌一开始就在指甲盖上，别人的是手伸进来的路上从她手里飘到指甲盖上）。
+  // （自己的牌一开始就在指甲盖上，别人的是手伸进来的路上从她手里飘到指甲盖上）；
+  // 通用的另一套桌切（edge）：按着牌放在比手牌靠桌子中间一点的地方，往自己这边一划、磕在桌框上弹回来，手牌跟着倒
+  // （自己的桌框横屏时在画面下面，磕的那一下镜头往下带一点，slamFocus）。
   // 牌最后都牌面朝上躺在倒牌后和了牌的位置
   private startTsumoSlam(ts: NonNullable<RevealState['tsumoSlam']>, g: Game): void {
     ts.started = true;
@@ -2066,6 +2079,7 @@ export class Table3D {
       hand,
       style: ts.style,
       order: this.lastSync.view.slamOrder,
+      ...this.edgeRoom(ts.seat, to),
       at: Math.max(this.now, ts.start),
       onPress: (at) => (ts.sea ? this.seaPress(ts.seat, at, to.scale) : this.slamPress(ts.seat, at, to.scale)),
       // 衣的海底牌：立起来时聚的是月光
@@ -2081,6 +2095,15 @@ export class Table3D {
     });
     ts.hitAt = run.hitAt;
     ts.revealAt = run.revealAt;
+    this.slamFocus = self && run.focus ? run.focus : null;
+  }
+
+  // 桌切要的两个距离：落点到桌框内沿有多远（rim），一开始放在比落点靠桌子中间多少（ahead，牌宽；别顶到牌山上）
+  private edgeRoom(seat: number, to: Placement): { rim: number; ahead: number } {
+    const z = to.pos.dot(this.seatPoint(seat, 0, 0, 1).normalize());
+    const wall = this.wallZ((seat - (this.lastSync?.view.me ?? 0) + 4) % 4) + TILE_H / 2 + 0.15;
+    const room = (z - (TILE_H / 2) * to.scale - wall) / to.scale;
+    return { rim: this.dim.tableHalf - z, ahead: Math.min(1.5, Math.max(0.2, room)) };
   }
 
   // 拍一张牌（可以给别的特效用，比如天江衣的海底捞月）：一只手把 id 这张牌夹起来斜着举高，牌面朝上拍在 to（slamSlap.ts）。
@@ -2101,6 +2124,8 @@ export class Table3D {
       near?: boolean;
       hand?: boolean;
       style?: SlamStyle;
+      rim?: number;
+      ahead?: number;
       at?: number;
       order?: SlapOrder;
       onPress?: (at: THREE.Vector3) => void;
@@ -2124,6 +2149,8 @@ export class Table3D {
         out: this.seatPoint(seat, 0, 0, 1).normalize(),
         view: near ? camView : undefined,
         cam: camView,
+        rim: o.rim,
+        ahead: o.ahead,
         arm: o.hand === false ? null : undefined,
         order: o.order,
         onPress: o.onPress,
@@ -2727,9 +2754,9 @@ export class Table3D {
     return { at: this.toWorld(s, me, x, (TILE_T / 2) * row.hs, row.z + (0.3 + j.dz) * row.hs, FACE_UP, yaw, row.hs), x };
   }
 
-  // 这个座位的人砸牌用哪一套动作（looks.ts 里没配的是通用的 press）
-  private slamStyle(s: number): SlamStyle {
-    return LOOKS[this.lastSync?.view.ids[s] ?? '']?.slam ?? 'press';
+  // 这个座位的人砸牌用哪一套动作：looks.ts 里配了的照配的，没配的是通用的——视觉设置里选拍牌（press）还是桌切（edge；edge 不行的场合传 false）
+  private slamStyle(s: number, edge = true): SlamStyle {
+    return LOOKS[this.lastSync?.view.ids[s] ?? '']?.slam ?? (edge && this.lastSync?.view.slamStyle === 'edge' ? 'edge' : 'press');
   }
 
   // 自摸的那张现在（竹井久伸手拿它的时候）在哪：改良布局的自己是桌上立着那一排右边隔开半张（placeStanding 摆的地方），别人就是现在的样子
@@ -3397,6 +3424,7 @@ export class Table3D {
       look.lerp(this.zoom.target, e * 0.35);
       if (this.zoom.t > 3) this.zoom.t = -1;
     }
+    this.focusCamera(base, look);
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt * 1.5);
       const a = this.shake * this.shake * 0.5;
@@ -3405,6 +3433,42 @@ export class Table3D {
     }
     this.camera.position.copy(base);
     this.camera.lookAt(look);
+  }
+
+  // 自己桌切：磕桌框的地方在画面下面看不见时（横屏），镜头顺着桌面往自己这边平移一点，把桌框带进画面，磕完再回去
+  private focusCamera(base: THREE.Vector3, look: THREE.Vector3): void {
+    const f = this.slamFocus;
+    if (!f) return;
+    if (this.now >= f.end) {
+      this.slamFocus = null;
+      return;
+    }
+    const smooth = (x: number) => x * x * (3 - 2 * x);
+    const e = this.now < f.peak ? smooth(Math.max(0, (this.now - f.from) / (f.peak - f.from))) : this.now < f.until ? 1 : 1 - smooth((this.now - f.until) / (f.end - f.until));
+    if (e <= 0) return;
+    const out = this.seatPoint(this.lastSync?.view.me ?? 0, 0, 0, 1).normalize();
+    // 要看见的点：磕的地方外面一点的桌框顶上
+    const p = f.at.clone().addScaledVector(out, FOCUS_RIM).setY(FRAME_TOP);
+    const cam = this.camera;
+    const y = (d: number) => {
+      cam.position.copy(base).addScaledVector(out, d);
+      cam.lookAt(look.clone().addScaledVector(out, d));
+      cam.updateMatrixWorld();
+      return p.clone().project(cam).y;
+    };
+    let d = 0;
+    if (y(0) < FOCUS_Y) {
+      let lo = 0;
+      let hi = FOCUS_MAX;
+      for (let i = 0; i < 10; i++) {
+        const mid = (lo + hi) / 2;
+        if (y(mid) < FOCUS_Y) lo = mid;
+        else hi = mid;
+      }
+      d = hi;
+    }
+    base.addScaledVector(out, d * e);
+    look.addScaledVector(out, d * e);
   }
 
   // 用手搬牌：伸手到那张牌，拿起来沿弧线移到目标，放下停一下，再收回手

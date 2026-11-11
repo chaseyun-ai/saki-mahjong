@@ -37,6 +37,8 @@ export interface MatchSettings {
   slam: 'hand' | 'tile';
   // 通用拍牌时手牌什么时候倒：first 先倒再拍，lift 举牌的同时倒，slap 拍下去那一下跟着倒（试做，几种对比着看）
   slamOrder: 'first' | 'lift' | 'slap';
+  // 通用的自摸动作用哪一套（各人自己有招牌动作的不管）：slap 拍牌；edge 桌切（按着牌往自己这边划、磕桌框弹回来，手牌跟着倒）
+  slamStyle: 'slap' | 'edge';
 }
 
 export const SEAT_NAMES = ['下家', '对家', '上家'];
@@ -60,6 +62,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   result: 'classic',
   slam: 'hand',
   slamOrder: 'first',
+  slamStyle: 'slap',
 };
 
 const KEY = 'saki-match-settings';
@@ -177,9 +180,18 @@ const ROWS: Row[] = [
     ],
   },
   {
+    key: 'slamStyle',
+    name: '通用自摸',
+    note: '没有自己招牌动作的人自摸时：拍牌是举起来拍在桌上；桌切是按着牌往自己这边一划、磕在桌框上弹回来，手牌跟着倒',
+    options: [
+      { label: '拍牌', value: 'slap' },
+      { label: '桌切', value: 'edge' },
+    ],
+  },
+  {
     key: 'slamOrder',
     name: '自摸顺序',
-    note: '通用拍牌时手牌什么时候倒（竹井久的照她自己那套，翻过来亮牌时倒）',
+    note: '通用拍牌时手牌什么时候倒（桌切是磕完就倒；竹井久的照她自己那套，亮牌时倒）',
     options: [
       { label: '先倒后拍', value: 'first' },
       { label: '边举边倒', value: 'lift' },
@@ -349,6 +361,6 @@ export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMod
     return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="vis-mode" data-v="${m.id}">${m.name}</button>`;
   }).join('');
   const art = skins ? section('素材') + rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图 ›</button>', '只有页面主人看得到') : '';
-  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand', 'slam', 'slamOrder', 'result'] : ['layout', 'result']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
+  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand', 'slam', 'slamStyle', 'slamOrder', 'result'] : ['layout', 'result']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
   return panelHtml('visual', '视觉设置', '改了马上生效', body, '');
 }

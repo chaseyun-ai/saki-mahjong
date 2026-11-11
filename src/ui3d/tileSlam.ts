@@ -1,15 +1,17 @@
 import * as THREE from 'three';
+import { EdgeMotion } from './slamEdge';
 import { FlickMotion } from './slamFlick';
 import { ArmLook, OPEN, buildArm, disposeArm, poseArm } from './slamHand';
-import { HAND_SCALE, SlamMotion, SlamStyle } from './slamMath';
+import { HAND_SCALE, SlamFocus, SlamMotion, SlamStyle } from './slamMath';
 import { SlapMotion, SlapOrder } from './slamSlap';
 
-export type { SlamStyle } from './slamMath';
+export type { SlamFocus, SlamStyle } from './slamMath';
 export { DEFAULT_ARM, buildArm } from './slamHand';
 export type { ArmLook } from './slamHand';
 
 // 自摸拍牌。每个角色用哪一套动作（style）在 looks.ts 里配，不配就是通用的 press（slamSlap.ts：夹着牌斜着举起来，牌面朝上拍在桌上）；
-// 竹井久配的是 hisa（slamFlick.ts）。两套都是“自己算好整段”的动作（SlamMotion），这里照着摆手和牌、到点回调。
+// 通用的还有另一套 edge（slamEdge.ts 桌切：按着牌往自己这边划、磕桌框弹回来），视觉设置里选；
+// 竹井久配的是 hisa（slamFlick.ts）。几套都是“自己算好整段”的动作（SlamMotion），这里照着摆手和牌、到点回调。
 //
 // 牌桌（table3d.ts）给出牌从哪拿、落在哪、这一家的朝向、镜头，
 // 扣到桌上 onPress、开始亮 onCharge、炸开 onHit 各回调一次；冲击波、旋风、震屏、音效、角色特效（咲的百合、衣的水……）都在回调里放。
@@ -40,6 +42,8 @@ export interface SlamSpec {
   order?: SlapOrder; // press：手牌什么时候倒（先倒、举牌时倒、拍下去时倒），不给是先倒
   side: THREE.Vector3; // 砸牌那一家的右手方向（世界坐标，水平）
   out: THREE.Vector3; // 那一家往外（朝她自己身体）的方向（世界坐标，水平）
+  rim?: number; // edge：落点（牌中心）到桌框内沿有多远（顺着 out）
+  ahead?: number; // edge：一开始放在比落点靠桌子中间多少的地方（牌宽）
   view?: SlamView; // 给了就是自己砸牌（镜头在她身后）
   cam?: SlamView; // 牌桌的镜头（不管是谁砸）：hisa 用它把弹到最高处的牌挪进画面
   arm?: Partial<ArmLook> | null; // null：不带手，牌从原处（from，不给就是落点）自己跳起来再拍下去
@@ -54,7 +58,9 @@ export interface SlamRun {
   pressAt: number;
   revealAt?: number; // 这一套里手牌该倒下的时刻（不给就照 pressAt）
   hitAt: number;
+  restAt: number; // 牌落定的时刻（一般就是 hitAt；桌切是弹回来停住）
   doneAt: number;
+  focus?: SlamFocus; // 镜头要照顾的地方（时刻已经换成和 now 同一个时钟）
 }
 
 // 自己算好整段的动作（SlamMotion，比如竹井久的 FlickMotion）
@@ -67,6 +73,7 @@ interface MotionActive {
   pressed: boolean;
   charged: boolean;
   hit: boolean;
+  rested: boolean; // 牌落定了（炸开以后不再自己动）
   shadows: THREE.Mesh[]; // 一直关到砸下去
 }
 
@@ -84,11 +91,21 @@ export class TileSlam {
     const motion: SlamMotion =
       spec.style === 'hisa'
         ? new FlickMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, cam: spec.cam, near: !!spec.view, hand })
-        : new SlapMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, cam: spec.cam, near: !!spec.view, hand, order: spec.order });
-    const m: MotionActive = { kind: 'motion', spec, t0: at, arm: this.newArm(spec, motion.handScale), motion, pressed: false, charged: false, hit: false, shadows: this.shadowsOff(spec.tile) };
+        : spec.style === 'edge'
+          ? new EdgeMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, rim: spec.rim ?? 0, ahead: spec.ahead, hand })
+          : new SlapMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, cam: spec.cam, near: !!spec.view, hand, order: spec.order });
+    const m: MotionActive = { kind: 'motion', spec, t0: at, arm: this.newArm(spec, motion.handScale), motion, pressed: false, charged: false, hit: false, rested: false, shadows: this.shadowsOff(spec.tile) };
     this.list.push(m);
     this.poseMotion(m, now);
-    return { pressAt: at + motion.pressAt, revealAt: at + (motion.revealAt ?? motion.pressAt), hitAt: at + motion.hitAt, doneAt: at + motion.doneAt };
+    const f = motion.focus;
+    return {
+      pressAt: at + motion.pressAt,
+      revealAt: at + (motion.revealAt ?? motion.pressAt),
+      hitAt: at + motion.hitAt,
+      restAt: at + (motion.restAt ?? motion.hitAt),
+      doneAt: at + motion.doneAt,
+      focus: f && { at: f.at.clone(), from: at + f.from, peak: at + f.peak, until: at + f.until, end: at + f.end },
+    };
   }
 
   // 这一下的手（不带手是 null）：大小照着牌落地时的大小，先藏着
@@ -113,9 +130,9 @@ export class TileSlam {
     return shadows;
   }
 
-  // 这张牌正在被砸（还没炸开）
+  // 这张牌正在被砸（还没落定）
   holds(tile: THREE.Object3D): boolean {
-    return this.list.some((a) => a.spec.tile === tile && !a.hit);
+    return this.list.some((a) => a.spec.tile === tile && !a.rested);
   }
 
   get busy(): boolean {
@@ -152,7 +169,7 @@ export class TileSlam {
         poseArm(a.arm, fr.hand.pose ?? OPEN);
       }
     }
-    if (!a.hit) this.setTile(a, fr.tile.pos, fr.tile.quat, fr.tile.scale);
+    if (!a.rested) this.setTile(a, fr.tile.pos, fr.tile.quat, fr.tile.scale);
     if (!a.pressed && k >= m.pressAt) {
       a.pressed = true;
       spec.onPress?.(m.pressPoint.clone());
@@ -165,8 +182,12 @@ export class TileSlam {
     if (!a.hit && k >= m.hitAt) {
       a.hit = true;
       this.shadowsOn(a);
-      this.setTile(a, spec.to.pos, spec.to.quat, spec.to.scale);
       spec.onHit?.(m.hitPoint.clone());
+    }
+    // 落定：放到落点，以后不再管这张牌（桌切炸开以后牌还要弹回来，等它停住）
+    if (a.hit && !a.rested && k >= (m.restAt ?? m.hitAt)) {
+      a.rested = true;
+      this.setTile(a, spec.to.pos, spec.to.quat, spec.to.scale);
     }
     if (a.hit && k >= m.doneAt) this.finish(a, true);
   }
@@ -175,7 +196,7 @@ export class TileSlam {
     this.list = this.list.filter((x) => x !== a);
     this.shadowsOn(a);
     const { tile, to } = a.spec;
-    if (!a.hit) {
+    if (!a.rested) {
       tile.position.copy(to.pos);
       tile.quaternion.copy(to.quat);
       tile.scale.setScalar(to.scale);
