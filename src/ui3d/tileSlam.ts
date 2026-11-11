@@ -46,6 +46,7 @@ export interface SlamSpec {
   ahead?: number; // edge：一开始放在比落点靠桌子中间多少的地方（牌宽）
   view?: SlamView; // 给了就是自己砸牌（镜头在她身后）
   cam?: SlamView; // 牌桌的镜头（不管是谁砸）：hisa 用它把弹到最高处的牌挪进画面
+  over?: (at: THREE.Vector3) => number; // hisa：桌上这个地方摆着的东西有多高（别家的拳头伸到画面里亮牌，底下有牌就悬在上面）
   arm?: Partial<ArmLook> | null; // null：不带手，牌从原处（from，不给就是落点）自己跳起来再拍下去
   onPress?: (at: THREE.Vector3) => void; // “嗒”一声的那一刻（press 就是拍下去那一下，hisa 是大拇指弹出去那一下），at 是落点底下的桌面点
   onCharge?: (at: THREE.Vector3, dur: number) => void; // 开始亮光（hisa 弹到最高处；press 没有），at 是牌中心，dur 是亮多久就炸开
@@ -89,7 +90,7 @@ export class TileSlam {
     const hand = spec.arm !== null;
     const motion: SlamMotion =
       spec.style === 'hisa'
-        ? new FlickMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, cam: spec.cam, near: !!spec.view, hand })
+        ? new FlickMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, cam: spec.cam, over: spec.over, near: !!spec.view, hand })
         : spec.style === 'edge'
           ? new EdgeMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, rim: spec.rim ?? 0, ahead: spec.ahead, hand })
           : new SlapMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, cam: spec.cam, near: !!spec.view, hand, order: spec.order });

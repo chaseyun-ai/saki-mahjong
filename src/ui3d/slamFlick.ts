@@ -35,6 +35,7 @@ export interface FlickSpec {
   hand: boolean; // false：不带手，牌自己从原处翻到落点、跳、砸
   near?: boolean; // 自己砸牌（镜头就在她身后）
   cam?: SlamView; // 牌桌的镜头：最高处要在画面里（别家的牌在画面边上，往上弹会出画面，就往桌子中间挪、放低一点）
+  over?: (at: THREE.Vector3) => number; // 桌上这个地方（世界坐标）摆着的东西有多高（没有是 0）：别家的拳头伸到画面里亮牌，底下有牌就悬在上面
   timing?: Partial<FlickTiming>;
 }
 
@@ -56,10 +57,11 @@ function projector(cam: SlamView): (v: THREE.Vector3) => THREE.Vector3 {
 // 最高处挪进画面：原样在画面里（离左右边、上下边都还有一段，不压着两边的头像框）、画面上离落点也够远就不动；
 // 不然（落点在画面边上，往上弹会出画面；对家的牌在画面最上面，往上弹在画面上几乎不动）往画面中间横着挪、
 // 往镜头这边挪、放低一点，挑挪得最少、画面上弹得看得出来的。lower：放低算挪了多少（自己砸牌时放低最显眼，算得重，宁可横着多挪一点）
-function fitApex(F: THREE.Vector3, A: THREE.Vector3, cam: SlamView, s: number, lower: number): THREE.Vector3 {
+// above：最高处在画面上至少要比 F 高这么多（别家：牌从亮牌的地方弹起来，画面上看着也得是往上走）
+function fitApex(F: THREE.Vector3, A: THREE.Vector3, cam: SlamView, s: number, lower: number, above = -Infinity, top = 0.84): THREE.Vector3 {
   const ndc = projector(cam);
-  const inside = (q: THREE.Vector3) => q.z < 1 && Math.abs(q.x) < 0.62 && q.y < 0.84 && q.y > -0.88;
   const f = ndc(F);
+  const inside = (q: THREE.Vector3) => q.z < 1 && Math.abs(q.x) < 0.62 && q.y < top && q.y > -0.88 && q.y >= f.y + above;
   // 画面上离落点不到 MIN_RISE 的，越近越算挪得多
   const short = (q: THREE.Vector3) => Math.max(0, MIN_RISE - Math.hypot((q.x - f.x) * cam.aspect, q.y - f.y)) * 20;
   const a = ndc(A);
@@ -88,6 +90,33 @@ function fitApex(F: THREE.Vector3, A: THREE.Vector3, cam: SlamView, s: number, l
   return best ?? A.clone().setY(F.y + rise * 0.45);
 }
 
+// 别家亮牌的地方挪进画面：落点正上方（P）在画面边上、头像框后面（对家的在画面上沿外面），拳头就往画面中间、往镜头这边伸出来，
+// 挑挪得最少、整只拳头在画面里、上面还留着往上弹的空的地方。拳头照样立在桌上；底下摆着牌（over 说有多高）就悬在牌上面一点
+function fitPerch(P: THREE.Vector3, cam: SlamView, s: number, over?: (at: THREE.Vector3) => number): THREE.Vector3 {
+  const ndc = projector(cam);
+  const fits = (q: THREE.Vector3) => q.z < 1 && Math.abs(q.x) < PERCH_X && q.y < PERCH_Y && q.y > -0.75;
+  const p = ndc(P);
+  const right = V(1, 0, 0).applyQuaternion(cam.quat).setY(0).normalize();
+  const near = V(0, 0, 1).applyQuaternion(cam.quat).setY(0).normalize();
+  const sx = p.x > 0 ? -1 : 1;
+  const sz = p.y > 0 ? 1 : -1;
+  let best: THREE.Vector3 | null = null;
+  let cost = Infinity;
+  for (let dx = 0; dx <= 12; dx += 0.5) {
+    for (let dz = 0; dz <= 12; dz += 0.5) {
+      const c = dx + dz;
+      if (c >= cost) continue;
+      const v = P.clone().addScaledVector(right, sx * dx * s).addScaledVector(near, sz * dz * s);
+      const under = over?.(v) ?? 0;
+      if (under > 0) v.y += under + PERCH_GAP * s;
+      if (!fits(ndc(v))) continue;
+      cost = c;
+      best = v;
+    }
+  }
+  return best ?? P.clone();
+}
+
 // 手里坐标（手掌中心原点，+y 手指，+z 手背，单位是手模型的牌宽，乘 HAND_SCALE 才是世界里的牌宽）：
 // 手掌扣着牌面朝上的牌时，牌中心在哪：手心底下，靠手指那边一点
 const PALM_TILE = V(0, 0.55, -0.58);
@@ -109,6 +138,15 @@ const FLICK_KICK = 0.55;
 // 弹上去多高、往自己这边飘多少（牌宽）；手在最高处的右边等着，往左一扣
 const APEX = 14;
 const APEX_OUT = 0;
+// 别家：拳头伸到画面里亮牌（fitPerch）——指甲盖上的牌在画面上离左右边、上边至少这么远（NDC），底下有牌时拳头悬在牌上面多少（牌宽）；
+// 从那里弹起来多高（牌宽）、画面上最高处至少比亮牌的地方高多少、最高到哪（NDC）；砸回落点路远，多花多少秒
+const PERCH_X = 0.56;
+const PERCH_Y = 0.58;
+const PERCH_GAP = 0.3;
+const APEX_FAR = 10;
+const APEX_ABOVE = 0.16;
+const APEX_TOP = 0.86;
+const SLAM_FAR = 0.07;
 // 别家（镜头从她对面、斜上方看过来）手等得高一点：不然手正好挡在牌和镜头中间
 const WAIT_SIDE = 3.6;
 const WAIT_UP = 0.5;
@@ -133,6 +171,7 @@ export class FlickMotion implements SlamMotion {
   private readonly s: number;
   private readonly hs: number; // 手的大小
   private readonly hand: boolean;
+  private readonly far: boolean; // 别家：拳头伸到画面里亮牌，牌从那里弹起来
   private readonly waitUp: number;
   private readonly waitSide: number;
   private readonly side: THREE.Vector3;
@@ -164,8 +203,28 @@ export class FlickMotion implements SlamMotion {
     const { up, out, side } = this;
     const fwd = out.clone().negate();
     const th = (TILE_T / 2) * s;
-    const apex = this.F.clone().addScaledVector(up, APEX * s).addScaledVector(out, APEX_OUT * s);
-    this.A = o.cam ? fitApex(this.F, apex, o.cam, s, o.near ? LOWER_NEAR : LOWER_FAR) : apex;
+    const yawed = fwd.clone().multiplyScalar(Math.cos(YAW)).addScaledVector(side, Math.sin(YAW));
+    const pitched = (p: number) => yawed.clone().multiplyScalar(Math.cos(p)).addScaledVector(up, -Math.sin(p));
+    this.catchQ = basis(pitched(0.04), up);
+    // 拳头立着：手指那头朝前（照样往左偏），大拇指那边朝上，再跟牌一样往前倾
+    this.tilt = this.hand ? PERCH_TILT : 0;
+    const lean = new THREE.Quaternion().setFromAxisAngle(side, -this.tilt);
+    this.fistQ = lean.clone().multiply(basis(yawed, up.clone().negate().cross(yawed)));
+    // 牌放在指甲盖上的地方：就在落点正上方，高度是拳头立在桌上时指甲盖的高度
+    this.P = this.F.clone();
+    if (this.hand) {
+      const nailUp = thumbNail(COCKED).at.multiplyScalar(this.hs).applyQuaternion(this.fistQ).y;
+      this.P.y = this.F.y - th + FIST_REST * this.hs + nailUp + th * V(0, 0, 1).applyQuaternion(this.q(-this.tilt)).y;
+    }
+    // 别家：落点在画面边上，拳头伸到画面里、抬起来亮牌，牌从那里弹起来
+    this.far = this.hand && !o.near && !!o.cam;
+    if (this.far) {
+      this.P.copy(fitPerch(this.P, o.cam!, s, o.over));
+      t.slam += SLAM_FAR;
+    }
+    const base = this.far ? this.P : this.F;
+    const apex = base.clone().addScaledVector(up, (this.far ? APEX_FAR : APEX) * s).addScaledVector(out, APEX_OUT * s);
+    this.A = o.cam ? fitApex(base, apex, o.cam, s, o.near ? LOWER_NEAR : LOWER_FAR, this.far ? APEX_ABOVE : undefined, this.far ? APEX_TOP : undefined) : apex;
     // 手在最高处右边等着：出了画面（或者压着画面边上的头像框）就往牌这边靠、抬高一点
     const waitUp = o.near ? WAIT_UP : WAIT_UP_FAR;
     let wait = { side: WAIT_SIDE, up: waitUp };
@@ -180,19 +239,6 @@ export class FlickMotion implements SlamMotion {
     }
     this.waitSide = wait.side;
     this.waitUp = wait.up;
-    const yawed = fwd.clone().multiplyScalar(Math.cos(YAW)).addScaledVector(side, Math.sin(YAW));
-    const pitched = (p: number) => yawed.clone().multiplyScalar(Math.cos(p)).addScaledVector(up, -Math.sin(p));
-    this.catchQ = basis(pitched(0.04), up);
-    // 拳头立着：手指那头朝前（照样往左偏），大拇指那边朝上，再跟牌一样往前倾
-    this.tilt = this.hand ? PERCH_TILT : 0;
-    const lean = new THREE.Quaternion().setFromAxisAngle(side, -this.tilt);
-    this.fistQ = lean.clone().multiply(basis(yawed, up.clone().negate().cross(yawed)));
-    // 牌放在指甲盖上的地方：就在落点正上方，高度是拳头立在桌上时指甲盖的高度
-    this.P = this.F.clone();
-    if (this.hand) {
-      const nailUp = thumbNail(COCKED).at.multiplyScalar(this.hs).applyQuaternion(this.fistQ).y;
-      this.P.y = this.F.y - th + FIST_REST * this.hs + nailUp + th * V(0, 0, 1).applyQuaternion(this.q(-this.tilt)).y;
-    }
     // 拳头从她身前（右后方）伸进来；拍完手往那边撤
     this.start = out.clone().multiplyScalar(ENTER_OUT * s).addScaledVector(side, ENTER_SIDE * s).addScaledVector(up, ENTER_UP * s);
     this.exit = { pos: this.palm(this.F).pos.addScaledVector(out, 10 * s).addScaledVector(side, 3 * s).addScaledVector(up, 3 * s), quat: basis(pitched(0.2), up) };
@@ -275,7 +321,8 @@ export class FlickMotion implements SlamMotion {
       const f = clamp01((k - c.shown) / t.rise);
       const lift = 1 - (1 - f) ** 2;
       const from = this.perched(0, this.dip(1)).pos;
-      const pos = from.clone().lerp(this.A, f).setY(THREE.MathUtils.lerp(from.y, this.A.y, lift));
+      // 别家：横着挪和升高一个节奏，画面上是一条直直的线（两头都在画面里，中间就不会出画面）
+      const pos = from.clone().lerp(this.A, this.far ? lift : f).setY(THREE.MathUtils.lerp(from.y, this.A.y, lift));
       return { pos, quat: this.q(-this.tilt - (Math.PI * 2 - this.tilt) * f), scale: s };
     }
     if (k < c.hung) {

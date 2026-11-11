@@ -124,4 +124,59 @@ describe('竹井久的摔牌', () => {
       expect(q.y).toBeLessThan(0.87);
     }
   });
+
+  it('别家：拳头伸到画面里亮牌，牌从那里弹起来，一路都在画面里，最后砸回落点', () => {
+    // 真牌局的镜头（2.5D 横屏）
+    const cam = new THREE.PerspectiveCamera(28, 1.6, 0.1, 1000);
+    cam.position.set(0, 30.73, 29.4);
+    cam.quaternion.set(-0.4078, 0, 0, 0.9131).normalize();
+    cam.updateMatrixWorld();
+    const view = { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov, aspect: cam.aspect };
+    // 下家、对家、上家：落点在她手牌右边（画面边上）
+    const seats = [
+      { rot: Math.PI / 2, at: new THREE.Vector3(12.6, 0.39, -7.2) },
+      { rot: Math.PI, at: new THREE.Vector3(-7.2, 0.39, -13.2) },
+      { rot: -Math.PI / 2, at: new THREE.Vector3(-12.6, 0.39, 7.2) },
+    ];
+    for (const seat of seats) {
+      const R = new THREE.Quaternion().setFromAxisAngle(up, seat.rot);
+      const sd = new THREE.Vector3(1, 0, 0).applyQuaternion(R);
+      const ot = new THREE.Vector3(0, 0, 1).applyQuaternion(R);
+      const lie = { pos: seat.at, quat: R.clone().multiply(faceUp), scale: 1 };
+      const m = new FlickMotion({ to: lie, side: sd, out: ot, hand: true, cam: view, near: false });
+      // 亮牌：牌在画面里，离左右两边的头像框、上边都有一段
+      const show = m.frame(m.revealAt + 0.01).tile.pos.clone();
+      const p = show.clone().project(cam);
+      expect(Math.abs(p.x)).toBeLessThan(0.57);
+      expect(p.y).toBeLessThan(0.59);
+      // 没挪到落点正上方以外太远的地方去凑数：确实离开了落点（落点本身在画面边上）
+      expect(show.clone().setY(0).distanceTo(seat.at.clone().setY(0))).toBeGreaterThan(2);
+      // 弹上去：画面上一直在画面里，最高处比亮牌的地方高
+      for (let k = m.flickAt; k <= m.chargeAt + 0.08; k += 0.02) {
+        const q = m.frame(k).tile.pos.clone().project(cam);
+        expect(Math.abs(q.x)).toBeLessThan(0.63);
+        expect(q.y).toBeLessThan(0.9);
+        expect(q.y).toBeGreaterThan(p.y - 0.02);
+      }
+      expect(m.chargePoint.clone().project(cam).y).toBeGreaterThan(p.y + 0.15);
+      // 砸回手牌旁边的落点
+      const end = m.frame(m.hitAt + 0.01);
+      expect(end.tile.pos.distanceTo(seat.at)).toBeLessThan(1e-6);
+      expect(end.tile.quat.angleTo(lie.quat)).toBeLessThan(1e-6);
+    }
+  });
+
+  it('别家：伸出去的地方底下摆着牌，拳头就悬在牌上面', () => {
+    const cam = new THREE.PerspectiveCamera(28, 1.6, 0.1, 1000);
+    cam.position.set(0, 30.73, 29.4);
+    cam.quaternion.set(-0.4078, 0, 0, 0.9131).normalize();
+    cam.updateMatrixWorld();
+    const view = { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov, aspect: cam.aspect };
+    const R = new THREE.Quaternion().setFromAxisAngle(up, -Math.PI / 2);
+    const spec = { to: { pos: new THREE.Vector3(-12.6, 0.39, 7.2), quat: R.clone().multiply(faceUp), scale: 1 }, side: new THREE.Vector3(1, 0, 0).applyQuaternion(R), out: new THREE.Vector3(0, 0, 1).applyQuaternion(R), hand: true, cam: view, near: false };
+    const clear = new FlickMotion(spec).frame(0.5).tile.pos;
+    const stacked = new FlickMotion({ ...spec, over: () => 1.56 }).frame(0.5).tile.pos;
+    expect(stacked.y - clear.y).toBeGreaterThan(1.56);
+    expect(stacked.y - clear.y).toBeLessThan(2.2);
+  });
 });
