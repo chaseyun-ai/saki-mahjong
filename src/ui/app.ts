@@ -47,6 +47,7 @@ import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles
 import { playCall, playChime, playClick, playLily, playRiichi, playSlam, playSplash, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
+import { soundButtonHtml, soundEntryHtml } from './soundPanel';
 import { paceOf, vary } from './vary';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
@@ -341,6 +342,7 @@ export class App {
           <div class="sel-tools">
             <button class="sel-set" data-ui="open-match" aria-haspopup="dialog">${SLIDERS_SVG}<span>对局设置</span></button>
             <button class="sel-set" data-ui="open-visual" aria-haspopup="dialog">${PALETTE_SVG}<span>视觉设置</span></button>
+            ${soundEntryHtml()}
             <details class="sel-more">
               <summary aria-label="更多" title="动作调试">${MORE_SVG}</summary>
               <div class="sel-more-menu"><button data-ui="lab">动作调试</button></div>
@@ -972,7 +974,7 @@ export class App {
     const html = btns
       .map(([k, ch, tip]) => `<button class="${this.assist[k] ? 'on' : ''}" aria-pressed="${this.assist[k]}" title="${tip}" aria-label="${tip}" data-ui="assist" data-k="${k}">${ch}</button>`)
       .join('');
-    return `<div class="assist-bar">${html}</div>`;
+    return `<div class="assist-bar">${html}${soundButtonHtml()}</div>`;
   }
 
   private toggleAssist(k: keyof App['assist']): void {

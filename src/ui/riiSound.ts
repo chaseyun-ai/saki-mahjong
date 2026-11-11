@@ -1,4 +1,4 @@
-import { audio } from './sound';
+import { audio, bus as busOf } from './audioBus';
 import { RII_CLIPS, RiiClip } from './riiClips';
 import { BREAK, GOLD, LOCK, PADLOCK, QUICK_LOCK, SKY, chainPlan, skyStart, vanishTime } from './riiChainPlan';
 import { padlockSlam } from './riiPadlock';
@@ -103,7 +103,7 @@ function out(a: BaseAudioContext): AudioNode {
     comp.release.value = 0.2;
     const g = a.createGain();
     g.gain.value = 0.9;
-    g.connect(comp).connect(a.destination);
+    g.connect(comp).connect(busOf('sfx', a));
     buses.set(a, g);
     bus = g;
   }

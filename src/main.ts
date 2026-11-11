@@ -4,8 +4,11 @@ import { App } from './ui/app';
 import { DiscardLab } from './lab/discardLab';
 import { BracketPreview } from './story/bracketPreview';
 import { applyTheme } from './ui/theme';
+import { installSoundPanel } from './ui/soundPanel';
 
 applyTheme();
+// 声音设置面板：选人页顶栏和对局里的喇叭按钮都开它
+installSoundPanel();
 
 let root = document.getElementById('app')!;
 

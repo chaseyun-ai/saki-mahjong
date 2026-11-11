@@ -1,17 +1,8 @@
-// 用 WebAudio 合成的简单音效，不需要音频文件
+// 用 WebAudio 合成的简单音效，不需要音频文件。全部接在音效总线上（audioBus.ts），音量归声音设置里的「音效」管
+import { audio, bus } from './audioBus';
 import { vary } from './vary';
 
-let ctx: AudioContext | null = null;
-
-export function audio(): AudioContext | null {
-  try {
-    ctx ??= new AudioContext();
-    if (ctx.state === 'suspended') void ctx.resume();
-    return ctx;
-  } catch {
-    return null;
-  }
-}
+export { audio };
 
 // 落桌声的几种音色：freq 带通中心（Hz），q 带宽，vol 音量，len 长度（秒），decay 衰减快慢（越大越脆）。
 // 第一种是原来那一声；微变化开着时三种轮换（不连着两次同一种），每次再在频率、音量、长度上浮动一点
@@ -50,7 +41,7 @@ export function playClick(opts: { pan?: number; varied?: boolean } = {}): void {
       out = out.connect(panner);
     }
   }
-  out.connect(a.destination);
+  out.connect(bus('sfx', a));
   src.start();
 }
 
@@ -67,7 +58,7 @@ export function playChime(): void {
     gain.gain.setValueAtTime(0.0001, now + i * 0.08);
     gain.gain.exponentialRampToValueAtTime(0.15, now + i * 0.08 + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.08 + 0.5);
-    osc.connect(gain).connect(a.destination);
+    osc.connect(gain).connect(bus('sfx', a));
     osc.start(now + i * 0.08);
     osc.stop(now + i * 0.08 + 0.55);
   });
@@ -81,7 +72,7 @@ function tone(a: AudioContext, f: number, start: number, dur: number, vol: numbe
   gain.gain.setValueAtTime(0.0001, start);
   gain.gain.exponentialRampToValueAtTime(vol, start + 0.015);
   gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-  osc.connect(gain).connect(a.destination);
+  osc.connect(gain).connect(bus('sfx', a));
   osc.start(start);
   osc.stop(start + dur + 0.05);
 }
@@ -109,7 +100,7 @@ export function playRiichi(): void {
   gain.gain.setValueAtTime(0.0001, now);
   gain.gain.exponentialRampToValueAtTime(0.12, now + 0.03);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
-  osc.connect(gain).connect(a.destination);
+  osc.connect(gain).connect(bus('sfx', a));
   osc.start(now);
   osc.stop(now + 0.65);
   tone(a, 110, now, 0.5, 0.3, 'triangle');
@@ -137,7 +128,7 @@ export function playSlam(): void {
   gain.gain.setValueAtTime(0.0001, now);
   gain.gain.exponentialRampToValueAtTime(0.6, now + 0.006);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
-  osc.connect(gain).connect(a.destination);
+  osc.connect(gain).connect(bus('sfx', a));
   osc.start(now);
   osc.stop(now + 0.35);
   const len = Math.floor(a.sampleRate * 0.1);
@@ -152,7 +143,7 @@ export function playSlam(): void {
   filter.Q.value = 0.7;
   const g2 = a.createGain();
   g2.gain.value = 0.9;
-  src.connect(filter).connect(g2).connect(a.destination);
+  src.connect(filter).connect(g2).connect(bus('sfx', a));
   src.start(now);
   // 旋风：滤过的噪声，频率先往上卷再落下来
   const wl = Math.floor(a.sampleRate * 0.6);
@@ -171,7 +162,7 @@ export function playSlam(): void {
   wg.gain.setValueAtTime(0.0001, now);
   wg.gain.exponentialRampToValueAtTime(0.22, now + 0.06);
   wg.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
-  ws.connect(wf).connect(wg).connect(a.destination);
+  ws.connect(wf).connect(wg).connect(bus('sfx', a));
   ws.start(now);
   ws.stop(now + 0.62);
 }
@@ -189,7 +180,7 @@ export function playSplash(): void {
   gain.gain.setValueAtTime(0.0001, now);
   gain.gain.exponentialRampToValueAtTime(0.5, now + 0.008);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-  osc.connect(gain).connect(a.destination);
+  osc.connect(gain).connect(bus('sfx', a));
   osc.start(now);
   osc.stop(now + 0.42);
   // 水被拍开：噪声从亮到暗、慢慢收掉
@@ -209,7 +200,7 @@ export function playSplash(): void {
   g2.gain.setValueAtTime(0.0001, now);
   g2.gain.exponentialRampToValueAtTime(0.55, now + 0.015);
   g2.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-  src.connect(filter).connect(g2).connect(a.destination);
+  src.connect(filter).connect(g2).connect(bus('sfx', a));
   src.start(now);
   // 水珠落回来：一个个往上滑的短音
   for (let i = 0; i < 9; i++) {
@@ -223,7 +214,7 @@ export function playSplash(): void {
     gd.gain.setValueAtTime(0.0001, at);
     gd.gain.exponentialRampToValueAtTime(0.05 * (1 - i / 12), at + 0.004);
     gd.gain.exponentialRampToValueAtTime(0.0001, at + 0.08);
-    o.connect(gd).connect(a.destination);
+    o.connect(gd).connect(bus('sfx', a));
     o.start(at);
     o.stop(at + 0.1);
   }
@@ -254,7 +245,7 @@ export function playLily(big = 0): void {
   gain.gain.setValueAtTime(0.0001, now);
   gain.gain.exponentialRampToValueAtTime(0.07 + big * 0.05, now + 0.35);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-  src.connect(filter).connect(gain).connect(a.destination);
+  src.connect(filter).connect(gain).connect(bus('sfx', a));
   src.start(now);
   src.stop(now + dur + 0.05);
 }

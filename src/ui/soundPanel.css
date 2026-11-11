@@ -1,0 +1,130 @@
+/* ---------- 声音设置面板（soundPanel.ts） ---------- */
+
+/* 滑杆那几行：滑杆占满一行，后面跟数字 */
+.snd-row .setup-opts {
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.snd-range {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  margin: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.snd-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--gold) var(--v, 50%), var(--set-btn-line, rgba(255, 255, 255, 0.2)) var(--v, 50%));
+}
+
+.snd-range::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--gold) var(--v, 50%), var(--set-btn-line, rgba(255, 255, 255, 0.2)) var(--v, 50%));
+}
+
+.snd-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 2px solid var(--gold);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.snd-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--gold);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.snd-range:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.snd-val {
+  flex: 0 0 30px;
+  text-align: right;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--set-name, rgba(255, 255, 255, 0.8));
+}
+
+.setup-opts button.snd-mute {
+  flex: none;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+}
+
+/* 选人页顶栏、对局里的喇叭图标 */
+.snd-icon {
+  display: inline-flex;
+}
+
+/* ---------- 对局里的喇叭按钮：挂在理、和、鸣、切那一组上，不占它的格子 ---------- */
+
+/* 原版 2.5D、3D：挂机按钮上面 */
+.assist-bar .sound-btn {
+  position: absolute;
+  right: 0;
+  top: -106px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 0;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.assist-bar .sound-btn:hover {
+  color: #fff;
+  border-color: var(--gold);
+}
+
+/* 2D：挂机按钮下面 */
+.stage .me .assist-bar .sound-btn {
+  left: 165px;
+  right: auto;
+  top: 42px;
+}
+
+/* 改良 2.5D：理和鸣切竖在左边，喇叭放在最下面那个的右边 */
+.stage3d.flat.v2 .assist-bar .sound-btn {
+  left: calc(100% + 5px);
+  right: auto;
+  top: auto;
+  bottom: 0;
+}
+
+/* 改良 2.5D 的手机横屏、竖屏：那一组在右下角 */
+@media (max-height: 500px) {
+  .stage3d.flat.v2 .assist-bar .sound-btn {
+    left: auto;
+    right: 0;
+    bottom: calc(100% + 42px);
+  }
+}
+
+@media (orientation: portrait) and (max-width: 600px) {
+  .stage3d.flat.v2 .assist-bar .sound-btn {
+    left: auto;
+    right: 0;
+    bottom: calc(100% + 48px);
+  }
+}
