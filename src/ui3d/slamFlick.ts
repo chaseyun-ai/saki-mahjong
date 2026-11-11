@@ -137,6 +137,7 @@ const PERCH_GAP = 0.3;
 const APEX_FAR = 10;
 const APEX_ABOVE = 0.16;
 const APEX_TOP = 0.86;
+const APEX_RISE = 0.62;
 const SLAM_FAR = 0.07;
 // 别家（镜头从她对面、斜上方看过来）手等得高一点：不然手正好挡在牌和镜头中间
 const WAIT_SIDE = 3.6;
@@ -215,7 +216,9 @@ export class FlickMotion implements SlamMotion {
     }
     const base = this.far ? this.P : this.F;
     const apex = base.clone().addScaledVector(up, (this.far ? APEX_FAR : APEX) * s).addScaledVector(out, APEX_OUT * s);
-    this.A = o.cam ? fitApex(base, apex, o.cam, s, o.near ? LOWER_NEAR : LOWER_FAR, this.far ? APEX_ABOVE : undefined, this.far ? APEX_TOP : undefined) : apex;
+    // 别家：画面上最多比亮牌的地方高 APEX_RISE（上家在画面下半边，照十张牌宽弹上去会顶到画面上沿，接牌的手出了画面）
+    const top = this.far ? Math.min(APEX_TOP, projector(o.cam!)(this.P).y + APEX_RISE) : undefined;
+    this.A = o.cam ? fitApex(base, apex, o.cam, s, o.near ? LOWER_NEAR : LOWER_FAR, this.far ? APEX_ABOVE : undefined, top) : apex;
     // 手在最高处右边等着：出了画面（或者压着画面边上的头像框）就往牌这边靠、抬高一点
     const waitUp = o.near ? WAIT_UP : WAIT_UP_FAR;
     let wait = { side: WAIT_SIDE, up: waitUp };

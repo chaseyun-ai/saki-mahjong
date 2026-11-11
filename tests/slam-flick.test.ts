@@ -159,6 +159,8 @@ describe('竹井久的摔牌', () => {
         expect(q.y).toBeGreaterThan(p.y - 0.02);
       }
       expect(m.chargePoint.clone().project(cam).y).toBeGreaterThan(p.y + 0.15);
+      // 也不弹到离亮牌的地方太远（上家在画面下半边，不然会顶到画面上沿，接牌的手出画面）
+      expect(m.chargePoint.clone().project(cam).y).toBeLessThan(p.y + 0.63);
       // 砸回手牌旁边的落点
       const end = m.frame(m.hitAt + 0.01);
       expect(end.tile.pos.distanceTo(seat.at)).toBeLessThan(1e-6);
