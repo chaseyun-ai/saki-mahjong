@@ -365,6 +365,8 @@ export interface SyncView {
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
+  winSpots?: boolean; // 和牌聚光灯：false 时倒牌不开灯、四周也不暗，不给是开
+  winCam?: boolean; // 和牌转镜头：false 时别家和牌镜头不往那边推，不给是推
   slamHand?: boolean; // 改良布局的自摸砸牌带不带手（false：牌自己跳起来拍下去），不给就带手
   slamOrder?: SlapOrder; // 通用的拍牌：手牌什么时候倒（first 先倒再拍、lift 举牌时倒、slap 拍下去时倒），不给是先倒
   mist?: number; // 高鸭稳乃的深山：牌山上的雾有几级（0 没有）
@@ -1200,14 +1202,25 @@ export class Table3D {
       if (tsumo) this.callFx(seat, 'call');
       return;
     }
-    if (seat !== this.lastSync?.view.me) this.zoom = { t: 0, target: this.seatPoint(seat, 0, 4, this.dim.seatZ - 2) };
+    this.zoomTo(seat);
     if (tsumo) this.raiseHand(seat);
   }
 
-  // 手牌一倒，上方几盏聚光灯一盏接一盏打开，均匀照在和了的那副牌上；一直亮到这一局收掉（初美砸牌的不打）
+  // 别人和牌：镜头往他那边推过去看倒下的手牌（视觉设置里「和牌转镜头」关掉就不推）
+  private zoomTo(seat: number): void {
+    const view = this.lastSync?.view;
+    if (!view || seat === view.me || view.winCam === false) return;
+    this.zoom = { t: 0, target: this.seatPoint(seat, 0, 4, this.dim.seatZ - 2) };
+  }
+
+  // 手牌一倒，上方几盏聚光灯一盏接一盏打开，均匀照在和了的那副牌上；一直亮到这一局收掉（初美砸牌的不打）。
+  // 视觉设置里「和牌聚光灯」关掉就不开，四周也不暗
   private startSpots(rv: RevealState): void {
     const g = this.lastSync?.g;
     if (!g) return;
+    this.spots?.dispose();
+    this.spots = null;
+    if (this.lastSync?.view.winSpots === false) return;
     const rows: SpotRow[] = [];
     for (const w of rv.wins) {
       if (rv.slams.has(w.tile)) continue;
@@ -1222,8 +1235,6 @@ export class Table3D {
       const half = Math.max(...pts.map((p) => Math.abs(p.clone().sub(center).dot(side)))) + 0.7;
       rows.push({ center: center.setY(0), side, inward, half });
     }
-    this.spots?.dispose();
-    this.spots = null;
     if (!rows.length) return;
     this.spots = new WinSpots(rows);
     this.scene.add(this.spots.group);
@@ -2216,7 +2227,7 @@ export class Table3D {
       if (!e.from) {
         e.from = { pos: g.position.clone(), quat: g.quaternion.clone(), scale: g.scale.x };
         // 别人和牌：举牌的时候镜头就往那边推，看得清砸下去那一下
-        if (e.seat !== this.lastSync?.view.me) this.zoom = { t: 0, target: this.seatPoint(e.seat, 0, 4, this.dim.seatZ - 2) };
+        this.zoomTo(e.seat);
       }
       const out = this.seatPoint(e.seat, 0, 0, 1).normalize();
       const side = this.seatPoint(e.seat, 1, 0, 0).normalize();

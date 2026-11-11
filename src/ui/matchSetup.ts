@@ -21,6 +21,10 @@ export interface MatchSettings {
   drawPath: 'on' | 'off' | 'self';
   // 微变化：落桌声、电脑思考时间、出牌动作、牌河摆放每次都差一点点，久玩不腻（vary.ts）
   vary: boolean;
+  // 和牌聚光灯（3D、2.5D 牌桌）：手牌一倒，上方几盏灯照着和了的那副牌，四周暗一点；关掉就照平时的光
+  winSpots: boolean;
+  // 和牌转镜头（3D、2.5D 牌桌）：别家和牌时镜头往他那边推过去看倒下的手牌；关掉镜头不动
+  winCam: boolean;
   // 对手：下家、对家、上家坐谁（角色 id），空的是随机
   opponents: string[];
   // 自己用龙门渊透华时开局就是治水（不用等点数变动 10 万）：选人页透华头像旁边的“常态 / 治水”切换
@@ -52,6 +56,8 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   open: false,
   drawPath: 'on',
   vary: true,
+  winSpots: true,
+  winCam: true,
   opponents: ['', '', ''],
   chisui: false,
   sakiStrong: false,
@@ -149,6 +155,8 @@ const ROWS: Row[] = [
     ],
   },
   { key: 'vary', name: '微变化', options: onOff, note: '落桌声、出牌动作、牌河每次差一点点' },
+  { key: 'winSpots', name: '和牌聚光灯', options: onOff, note: '3D、2.5D 牌桌：手牌一倒，上方几盏灯照着和了的牌，四周暗一点' },
+  { key: 'winCam', name: '和牌转镜头', options: onOff, note: '3D、2.5D 牌桌：别家和牌时镜头推过去看他的手牌' },
   {
     key: 'layout',
     name: '2.5D 布局',
@@ -199,7 +207,7 @@ const ROWS: Row[] = [
 
 // 两个面板各管哪几项（存在同一份设置里）
 const MATCH_KEYS: (keyof MatchSettings)[] = ['length', 'start', 'target', 'tobi', 'red', 'kuitan', 'minHan', 'open'];
-const VISUAL_KEYS: (keyof MatchSettings)[] = ['drawPath', 'vary'];
+const VISUAL_KEYS: (keyof MatchSettings)[] = ['drawPath', 'vary', 'winSpots', 'winCam'];
 
 // 按钮上写的值换回设置里的值
 export function setOption(s: MatchSettings, key: string, value: string): void {
@@ -336,7 +344,7 @@ export function saveTableMode(m: TableMode): void {
   }
 }
 
-// 视觉设置：界面皮肤（带桌布和牌背的小色样）、牌桌视角、摸牌路径和微变化；页面主人多一行素材
+// 视觉设置：界面皮肤（带桌布和牌背的小色样）、牌桌视角、摸牌路径、微变化、和牌聚光灯和转镜头；页面主人多一行素材
 export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMode, skins: boolean): string {
   const themes = THEMES.map((t) => {
     const c = tableColors(t.id);
