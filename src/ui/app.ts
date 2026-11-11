@@ -48,6 +48,7 @@ import { playCall, playChime, playClick, playLily, playRiichi, playSlam, playSpl
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
+import { Scene, gameMusic, menuMusic, promptCue, resultMusic, soundtrackEvent, tallyCue } from './soundtrack';
 import { paceOf, vary } from './vary';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
@@ -335,6 +336,7 @@ export class App {
 
   private renderSelect(): void {
     this.teardown();
+    menuMusic();
     this.team = null;
     this.teamFlow = null;
     this.auto = false;
@@ -749,6 +751,7 @@ export class App {
     vary.reset(game.seed, this.settings.vary);
     this.trace = new AbilityTrace(this.game);
     this.game.onEvent((e) => this.onGameEvent(e));
+    gameMusic(game, this.finale());
     this.toasts = [];
     this.faces = [];
     this.stamina = STAMINA_MAX;
@@ -889,6 +892,7 @@ export class App {
       const wait = staged && !wins ? Math.max(base, 3000) : base;
       this.timer = window.setTimeout(() => {
         this.showResult = true;
+        if (!this.vision) resultMusic(g, this.scene(), staged);
         if (staged) {
           this.render();
           this.openFlow(g);
@@ -938,6 +942,7 @@ export class App {
       return;
     }
     if (!this.auto && !v && this.runAssist(g)) return;
+    if (!this.auto && !v) promptCue(g, this.me);
     if (g.phase === 'turn' && g.turn === this.me) {
       // 立直后没有别的选择时自动摸切。3D、2.5D 牌桌上这张牌不进手牌，飞到手牌上方停一下（AIR_PAUSE），直接打进牌河：
       // 等它从牌山出发（busyMs）、飞完，再停一下。摸牌路径关掉时和“切”一样：牌淡入手里，停一下（FADE_PAUSE）再打
@@ -1072,8 +1077,19 @@ export class App {
     this.riiLockEnd.clear();
   }
 
+  // 配乐要知道的：自己坐哪、现在该不该给玩家提示音、是不是团体赛大将战、牌桌动画还要多久
+  private scene(): Scene {
+    return { me: this.me, quiet: this.auto || !!this.vision, finale: this.finale(), delay: this.busyMs() };
+  }
+
+  private finale(): boolean {
+    return !!this.team && this.team.run.pos >= POSITIONS.length - 1;
+  }
+
   private onGameEvent(e: GameEvent): void {
     this.table3d?.onEvent(e, this.game!);
+    // 配乐、提示音（怜的演算里发生的事不算数）
+    if (!this.vision) soundtrackEvent(e, this.game!, this.scene());
     this.updateFaces(e);
     if (e.type === 'roundStart') {
       this.roundBanner();
@@ -3247,7 +3263,7 @@ export class App {
     const pages: FlowPage[] = r.wins.map((w, i) => ({ html: this.flowWinHtml(w, i === r.wins.length - 1), secs: this.auto ? 4 : 10 }));
     const seats = this.pointSeats(r);
     const trace = r.wins.length ? '' : this.flowTraceHtml();
-    pages.push({ html: pointsPageHtml(g.roundLabel(), seats, trace), secs: this.auto ? 3 : 6, after: (el) => animatePoints(el, seats) });
+    pages.push({ html: pointsPageHtml(g.roundLabel(), seats, trace), secs: this.auto ? 3 : 6, after: (el) => (tallyCue(), animatePoints(el, seats)) });
     this.flow = new ResultFlow(layer, pages, () => {
       this.flow = null;
       this.advance();

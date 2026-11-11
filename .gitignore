@@ -1,2 +1,5 @@
 node_modules
 dist
+
+# 内置的背景音乐：免费授权的曲子不单独再分发，文件只跟着游戏一起发，不进 git（见 src/ui/musicTracks.ts）
+public/music/

@@ -5,10 +5,13 @@ import { DiscardLab } from './lab/discardLab';
 import { BracketPreview } from './story/bracketPreview';
 import { applyTheme } from './ui/theme';
 import { installSoundPanel } from './ui/soundPanel';
+import { installSoundtrack, stopMusic } from './ui/soundtrack';
 
 applyTheme();
 // 声音设置面板：选人页顶栏和对局里的喇叭按钮都开它
 installSoundPanel();
+// 背景音乐、按钮的点击声：等玩家第一次点了才出声
+installSoundtrack();
 
 let root = document.getElementById('app')!;
 
@@ -27,6 +30,8 @@ function show(page: Page): void {
   } catch {
     // 有的地方不让改网址，不影响切换
   }
+  // 调试场景、晋级表不放音乐（回到游戏时选人页自己会放）
+  if (page !== 'game') stopMusic();
   if (page === 'lab') new DiscardLab(root, () => show('game'));
   // 晋级表预览：剧情模式接上之前，网址加 #bracket 单独看
   else if (page === 'bracket') new BracketPreview(root, () => show('game'));

@@ -73,6 +73,67 @@
   padding: 5px 10px;
 }
 
+/* ---------- 曲目（musicPanel.ts）：五个格子，每格两行，上面曲名和按钮，下面单曲音量 ---------- */
+
+.mus-row .setup-opts {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mus-top,
+.mus-vol {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mus-vol {
+  gap: 10px;
+}
+
+.mus-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--set-name, rgba(255, 255, 255, 0.8));
+}
+
+.mus-name.empty {
+  color: var(--set-quiet, rgba(255, 255, 255, 0.5));
+}
+
+.setup-opts .mus-top button {
+  flex: none;
+  min-width: 0;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.setup-opts .mus-top button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  border-color: var(--set-btn-line, rgba(255, 255, 255, 0.2));
+}
+
+.mus-tip,
+.mus-credit {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--set-quiet, rgba(255, 255, 255, 0.5));
+}
+
+.mus-credit a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* 选人页顶栏、对局里的喇叭图标 */
 .snd-icon {
   display: inline-flex;

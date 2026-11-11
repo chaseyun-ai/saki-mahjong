@@ -1,10 +1,11 @@
 import './soundPanel.css';
 import { AudioSettings, DEFAULT_AUDIO, audioSettings, onAudioSettings, setAudioSetting } from './audioBus';
 import { optsHtml, panelHtml, rowHtml, section } from './matchSetup';
+import { installMusicPanel, musicRowsHtml, stopMusicPreview } from './musicPanel';
 import { playClick } from './sound';
 import { sampleVoice } from './voice';
 
-// 声音设置：总音量、音乐、音效、语音四条滑杆，一键静音，演出时压低音乐。
+// 声音设置：总音量、音乐、音效、语音四条滑杆，一键静音，演出时压低音乐，五个场景各放哪首曲子（musicPanel.ts）。
 // 选人页顶栏的「声音设置」和对局里的喇叭按钮开的是同一个面板。面板挂在 <body> 上，不跟着牌桌重画，
 // 点击也在这里自己接（[data-ui="open-sound"] 的按钮放在哪都能开），不用经过 App。
 
@@ -62,7 +63,7 @@ export function soundPanelHtml(): string {
   const sliders = SLIDERS.map((s) => rowHtml(s.name, sliderHtml(s.key, s.name), s.note, 'snd-row')).join('');
   const duck = rowHtml('演出时压低音乐', optsHtml('snd-opt', 'duck', ON_OFF, String(audioSettings.duck)), '能力演出、和牌、语音响的时候音乐自动小下去');
   const voice = rowHtml('角色语音', optsHtml('snd-opt', 'voiceMode', VOICE_MODES, audioSettings.voiceMode), '「只喊牌」只留立直、吃碰杠、荣和、自摸，不说能力台词');
-  const body = section('音量') + sliders + section('语音') + voice + section('音乐') + duck;
+  const body = section('音量') + sliders + section('语音') + voice + section('音乐') + duck + musicRowsHtml();
   return panelHtml('sound', '声音设置', '改了马上生效', body, '<button data-ui="snd-reset">恢复默认</button>');
 }
 
@@ -85,6 +86,7 @@ export function closeSoundPanel(): void {
   if (!host) return;
   host.remove();
   host = null;
+  stopMusicPreview();
   // 开面板的按钮可能已经被牌桌重画换掉了：还在页面上才把焦点还给它
   if (opener?.isConnected) opener.focus();
   opener = null;
@@ -173,6 +175,8 @@ export function installSoundPanel(): void {
     refreshIcons();
     if (!dragging) render();
   });
+  // 「曲目」那一段（试听、换曲、单曲音量）
+  installMusicPanel(render);
 }
 
 let dragging = false;
