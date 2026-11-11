@@ -210,7 +210,7 @@ export interface TraceLine {
 // 不换牌的能力消息，有的换个说法更好懂
 const NOTE_TEXT: Record<string, (who: string) => string> = {
   'awai-时间迟滞': (who) => `${who}的时间迟滞：另外三家的配牌压到 ${AWAI.slowShanten}–${AWAI.slowShanten + 1} 向听（挡得住、会支配牌山的人是 ${AWAI.slowShantenWeak} 向听）。`,
-  'koromo-海底捞月': (who) => `配完牌，牌山最后一张归${who}：海底变成她的和了牌，这一局走海底路线，别家进入一向听地狱、不能自摸。`,
+  'koromo-海底捞月': (who) => `配完牌，牌山最后一张归${who}：海底变成她的和了牌，这一局走海底路线，别家一向听时每次都摸不到进张，听了牌也不能自摸。`,
   'koromo-海底挪移': (who) => `${who}鸣牌听牌，最后一张轮到了她：海底变成她的和了牌，这一局走海底路线。`,
   'koromo-海底自摸': (who) => `${who}摸到了牌山最后一张：海底捞月。`,
   ...Object.fromEntries(

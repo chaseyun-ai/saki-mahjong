@@ -357,9 +357,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 
   const counts = toCounts(p.hand);
   const cur = shanten(counts, p.melds.length);
+  // 衣自己不开杠：一杠牌山少一张，海底就从她手里错开了。只有海底已经被别人错开、杠这一手正好能把它挪回来时才杠
+  const koromoNoKan =
+    !!style.haitei && !g.isSealed(seat) && koromoHaiteiOn(g, seat) && !(koromoRouteSet(g, seat) && !koromoRouteOn(g, seat) && g.wall.live.length % 4 === 1);
   for (const a of legal) {
     // 透华治水：自己也不杠
-    if ((a.type === 'ankan' || a.type === 'kakan') && tokaChisui(g, seat)) continue;
+    if ((a.type === 'ankan' || a.type === 'kakan') && (tokaChisui(g, seat) || koromoNoKan)) continue;
     if (a.type === 'ankan') {
       // 初美：风牌能杠就杠（配牌的暗刻摸到第四张、鸣出东北以后）
       if (style.rinshan) {

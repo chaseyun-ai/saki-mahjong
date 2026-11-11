@@ -2,9 +2,9 @@
 // 用法：npx vite-node scripts/koromo.ts [角色id] [场数] [对手：random|plain|三个id] [起始种子]
 // 角色 id 不是 koromo 时只出总成绩（拿来跑基准，抽对手、座位和 strength.ts 一样）
 // 只在这个脚本里改，不动游戏代码：
-//   PARAMS='{"hellDepth":0}'  改 KOROMO 的数（hellDepth 0 关一向听地狱，flood/tide/night 0 关满潮/潮起潮落/夜之支配，dealDora 0 关月下的配牌，
-//                             tenpaiFreeze false 关听牌后别家鸣不了牌，holdUnder 0 小牌也和，aiDisrupt 别家想到去错开的概率）。
-//                             flood、tide、night、dealDora 写成 [新月, 满月] 两个数是跟月相走，写成一个数是不看月相
+//   PARAMS='{"hellDepth":0}'  改 KOROMO 的数（hellDepth 0 关一向听地狱，hell 0 只关不在海底路线上的那一半，flood/tide 0 关满潮/潮起潮落，
+//                             dealDora 0 关月下的配牌，tenpaiFreeze false 关听牌后别家鸣不了牌，holdUnder 0 小牌也和，aiDisrupt 别家想到去错开的概率）。
+//                             flood、tide、hell、dealDora 写成 [新月, 满月] 两个数是跟月相走，写成一个数是不看月相
 //   MOON=4                    每场都是这个月相（0 新月 … 4 满月 … 7 残月）
 //   NOHAITEI=1                不定海底（海底捞月、海底挪移都不发动）
 //   READERS=yumi,kana         另外这些人也看得穿海底（每局都会去错开，她听牌时照样能鸣）
