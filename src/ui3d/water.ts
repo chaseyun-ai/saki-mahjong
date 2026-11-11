@@ -397,7 +397,7 @@ void main() {
     float halo = exp(-r * r * 0.9) * 0.12 + exp(-r * r * 0.15) * 0.05;
     vec3 HM = normalize(normalize(uMoonDir) + V);
     float road = ggx(max(dot(N, HM), 0.0), 0.07) * 0.003 * exp(-r * r * 0.03) * gaps;
-    moon = vec3(0.86, 0.92, 1.0) * (disc * (0.05 + 0.95 * lit) * maria * limb * gaps * 0.95 + rim * 0.5 + halo + road) * uMoonA.w;
+    moon = vec3(0.86, 0.92, 1.0) * (disc * (0.14 + 0.86 * lit) * maria * limb * gaps * 0.95 + rim * 0.5 + halo + road) * uMoonA.w;
   }
   vec3 col = refl * Fr + spec + moon;
   float alpha = Fr + uLook.y * (1.0 - Fr);
@@ -527,6 +527,7 @@ export interface MoonReflection {
   z: number;
   phase: number; // 0 新月 … 0.5 满月 … 接近 1 残月
   amount: number; // 0..1
+  radius?: number; // 倒影的半径（世界单位），不给是 1
 }
 
 export class Water {
@@ -658,7 +659,7 @@ export class Water {
     this.group.visible = on;
     const look = lerpLook(STILL_LOOK, SEA_LOOK, this.seaMix);
     SEA.uSea.value.set(this.level, this.t, on ? this.amount : 0, this.half);
-    SEA.uSeaB.value.set(look.swell * Math.min(1, this.level / 0.3), look.caustic, look.line, 1.6);
+    SEA.uSeaB.value.set(look.swell * Math.min(1, this.level / 0.3), look.caustic, look.line, 1.6 * (this.moon?.radius ?? 1));
     SEA.uSeaAbs.value.set(look.absorb.x, look.absorb.y, look.absorb.z, this.moonAmt * 0.9);
     SEA.uSeaScatter.value.copy(look.scatter);
     if (this.moon) SEA.uSeaMoon.value.set(this.moon.x, this.moon.z);
@@ -672,7 +673,7 @@ export class Water {
     this.u.uMirrorOn.value = this.lite ? 0 : look.mirror;
     const m = this.moon;
     if (m && this.moonAmt > 0.002) {
-      (this.u.uMoonA.value as THREE.Vector4).set(m.x, m.z, 1.0, this.moonAmt);
+      (this.u.uMoonA.value as THREE.Vector4).set(m.x, m.z, m.radius ?? 1, this.moonAmt);
       if (camPos) (this.u.uMoonDir.value as THREE.Vector3).set(m.x - camPos.x, camPos.y - this.level, m.z - camPos.z).normalize();
       const p = m.phase - Math.floor(m.phase);
       // 新月几乎看不见：留一圈细边

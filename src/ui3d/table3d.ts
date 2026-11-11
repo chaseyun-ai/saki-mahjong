@@ -13,6 +13,7 @@ import { BOLT_LEADER, Effects } from './effects';
 import { type SpotRow, WinSpots } from './winSpots';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
 import { Gale } from './gale';
+import { MoonLift } from './moonFx';
 import { SEA, Water, wet, wetLike } from './water';
 import { ChainFx, ChainFrame } from './chains';
 import { riiLook } from '../ui/riiLook';
@@ -180,16 +181,24 @@ const SEA_TOP = TILE_T * 2 + 0.07;
 const SEA_RISE = 0.35; // 涨潮每秒最多涨多少
 // 衣的海底捞月：月亮的倒影一亮、水面一圈圈收进去（WAIT），牌从海底直直浮上来破水而出（RISE），
 // 停在半空、身上的水往下淌（HOLD），再飞进她手里（FLY）。秒
-const SCOOP_WAIT = 0.35;
-const SCOOP_RISE = 0.7;
-const SCOOP_HOLD = 0.45;
-const SCOOP_FLY = 0.3;
+const SCOOP_WAIT = 0.7;
+const SCOOP_RISE = 0.8;
+const SCOOP_HOLD = 0.75;
+const SCOOP_FLY = 0.35;
 const SCOOP_TIME = SCOOP_WAIT + SCOOP_RISE + SCOOP_HOLD + SCOOP_FLY;
+// 浮上来停在半空的那张牌：往桌子中间挪几成、离水面多高、比手里的牌大多少
+const SCOOP_IN = 0.3;
+const SCOOP_UP = 4.2;
+const SCOOP_SCALE = 1.6;
 const MOON_GLOW = '#cfe4ff';
-// 月亮的倒影离海底牌往桌子中间挪多少
-const MOON_IN = 1.9;
-// 海水涨满时四周暗下来多少（夜里的海，月亮更亮）
-const SEA_NIGHT = 0.3;
+// 月亮的倒影：映在离海底牌最近的那个角的空水面上（两家牌河中间，离中心 MOON_AT），半径 MOON_R；
+// 捞月时滑到海底牌底下、缩成 MOON_R_SCOOP，跟着牌一起被捞走
+const MOON_AT = 6.1;
+const MOON_R = 2.35;
+const MOON_R_SCOOP = 0.95;
+// 海水涨满时四周暗下来多少（夜里的海，月亮更亮）；捞月那一下再暗 SCOOP_NIGHT
+const SEA_NIGHT = 0.42;
+const SCOOP_NIGHT = 0.22;
 
 // 用手搬牌的动作：伸手、拿起来移过去、放下停一下、收手（秒）
 interface HandTiming {
@@ -294,6 +303,7 @@ interface Scoop {
   t: number;
   from: Placement;
   broke: boolean; // 破水而出了没有
+  brokeAt: number; // 什么时候破水的（sc.t）
   drip: number; // 下一滴水什么时候滴
 }
 
@@ -513,6 +523,9 @@ export class Table3D {
   private water: Water | null = null;
   // 衣的海底捞月：正从海里捞上来的牌；要砸的那张（自摸时砸下去）；砸下去以后这一局海水散掉
   private scoop: Scoop | null = null;
+  // 捞上来的那张牌背后的月亮和月光（moonFx.ts），捞月那一下四周再暗一点（0..1）
+  private moonLift: MoonLift | null = null;
+  private scoopDim = 0;
   private seaSlamTile: TileId | null = null;
   private seaDrained = false;
   // 捞上来的牌身上一层月光（用到时才建）
@@ -617,6 +630,7 @@ export class Table3D {
     cancelAnimationFrame(this.frame);
     this.resizer.disconnect();
     this.water?.dispose();
+    this.moonLift?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.loadingEl?.remove();
@@ -990,6 +1004,7 @@ export class Table3D {
       this.startDeal(g);
       this.clearRound();
       this.scoop = null;
+      this.moonLift?.hide();
       this.seaSlamTile = null;
       this.seaDrained = false;
       // 牌河里每张牌歪多少换一套：同一张牌这一局一直歪成一样，下一局换个样子
@@ -1258,7 +1273,7 @@ export class Table3D {
       sp.update(dt);
     }
     const lvl = sp?.level ?? 0;
-    const night = 1 - SEA_NIGHT * (this.water?.night ?? 0);
+    const night = 1 - SEA_NIGHT * (this.water?.night ?? 0) - SCOOP_NIGHT * this.scoopDim;
     if (this.hemi) this.hemi.intensity = HEMI_BASE * (1 - STAGE_DIM * lvl) * night;
     if (this.keyLight) this.keyLight.intensity = KEY_BASE * (1 - STAGE_DIM * 1.15 * lvl) * night;
     const light = this.stageLight;
@@ -1786,13 +1801,16 @@ export class Table3D {
     const haitei = sea?.on && !this.scoop && !this.seaDrained && !ended ? sea.haitei : null;
     const at = haitei !== null && haitei !== undefined ? this.tiles[haitei].target?.pos : null;
     if (sea && at) {
-      // 映在海底牌前面（往桌子中间一点）的水面上：底下是桌布，月亮看得清
-      const c = at.clone().setY(0);
-      const toward = c.clone().negate().normalize();
-      const side = Math.abs(c.x) > Math.abs(c.z) ? new THREE.Vector3(Math.sign(-c.x), 0, 0) : new THREE.Vector3(0, 0, Math.sign(-c.z));
-      const m = c.addScaledVector(side.lengthSq() ? side : toward, MOON_IN);
-      w.setMoon({ x: m.x, z: m.z, phase: sea.moon / 8, amount: THREE.MathUtils.smoothstep(sea.level, 0.12, 0.55) });
+      const m = this.moonSpot(at);
+      w.setMoon({ x: m.x, z: m.z, phase: sea.moon / 8, amount: THREE.MathUtils.smoothstep(sea.level, 0.1, 0.5), radius: MOON_R });
     } else w.setMoon(null);
+  }
+
+  // 月亮映在哪：离海底牌最近的那个角上，两家牌河中间的空水面（底下只有桌布，一整轮月亮看得清）
+  private moonSpot(haitei: THREE.Vector3): THREE.Vector3 {
+    const sx = Math.abs(haitei.x) > 0.5 ? Math.sign(haitei.x) : -1;
+    const sz = Math.abs(haitei.z) > 0.5 ? Math.sign(haitei.z) : -1;
+    return new THREE.Vector3(sx * MOON_AT, 0, sz * MOON_AT);
   }
 
   // 牌落进水里（打进牌河、砸下去）：按牌的样子压下去一块，荡开一圈圈涟漪
@@ -1848,7 +1866,11 @@ export class Table3D {
     obj.group.position.copy(from.pos);
     obj.group.quaternion.copy(from.quat);
     obj.group.scale.setScalar(from.scale);
-    this.scoop = { tile, seat, t: 0, from, broke: false, drip: SCOOP_WAIT + SCOOP_RISE * 0.6 };
+    this.scoop = { tile, seat, t: 0, from, broke: false, brokeAt: 0, drip: SCOOP_WAIT + SCOOP_RISE * 0.6 };
+    if (!this.moonLift) {
+      this.moonLift = new MoonLift();
+      this.scene.add(this.moonLift.group);
+    }
     this.seaSlamTile = tile;
     // 月亮的倒影亮一下，水面往这里收一下
     this.water.drop(from.pos.x, from.pos.z, -0.06, 1.2);
@@ -1858,13 +1880,17 @@ export class Table3D {
 
   private animateScoop(dt: number): void {
     const sc = this.scoop;
-    if (!sc) return;
+    if (!sc) {
+      this.scoopDim = Math.max(0, this.scoopDim - dt * 2.5);
+      return;
+    }
     sc.t += dt;
     const tile = this.tiles[sc.tile];
     const dest = tile.target;
     const glow = this.moonGlow();
     if (!dest || sc.t >= SCOOP_TIME) {
       this.scoop = null;
+      this.moonLift?.hide();
       glow.body.emissiveIntensity = glow.back.emissiveIntensity = 0;
       if (dest) {
         tile.group.position.copy(dest.pos);
@@ -1879,46 +1905,61 @@ export class Table3D {
     const from = sc.from;
     const level = this.water?.level ?? 0;
     const smooth = (x: number) => x * x * (3 - 2 * x);
-    // 浮上来停在海底牌正上方（往桌子中间一点），离水面两个多牌高；海底在对面牌山时画面上会顶出上沿，再往中间挪
-    const apex = from.pos.clone().lerp(new THREE.Vector3(0, from.pos.y, 0), 0.08);
-    apex.y = Math.max(level, from.pos.y) + 2.3;
-    const top = (TILE_H / 2) * Math.max(from.scale, dest.scale) * 1.15;
-    for (let i = 0; i < 8 && apex.clone().setY(apex.y + top).project(this.camera).y > 0.82; i++) apex.lerp(new THREE.Vector3(0, apex.y, 0), 0.15);
+    const phase = (this.lastSync?.view.sea?.moon ?? 4) / 8;
+    // 浮上来停在半空：往桌子中间挪一段、离水面三个牌高，比手里的牌还大一圈，背后是一轮月亮。
+    // 海底在对面牌山时月亮会顶出画面上沿，再往中间挪
+    const big = Math.max(from.scale, dest.scale) * SCOOP_SCALE;
+    const moonSize = TILE_H * big * 2.25;
+    const apex = from.pos.clone().lerp(new THREE.Vector3(0, from.pos.y, 0), SCOOP_IN);
+    apex.y = Math.max(level, from.pos.y) + SCOOP_UP;
+    for (let i = 0; i < 10 && apex.clone().setY(apex.y + moonSize * 0.55).project(this.camera).y > 0.9; i++) apex.lerp(new THREE.Vector3(0, apex.y, 0), 0.12);
+    const foot = new THREE.Vector3(from.pos.x, level + 0.02, from.pos.z);
+    const spot = this.moonSpot(from.pos);
     // 半路转过来：自己捞的牌面朝着自己（和进了手里一样），别人捞的照她手里的朝向（背对别家）
     const upright = dest.quat;
     let t = sc.t;
     let light = 0;
+    let halo = sc.broke ? Math.min(1, (sc.t - sc.brokeAt) / 0.3) : 0;
+    let beam = 0;
+    let dim = 1;
     if (t < SCOOP_WAIT) {
-      // 海底牌在水里微微一颤，月光聚过来
+      // 月亮的倒影滑到海底牌底下、缩成一小轮，月光照下来；海底牌在水里微微一颤
       const k = t / SCOOP_WAIT;
+      const e = smooth(k);
+      this.water?.setMoon({ x: THREE.MathUtils.lerp(spot.x, from.pos.x, e), z: THREE.MathUtils.lerp(spot.z, from.pos.z, e), phase, amount: 1, radius: THREE.MathUtils.lerp(MOON_R, MOON_R_SCOOP, e) });
       g.position.copy(from.pos).add(new THREE.Vector3(Math.sin(t * 60) * 0.02 * k, 0.05 * k, 0));
       g.quaternion.copy(from.quat);
       g.scale.setScalar(from.scale);
       light = 0.8 * k;
+      beam = 0.7 * e;
+      dim = e;
     } else if ((t -= SCOOP_WAIT) < SCOOP_RISE) {
       const k = t / SCOOP_RISE;
       const e = smooth(k);
       g.position.lerpVectors(from.pos, apex, e);
       g.quaternion.slerpQuaternions(from.quat, upright, smooth(Math.min(1, k * 1.2)));
-      g.scale.setScalar(THREE.MathUtils.lerp(from.scale, Math.max(from.scale, dest.scale) * 1.15, e));
+      g.scale.setScalar(THREE.MathUtils.lerp(from.scale, big, e));
       light = 0.8 + 0.7 * e;
-      // 破水而出：水面隆起一圈、水花往上溅、月亮的倒影碎掉
+      beam = 0.7 + 0.3 * e;
+      // 破水而出：水面隆起一圈、水花往上溅，月亮的倒影没了（跟着牌被捞走）
       if (!sc.broke && g.position.y - (TILE_H / 2) * g.scale.x > level) {
         sc.broke = true;
+        sc.brokeAt = sc.t;
         const p = g.position.clone().setY(level);
-        this.water?.drop(p.x, p.z, 0.16, 0.9);
+        this.water?.drop(p.x, p.z, 0.2, 1.1);
         this.water?.setMoon(null);
-        this.droplets(p, 40, 2.6, 7, 0.9);
-        this.effects.flash(p.clone().setY(level + 0.8), MOON_GLOW, 5, 0.45);
-        this.effects.ring(p.clone().setY(level), '#a8dcff', 3, 0.6, 0.7);
+        this.droplets(p, 56, 3, 7.5, 1);
+        this.effects.flash(p.clone().setY(level + 0.8), MOON_GLOW, 6, 0.5);
+        this.effects.ring(p.clone().setY(level), '#a8dcff', 4.5, 0.8, 0.8);
       }
     } else if ((t -= SCOOP_RISE) < SCOOP_HOLD) {
-      // 停在半空，慢慢转正，身上的水往下淌，一滴滴落回海里
+      // 停在半空，身上的水往下淌，一滴滴落回海里
       const k = t / SCOOP_HOLD;
-      g.position.copy(apex).add(new THREE.Vector3(0, Math.sin(k * Math.PI) * 0.12, 0));
+      g.position.copy(apex).add(new THREE.Vector3(0, Math.sin(k * Math.PI) * 0.14, 0));
       g.quaternion.copy(upright);
-      g.scale.setScalar(Math.max(from.scale, dest.scale) * 1.15);
+      g.scale.setScalar(big);
       light = 1.5 - 0.4 * k;
+      beam = 1 - 0.5 * k;
     } else {
       t -= SCOOP_HOLD;
       const k = Math.min(1, t / SCOOP_FLY);
@@ -1926,16 +1967,22 @@ export class Table3D {
       g.position.lerpVectors(apex, dest.pos, e);
       g.position.y += Math.sin(k * Math.PI) * 0.6;
       g.quaternion.copy(upright).slerp(dest.quat, e);
-      g.scale.setScalar(THREE.MathUtils.lerp(Math.max(from.scale, dest.scale) * 1.15, dest.scale, e));
+      g.scale.setScalar(THREE.MathUtils.lerp(big, dest.scale, e));
       light = 1.1 * (1 - e);
+      // 月亮留在半空淡掉，月光收起来
+      halo *= Math.max(0, 1 - k * 2.2);
+      beam = 0.5 * (1 - e);
+      dim = 1 - e;
     }
+    this.scoopDim = dim;
     glow.body.emissiveIntensity = light * 0.55;
     glow.back.emissiveIntensity = light * 0.75;
+    this.moonLift?.set(g.position, moonSize * (0.55 + 0.45 * smooth(Math.min(1, halo))), halo, foot, beam, phase, this.camera);
     // 出水以后身上的水一滴滴往下掉，落到水面上一个个小涟漪
     if (sc.broke && sc.t >= sc.drip && sc.t < SCOOP_TIME - SCOOP_FLY * 0.5) {
-      sc.drip = sc.t + 0.07 + Math.random() * 0.06;
-      const p = g.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, -(TILE_H / 2) * g.scale.x, (Math.random() - 0.5) * 0.3));
-      this.effects.sparks(p, '#9fd6ff', { count: 2, life: [0.3, 0.45], vel: (v) => v.set((Math.random() - 0.5) * 0.4, -1, (Math.random() - 0.5) * 0.4), gravity: 24, drag: 0.2, size: [0.03, 0.05], stretch: 0.06, jitter: 0.05, hot: '#ffffff' });
+      sc.drip = sc.t + 0.06 + Math.random() * 0.05;
+      const p = g.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6 * g.scale.x, -(TILE_H / 2) * g.scale.x, (Math.random() - 0.5) * 0.3));
+      this.effects.sparks(p, '#9fd6ff', { count: 2, life: [0.3, 0.5], vel: (v) => v.set((Math.random() - 0.5) * 0.4, -1, (Math.random() - 0.5) * 0.4), gravity: 24, drag: 0.2, size: [0.03, 0.06], stretch: 0.06, jitter: 0.05, hot: '#ffffff' });
       const fall = Math.sqrt(Math.max(0, 2 * (p.y - level) / 24));
       this.effects.later(fall, () => this.water?.drop(p.x, p.z, -0.02, 0.25));
     }
