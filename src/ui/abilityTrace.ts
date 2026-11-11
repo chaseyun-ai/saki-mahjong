@@ -214,7 +214,7 @@ const NOTE_TEXT: Record<string, (who: string) => string> = {
   'koromo-海底挪移': (who) => `${who}鸣牌听牌，最后一张轮到了她：海底变成她的和了牌，这一局走海底路线。`,
   'koromo-海底自摸': (who) => `${who}摸到了牌山最后一张：海底捞月。`,
   ...Object.fromEntries(
-    MOON_PHASES.map((m) => [`koromo-${m.name}`, (who: string) => `今晚是${m.name}${m.icon}，别人的能力有 ${Math.round(KOROMO.resist * m.power * 100)}% 干扰不到${who}。`]),
+    MOON_PHASES.map((m) => [`koromo-${m.name}`, (who: string) => `今晚是${m.name}${m.icon}，月亮越圆${who}越强；别人的能力有 ${Math.round(KOROMO.resist * m.power * 100)}% 干扰不到她。`]),
   ),
   'saki-杠的气息': (who) => `${who}手里成了刻子：第四张落在她摸牌的路上，从这一刻起她看得见它。`,
   'saki-岭上开花': (who) => `${who}开杠，岭上牌正是她等的那一张。这张岭上牌配牌时就定好了，没有换过。`,

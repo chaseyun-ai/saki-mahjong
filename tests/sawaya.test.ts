@@ -207,7 +207,18 @@ describe('狮子原爽', () => {
             const honor = isHonor(kindOf(g.players[e.seat].drawn!));
             // 字牌只流给一家，别的牌快被摸光时牌山里几乎只剩字牌：剩下的几张数牌又被先定的规矩
             // （衣的一向听地狱、玄的宝牌、锁住的海底牌）挡着，换不来，不算
-            if (honor && g.wall.live.filter((t) => !isHonor(kindOf(t)) && !g.wall.locked.has(t)).length < 8) return;
+            // 衣在场时（一向听地狱、夜之支配先定）：能让这一家向听数前进的数牌也换不来，一样不算
+            const p = g.players[e.seat];
+            const counts = toCounts(p.hand.filter((t) => t !== p.drawn));
+            const sh = ids.includes('koromo') ? shanten(counts, p.melds.length) : -1;
+            const helps = (t: number) => {
+              if (sh < 1 || sh > 2) return false;
+              counts[kindOf(t)]++;
+              const after = shanten(counts, p.melds.length);
+              counts[kindOf(t)]--;
+              return after < sh;
+            };
+            if (honor && g.wall.live.filter((t) => !isHonor(kindOf(t)) && !g.wall.locked.has(t) && !helps(t)).length < 8) return;
             if (red === me) {
               if (e.seat !== me && g.rulesBind(me, e.seat) && g.abilities[e.seat]?.id !== 'koromo') {
                 selfDraws++;

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // 天江衣的海底捞月：捞上来的那张牌背后的一轮月亮（月相照今晚的月亮），和从海面照上来的一道月光。
 // 牌从月亮的倒影里浮上来，倒影没了，月亮跟着牌到了半空：月亮被她从海里捞走了。
-// 两样都是叠加发亮的片，一直朝着镜头；不挡牌（画在牌后面一点）
+// 两样都是发亮的片，一直朝着镜头；不挡牌（画在牌后面一点）
 
 const N = 256;
 // 月面占整张图的多大（外面留给光晕）
@@ -94,7 +94,19 @@ export class MoonLift {
   private phase = -1;
 
   constructor() {
-    this.haloMat = new THREE.SpriteMaterial({ blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, toneMapped: false, fog: false });
+    // 滤色叠加（底色越亮加得越少）：月亮压在深色的海面上是亮的，后面有牌河的地方不会被照成一片白。
+    // 这种叠法不看透明度，月亮的明暗用 color 调
+    this.haloMat = new THREE.SpriteMaterial({
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation,
+      blendSrc: THREE.OneMinusDstColorFactor,
+      blendDst: THREE.OneFactor,
+      depthWrite: false,
+      transparent: true,
+      toneMapped: false,
+      fog: false,
+    });
+    this.haloMat.color.setScalar(0);
     this.halo = new THREE.Sprite(this.haloMat);
     this.halo.renderOrder = 3;
     this.beamMat = new THREE.MeshBasicMaterial({ map: beamTexture(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, side: THREE.DoubleSide, toneMapped: false, fog: false });
@@ -121,8 +133,7 @@ export class MoonLift {
     const away = tile.clone().sub(cam).normalize();
     this.halo.position.copy(tile).addScaledVector(away, 0.9);
     this.halo.scale.setScalar(size / DISC);
-    // 叠加发亮，开到头就一片白，看不出月海，所以留一点
-    this.haloMat.opacity = Math.min(1, glow) * 0.8;
+    this.haloMat.color.setScalar(Math.min(1, glow) * 0.92);
     // 月光：竖着的一片，绕竖轴转到朝着镜头
     const top = Math.max(tile.y + 1.2, foot.y + 2);
     this.beam.position.copy(foot);
@@ -133,7 +144,7 @@ export class MoonLift {
 
   hide(): void {
     this.group.visible = false;
-    this.haloMat.opacity = 0;
+    this.haloMat.color.setScalar(0);
     this.beamMat.opacity = 0;
   }
 

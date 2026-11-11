@@ -89,6 +89,8 @@ describe('宫永照', () => {
           g.onEvent((e) => {
             if (e.type === 'roundStart') expect(teruLadder(g, me).level).toBe(level);
             if (e.type !== 'roundEnd' || e.result.kind === 'abortive') return;
+            // 淡这一局开过平行宇宙：天梯已经被打回塔底
+            if (teruLadder(g, me).broke === '平行宇宙') level = 0;
             const w = e.result.wins.find((x) => x.seat === me);
             const next = level >= TERU_TOP ? 1 : level + 1;
             const tier = w ? teruTier(w.result) : 0;

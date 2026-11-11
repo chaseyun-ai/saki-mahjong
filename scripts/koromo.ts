@@ -2,20 +2,20 @@
 // 用法：npx vite-node scripts/koromo.ts [角色id] [场数] [对手：random|plain|三个id] [起始种子]
 // 角色 id 不是 koromo 时只出总成绩（拿来跑基准，抽对手、座位和 strength.ts 一样）
 // 只在这个脚本里改，不动游戏代码：
-//   PARAMS='{"hellDepth":0}'  改 KOROMO 的数（hellDepth 0 关一向听地狱，flood/tide 0 关满潮/潮起潮落，dealDora 0 关月下的配牌，
-//                             tenpaiFreeze false 关听牌后别家鸣不了牌，holdUnder 0 小牌也和，aiDisrupt 别家想到去错开的概率）
+//   PARAMS='{"hellDepth":0}'  改 KOROMO 的数（hellDepth 0 关一向听地狱，flood/tide/night 0 关满潮/潮起潮落/夜之支配，dealDora 0 关月下的配牌，
+//                             tenpaiFreeze false 关听牌后别家鸣不了牌，holdUnder 0 小牌也和，aiDisrupt 别家想到去错开的概率）。
+//                             flood、tide、night、dealDora 写成 [新月, 满月] 两个数是跟月相走，写成一个数是不看月相
 //   MOON=4                    每场都是这个月相（0 新月 … 4 满月 … 7 残月）
 //   NOHAITEI=1                不定海底（海底捞月、海底挪移都不发动）
-//   NIGHT=1                   试“夜之支配”：不在海底路线上的局，别家一向听时也摸不到进张（概率 = 月相的 power，NIGHT=2 时不看月相一直有）
 //   READERS=yumi,kana         另外这些人也看得穿海底（每局都会去错开，她听牌时照样能鸣）
 // 输出一行 JSON
 import { CHARACTERS } from '../src/abilities/characters';
-import { KOROMO, KOROMO_READERS, MOON_PHASES, koromoAbility, koromoMoon, koromoRouteSet } from '../src/abilities/koromo';
+import { KOROMO, KOROMO_READERS, MOON_PHASES, koromoAbility } from '../src/abilities/koromo';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { Rng } from '../src/engine/rng';
 import { shanten } from '../src/engine/shanten';
-import { kindOf, toCounts } from '../src/engine/tiles';
+import { toCounts } from '../src/engine/tiles';
 
 const id = process.argv[2] ?? 'koromo';
 const games = Number(process.argv[3] ?? 200);
@@ -38,31 +38,6 @@ if (process.env.NOHAITEI) {
 }
 
 if (process.env.READERS) KOROMO_READERS.push(...process.env.READERS.split(','));
-if (process.env.NIGHT) {
-  const always = process.env.NIGHT === '2';
-  const orig = koromoAbility.beforeAnyDraw!;
-  koromoAbility.beforeAnyDraw = (g, seat, drawer, rinshan) => {
-    const r = orig(g, seat, drawer, rinshan);
-    if (r || drawer === seat || koromoRouteSet(g, seat)) return r;
-    const p = g.players[drawer];
-    const counts = toCounts(p.hand);
-    const sh = shanten(counts, p.melds.length);
-    if (sh !== 1) return r;
-    if (!always && !g.rng.chance(koromoMoon(g, seat)?.power ?? 1)) return r;
-    return {
-      seat,
-      ability: 'koromo',
-      text: '一向听地狱',
-      deny: (t) => {
-        counts[kindOf(t)]++;
-        const after = shanten(counts, p.melds.length);
-        counts[kindOf(t)]--;
-        return after < sh;
-      },
-    };
-  };
-}
-
 type St = { route?: 'deal' | 'call'; on?: boolean; haitei?: number; fogged?: boolean };
 const me = CHARACTERS.find((c) => c.id === id)!;
 const plain = CHARACTERS.find((c) => c.id === 'izumi')!;

@@ -185,6 +185,24 @@ export class Wall {
     return true;
   }
 
+  // 把还没翻开的王牌（岭上牌、里宝牌指示牌）里符合条件的一张换到 live[target]：牌山里已经找不到时用（衣的海底）
+  bringDeadToLive(target: number, pred: (t: TileId) => boolean, rng: Rng): boolean {
+    if (target < 0 || target >= this.live.length || this.locked.has(this.live[target])) return false;
+    const deny = target === 0 ? this.deny : null;
+    const ok = (t: TileId) => !this.locked.has(t) && pred(t) && !deny?.(t) && (!this.guard || this.guard([[target, t]]));
+    const cands: { src: TileId[]; i: number }[] = [];
+    this.rinshan.forEach((t, i) => {
+      if (ok(t)) cands.push({ src: this.rinshan, i });
+    });
+    this.uraIndicators.forEach((t, i) => {
+      if (ok(t)) cands.push({ src: this.uraIndicators, i });
+    });
+    if (cands.length === 0) return false;
+    const c = cands[rng.int(cands.length)];
+    [this.live[target], c.src[c.i]] = [c.src[c.i], this.live[target]];
+    return true;
+  }
+
   // 不会被击飞的人（花田煌）的规矩比锁大：下一张要摸的牌（rinshan 时是第一张岭上牌）锁着也照换。
   // 先从牌山里找没锁、符合条件的牌，牌山里没有再从王牌（后面的岭上牌、还没翻开的里宝牌指示牌）里找。
   // 锁跟着位置走：原来那张的锁转到换进来的牌上（爱丽丝画上要摸的、咲看得见的那个位置还是锁着的），换走的那张不再锁

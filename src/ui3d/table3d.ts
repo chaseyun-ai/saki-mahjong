@@ -179,6 +179,8 @@ const V2_SEA_HOLD = 0.95;
 const STILL_LEVEL = 0.03;
 const SEA_TOP = TILE_T * 2 + 0.07;
 const SEA_RISE = 0.35; // 涨潮每秒最多涨多少
+// 海底牌砸到桌上以后海水退得多快（退潮是这个数的 4 倍：每秒 0.44，原来是 0.88，半秒多就干了）
+const SLAM_EBB = 0.11;
 // 衣的海底捞月：月亮的倒影一亮、水面一圈圈收进去（WAIT），牌从海底直直浮上来破水而出（RISE），
 // 停在半空、身上的水往下淌（HOLD），再飞进她手里（FLY）。秒
 const SCOOP_WAIT = 0.7;
@@ -2005,11 +2007,11 @@ export class Table3D {
     this.onSeaSlam?.(seat);
     const w = this.water;
     if (w) {
-      // 砸下去那一下把海水推开：半秒左右退干净
-      w.setRate(0.22);
+      // 砸下去那一下把海水推开，一圈大浪荡出去；海水接着慢慢退，倒牌、亮手牌的时候桌上还是湿的，两秒左右露出牌面
+      w.setRate(SLAM_EBB);
       w.set(STILL_LEVEL, 1, true);
       w.setMoon(null);
-      w.drop(at.x, at.z, -0.5, 2.6);
+      w.drop(at.x, at.z, -0.62, 3);
     }
     const p = at.clone().setY(Math.max(0.2, (w?.level ?? 0) * 0.6));
     this.effects.sparks(p, '#9fd6ff', {

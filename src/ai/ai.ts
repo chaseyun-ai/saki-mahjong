@@ -9,7 +9,7 @@ import { SERA, seraYakuhai } from '../abilities/sera';
 import { SUMIRE, sumireAimedAt, sumireMarks, sumireTarget } from '../abilities/sumire';
 import { forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
-import { KOROMO, KOROMO_READERS, koromoDisruptor, koromoHaiteiOn, koromoRouteOn, koromoRouteSet } from '../abilities/koromo';
+import { KOROMO, KOROMO_READERS, koromoDisruptor, koromoHaiteiOn, koromoHaiteiReach, koromoHaiteiReady, koromoRouteOn, koromoRouteSet } from '../abilities/koromo';
 import { mihokoEyeOpen, mihokoLikelySafe, mihokoSafeKinds } from '../abilities/mihoko';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { seikoFish } from '../abilities/seiko';
@@ -403,6 +403,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     feed: number; // 浩子：这张是同桌能力者要的牌（漫爆发的六到九、灼的饼子、初美的西南风……）
     std: number; // 咲：打这张以后一般型的向听数
     trip: number; // 咲：打这张会拆掉暗刻（杠材）
+    dry: number; // 衣：海底路线上，打这张以后听的牌牌山里已经没有了（海底变不成她的和了牌）
   };
   // 被爽的蛇神威封印时读不了牌
   const sealed = g.isSealed(seat);
@@ -458,6 +459,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 小莳的稻荷神：进张几乎都是手里最多的那一门。别的花色的搭子、单张的字牌等不来，
   // 向听只按这一门的进张算（别处现成的面子、雀头照用），进张也只数这一门的
   const harvest = style.gods ? komakiHarvestSuit(g, seat) : null;
+  const onHaitei = !!style.haitei && !sealed && koromoRouteOn(g, seat);
   const cands: Cand[] = [];
   const seen = new Set<string>();
   for (const a of discards) {
@@ -539,7 +541,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       std = Math.max(std, 1);
     }
     const sh2 = sh;
-    cands.push({ a, sh, sh2, uke: harvestUke >= 0 ? harvestUke : bloomUke >= 0 ? bloomUke : kimonGoal ? ukeire(withWinds(c, kimonGoal), p.melds.length, visible) : sh <= cur || (style.gods && sh <= 1) ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl, feed, std, trip });
+    // 衣看得到海底：海底归她时，听的牌牌山和没翻开的王牌里一张都没有，海底就变不成她的和了牌
+    const dry = onHaitei && sh === 0 && !koromoHaiteiReach(g, seat, waitingKinds(c, p.melds.length)) ? 1 : 0;
+    cands.push({ a, sh, sh2, uke: harvestUke >= 0 ? harvestUke : bloomUke >= 0 ? bloomUke : kimonGoal ? ukeire(withWinds(c, kimonGoal), p.melds.length, visible) : sh <= cur || (style.gods && sh <= 1) ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, bad, bowl, feed, std, trip, dry });
   }
 
   // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌；涅莉的宣言局也一样，留下做的那门花色
@@ -572,11 +576,11 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 灼听牌时：两种听法都有牌可和，挑保龄球型（希腊教堂最好），比留筒子还要紧
   const bowlOrder = (x: Cand, y: Cand) => (x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? y.bowl - x.bowl : 0);
   // 衣：海底路线上听着牌，海底一定是她的和了牌，听几张无所谓：先留宝牌（打点王）
-  const haiteiRich = style.haitei && !sealed && koromoRouteOn(g, seat);
+  const haiteiRich = onHaitei;
   const richOrder = (x: Cand, y: Cand) =>
     haiteiRich && x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? (isDoraTile(g, x.a.tile) ? 1 : 0) - (isDoraTile(g, y.a.tile) ? 1 : 0) : 0;
   const attackOrder = (x: Cand, y: Cand) =>
-    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || richOrder(x, y) || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || x.std - y.std || x.trip - y.trip || y.uke - x.uke || x.feed - y.feed || x.val - y.val;
+    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || x.dry - y.dry || richOrder(x, y) || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || x.std - y.std || x.trip - y.trip || y.uke - x.uke || x.feed - y.feed || x.val - y.val;
   cands.sort(attackOrder);
   // 怜：假设打掉现在最想打的那张，演算自己下一次摸到什么，按它重排。
   // 失误先掷（随机数用掉的时刻和别人一样），再演算：演算拿到的随机数和之后真的牌局一致
@@ -730,7 +734,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       return riichi;
     }
     // 衣：海底路线上先默听（还要留着鸣牌把海底挪回来），牌山剩 KOROMO.riichiAt 张（倒数第二次摸牌）时立直，下一巡海底自摸
-    if (style.haitei && !sealed && koromoRouteOn(g, seat)) return g.wall.remaining > KOROMO.riichiAt ? best.a : riichi;
+    if (style.haitei && !sealed && koromoHaiteiReady(g, seat)) return g.wall.remaining > KOROMO.riichiAt ? best.a : riichi;
     // 海底暂时被错开：也先默听，留着鸣牌挪回来
     if (style.haitei && !sealed && koromoRouteSet(g, seat) && g.wall.remaining > KOROMO.riichiAt) return best.a;
     // 优希：东场坐庄听的是只等一种牌的烂听牌（边张、坎张、单骑），牌山还多就先默听等改良
@@ -988,7 +992,8 @@ function seraHolds(g: Game, seat: number, style: AiStyle, tsumo: boolean): boole
 
 // 衣：海底路线上（海底归她），不到满贯（庄家 1.5 倍）的和先不和，等海底自摸（立直一发自摸海底再加宝牌）
 function koromoHolds(g: Game, seat: number, style: AiStyle, tsumo: boolean): boolean {
-  if (!style.haitei || g.isSealed(seat) || g.wall.remaining === 0 || !koromoRouteOn(g, seat)) return false;
+  // 海底定不下来（她听的牌牌山里没有了）时不等，能和就和
+  if (!style.haitei || g.isSealed(seat) || g.wall.remaining === 0 || !koromoHaiteiReady(g, seat)) return false;
   const p = g.players[seat];
   const tile = tsumo ? p.drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
   const r = g.winResult(seat, tile, tsumo);
