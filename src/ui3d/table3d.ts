@@ -2099,6 +2099,19 @@ export class Table3D {
     ts.revealAt = run.revealAt;
   }
 
+  // 桌上 at 这个地方周围 r 以内摆着的牌最高到哪（世界坐标的高度，没有牌是 0；skip 这张不算）
+  private tileTop(at: THREE.Vector3, r: number, skip: TileId): number {
+    let top = 0;
+    this.tiles.forEach((t, i) => {
+      if (!t.shown || !t.group.visible || i === skip) return;
+      const p = t.group.position;
+      const s = t.group.scale.x;
+      if (Math.abs(p.x - at.x) > r + (TILE_H / 2) * s || Math.abs(p.z - at.z) > r + (TILE_H / 2) * s) return;
+      top = Math.max(top, p.y + (TILE_H / 2) * s);
+    });
+    return top;
+  }
+
   // 边缘切要的两个距离。rim：落点到磕的那条边有多远——桌框内沿；自己的桌框在画面外（横屏）时是画面底边在桌面上的那条线。
   // ahead：一开始放在比落点靠桌子中间多少（牌宽）——这一路上（牌要划过的那一条）最近的一张牌（牌山、别人的牌）跟前，没东西挡着就放到 AHEAD_MAX
   private edgeRoom(g: Game, seat: number, win: TileId, to: Placement): { rim: number; ahead: number } {
@@ -2181,6 +2194,7 @@ export class Table3D {
         out: this.seatPoint(seat, 0, 0, 1).normalize(),
         view: near ? camView : undefined,
         cam: camView,
+        over: (at) => this.tileTop(at, 1.4 * o.to.scale, id),
         rim: o.rim,
         ahead: o.ahead,
         arm: o.hand === false ? null : undefined,
