@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { V } from './slamMath';
 
 // 自摸拍牌的那只手：模型和手型。手是卡通渲染：三阶明暗加一圈细描边，皮肤、指甲、袖子的颜色可以换；手不投影子。
-// 手指、大拇指每一节都是单独的一块，照手型（HandPose）摆：张开的手（OPEN，夹牌、扣牌、拍牌都是它）、
+// 手指、大拇指每一节都是单独的一块，照手型（HandPose）摆：张开的手（OPEN，竹井久扣牌、手撤走时）、夹牌的手（GRIP，通用拍牌、边缘切）、
 // 握拳把大拇指压在食指底下（COCKED，竹井久弹牌前牌就放在大拇指指甲盖上）、握着拳大拇指弹起来（FLICKED）。
 // 两个手型之间可以按比例混（mixPose），手就慢慢握起来、张开。
 //
@@ -31,7 +31,7 @@ export interface HandPose {
 
 const dir = (x: number, y: number, z: number) => V(x, y, z).normalize();
 
-// 张开的手：食指、中指的指肚压着牌，弯得多一点；大拇指往上、往手心那边弯
+// 张开的手：手指松松地弯一点；大拇指往上、往手心那边弯
 export const OPEN: HandPose = {
   curl: [
     [0.12, 0.2, 0.18],
@@ -40,6 +40,20 @@ export const OPEN: HandPose = {
     [0.1, 0.14, 0.12],
   ],
   spread: [0.1, 0.02, -0.07, -0.18],
+  thumb: [dir(-0.62, 0.52, -0.3), dir(-0.3, 0.68, -0.22), dir(-0.1, 0.6, -0.14)],
+  nail: dir(-0.55, 0, 0.83),
+};
+
+// 夹牌：牌平着在手指底下（牌面和手掌平行，比手掌低一截），中指伸出去、指肚平放在牌面上（指根往下探，后两节放平），
+// 食指、无名指从两边往下弯、指尖夹着牌的左右两条边，小指松松地垂着。牌放在哪见 slamSlap.ts 的 TILE_AT
+export const GRIP: HandPose = {
+  curl: [
+    [0.3, 0.15, 0.1],
+    [0.25, -0.05, -0.17],
+    [0.3, 0.15, 0.1],
+    [0.3, 0.22, 0.16],
+  ],
+  spread: [0.07, 0, -0.065, -0.16],
   thumb: [dir(-0.62, 0.52, -0.3), dir(-0.3, 0.68, -0.22), dir(-0.1, 0.6, -0.14)],
   nail: dir(-0.55, 0, 0.83),
 };
@@ -85,7 +99,7 @@ export function mixPose(a: HandPose, b: HandPose, t: number): HandPose {
 // 手指：根部在哪、多长、多粗（食指到小指）；三节各占多长、各比根部细多少
 const FINGERS: { base: THREE.Vector3; len: number; r: number }[] = [
   { base: V(-0.8, 1.2, 0.02), len: 2.45, r: 0.25 },
-  { base: V(-0.27, 1.32, 0.04), len: 2.87, r: 0.26 },
+  { base: V(-0.27, 1.32, 0.04), len: 2.72, r: 0.26 },
   { base: V(0.27, 1.24, 0.02), len: 2.52, r: 0.24 },
   { base: V(0.75, 1.06, -0.02), len: 1.98, r: 0.21 },
 ];
@@ -249,16 +263,22 @@ export function buildArm(look: Partial<ArmLook> = {}): THREE.Group {
   return g;
 }
 
-// 这个手型下第 f 根手指（0 食指、1 中指、2 无名指、3 小指）的指尖在哪（手里坐标）
-export function fingerTip(pose: HandPose, f: number): THREE.Vector3 {
-  const p = FINGERS[f].base.clone();
+// 这个手型下第 f 根手指（0 食指、1 中指、2 无名指、3 小指）三节各从哪到哪、多粗（手里坐标）
+export function fingerBones(pose: HandPose, f: number): { from: THREE.Vector3; to: THREE.Vector3; r: number }[] {
+  let p = FINGERS[f].base.clone();
   let bend = 0;
-  SEGS.forEach((seg, i) => {
+  return SEGS.map((seg, i) => {
     bend += pose.curl[f][i];
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-bend, 0, pose.spread[f], 'ZXY'));
-    p.addScaledVector(V(0, 1, 0).applyQuaternion(q), FINGERS[f].len * seg);
+    const from = p;
+    p = p.clone().addScaledVector(V(0, 1, 0).applyQuaternion(q), FINGERS[f].len * seg);
+    return { from, to: p, r: FINGERS[f].r * TAPER[i] };
   });
-  return p;
+}
+
+// 指尖在哪
+export function fingerTip(pose: HandPose, f: number): THREE.Vector3 {
+  return fingerBones(pose, f)[2].to.clone();
 }
 
 // 把手摆成这个手型（同一个手型不重摆）

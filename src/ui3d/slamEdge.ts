@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TILE_H, TILE_T } from './tableLayout';
 import { Key, SlamMotion, V, basis, bezier, clamp01, easeInOut, easeOut, smooth } from './slamMath';
+import { GRIP, OPEN, mixPose } from './slamHand';
 import { SLAP_HAND, TILE_AT } from './slamSlap';
 import type { SlamPose } from './tileSlam';
 
@@ -11,7 +12,7 @@ import type { SlamPose } from './tileSlam';
 // 牌被弹回来、跳两下，牌面朝上停在手牌右边（restAt）；磕完手牌跟着倒下（revealAt）。
 // 自己的牌一开始就在手里，手带着牌从画面下面伸进来；别人的手先伸过去把她手里立着的那张夹起来。
 // 不带手：牌自己跳到桌上、滑过去磕在边上、弹回来。
-// 手的样子和通用拍牌一样（slamSlap.ts：牌在指尖底下，牌顶朝指尖）。这里只算整段手和牌在哪（SlamMotion）。
+// 手的样子和通用拍牌一样（slamHand.ts 的 GRIP、slamSlap.ts 的 TILE_AT：中指盖在牌面上，食指、无名指夹着两边）。这里只算整段手和牌在哪（SlamMotion）。
 
 export interface EdgeTiming {
   reach: number; // 别人的：手伸到她手里那张上
@@ -213,9 +214,8 @@ export class EdgeMotion implements SlamMotion {
       return { pos: bezier(a.pos, ctrl, set.pos, f), quat: a.quat.clone().slerp(set.quat, smooth(0, 0.85, f)) };
     }
     if (k < c.set) {
-      // 按着停一下：往下一压，最后往前送一点蓄劲
-      const f = clamp01((k - c.placed) / t.set);
-      return { pos: set.pos.clone().addScaledVector(up, -0.04 * s * Math.sin(Math.PI * Math.min(1, f * 2))), quat: set.quat };
+      // 按着停一下（指肚贴着牌面，不压进牌里）
+      return set;
     }
     if (k < c.hit) return this.holding(this.pulled((k - c.set) / t.pull));
     if (k < c.gone) {
@@ -243,6 +243,8 @@ export class EdgeMotion implements SlamMotion {
   frame(k: number): { hand: Key | null; tile: SlamPose } {
     const { c, t } = this;
     const hand = this.hand ? this.handAt(k) : null;
+    // 手型：伸过去时慢慢摆成夹牌的样子，一直夹到磕完，甩开时松开
+    if (hand) hand.pose = k < c.reached ? mixPose(OPEN, GRIP, smooth(0.3, 1, k / t.reach)) : k < c.hit ? GRIP : mixPose(GRIP, OPEN, smooth(0, 0.4, (k - c.hit) / t.leave));
     let tile: SlamPose;
     if (k >= c.hit) tile = this.bounced((k - c.hit) / t.rebound);
     else if (k >= c.set) tile = this.lying(this.pulled((k - c.set) / t.pull));

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { AHEAD, AHEAD_MAX, EdgeMotion } from '../src/ui3d/slamEdge';
-import { OPEN, fingerTip } from '../src/ui3d/slamHand';
+import { GRIP, OPEN, fingerBones } from '../src/ui3d/slamHand';
 import { SLAP_HAND, TILE_AT } from '../src/ui3d/slamSlap';
 import { TILE_H, TILE_T } from '../src/ui3d/tableLayout';
 
@@ -132,18 +132,45 @@ describe('边缘切', () => {
     expect(far.frame(far.restAt + 0.01).tile.pos.distanceTo(to.pos)).toBeLessThan(1e-6);
   });
 
-  it('夹牌的手：中指盖过半张牌，牌顶露在指尖外面', () => {
-    // 牌在手里竖着（牌顶朝指尖）：牌底、牌顶在手里坐标的 y
+  it('夹牌的手：中指平放在牌面上（不嵌进牌里），盖住大半张牌；食指、无名指夹着左右两边', () => {
+    // 牌在手里：牌顶朝指尖（+y）、牌面朝手背（+z），单位是手模型的牌宽
     const h = TILE_H / SLAP_HAND;
+    const w = 1 / SLAP_HAND;
     const bottom = TILE_AT.y - h / 2;
-    const cover = (fingerTip(OPEN, 1).y - bottom) / h;
-    expect(cover).toBeGreaterThan(0.55);
-    expect(cover).toBeLessThan(0.85);
-    // 食指、无名指的指尖在牌的两边、够得着牌
-    expect(fingerTip(OPEN, 0).y).toBeGreaterThan(bottom + 0.2);
-    expect(fingerTip(OPEN, 2).y).toBeGreaterThan(bottom + 0.2);
-    expect(fingerTip(OPEN, 0).x).toBeLessThan(TILE_AT.x);
-    expect(fingerTip(OPEN, 2).x).toBeGreaterThan(TILE_AT.x);
+    const face = TILE_AT.z + TILE_T / SLAP_HAND / 2;
+    const mid = fingerBones(GRIP, 1);
+    const cover = (mid[2].to.y - bottom) / h;
+    expect(cover).toBeGreaterThan(0.7);
+    expect(cover).toBeLessThan(0.95);
+    // 中指在牌上面的那一段：最低的地方正好贴着牌面，不往牌里陷
+    let low = Infinity;
+    for (const bone of mid)
+      for (let u = 0; u <= 1; u += 0.05) {
+        const p = bone.from.clone().lerp(bone.to, u);
+        if (p.y >= bottom) low = Math.min(low, p.z - bone.r);
+      }
+    expect(low).toBeGreaterThan(face - 0.02);
+    expect(low).toBeLessThan(face + 0.04);
+    // 食指、无名指的指尖在牌面底下、牌的左右两条边外面，贴着边
+    const idx = fingerBones(GRIP, 0)[2];
+    const ring = fingerBones(GRIP, 2)[2];
+    for (const tip of [idx, ring]) {
+      expect(tip.to.z).toBeLessThan(face);
+      expect(tip.to.y).toBeGreaterThan(bottom + 0.3);
+    }
+    const gapL = TILE_AT.x - w / 2 - (idx.to.x + idx.r);
+    const gapR = ring.to.x - ring.r - (TILE_AT.x + w / 2);
+    for (const gap of [gapL, gapR]) {
+      expect(gap).toBeGreaterThan(-0.02);
+      expect(gap).toBeLessThan(0.1);
+    }
+  });
+
+  it('手型：夹着牌一直到磕完，甩开时松开', () => {
+    const m = new EdgeMotion({ to, side, out, rim, hand: true });
+    expect(m.frame(m.pressAt + 0.01).hand!.pose).toBe(GRIP);
+    expect(m.frame(m.hitAt - 0.01).hand!.pose).toBe(GRIP);
+    expect(m.frame(m.hitAt + 0.3).hand!.pose).toBe(OPEN);
   });
 
   it('落点紧挨着桌框、前面顶着牌山：划得短一点，照样磕、照样停在落点', () => {

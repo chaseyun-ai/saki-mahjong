@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TILE_T } from './tableLayout';
 import { Key, SlamMotion, V, basis, bezier, clamp01, easeInOut, easeOut, smooth } from './slamMath';
+import { GRIP, OPEN, mixPose } from './slamHand';
 import type { SlamPose, SlamView } from './tileSlam';
 
 // 通用的自摸拍牌（除了有招牌动作的人，大家都用这一套）：看清摸到的是什么，下意识牌面朝上往桌上一拍，让别人看到。
@@ -39,9 +40,10 @@ export interface SlapSpec {
 
 // 手比照着牌放大多少
 export const SLAP_HAND = 1.15;
-// 牌在手里（手里坐标，单位是手模型的牌宽）：中指指肚按着牌面、盖过半张牌多一点（食指、无名指在左右两边夹着），
-// 牌顶那一小半露在指尖外面（从上面看得见牌）；牌面朝 +z（贴着中指指肚），牌顶朝指尖
-export const TILE_AT = V(-0.27, 3.8, -0.5);
+// 牌在手里（手里坐标，单位是手模型的牌宽；手型是 slamHand.ts 的 GRIP）：牌面朝 +z、牌顶朝指尖，平着在手指底下——
+// 牌面正好贴着中指的指肚（中指盖在牌面上，盖住牌的八成，不嵌进牌里），食指、无名指的指尖夹着左右两条边，
+// 牌顶那一条露在中指指尖外面
+export const TILE_AT = V(-0.27, 3.575, -1.015);
 // 举起来时手指往上翘多少（弧度），蓄劲时再翘多少
 const LIFT_PITCH = 0.6;
 const COCK_PITCH = 0.2;
@@ -178,9 +180,9 @@ export class SlapMotion implements SlamMotion {
       return { pos: bezier(this.cockK.pos, ctrl, this.slapK.pos, f * f), quat: this.cockK.quat.clone().slerp(this.slapK.quat, smooth(0, 0.8, f)) };
     }
     if (k < c.held) {
-      // 按着，手掌往下一压
+      // 按着，手掌往下一压（指肚贴着牌面，不压进牌里）
       const f = clamp01((k - c.hit) / t.hold);
-      return { pos: this.slapK.pos.clone().addScaledVector(up, -0.04 * s * Math.sin(Math.PI * f)), quat: this.slapK.quat.clone() };
+      return { pos: this.slapK.pos.clone().addScaledVector(up, -0.02 * s * Math.sin(Math.PI * f)), quat: this.slapK.quat.clone() };
     }
     if (k < c.gone) {
       // 抬起来，往回撤出画面（牌留在桌上，牌面朝上）
@@ -220,7 +222,9 @@ export class SlapMotion implements SlamMotion {
   frame(k: number): { hand: Key | null; tile: SlamPose } {
     if (!this.hand) return { hand: null, tile: this.hopAt(k) };
     const hand = this.handAt(k);
-    const { c } = this;
+    const { c, t } = this;
+    // 手型：伸过去时慢慢摆成夹牌的样子，一直夹到拍完，抬走时松开
+    if (hand) hand.pose = k < c.reached ? mixPose(OPEN, GRIP, smooth(0.3, 1, k / t.reach)) : k < c.held ? GRIP : mixPose(GRIP, OPEN, smooth(0, 0.5, (k - c.held) / t.leave));
     let tile: SlamPose;
     if (k >= c.hit || !hand) tile = { pos: this.to.pos.clone(), quat: this.to.quat.clone(), scale: this.s };
     else if (this.from && k < c.grabbed) tile = { pos: this.from.pos.clone(), quat: this.from.quat.clone(), scale: this.from.scale };
