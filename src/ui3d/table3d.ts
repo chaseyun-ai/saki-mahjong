@@ -370,8 +370,8 @@ export interface SyncView {
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
-  winSpots?: boolean; // 和牌聚光灯：false 时倒牌不开灯、四周也不暗，不给是开
-  winCam?: boolean; // 和牌转镜头：false 时别家和牌镜头不往那边推，不给是推
+  spotlight?: boolean; // 和牌聚光灯：true 时倒牌开灯、四周暗一点，不给是不开
+  winZoom?: boolean; // 和牌转镜头：true 时别家和牌镜头往那边推，不给是不推
   slamHand?: boolean; // 改良布局的自摸砸牌带不带手（false：牌自己跳起来拍下去），不给就带手
   slamOrder?: SlapOrder; // 通用的拍牌：手牌什么时候倒（first 先倒再拍、lift 举牌时倒、slap 拍下去时倒），不给是先倒
   slamStyle?: 'slap' | 'edge'; // 通用的自摸动作用哪一套：slap 拍牌，edge 边缘切（按着牌往自己这边划、磕在边上弹回来），不给是拍牌
@@ -1216,21 +1216,21 @@ export class Table3D {
     if (tsumo) this.raiseHand(seat);
   }
 
-  // 别人和牌：镜头往他那边推过去看倒下的手牌（视觉设置里「和牌转镜头」关掉就不推）
+  // 别人和牌：镜头往他那边推过去看倒下的手牌（视觉设置里「和牌转镜头」开了才推，默认不推）
   private zoomTo(seat: number): void {
     const view = this.lastSync?.view;
-    if (!view || seat === view.me || view.winCam === false) return;
+    if (!view || seat === view.me || !view.winZoom) return;
     this.zoom = { t: 0, target: this.seatPoint(seat, 0, 4, this.dim.seatZ - 2) };
   }
 
   // 手牌一倒，上方几盏聚光灯一盏接一盏打开，均匀照在和了的那副牌上；一直亮到这一局收掉（初美砸牌的不打）。
-  // 视觉设置里「和牌聚光灯」关掉就不开，四周也不暗
+  // 视觉设置里「和牌聚光灯」开了才亮（默认不开），四周也不暗
   private startSpots(rv: RevealState): void {
     const g = this.lastSync?.g;
     if (!g) return;
     this.spots?.dispose();
     this.spots = null;
-    if (this.lastSync?.view.winSpots === false) return;
+    if (!this.lastSync?.view.spotlight) return;
     const rows: SpotRow[] = [];
     for (const w of rv.wins) {
       if (rv.slams.has(w.tile)) continue;

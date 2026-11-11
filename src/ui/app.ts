@@ -1740,8 +1740,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、咲的标准 / 加强、动画开关是别处的设置，留着
-      const { chisui, sakiStrong, drawPath, vary, winSpots, winCam, layout, hand, slam, slamOrder, slamStyle } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, drawPath, vary, winSpots, winCam, layout, hand, slam, slamOrder, slamStyle };
+      const { chisui, sakiStrong, drawPath, vary, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, drawPath, vary, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -2092,8 +2092,8 @@ export class App {
       handOrder: this.myHand(),
       openHands: this.openHands(),
       drawPath: this.settings.drawPath,
-      winSpots: this.settings.winSpots,
-      winCam: this.settings.winCam,
+      spotlight: this.settings.spotlight,
+      winZoom: this.settings.winZoom,
       slamHand: this.settings.slam !== 'tile',
       slamOrder: this.settings.slamOrder,
       slamStyle: this.settings.slamStyle,
