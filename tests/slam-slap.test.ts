@@ -65,4 +65,70 @@ describe('通用的自摸拍牌', () => {
     expect(m.frame(m.hitAt + 0.01).tile.quat.angleTo(to.quat)).toBeLessThan(1e-6);
     expect(m.doneAt).toBeCloseTo(m.hitAt + 0.05);
   });
+
+  it('下家、上家（镜头从侧面看）：举得直、整张牌在画面里，最后一段垂直拍下去；自己和对家照旧', () => {
+    // 真牌局的镜头（2.5D 横屏）
+    const cam = new THREE.PerspectiveCamera(28, 1.6, 0.1, 1000);
+    cam.position.set(0, 30.73, 29.4);
+    cam.quaternion.set(-0.4078, 0, 0, 0.9131).normalize();
+    cam.updateMatrixWorld();
+    const view = { pos: cam.position.clone(), quat: cam.quaternion.clone(), fov: cam.fov, aspect: cam.aspect };
+    const up = new THREE.Vector3(0, 1, 0);
+    const flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+    const seat = (rot: number, at: THREE.Vector3, cv: typeof view | undefined) => {
+      const R = new THREE.Quaternion().setFromAxisAngle(up, rot);
+      const sd = new THREE.Vector3(1, 0, 0).applyQuaternion(R);
+      const ot = new THREE.Vector3(0, 0, 1).applyQuaternion(R);
+      const lie = { pos: at, quat: R.clone().multiply(flat), scale: 1 };
+      const from = { pos: at.clone().addScaledVector(sd, -0.4).setY(TILE_H / 2), quat: R.clone(), scale: 1 };
+      return { m: new SlapMotion({ to: lie, from, side: sd, out: ot, hand: true, cam: cv }), ot, lie };
+    };
+    // 下家（落点在画面右上角）、上家（左下角）
+    for (const [rot, at] of [
+      [Math.PI / 2, new THREE.Vector3(12.83, 0.39, -7.1)],
+      [-Math.PI / 2, new THREE.Vector3(-13.01, 0.39, 7.4)],
+    ] as const) {
+      const { m, ot, lie } = seat(rot, at, view);
+      const old = seat(rot, at, undefined).m;
+      // 往桌子中间带出去多远、离落点多高（牌宽）
+      const inward = (p: THREE.Vector3) => -p.clone().sub(at).dot(ot);
+      // 蓄好劲（拍之前）：比落点高两张牌以上，往桌子中间不超过两张牌宽（原来是三张），整张牌在画面里
+      const top = m.frame(m.hitAt - 0.1 - 1e-3).tile.pos;
+      expect(top.y - at.y).toBeGreaterThan(2.4);
+      expect(inward(top)).toBeLessThan(2);
+      expect(inward(old.frame(old.hitAt - 0.1 - 1e-3).tile.pos)).toBeGreaterThan(2.8);
+      for (let k = 0; k <= m.hitAt; k += 0.02) {
+        const q = m.frame(k).tile.pos.clone().project(cam);
+        expect(q.y).toBeLessThan(0.86);
+        expect(Math.abs(q.x)).toBeLessThan(0.9);
+      }
+      // 拍下去：一路往下，离桌面一张牌高以内时已经在落点正上方、差不多放平了
+      let last = top.y;
+      for (let k = m.hitAt - 0.1; k < m.hitAt; k += 0.005) {
+        const fr = m.frame(k);
+        expect(fr.tile.pos.y).toBeLessThanOrEqual(last + 1e-6);
+        last = fr.tile.pos.y;
+        if (fr.tile.pos.y - at.y < 1) {
+          expect(inward(fr.tile.pos)).toBeLessThan(0.15);
+          expect(fr.tile.quat.angleTo(lie.quat)).toBeLessThan(0.12);
+        }
+      }
+      // 原来是斜着划回来的：离桌面一张牌高时还在落点往里半张牌多的地方
+      let slant = 0;
+      for (let k = old.hitAt - 0.1; k < old.hitAt; k += 0.005) {
+        const p = old.frame(k).tile.pos;
+        if (p.y - at.y < 1) slant = Math.max(slant, inward(p));
+      }
+      expect(slant).toBeGreaterThan(0.5);
+      const end = m.frame(m.hitAt + 0.01);
+      expect(end.tile.pos.distanceTo(at)).toBeLessThan(1e-6);
+      expect(end.tile.quat.angleTo(lie.quat)).toBeLessThan(1e-6);
+      expect(m.hitAt).toBeCloseTo(old.hitAt, 6);
+    }
+    // 对家（顺着镜头看，看不出斜）：给不给镜头都一样
+    const far = new THREE.Vector3(-7.32, 0.39, -12.88);
+    const a = seat(Math.PI, far, view).m;
+    const b = seat(Math.PI, far, undefined).m;
+    for (let k = 0; k <= a.doneAt; k += 0.03) expect(a.frame(k).tile.pos.distanceTo(b.frame(k).tile.pos)).toBeLessThan(1e-9);
+  });
 });

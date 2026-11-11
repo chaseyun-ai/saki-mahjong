@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { HandPose } from './slamHand';
+import type { SlamView } from './tileSlam';
 
 // 自摸砸牌几套动作（tileSlam.ts 的通用一套、slamFlick.ts 竹井久的一套……）共用的小工具和接口。
 
@@ -55,4 +56,13 @@ export function bezier(p0: THREE.Vector3, p1: THREE.Vector3, p2: THREE.Vector3, 
   const a = p0.clone().lerp(p1, u);
   const b = p1.clone().lerp(p2, u);
   return a.lerp(b, u);
+}
+
+// 牌桌镜头：世界坐标的点投到画面上（x、y 是 -1 到 1，z < 1 在镜头前面）
+export function projector(cam: SlamView): (v: THREE.Vector3) => THREE.Vector3 {
+  const c = new THREE.PerspectiveCamera(cam.fov, cam.aspect, 0.1, 1000);
+  c.position.copy(cam.pos);
+  c.quaternion.copy(cam.quat);
+  c.updateMatrixWorld();
+  return (v) => v.clone().project(c);
 }

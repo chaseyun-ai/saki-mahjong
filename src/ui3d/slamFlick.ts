@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TILE_T } from './tableLayout';
 import { COCKED, FLICKED, OPEN, mixPose, thumbNail } from './slamHand';
-import { Key, SlamMotion, V, basis, bezier, clamp01, easeIn, easeInOut, easeOut, smooth } from './slamMath';
+import { Key, SlamMotion, V, basis, bezier, clamp01, easeIn, easeInOut, easeOut, projector, smooth } from './slamMath';
 import type { SlamPose, SlamView } from './tileSlam';
 
 // 竹井久的自摸（照原作的摔牌）：宣言自摸以后，握着拳的手（拳头立着，大拇指那边朝上、指尖压在食指底下）伸进来，
@@ -44,15 +44,6 @@ const MIN_RISE = 0.3;
 // 最高处挪进画面时，放低一成算横着挪几张牌宽（自己的 / 别家的）
 const LOWER_NEAR = 1.4;
 const LOWER_FAR = 0.6;
-
-// 牌桌镜头：世界坐标的点投到画面上（x、y 是 -1 到 1，z < 1 在镜头前面）
-function projector(cam: SlamView): (v: THREE.Vector3) => THREE.Vector3 {
-  const c = new THREE.PerspectiveCamera(cam.fov, cam.aspect, 0.1, 1000);
-  c.position.copy(cam.pos);
-  c.quaternion.copy(cam.quat);
-  c.updateMatrixWorld();
-  return (v) => v.clone().project(c);
-}
 
 // 最高处挪进画面：原样在画面里（离左右边、上下边都还有一段，不压着两边的头像框）、画面上离落点也够远就不动；
 // 不然（落点在画面边上，往上弹会出画面；对家的牌在画面最上面，往上弹在画面上几乎不动）往画面中间横着挪、

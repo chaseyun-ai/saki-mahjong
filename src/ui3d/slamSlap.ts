@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TILE_T } from './tableLayout';
-import { Key, SlamMotion, V, basis, bezier, clamp01, easeInOut, easeOut, smooth } from './slamMath';
+import { Key, SlamMotion, V, basis, bezier, clamp01, easeInOut, easeOut, projector, smooth } from './slamMath';
 import { GRIP, OPEN, mixPose } from './slamHand';
 import type { SlamPose, SlamView } from './tileSlam';
 
@@ -33,7 +33,7 @@ export interface SlapSpec {
   from?: SlamPose; // 要拿的那张现在在哪；不给就是牌一开始就在手里（自己拍牌），跟着手从画面外伸上来
   hand: boolean; // false：不带手
   near?: boolean; // 自己拍牌（镜头就在她身后）
-  cam?: SlamView;
+  cam?: SlamView; // 牌桌的镜头：下家、上家举多高照着它定（不顶出画面）
   order?: SlapOrder;
   timing?: Partial<SlapTiming>;
 }
@@ -53,8 +53,29 @@ const LIFT_IN = 1.2;
 // 别家的牌在画面边上（下家、上家的手牌就在两边的头像框底下），举的时候多往桌子中间带一点，手和牌才进画面
 const LIFT_IN_FAR = 3.2;
 const LIFT_UP_FAR = 3.4;
+// 下家、上家（在画面左右两边的人）：镜头从侧面看她拍牌，牌走的路线看得一清二楚。照上面那样往桌子中间斜着举出去三张牌宽、
+// 再斜着划回来，看着像把牌甩回来，不像拍；下家的落点在画面右上角，举起来还会顶出画面上沿。所以这两家举得直一点
+// （只往中间带 LIFT_IN_SIDE），举多高照着镜头定（fitUp：最高 LIFT_UP_SIDE，蓄好劲的牌在画面上不超过 LIFT_TOP，最少 LIFT_UP_MIN），
+// 拍下去时牌先收到落点正上方、放平，最后一段垂直落下
+const LIFT_IN_SIDE = 1.8;
+const LIFT_UP_SIDE = 3.8;
+const LIFT_UP_MIN = 2.4;
+const LIFT_TOP = 0.84;
+// 蓄劲时再往上、往自己这边带多少（牌宽）
+const COCK_UP = 0.35;
+const COCK_OUT = 0.3;
 // 别人的手夹她手里那张时手指往下扎多少（弧度）
 const GRAB_PITCH = 0.5;
+
+// 下家、上家举多高：从 LIFT_UP_SIDE 往下试，蓄好劲的牌（比举着时再高 COCK_UP）在画面里就用
+function fitUp(F: THREE.Vector3, into: THREE.Vector3, cam: SlamView, s: number): number {
+  const ndc = projector(cam);
+  for (let u = LIFT_UP_SIDE; u > LIFT_UP_MIN; u -= 0.1) {
+    const q = ndc(F.clone().addScaledVector(V(0, 1, 0), (u + COCK_UP) * s).addScaledVector(into, (LIFT_IN_SIDE - COCK_OUT) * s));
+    if (q.z < 1 && q.y < LIFT_TOP) return u;
+  }
+  return LIFT_UP_MIN;
+}
 
 export class SlapMotion implements SlamMotion {
   readonly pressAt: number;
@@ -72,6 +93,7 @@ export class SlapMotion implements SlamMotion {
   private readonly s: number;
   private readonly hs: number;
   private readonly hand: boolean;
+  private readonly steep: boolean; // 下家、上家：举得直，拍下去最后一段垂直落下
   private readonly to: SlamPose;
   private readonly from: SlamPose | null;
   private readonly up = V(0, 1, 0);
@@ -97,11 +119,15 @@ export class SlapMotion implements SlamMotion {
     const pitched = (a: number) => basis(top.clone().multiplyScalar(Math.cos(a)).addScaledVector(up, Math.sin(a)), up.clone().multiplyScalar(Math.cos(a)).addScaledVector(top, -Math.sin(a)));
     this.slapK = this.holding(this.to.pos, this.to.quat);
     this.slapK.pos.addScaledVector(up, 0.02 * s);
-    const lifted = this.to.pos.clone().addScaledVector(up, (o.near ? LIFT_UP : LIFT_UP_FAR) * s).addScaledVector(out, -(o.near ? LIFT_IN : LIFT_IN_FAR) * s);
+    // 下家、上家（她往外的方向在画面上是横着的）：举得直一点，举多高照着镜头定，拍下去最后一段垂直落下
+    this.steep = !o.near && !!o.cam && Math.abs(out.dot(V(1, 0, 0).applyQuaternion(o.cam.quat))) > 0.7;
+    const liftUp = o.near ? LIFT_UP : this.steep ? fitUp(this.to.pos, out.clone().negate(), o.cam!, s) : LIFT_UP_FAR;
+    const liftIn = o.near ? LIFT_IN : this.steep ? LIFT_IN_SIDE : LIFT_IN_FAR;
+    const lifted = this.to.pos.clone().addScaledVector(up, liftUp * s).addScaledVector(out, -liftIn * s);
     const rq = pitched(LIFT_PITCH);
     this.raiseK = { pos: lifted.clone().sub(this.attach(rq)), quat: rq };
     const cq = pitched(LIFT_PITCH + COCK_PITCH);
-    this.cockK = { pos: lifted.clone().addScaledVector(up, 0.35 * s).addScaledVector(out, 0.3 * s).sub(this.attach(cq)), quat: cq };
+    this.cockK = { pos: lifted.clone().addScaledVector(up, COCK_UP * s).addScaledVector(out, COCK_OUT * s).sub(this.attach(cq)), quat: cq };
     this.enterK = { pos: this.slapK.pos.clone().addScaledVector(out, 9 * s).addScaledVector(up, 1.5 * s).addScaledVector(o.side, 1.5 * s), quat: pitched(0.35) };
     this.grabK = null;
     if (this.from && this.hand) {
@@ -176,6 +202,14 @@ export class SlapMotion implements SlamMotion {
     if (k < c.hit) {
       // 拍下去：越拍越快
       const f = clamp01((k - c.hung) / t.slap);
+      if (this.steep) {
+        // 照着牌走的路线算：牌先收到落点正上方、放平，最后一段垂直落下，手跟着牌（手腕往下一扣）
+        const q = this.cockK.quat.clone().slerp(this.slapK.quat, smooth(0, 1, f));
+        const a = this.held(this.cockK).pos;
+        const down = this.held(this.slapK).pos;
+        const ctrl = down.clone().setY(THREE.MathUtils.lerp(down.y, a.y, 0.6));
+        return { pos: bezier(a, ctrl, down, f * f).sub(this.attach(q)), quat: q };
+      }
       const ctrl = this.slapK.pos.clone().addScaledVector(up, 2.2 * s).lerp(this.cockK.pos, 0.35);
       return { pos: bezier(this.cockK.pos, ctrl, this.slapK.pos, f * f), quat: this.cockK.quat.clone().slerp(this.slapK.quat, smooth(0, 0.8, f)) };
     }
