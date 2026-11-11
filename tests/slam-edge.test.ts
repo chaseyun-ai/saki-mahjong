@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { AHEAD, AHEAD_MAX, EdgeMotion } from '../src/ui3d/slamEdge';
-import { GRIP, OPEN, fingerBones } from '../src/ui3d/slamHand';
+import { GRIP, OPEN, fingerBones, thumbBones } from '../src/ui3d/slamHand';
 import { SLAP_HAND, TILE_AT } from '../src/ui3d/slamSlap';
 import { TILE_H, TILE_T } from '../src/ui3d/tableLayout';
 
@@ -164,6 +164,30 @@ describe('边缘切', () => {
       expect(gap).toBeGreaterThan(-0.02);
       expect(gap).toBeLessThan(0.1);
     }
+  });
+
+  it('夹牌的手：大拇指收在手掌底下，不往手掌外面伸（不戳旁边立着的手牌）、不碰桌面、不顶到牌和食指', () => {
+    // 桌面在牌底那一面；手掌左边到 x = -1.15 左右，底面在 z = -0.31
+    const table = TILE_AT.z - TILE_T / SLAP_HAND / 2;
+    const bottom = TILE_AT.y - TILE_H / SLAP_HAND / 2;
+    const root = thumbBones(GRIP)[0].from;
+    const index = fingerBones(GRIP, 0);
+    for (const bone of thumbBones(GRIP))
+      for (let u = 0; u <= 1; u += 0.05) {
+        const p = bone.from.clone().lerp(bone.to, u);
+        // 不比大拇指根更往外
+        expect(p.x - bone.r).toBeGreaterThan(root.x - 0.37);
+        expect(p.z - bone.r).toBeGreaterThan(table + 0.1);
+        expect(p.y + bone.r).toBeLessThan(bottom - 0.2);
+        // 和食指隔开
+        for (const f of index)
+          for (let v = 0; v <= 1; v += 0.1) expect(p.distanceTo(f.from.clone().lerp(f.to, v))).toBeGreaterThan(bone.r + f.r);
+      }
+    // 指尖在手掌底下（张开的手是伸到手掌外面去的）
+    const tip = thumbBones(GRIP)[2].to;
+    expect(Math.abs(tip.x)).toBeLessThan(0.8);
+    expect(tip.z).toBeLessThan(-0.5);
+    expect(thumbBones(OPEN)[2].to.x).toBeLessThan(-1.5);
   });
 
   it('手型：夹着牌一直到磕完，甩开时松开', () => {
