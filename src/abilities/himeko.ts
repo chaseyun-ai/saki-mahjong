@@ -50,6 +50,13 @@ export function himekoKey(g: Game, seat: number, broken = false): BindKey | null
   return null;
 }
 
+// 团体赛：同一个场、局后面的本场还有一把完整的钥匙（这一局本身没有）。电脑的姬子坐庄连庄、九种九牌去够它
+export function himekoKeyAhead(g: Game, seat: number): BindKey | null {
+  if (himekoKey(g, seat)) return null;
+  const [round] = g.roundLabel().split(' ');
+  return g.keys[seat]?.find((k) => !k.broken && k.label.split(' ')[0] === round && Number.parseInt(k.label.split(' ')[1], 10) > g.honba) ?? null;
+}
+
 // 这一局拿着钥匙的姬子坐哪（配牌时放光柱、火焰特效用），没有是 null
 export function himekoKeySeat(g: Game): number | null {
   for (let s = 0; s < 4; s++) if (g.abilities[s]?.id === 'himeko' && himekoKey(g, s)) return s;

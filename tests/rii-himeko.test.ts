@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { HIMEKO, himekoBroken, himekoKey, himekoPlan } from '../src/abilities/himeko';
+import { HIMEKO, himekoBroken, himekoKey, himekoKeyAhead, himekoPlan } from '../src/abilities/himeko';
 import { isDoraTile } from '../src/abilities/kuro';
-import { RII, riiBind, riiKeys } from '../src/abilities/rii';
+import { RII, riiBind, riiCanBind, riiHelp, riiKeys } from '../src/abilities/rii';
 import type { BindKey } from '../src/abilities/types';
 import { chooseAction } from '../src/ai/ai';
-import { Game } from '../src/engine/game';
+import { Game, type Stage } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
-import { toCounts } from '../src/engine/tiles';
+import { kindOf, toCounts } from '../src/engine/tiles';
 import { TeamRun } from '../src/team/team';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
-function setup(seed: number, ids: string[], opts: { manual?: number; keys?: BindKey[][]; format?: 'east' | 'south' } = {}) {
+function setup(seed: number, ids: string[], opts: { manual?: number; keys?: BindKey[][]; format?: 'east' | 'south'; stage?: Stage } = {}) {
   const seats = ids.map(byId);
-  const g = new Game({ seed, format: opts.format ?? 'east', keys: opts.keys, players: seats.map((c, i) => ({ name: c.id, ability: c.ability, manual: i === opts.manual })) });
+  const g = new Game({ seed, format: opts.format ?? 'east', keys: opts.keys, stage: opts.stage, players: seats.map((c, i) => ({ name: c.id, ability: c.ability, manual: i === opts.manual })) });
   return { g, seats };
 }
 
@@ -28,7 +28,21 @@ function playRound(g: Game, seats: ReturnType<typeof byId>[], before?: (g: Game,
   expect(g.phase).toBe('roundEnd');
 }
 
-const keyAt = (label: string, bind: number): BindKey[][] => [[{ label, round: 1, bind, broken: false }], [], [], []];
+const keyAt = (label: string, bind: number, broken = false): BindKey[][] => [[{ label, round: 1, bind, broken }], [], [], []];
+
+// 配牌摆成 seat 拿着十一种幺九牌（国士两向听，平常的电脑留着做国士，不九种九牌）
+const kokushiStage = (seat: number): Stage => ({
+  deal(g) {
+    const w = g.wall;
+    const mine = g.dealIndices(seat);
+    [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 4, 13].forEach((k, n) => {
+      const i = mine[n];
+      if (kindOf(w.live[i]) === k) return;
+      const j = w.live.findIndex((t, j) => !mine.includes(j) && kindOf(t) === k && !w.locked.has(t));
+      [w.live[i], w.live[j]] = [w.live[j], w.live[i]];
+    });
+  },
+});
 
 describe('白水哩', () => {
   it('3 费、新道寺；别人对她的影响减半', () => {
@@ -70,11 +84,14 @@ describe('白水哩', () => {
   it('和出的番数不少于番缚数得到钥匙，没和成是破碎的钥匙，番数不够什么也没有；钥匙记着场、局、本场', () => {
     const seen = { key: 0, broken: 0, none: 0 };
     for (let seed = 1; seed <= 40 && (seen.key === 0 || seen.none === 0); seed++) {
-      const { g, seats } = setup(seed, ['rii', 'izumi', 'mako', 'kyouko'], { format: 'south' });
+      // 玩家操作的哩轮着缚 2–6 番（电脑的哩番数不够先不和，很少落到“什么也没有”）
+      const { g, seats } = setup(seed, ['rii', 'izumi', 'mako', 'kyouko'], { format: 'south', manual: 0 });
       for (let r = 0; r < 8 && g.phase !== 'gameEnd'; r++) {
         const label = g.roundLabel();
         const before = riiKeys(g, 0).length;
-        playRound(g, seats);
+        playRound(g, seats, (g, s) => {
+          if (s === 0 && riiCanBind(g, 0)) seats[0].ability!.pressSkill!(g, 0, String(2 + ((seed + r) % 5)));
+        });
         const bind = riiBind(g, 0);
         // 还没轮到她出牌这一局就结束了：没缚
         if (bind === null) {
@@ -105,6 +122,81 @@ describe('白水哩', () => {
     expect(seen.broken).toBeGreaterThan(0);
     expect(seen.none).toBeGreaterThan(0);
   }, 60000);
+
+  it('缚上以后牌往番数上靠：没听牌时进张多了一截，听牌以后更容易摸到够番的和了牌；缚得越多越难', () => {
+    expect(riiHelp(2)).toBe(0.5);
+    expect(riiHelp(RII.maxBind)).toBe(0.25);
+    for (let n = 2; n <= RII.maxBind; n++) expect(riiHelp(n)).toBeLessThanOrEqual(riiHelp(n - 1));
+    // [摸牌次数, 进张次数]、[听牌时摸牌次数, 摸到够番的和了牌次数]
+    const far = { bound: [0, 0], free: [0, 0] };
+    const near = { bound: [0, 0], free: [0, 0] };
+    for (let seed = 1; seed <= 16; seed++) {
+      const bind = seed % 2 === 0;
+      const { g, seats } = setup(seed, ['rii', 'izumi', 'mako', 'kyouko'], { manual: 0 });
+      g.onEvent((e) => {
+        if (e.type !== 'draw' || e.seat !== 0 || g.rinshanDraw) return;
+        const p = g.players[0];
+        const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
+        const b = riiBind(g, 0);
+        // 封印了（恭子）能力不起作用
+        if (!g.active(0)) return;
+        if (before > 0) {
+          const r = b !== null ? far.bound : far.free;
+          r[0]++;
+          if (shanten(toCounts(p.hand), p.melds.length) < before) r[1]++;
+        } else if (before === 0) {
+          const r = b !== null ? near.bound : near.free;
+          r[0]++;
+          const w = g.winResult(0, p.drawn!, true);
+          if (w && (w.yakuman > 0 || w.han - w.ura >= (b ?? 1))) r[1]++;
+        }
+      });
+      while (g.phase !== 'gameEnd') {
+        playRound(g, seats, (g, s) => {
+          // 缚 1 番：和了就够番，看得出听牌以后的帮助（缚得多时要等手里番够的和了牌，没有就帮不上）
+          if (bind && s === 0 && riiCanBind(g, 0)) seats[0].ability!.pressSkill!(g, 0, '1');
+        });
+        g.nextRound();
+      }
+    }
+    const rate = (r: number[]) => r[1] / r[0];
+    expect(far.bound[0]).toBeGreaterThan(100);
+    expect(rate(far.bound) - rate(far.free)).toBeGreaterThan(0.2);
+    expect(near.bound[0]).toBeGreaterThan(30);
+    // 和了牌常常已经在别人手里、牌河里，牌山里没有就换不来，所以听牌后的帮助看起来比没听牌时小
+    expect(rate(near.bound) - rate(near.free)).toBeGreaterThan(0.1);
+  }, 120000);
+
+  it('电脑的哩：最少缚 2 番，缚上以后不吃不碰，番数不够的和了牌山还多时不和；缚了大多做得成', () => {
+    let binds = 0;
+    let keys = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const { g, seats } = setup(seed, ['rii', 'izumi', 'mako', 'kyouko']);
+      while (g.phase !== 'gameEnd') {
+        const before = riiKeys(g, 0).filter((k) => !k.broken).length;
+        playRound(g, seats, (g, s) => {
+          const bind = riiBind(g, 0);
+          if (s !== 0 || bind === null) return;
+          const a = chooseAction(g, 0, seats[0].ai);
+          expect(['chi', 'pon', 'daiminkan']).not.toContain(a.type);
+          if (a.type !== 'tsumo' && a.type !== 'ron') return;
+          const p = g.players[0];
+          const tile = a.type === 'tsumo' ? p.drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
+          const r = g.winResult(0, tile, a.type === 'tsumo')!;
+          if (r.yakuman === 0 && r.han - r.ura < bind) expect(g.wall.remaining).toBeLessThanOrEqual(RII.holdUntil);
+        });
+        const bind = riiBind(g, 0);
+        if (bind !== null) {
+          binds++;
+          expect(bind).toBeGreaterThanOrEqual(RII.aiMinBind);
+          keys += riiKeys(g, 0).filter((k) => !k.broken).length - before;
+        }
+        g.nextRound();
+      }
+    }
+    expect(binds).toBeGreaterThan(20);
+    expect(keys / binds).toBeGreaterThan(0.45);
+  }, 120000);
 });
 
 describe('鹤田姬子', () => {
@@ -247,6 +339,51 @@ describe('鹤田姬子', () => {
       }
     }
   });
+
+  it('后面本场的钥匙：只认同一个场、局，本场更大的完整钥匙', () => {
+    const at = (keys: BindKey[][]) => himekoKeyAhead(setup(1, ['himeko', 'izumi', 'mako', 'ako'], { keys }).g, 0);
+    expect(at(keyAt('东1局 1本场', 3))?.bind).toBe(3);
+    expect(at(keyAt('东1局 2本场', 2))?.bind).toBe(2);
+    expect(at(keyAt('东1局 0本场', 3))).toBeNull();
+    expect(at(keyAt('东2局 1本场', 3))).toBeNull();
+    expect(at(keyAt('南1局 1本场', 3))).toBeNull();
+    expect(at(keyAt('东1局 1本场', 3, true))).toBeNull();
+  });
+
+  it('电脑的姬子：破碎的钥匙那一局、钥匙记在这一局后面的本场时，能九种九牌就流掉（不做国士）', () => {
+    const himeko = byId('himeko');
+    const first = (keys: BindKey[][]) => {
+      const { g } = setup(5, ['himeko', 'izumi', 'mako', 'ako'], { keys, stage: kokushiStage(0) });
+      expect(g.legalActions(0).some((a) => a.type === 'kyuushu')).toBe(true);
+      return chooseAction(g, 0, himeko.ai).type;
+    };
+    // 平常（没有钥匙）十一种幺九牌留着做国士
+    expect(first([[], [], [], []])).not.toBe('kyuushu');
+    expect(first(keyAt('东1局 0本场', 3, true))).toBe('kyuushu');
+    expect(first(keyAt('东1局 1本场', 3))).toBe('kyuushu');
+    expect(first(keyAt('东2局 0本场', 3))).not.toBe('kyuushu');
+  });
+
+  it('电脑的姬子坐庄、钥匙记在下一个本场：先和小牌连庄，比不去够时连庄得多', () => {
+    const seats = ['himeko', 'izumi', 'mako', 'kyouko'].map(byId);
+    const renchan = (twin: boolean) => {
+      let n = 0;
+      for (let seed = 1; seed <= 120; seed++) {
+        const { g } = setup(seed, ['himeko', 'izumi', 'mako', 'kyouko'], { keys: keyAt('东1局 1本场', 3) });
+        expect(g.dealer).toBe(0);
+        const ai = { ...seats[0].ai, twin };
+        let steps = 0;
+        while (g.phase !== 'roundEnd' && ++steps < 5000) {
+          const s = g.waitingSeats()[0];
+          g.act(s, chooseAction(g, s, s === 0 ? ai : seats[s].ai));
+        }
+        g.nextRound();
+        if (g.roundLabel() === '东1局 1本场') n++;
+      }
+      return n;
+    };
+    expect(renchan(true)).toBeGreaterThan(renchan(false));
+  }, 120000);
 });
 
 describe('哩和姬子同桌', () => {
@@ -263,8 +400,10 @@ describe('哩和姬子同桌', () => {
           // 哩第一次出牌前（摸牌时已经决定缚不缚）：差于 aiBindShanten 向听不缚
           if (checked || s !== 0 || g.phase !== 'turn' || g.players[0].drawn === null || g.players[0].discards.length) return;
           checked = true;
-          const sh = shanten(toCounts(g.players[0].hand), g.players[0].melds.length);
-          expect(riiBind(g, 0) !== null).toBe(sh <= RII.aiBindShanten);
+          const p = g.players[0];
+          const sh = shanten(toCounts(p.hand), p.melds.length);
+          // 第一次出牌前已经鸣过牌的不缚（缚上以后要门清做）
+          expect(riiBind(g, 0) !== null).toBe(sh <= RII.aiBindShanten && p.melds.length === 0);
         });
         g.nextRound();
       }

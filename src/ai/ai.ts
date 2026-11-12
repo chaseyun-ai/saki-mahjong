@@ -24,7 +24,8 @@ import { harvestShanten, komakiActiveGod, komakiHarvestSuit } from '../abilities
 import { toyoneLurks, toyoneMode } from '../abilities/toyone';
 import { TERU, teruAccepts, teruCheapNext, teruDanger, teruFits, teruLadder, teruMirrored, teruOutlook, teruRaisable, teruReads, teruRising, teruSoftCap, teruTier, teruTiltSet, teruUnder, teruWallHas, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
-import { himekoExtra, himekoPlan } from '../abilities/himeko';
+import { himekoBroken, himekoExtra, himekoKeyAhead, himekoPlan } from '../abilities/himeko';
+import { riiBind, riiHoldsShort } from '../abilities/rii';
 import { bowlingOf, isPin } from '../abilities/arata';
 import { hatsumiNorth, hatsumiOpen, hatsumiSafeWinds, hatsumiWindGoal, hatsumiWindsComing } from '../abilities/hatsumi';
 import { JUN } from '../abilities/jun';
@@ -307,6 +308,11 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const out = extra.map((t) => legal.find((a) => a.type === 'discard' && !a.riichi && a.tile === t)).find((a) => a);
     if (out) return out;
   }
+  // 姬子（原作的打法）：破碎的钥匙那一局、钥匙记在这一局后面的本场时，能九种九牌就流掉（庄家不变，本场加一）
+  if (style.twin && (himekoBroken(g, seat) || himekoKeyAhead(g, seat))) {
+    const flow = find('kyuushu');
+    if (flow) return flow;
+  }
 
   // 郝慧宇：照番种打（能自摸的都是国标够 8 番的，八番起和由 canWin 把关）
   if (style.gb) {
@@ -337,7 +343,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   }
 
   const tsumo = find('tsumo');
-  if (tsumo && !(style.streak && teruWaits(g, seat, true)) && !(style.waves && nellyHolds(g, seat, true)) && !growHolds(g, seat, style, true) && !seraHolds(g, seat, style, true) && !koromoHolds(g, seat, style, true) && !hatsumiHolds(g, seat, style, true) && !allLastHold(g, seat, true)) return tsumo;
+  if (tsumo && !riiHolds(g, seat, true) && !(style.streak && teruWaits(g, seat, true)) && !(style.waves && nellyHolds(g, seat, true)) && !growHolds(g, seat, style, true) && !seraHolds(g, seat, style, true) && !koromoHolds(g, seat, style, true) && !hatsumiHolds(g, seat, style, true) && !allLastHold(g, seat, true)) return tsumo;
 
   // 白望的迷途之家：这一次发动了就照算出来的打（不立直，反正会自摸）
   if (style.mayoiga) {
@@ -696,7 +702,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 别人立直而自己离听牌还远：弃和。团体赛里少失点就是帮队伍：一向听就弃，听牌了手里这张也危险也弃
   const careful = teamCareful(g, seat) || leadCareful(g, seat);
   // 不弃和：涅莉的宣言局；诚子鸣满三次听牌了（两巡内必和）；尧深收获的局离听牌不远
-  const declared =
+  let declared =
     g.canWin(seat) &&
     ((style.waves && nellyTier(g, seat) > 0) ||
       (style.fish && !sealed && seikoFish(g, seat) >= SEIKO_SURE && best.sh === 0) ||
@@ -709,6 +715,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       (style.rokuyou && toyoneMode(g, seat) === 'senbu' && best.sh <= 1) ||
       // 初美鸣出东北以后奔小四喜（西南会送来），离听牌不远就不弃和
       (kimonGoal !== null && best.sh <= HATSUMI_AI.push));
+  // 姬子坐庄、钥匙记在这一局后面的本场：先和小牌连庄去够那一局，一向听以内不弃和（流局时也要听着牌）
+  if (!declared && g.canWin(seat) && best.sh <= 1 && himekoChase(g, seat, style)) declared = true;
   let folded: Cand[] | null = null;
   // 听牌了但听得很窄（能和的牌没几张）、要打的又是很危险的牌，对立直也不硬拼
   const riichiOn = threats(g, seat).some((t) => g.seesRiichi(t, seat));
@@ -1232,8 +1240,28 @@ function hatsumiSlotsNeeded(g: Game, seat: number): number {
   return need;
 }
 
+// 电脑的哩缚上以后：这一手和了番数不够（里宝牌看不到，不算）、牌山还多，先不和
+function riiHolds(g: Game, seat: number, tsumo: boolean): boolean {
+  if (g.abilities[seat]?.id !== 'rii' || g.manual[seat] || riiBind(g, seat) === null) return false;
+  const p = g.players[seat];
+  const tile = tsumo ? p.drawn : g.callKind === 'chankan' ? g.kakanInfo?.tile : g.lastDiscard?.tile;
+  if (tile === null || tile === undefined) return false;
+  const r = g.winResult(seat, tile, tsumo);
+  return !!r && riiHoldsShort(g, seat, r.han - r.ura, r.yakuman);
+}
+
+// 电脑的姬子坐庄、这一局没有钥匙、钥匙记在同一局后面的本场：连庄去够它
+function himekoChase(g: Game, seat: number, style: AiStyle): boolean {
+  return !!style.twin && seat === g.dealer && himekoKeyAhead(g, seat) !== null;
+}
+
 function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Action {
   const pass = legal.find((a) => a.type === 'pass')!;
+  // 电脑的哩缚上以后门清做（留着立直、门清自摸的番），不吃不碰不杠；番数不够的荣和先不和
+  if (g.abilities[seat]?.id === 'rii' && !g.manual[seat] && riiBind(g, seat) !== null) {
+    const ron = legal.find((a) => a.type === 'ron');
+    return ron && !riiHolds(g, seat, false) && !allLastHold(g, seat, false) ? ron : pass;
+  }
   // 姬子钥匙的那一局：门清自摸才是那副牌的番数，不鸣牌也不荣和
   if (style.twin && himekoPlan(g, seat)) return pass;
   // 佳织的新手运：役满听牌的局不鸣牌，能荣和就和
@@ -1386,7 +1414,9 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     (style.eastWind && seat !== g.dealer && yuukiActive(g, seat)) ||
     (style.streak && teruMirrored(g, seat) && teruCheapNext(g, seat)) ||
     // 照连和起来了：另外三家抢和小牌
-    teruRising(g, seat) !== null;
+    teruRising(g, seat) !== null ||
+    // 姬子坐庄去够后面本场的钥匙：先和小牌连庄
+    himekoChase(g, seat, style);
 
   // 照没起胡：役牌能碰就碰（不退向听），先和一个 1000 点
   const teruStart = style.streak && TERU.mode === 'points' && TERU.cheapStart && !sealedMe && teruMirrored(g, seat) && teruLadder(g, seat).level === 0;

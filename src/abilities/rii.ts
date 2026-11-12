@@ -1,5 +1,6 @@
 import type { Game } from '../engine/game';
-import { isDragon, kindOf, suitOf, toCounts } from '../engine/tiles';
+import { EAST, isDragon, kindOf, suitOf, toCounts, type TileId } from '../engine/tiles';
+import { evaluateWin } from '../engine/score';
 import { shanten } from '../engine/shanten';
 import { isDoraTile } from './kuro';
 import type { Ability, BindKey } from './types';
@@ -10,8 +11,19 @@ import type { Ability, BindKey } from './types';
 //   得到一把钥匙（多出来的一发、里宝牌不会把钥匙弄丢）；没和成（别人和了、流局），得到一把破碎的钥匙；和了但番数不够，什么也没有。
 //   钥匙记着是哪一局（东/南场几局几本场）。鹤田姬子在钥匙记的那一局能和出两倍番缚的牌（见 himeko.ts）。
 //   缚没缚只有她自己知道：不出字、不放切入，头像框上也不显示；只有宫永照的照魔镜看得穿（Ability.insight）
+// - 缚上以后牌往缚的番数上靠（原作里她缚了大多做得成）：没听牌时，下一张不进张就有 help 的概率换成进张；
+//   听牌以后，有同样的概率换成自摸就够番缚数的和了牌（不算里宝牌）。缚得越多越难，help 按番缚数取
 // aiBindShanten：电脑的哩只在第一次出牌前手牌不差于几向听时才番缚（烂牌缚了也和不了，只会给姬子一把破碎的钥匙）
-export const RII = { resist: 0.5, maxBind: 7, aiBindShanten: 2 };
+// aiMinBind：电脑最少缚几番（原作的钥匙是满贯、跳满、倍满、役满，没有缚 1 番换姬子 2 番小牌的）。玩家自己可以缚 1 番
+// holdUntil：电脑的哩缚上以后，番数不够的和了先不和，牌山剩这么多张以下才和（总比破碎的钥匙好）
+export const RII = {
+  resist: 0.5,
+  maxBind: 7,
+  aiBindShanten: 2,
+  aiMinBind: 2,
+  help: [0, 0.5, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25],
+  holdUntil: 12,
+};
 
 interface RiiState {
   bind?: number; // 这一局缚了几番
@@ -38,36 +50,96 @@ export function riiCanBind(g: Game, seat: number): boolean {
   return !!g.active(seat) && stateOf(g, seat).bind === undefined && g.phase === 'turn' && g.turn === seat && g.players[seat].discards.length === 0;
 }
 
-// 电脑的哩缚几番：按手里看得到的番估一个（立直算一番，宝牌、成对的役牌、偏一门花色往上加）
+const YAOCHU = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
+
+// 电脑的哩缚几番：按手里看得到的番估一个。缚上以后门清做，听牌会立直（1 番）、牌往缚的番数上靠多半自摸（1 番）；
+// 宝牌、赤宝牌、成对的役牌、断幺九的样子（幺九牌最多一张）、偏一门花色往上加；还差两向听以上少估一番留余量
 export function riiGuess(g: Game, seat: number): number {
   const p = g.players[seat];
   const counts = toCounts(p.hand);
-  let han = 1;
+  let han = 2;
   han += p.hand.filter((t) => isDoraTile(g, t)).length;
   for (let k = 27; k < 34; k++) if (counts[k] >= 2 && (isDragon(k) || k === g.seatWind(seat) || k === 27 + g.roundWind)) han++;
+  if (YAOCHU.reduce((a, k) => a + counts[k], 0) <= 1) han++;
   const per = [0, 0, 0];
   for (const t of p.hand) if (kindOf(t) < 27) per[suitOf(kindOf(t))]++;
   const honors = counts.slice(27).reduce((a, b) => a + b, 0);
   if (Math.max(...per) + honors >= 11) han += 2;
-  return Math.max(1, Math.min(RII.maxBind, han));
+  if (shanten(counts, p.melds.length) >= 2) han--;
+  return Math.max(RII.aiMinBind, Math.min(RII.maxBind, han));
+}
+
+// 缚 bind 番时摸牌往番数上靠的概率
+export function riiHelp(bind: number): number {
+  return RII.help[Math.min(bind, RII.help.length - 1)] ?? 0;
+}
+
+// 手牌加上自摸 t 能不能和、够不够 bind 番（立直、一发照现在的算，不算里宝牌）
+function enoughTsumo(g: Game, seat: number, t: TileId, bind: number): boolean {
+  const p = g.players[seat];
+  const counts = toCounts(p.hand);
+  counts[kindOf(t)]++;
+  if (shanten(counts, p.melds.length) !== -1) return false;
+  const r = evaluateWin({
+    closed: [...p.hand, t],
+    melds: p.melds,
+    winTile: t,
+    tsumo: true,
+    seatWind: g.seatWind(seat),
+    roundWind: EAST + g.roundWind,
+    isDealer: seat === g.dealer,
+    riichi: p.riichi,
+    doubleRiichi: p.doubleRiichi,
+    ippatsu: p.ippatsu,
+    doraIndicators: g.wall.visibleDoraIndicators().map(kindOf),
+  });
+  return !!r && (r.yakuman > 0 || r.han >= bind);
+}
+
+// 电脑的哩缚上以后，这一手和了番数不够、牌山还多：先不和
+export function riiHoldsShort(g: Game, seat: number, han: number, yakuman: number): boolean {
+  const bind = riiBind(g, seat);
+  if (bind === null || yakuman > 0 || han >= bind) return false;
+  return g.wall.remaining > RII.holdUntil;
 }
 
 export const riiAbility: Ability = {
   id: 'rii',
   name: '番缚',
-  description: `被动：别人对她配牌、摸牌的影响减半。番缚：每一局第一次出牌时可以给自己缚上 1–${RII.maxBind} 番，和出的番数不少于番缚数就得到一把钥匙，没和成得到一把破碎的钥匙，番数不够什么也没有。钥匙记着是哪一局，鹤田姬子在那一局能和出两倍番缚的牌。缚没缚只有宫永照看得穿。`,
+  description: `被动：别人对她配牌、摸牌的影响减半。番缚：每一局第一次出牌时可以给自己缚上 1–${RII.maxBind} 番，缚上以后牌会往缚的番数上靠（缚得越多越难）。和出的番数不少于番缚数就得到一把钥匙，没和成得到一把破碎的钥匙，番数不够什么也没有。钥匙记着是哪一局，鹤田姬子在那一局能和出两倍番缚的牌。缚没缚只有宫永照看得穿。`,
 
   resist() {
     return RII.resist;
   },
 
   // 电脑的哩：第一次出牌前手牌够好才缚上估出来的番数。烂牌也缚的话大多数局和不了，
-  // 每一局都会拿到破碎的钥匙，同桌的姬子就几乎一直是破碎的钥匙
+  // 每一局都会拿到破碎的钥匙，同桌的姬子就几乎一直是破碎的钥匙。已经鸣过牌（立直、门清自摸没了）不缚
   afterDraw(g, seat) {
     if (g.manual[seat] || !riiCanBind(g, seat)) return;
     const p = g.players[seat];
-    if (shanten(toCounts(p.hand), p.melds.length) > RII.aiBindShanten) return;
+    if (p.melds.length || shanten(toCounts(p.hand), 0) > RII.aiBindShanten) return;
     stateOf(g, seat).bind = riiGuess(g, seat);
+  },
+
+  // 缚上以后牌往缚的番数上靠：没听牌时换成进张，听牌了换成自摸就够番的和了牌（岭上牌不动）
+  beforeDraw(g, seat, rinshan) {
+    const bind = stateOf(g, seat).bind;
+    if (bind === undefined || rinshan || !g.rng.chance(riiHelp(bind))) return;
+    const p = g.players[seat];
+    const counts = toCounts(p.hand);
+    const m = p.melds.length;
+    const sh = shanten(counts, m);
+    if (sh === 0) {
+      g.wall.bringToLive(0, (t) => enoughTsumo(g, seat, t, bind), g.rng);
+      return;
+    }
+    const better = (t: TileId) => {
+      counts[kindOf(t)]++;
+      const ok = shanten(counts, m) < sh;
+      counts[kindOf(t)]--;
+      return ok;
+    };
+    g.wall.bringToLive(0, better, g.rng);
   },
 
   onRoundEnd(g, seat, result) {
@@ -93,7 +165,7 @@ export const riiAbility: Ability = {
     const bind = riiBind(g, seat);
     const keys = riiKeys(g, seat);
     const list = keys.length ? `钥匙：${keys.map((k) => `${k.label}${k.broken ? '（碎）' : ''}缚${k.bind}`).join('、')}` : '还没有钥匙';
-    if (bind !== null) return { label: '番缚', note: `这一局缚了 ${bind} 番，和出 ${bind} 番以上得到钥匙。${list}`, enabled: false, active: true };
+    if (bind !== null) return { label: '番缚', note: `这一局缚了 ${bind} 番，和出 ${bind} 番以上得到钥匙；摸牌有 ${Math.round(riiHelp(bind) * 100)}% 的机会往这个番数上靠。${list}`, enabled: false, active: true };
     const ready = riiCanBind(g, seat);
     const choices = Array.from({ length: RII.maxBind }, (_, i) => ({ id: String(i + 1), label: `${i + 1}番`, enabled: ready }));
     const waiting = !ready && g.players[seat].discards.length === 0;
