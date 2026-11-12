@@ -69,6 +69,37 @@ export function forecastNextDraw(g: Game, seat: number, opts: ForecastOpts = {})
   }
 }
 
+// 她现在打 discard 立直，演算一发巡：她下一次摸牌前有人打出她和得了的牌是 'ron'，下一次摸到就自摸是 'tsumo'，都没有是 null。
+// 和 forecastNextDraw 一样假设这一巡没人鸣牌、别人不自摸
+export function forecastIppatsu(g: Game, seat: number, discard: TileId): 'ron' | 'tsumo' | null {
+  if (depth > 0) return null;
+  if (g.phase !== 'turn' || g.turn !== seat) return null;
+  if (!g.legalActions(seat).some((a) => a.type === 'discard' && a.tile === discard && !!a.riichi)) return null;
+  depth++;
+  try {
+    const c = cloneGame(g);
+    c.act(seat, { type: 'discard', tile: discard, riichi: true });
+    for (let guard = 0; guard < 80; guard++) {
+      if (c.phase !== 'turn' && c.phase !== 'calls') return null;
+      if (c.phase === 'calls') {
+        const waiting = c.waitingSeats();
+        // 她打的那张（立直宣言牌）不算：轮到别人打的牌她能荣和才算
+        if (waiting.includes(seat) && c.lastDiscard?.seat !== seat && c.legalActions(seat).some((a) => a.type === 'ron')) return 'ron';
+        for (const s of waiting) c.act(s, { type: 'pass' });
+        continue;
+      }
+      if (c.turn === seat) return c.legalActions(seat).some((a) => a.type === 'tsumo') ? 'tsumo' : null;
+      const s = c.turn;
+      const act = onlyDiscard(c, s, chooseAction(c, s, styleOf(c, s)));
+      if (!act) return null;
+      c.act(s, act);
+    }
+    return null;
+  } finally {
+    depth--;
+  }
+}
+
 // 界面用：同一局面（事件数、该谁、牌山剩几张）同一个问法只算一次；局面一变就重新算，旧的结果不会留下来
 export class ForecastCache {
   private memo = new Map<string, TileId | null>();

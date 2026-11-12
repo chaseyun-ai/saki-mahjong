@@ -106,10 +106,7 @@ const ASSIST_DELAY = 450;
 // 团体赛以外开局的点数在设置弹窗里选（matchSetup.ts），终局排名的 ± 从那里算
 // 托管时结算画面停多久自动进下一局
 const AUTO_NEXT = 2600;
-// 怜“看下一巡”的体力：满 100，看一次 35，每局开始回 20。同一回合可以看两次，看第二次的话下一局不能用
-const STAMINA_MAX = 100;
-const DEEP_COST = 15;
-const STAMINA_REGEN = 20;
+// 怜“看下一巡”不花体力：同一回合可以看两次，看第二次的话下一局不能用
 
 // 郝慧宇：国标这么多番以上，「食糊」和结算面板换金色
 const GB_GOLD_FAN = 24;
@@ -219,10 +216,9 @@ export class App {
   // 2D：初美聚着风和牌，结算里手牌先倒、和了牌往下砸（哪一家、什么时候开始；结算重画时动画接着放）
   private galeSlam: { seat: number; t0: number } | null = null;
   private netTimer: number | null = null;
-  // 怜“看下一巡”（演算）：玩家操作怜时的体力。
+  // 怜“看下一巡”（演算）：玩家操作怜时用。
   // 演算中 vision 不是 null：this.game 换成牌局的复制品放到牌桌上演，真的牌局和演算前的表情先存在 vision 里，退出时换回来。
   // start：复制品从第几个事件开始是演算的；rons：演算里她能荣和却没和的那几次
-  private stamina = STAMINA_MAX;
   private vision: { real: Game; start: number; rons: CanRon[]; faces: { face: Face; until: number }[] } | null = null;
   // 这一回合（key）看了几次，上次演算的经过（退出以后留着给她看）
   // at：上次演算是在第几个事件时看的，之后有人鸣牌、开杠（事件变了）就不再显示
@@ -754,7 +750,6 @@ export class App {
     gameMusic(game, this.finale());
     this.toasts = [];
     this.faces = [];
-    this.stamina = STAMINA_MAX;
     this.vision = null;
     this.looks = { key: '', count: 0, last: '', at: -1 };
     this.penaltyNext = false;
@@ -1097,7 +1092,6 @@ export class App {
       this.handOrder = null;
       this.cutinSeen.clear();
       this.gbSighed.clear();
-      this.stamina = Math.min(STAMINA_MAX, this.stamina + STAMINA_REGEN);
       this.blocked = this.penaltyNext;
       this.penaltyNext = false;
       this.clearRoundFx();
@@ -2475,7 +2469,7 @@ export class App {
   private canDeep(): boolean {
     const key = this.turnKey();
     const count = this.looks.key === key ? this.looks.count : 0;
-    return this.isToki() && !this.vision && this.myDiscardTurn() && !this.blocked && count < 2 && this.stamina >= DEEP_COST;
+    return this.isToki() && !this.vision && this.myDiscardTurn() && !this.blocked && count < 2;
   }
 
   // 发动：牌局复制一份放到牌桌上，她接着在复制品上出牌
@@ -2485,7 +2479,6 @@ export class App {
     const key = this.turnKey();
     if (this.looks.key !== key) this.looks = { key, count: 0, last: '', at: -1 };
     if (++this.looks.count >= 2) this.penaltyNext = true;
-    this.stamina -= DEEP_COST;
     const sim = cloneGame(real);
     sim.onEvent((e) => this.onGameEvent(e));
     this.vision = { real, start: sim.events.length, rons: [], faces: [...this.faces] };
@@ -3057,7 +3050,7 @@ export class App {
     else this.step();
   }
 
-  // 怜的一巡先见：平时只有自己下一张摸牌；玩家操作怜时还有体力条和“看下一巡”按钮，演算中换成演算的经过和“退出”
+  // 怜的一巡先见：平时只有自己下一张摸牌；玩家操作怜时还有“看下一巡”按钮，演算中换成演算的经过和“退出”
   private foresightBox(): string {
     const g = this.game!;
     const c = this.chars[this.me];
@@ -3065,10 +3058,7 @@ export class App {
     const fs = g.isSealed(this.me) || c.ability?.foresightOn?.(g, this.me) === false ? undefined : c.ability?.foresight;
     if (!this.vision && (!fs || (g.phase !== 'turn' && g.phase !== 'calls'))) return '';
     const toki = this.isToki();
-    const stamina = toki
-      ? `<span class="stamina" title="体力"><i style="width:${(this.stamina / STAMINA_MAX) * 100}%"></i></span><span class="st-num">${this.stamina}</span>`
-      : '';
-    const title = `<div class="fs-title">${fs?.title ?? '一巡先见'}${stamina}</div>`;
+    const title = `<div class="fs-title">${fs?.title ?? '一巡先见'}</div>`;
     const v = this.vision;
     if (v) {
       const over = rehearsalOver(g, v.start, this.me);
@@ -3085,12 +3075,10 @@ export class App {
           ? ['看下一巡', '这一局用不了']
           : count >= 2
             ? ['看下一巡', '这回合不能再看了']
-            : this.stamina < DEEP_COST
-              ? [count ? '再看一次' : '看下一巡', '体力不够']
-              : count
-                ? ['再看一次', `体力 -${DEEP_COST}，下一局不能用`]
-                : ['看下一巡', `体力 -${DEEP_COST}`];
-      btn = `<button class="deep-btn" data-ui="deep" ${this.canDeep() ? '' : 'disabled'}>${label}<small>${note}</small></button>`;
+            : count
+              ? ['再看一次', '下一局不能用']
+              : ['看下一巡', ''];
+      btn = `<button class="deep-btn" data-ui="deep" ${this.canDeep() ? '' : 'disabled'}>${label}${note ? `<small>${note}</small>` : ''}</button>`;
     }
     const last =
       this.looks.last && this.looks.key === this.turnKey() && this.looks.at === g.events.length && this.myDiscardTurn()

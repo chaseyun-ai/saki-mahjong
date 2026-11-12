@@ -1323,7 +1323,7 @@ button {
   color: var(--ink-quiet);
 }
 
-/* 怜的体力条和“看下一巡” */
+/* 技能的能量条和怜的“看下一巡” */
 .fs-title {
   display: flex;
   align-items: center;

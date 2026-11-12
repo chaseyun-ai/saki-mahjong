@@ -52,7 +52,8 @@ export interface AiStyle {
   rinshan?: boolean; // 宫永咲：听牌前留着杠（岭上牌能让手牌前进才提前杠），留着第四张和淡要送来的岭上牌
   keepDora: boolean; // 尽量不打宝牌
   useForesight: boolean; // 根据先见决定要不要鸣牌
-  foresightRiichi: boolean; // 只在先见到下一巡自摸时才立直，否则默听
+  foresightRiichi: boolean; // 只在先见到立直后这一巡一发和得了（一发自摸或一发荣和）时才立直，否则默听
+  foresightRead: boolean; // 一巡先见看得到这一巡谁会荣和她打的牌：不打那些牌，别的牌不按筋、壁估危险，不为防守弃和
   cornerKan: boolean; // 大星淡：等转角暗杠，之前不荣和、不拆暗刻
   suitFocus: boolean; // 石户霞：请神后先打别的花色，做绝掉的那门和字牌
   defensive: boolean; // 别人立直、自己没听牌就弃和（霞请神以后不算）
@@ -109,7 +110,7 @@ export interface Character {
   note?: string;
 }
 
-export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false, gods: false, rokuyou: false, dama: false, stealth: false, twin: false };
+export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: false, useForesight: false, foresightRiichi: false, foresightRead: false, cornerKan: false, suitFocus: false, defensive: false, haitei: false, reads: false, trapWait: false, damaMin: 0, mirror: false, streak: false, eye: false, waves: false, eastWind: false, warm: false, speed: false, fish: false, memory: false, badWait: false, disrupt: false, harvest: false, clouds: false, angel: false, sniper: false, firepower: false, mugoku: false, gods: false, rokuyou: false, dama: false, stealth: false, twin: false };
 
 export const CHARACTERS: Character[] = [
   {
@@ -137,8 +138,8 @@ export const CHARACTERS: Character[] = [
     school: '千里山女子',
     color: '#6f8fc9',
     ability: tokiAbility,
-    // 原作里怜一立直就一发自摸：她看得见下一张，只在确定能和的时候才立直
-    ai: { ...baseAi, useForesight: true, foresightRiichi: true },
+    // 原作里怜一立直就一发：她看得见这一巡，只在确定一发能和的时候才立直；看得见谁会荣和，不往别人的和了牌上打
+    ai: { ...baseAi, useForesight: true, foresightRiichi: true, foresightRead: true },
   },
   {
     id: 'nodoka',

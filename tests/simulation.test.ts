@@ -82,9 +82,10 @@ describe('整场模拟', () => {
 });
 
 describe('园城寺怜的立直', () => {
-  it('立直后只要没人鸣牌，下一巡一定能自摸', () => {
+  it('立直后只要没人鸣牌，这一巡里一定一发和牌（荣和，或者下一张自摸）', () => {
     const toki = CHARACTERS.findIndex((c) => c.id === 'toki');
     let riichis = 0;
+    let rons = 0;
     for (let seed = 1; seed <= 30; seed++) {
       const g = new Game({ seed, players: CHARACTERS.map((c) => ({ name: c.name, ability: c.ability })) });
       let watching = false;
@@ -92,6 +93,11 @@ describe('园城寺怜的立直', () => {
         if (e.type === 'discard' && e.seat === toki && e.riichi) {
           watching = true;
           riichis++;
+        }
+        // 这一巡里有人打出她的和了牌：一发荣和（别人先和了、途中流局的不算）
+        if (e.type === 'roundEnd' && watching && e.result.kind === 'win' && e.result.wins.every((w) => w.seat === toki)) {
+          expect(e.result.wins.some((w) => w.from !== null)).toBe(true);
+          rons++;
         }
         if (e.type === 'call' || e.type === 'roundEnd') watching = false;
         if (e.type === 'draw' && e.seat === toki && watching) {
@@ -110,5 +116,6 @@ describe('园城寺怜的立直', () => {
       }
     }
     expect(riichis).toBeGreaterThan(0);
+    expect(rons).toBeGreaterThan(0);
   }, 120000);
 });

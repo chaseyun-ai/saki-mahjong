@@ -7,7 +7,7 @@ import { momoStealthNext } from '../abilities/momo';
 import { ryuukaMugoku, ryuukaSensesTenpai } from '../abilities/ryuuka';
 import { SERA, seraYakuhai } from '../abilities/sera';
 import { SUMIRE, sumireAimedAt, sumireMarks, sumireTarget } from '../abilities/sumire';
-import { forecastNextDraw } from './forecast';
+import { forecastIppatsu, forecastNextDraw } from './forecast';
 import { kasumiSuit } from '../abilities/kasumi';
 import { KOROMO, KOROMO_READERS, koromoDisruptor, koromoHaiteiOn, koromoHaiteiReach, koromoHaiteiReady, koromoRouteOn, koromoRouteSet } from '../abilities/koromo';
 import { mihokoEyeOpen, mihokoLikelySafe, mihokoSafeKinds } from '../abilities/mihoko';
@@ -424,7 +424,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const angel = style.angel && nodokaAngel(g, seat);
   // 龙华的无极天：读得出别人听什么
   const mugoku = style.mugoku && ryuukaMugoku(g, seat);
-  const reader = !sealed && (style.reads || style.memory || eyeReads || (style.mirror && teruMirrored(g, seat)) || angel || mugoku);
+  // 怜的一巡先见：看得到这一巡谁会荣和她打的牌（振听、没役的不算）。玩家操作的怜托管时不替玩家读
+  const tokiRead = !sealed && style.foresightRead && !g.manual[seat] && foresees(g, seat);
+  const reader = !sealed && (style.reads || style.memory || eyeReads || (style.mirror && teruMirrored(g, seat)) || angel || mugoku || tokiRead);
   // 照魔镜只读得出立直的人听什么
   const mirrorOnly = style.mirror && !(style.reads || style.memory || eyeReads || angel || mugoku);
   const readDanger = !reader
@@ -467,7 +469,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const safeWinds = style.winds && !sealed && !g.quelled(seat) && hatsumiSafeWinds(g, seat);
   // 照：镜子照得进去的立直家，她知道他听什么。不是铳牌的牌对他绝对安全，不照一般人那样按筋、壁估
   const mirrorRead = mirrorOnly && reader && TERU.readFold ? teruReads(g, seat) : null;
-  const riskOf = (t: number, k: Kind) => (mirrorRead?.has(t) ? (readDanger!.has(k) ? 10 : 0) : safeWinds && (k === WEST || k === SOUTH) && g.binds(seat, t) ? Math.min(1, eyeRisk(t, k)) : eyeRisk(t, k));
+  // 怜：看得到这张这一巡不会放铳，就不按筋、壁估危险（别的牌都当安全牌，有人立直也照样往前打）
+  const riskOf = (t: number, k: Kind) => (tokiRead ? (readDanger!.has(k) ? 10 : 0) : mirrorRead?.has(t) ? (readDanger!.has(k) ? 10 : 0) : safeWinds && (k === WEST || k === SOUTH) && g.binds(seat, t) ? Math.min(1, eyeRisk(t, k)) : eyeRisk(t, k));
   // 小莳的稻荷神：进张几乎都是手里最多的那一门。别的花色的搭子、单张的字牌等不来，
   // 向听只按这一门的进张算（别处现成的面子、雀头照用），进张也只数这一门的
   const harvest = style.gods ? komakiHarvestSuit(g, seat) : null;
@@ -776,11 +779,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     // 堇：有役就默听，只等目标打
     if (style.sniper && sumireTarget(g, seat) !== null && damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) > 0) return best.a;
     if (style.foresightRiichi && !sealed) {
-      // 怜：先见到立直以后下一次摸的牌正好和牌才立直（一发自摸），否则默听
-      const nextDraw = forecastNextDraw(g, seat, { discard: riichi.tile, riichi: true });
-      if (nextDraw === null) return best.a;
-      c[kindOf(nextDraw)]++;
-      return shanten(c, p.melds.length) === -1 ? riichi : best.a;
+      // 怜：先见到立直以后这一巡里一发和得了才立直（一发自摸，或者有人打出她的和了牌），否则默听
+      return forecastIppatsu(g, seat, riichi.tile) ? riichi : best.a;
     }
     if (style.keepDora && !kuroMustRiichi(g, seat, p.hand.filter((t) => t !== best.a.tile))) return best.a;
     // 涅莉押了运势的局：离该和的那一巡还早就默听，手牌留着往大里做；该和的前一巡再立直（下一巡一发自摸；押 2、3 点立直以后里宝牌往她手里变）。
