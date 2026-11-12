@@ -1228,6 +1228,24 @@ button {
   color: #ff8a7a;
 }
 
+/* 照：待和牌下面写点数，接不上连和的划掉 */
+.wait-pts {
+  font-weight: 700;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.wait-pts.low {
+  color: #9aa0a8;
+  text-decoration: line-through;
+}
+
+.wait-goal {
+  margin-left: 8px;
+  color: #e0637c;
+  font-weight: 700;
+}
+
 .wait.dead .tile {
   opacity: 0.4;
   filter: grayscale(1);

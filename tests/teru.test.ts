@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { TERU, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruTier } from '../src/abilities/teru';
+import { TERU, TERU_LADDER, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruTier, teruWinValue } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import type { WinResult } from '../src/engine/score';
@@ -34,7 +34,94 @@ const LINEUPS = [
   ['nodoka', 'saki', 'hiroe', 'teru'],
 ];
 
-describe('宫永照', () => {
+// 默认是按打点递增的连和；原来的天梯留着，那一组测试换回去跑
+const POINTS = { ...TERU };
+
+describe('宫永照（按打点递增的连和）', () => {
+  it('每次和了的点数比上一次高就接上；和小了算新一轮的第一次；别人和了、流局就断', () => {
+    const n = { up: 0, restart: 0, broke: 0, max: 0 };
+    for (let seed = 1; seed <= 30; seed++) {
+      play(seed, LINEUPS[seed % 4], {
+        setup: (g, me) => {
+          // 自己按规则记一份，和能力里的对照
+          let streak: number[] = [];
+          let dealer = false;
+          g.onEvent((e) => {
+            if (e.type === 'roundStart') {
+              const l = teruLadder(g, me);
+              expect(l.level).toBe(Math.min(streak.length, 8));
+              expect(l.last).toBe(streak.at(-1) ?? 0);
+              expect(l.streak).toEqual(streak.slice(-8));
+              dealer = me === g.dealer;
+              n.max = Math.max(n.max, streak.length);
+            }
+            if (e.type !== 'roundEnd' || e.result.kind === 'abortive') return;
+            // 淡这一局开过平行宇宙：连和已经清掉了
+            if (teruLadder(g, me).broke === '平行宇宙') streak = [];
+            const w = e.result.wins.find((x) => x.seat === me);
+            if (!w) {
+              if (streak.length) n.broke++;
+              streak = [];
+              return;
+            }
+            const v = teruWinValue(w.result, w.from === null, dealer);
+            if (!streak.length || v > streak.at(-1)!) {
+              streak.push(v);
+              n.up++;
+            } else {
+              streak = [v];
+              n.restart++;
+            }
+          });
+        },
+      });
+    }
+    expect(n.up).toBeGreaterThan(40);
+    expect(n.max).toBeGreaterThanOrEqual(4);
+    expect(n.broke).toBeGreaterThan(0);
+    console.log(n);
+  }, 120000);
+
+  it('起胡便宜、宝牌少：起胡的那一次多半在 2000 点以内，她和的牌里宝牌平均不到半张', () => {
+    const first: number[] = [];
+    let wins = 0;
+    let dora = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      play(seed, LINEUPS[seed % 4], {
+        setup: (g, me) => {
+          let dealer = false;
+          let level = 0;
+          g.onEvent((e) => {
+            if (e.type === 'roundStart') {
+              dealer = me === g.dealer;
+              level = teruLadder(g, me).level;
+            }
+            if (e.type !== 'roundEnd') return;
+            const w = e.result.wins.find((x) => x.seat === me);
+            if (!w) return;
+            wins++;
+            dora += w.result.dora + w.result.aka;
+            if (level === 0) first.push(teruWinValue(w.result, w.from === null, dealer) / (dealer ? 1.5 : 1));
+          });
+        },
+      });
+    }
+    const cheap = first.filter((v) => v <= 2000).length / first.length;
+    console.log({ first: first.length, cheap: cheap.toFixed(2), dora: (dora / wins).toFixed(2) });
+    expect(first.length).toBeGreaterThan(20);
+    expect(cheap).toBeGreaterThan(0.5);
+    expect(dora / wins).toBeLessThan(0.5);
+  }, 120000);
+});
+
+describe('宫永照（原来的天梯）', () => {
+  beforeAll(() => {
+    Object.assign(TERU, TERU_LADDER);
+  });
+  afterAll(() => {
+    Object.assign(TERU, POINTS);
+  });
+
   it('照魔镜：第一局和不了牌，第二局起可以和', () => {
     let firstRoundChecks = 0;
     let laterWins = 0;

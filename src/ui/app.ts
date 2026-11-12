@@ -3,7 +3,7 @@ import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { HIROKO_NOTES } from '../abilities/hiroko';
-import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored } from '../abilities/teru';
+import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruNote, teruPoints, teruWinValue } from '../abilities/teru';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
@@ -2406,7 +2406,21 @@ export class App {
   private towerHtml(s: number): string {
     const g = this.game!;
     if (this.chars[s]?.id !== 'teru' || !teruMirrored(g, s) || g.isSealed(s)) return '';
-    const { level, next, broke, kiki } = teruLadder(g, s);
+    const { level, next, broke, kiki, last, streak } = teruLadder(g, s);
+    // 按打点递增的连和：一层是一次连和，亮着的层上写那一次和了多少点，闪的那层写这一局要超过多少；塔尖是九莲宝灯
+    if (teruPoints()) {
+      const tiers = Array.from({ length: 8 }, (_, i) => {
+        const n = i + 1;
+        const lit = n <= level;
+        const up = !lit && n === level + 1;
+        return `<i class="tt-tier${lit ? ' lit' : up ? ' next' : ''}" style="--i:${i}">${lit ? (streak[i] ?? '') : up ? (level ? `>${last}` : '起胡') : ''}</i>`;
+      })
+        .reverse()
+        .join('');
+      const pips = Array.from({ length: TERU.kiki }, (_, i) => `<i${i < kiki ? ' class="on"' : ''}></i>`).join('');
+      const note = `${teruNote(g, s)}；叽叽叽 ${kiki}/${TERU.kiki}`;
+      return `<span class="teru-tower${broke && !level ? ' broken' : ''}" title="${note}"><i class="tt-spire${kiki >= TERU.kiki ? ' lit' : ''}"></i>${tiers}<span class="tt-kiki">${pips}</span></span>`;
+    }
     const tiers = TERU_TIERS.slice(0, TERU_TOP - 1)
       .map((name, i) => {
         const n = i + 1;
@@ -2839,15 +2853,26 @@ export class App {
   private waitsHtml(info: WaitInfo, prefix = ''): string {
     if (!info.tiles.length) return '';
     const status = info.tiles.map((w) => waitStatus(w, info.furiten));
+    // 照：连和看的是点数，待和牌下面直接写荣和、自摸各拿多少点；接不上连和的（不比上一次高）划掉
+    const g = this.game!;
+    const teru = this.chars[this.me]?.id === 'teru' && teruPoints() && teruMirrored(g, this.me) && !g.isSealed(this.me);
+    const last = teru ? teruLadder(g, this.me).last : 0;
+    const dealer = this.me === g.dealer;
+    const pts = (r: WaitInfo['tiles'][number]['ron'], tsumo: boolean, show: boolean) => {
+      if (!r || !show) return '';
+      const v = teruWinValue(r, tsumo, dealer);
+      return `<span class="wait-pts${v > last ? '' : ' low'}">${tsumo ? '摸' : '荣'} ${v}</span>`;
+    };
     const tiles = info.tiles
       .map((w, i) => {
         const st = status[i];
         const label = st === 'ron' ? hanLabel(w.ron!) : st === 'tsumo' ? '仅自摸' : '无役';
         const dead = st === 'none' || w.left === 0;
-        return `<div class="wait${dead ? ' dead' : ''}">${tileHtml(w.kind * 4 + 3, { size: 'pond' })}<span class="wait-left">余 ${w.left}</span><span class="wait-han ${st}">${label}</span></div>`;
+        const han = teru && st !== 'none' ? pts(w.ron, false, st === 'ron') + pts(w.tsumo, true, true) : `<span class="wait-han ${st}">${label}</span>`;
+        return `<div class="wait${dead ? ' dead' : ''}">${tileHtml(w.kind * 4 + 3, { size: 'pond' })}<span class="wait-left">余 ${w.left}</span>${han}</div>`;
       })
       .join('');
-    const title = prefix + (status.every((st) => st === 'none') ? '形式听牌（无役）' : '听牌');
+    const title = prefix + (status.every((st) => st === 'none') ? '形式听牌（无役）' : '听牌') + (teru && last ? `<span class="wait-goal">要超过 ${last} 点</span>` : '');
     return `<div class="waits"><div class="waits-title">${title}${info.furiten ? '<span class="furiten">振听</span>' : ''}</div><div class="wait-list">${tiles}</div></div>`;
   }
 
