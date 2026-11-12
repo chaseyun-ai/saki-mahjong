@@ -3,7 +3,7 @@ import { CHARACTERS } from '../src/abilities/characters';
 import { Game } from '../src/engine/game';
 import { kindOf } from '../src/engine/tiles';
 import { RINSHAN_TIERS, RinshanTier, rinshanHand, rinshanStage } from '../src/ui/sakiStage';
-import { lilyCount } from '../src/ui3d/lilyFx';
+import { lilyCount, lilyFieldCount } from '../src/ui3d/lilyFx';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -95,5 +95,16 @@ describe('百合花瓣的数量', () => {
     expect(n[0]).toBeGreaterThanOrEqual(30);
     expect(n[2]).toBeGreaterThan(n[1] * 1.5);
     expect(n.at(-1)).toBe(n.at(-2));
+  });
+
+  it('四周跟着开的小百合：小和也有几朵，和得越大越多，两倍役满封顶 16 朵', () => {
+    const bases = [240, 640, 2000, 3000, 4000, 6000, 8000, 16000, 24000];
+    const n = bases.map(lilyFieldCount);
+    for (let i = 1; i < n.length; i++) expect(n[i]).toBeGreaterThanOrEqual(n[i - 1]);
+    expect(lilyFieldCount(640)).toBeGreaterThanOrEqual(3);
+    expect(lilyFieldCount(2000)).toBeGreaterThan(lilyFieldCount(640));
+    expect(lilyFieldCount(8000)).toBeGreaterThan(lilyFieldCount(2000));
+    expect(n.at(-1)).toBe(16);
+    expect(n.at(-2)).toBe(16);
   });
 });

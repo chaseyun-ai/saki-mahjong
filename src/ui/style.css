@@ -7380,6 +7380,22 @@ html:root .tm-draft .tmd-go {
   height: 100%;
 }
 
+/* 2D 牌桌：咲的岭上开花（lily2d.ts 画在 canvas 上），盖在结算上面，放完自己拿掉 */
+.lily {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 60;
+}
+.lily2d,
+.lily2d canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 /* 风起来时四周暗成星空（中间留出牌桌）；透明度由 JS 跟着风的浓淡调 */
 .gale-void {
   position: absolute;

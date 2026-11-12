@@ -12,6 +12,7 @@ import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
 import { Gale2D } from './gale2d';
+import { Lily2D } from './lily2d';
 import { AISLINN_DROP, aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
 import { type HuiyuCard, huiyuBar, huiyuCards, huiyuMissedRon, huiyuReady, huiyuWinGb } from '../abilities/huiyu';
 import { playGlitch, playRebuild, playShatter } from './sketchFx';
@@ -1173,6 +1174,14 @@ export class App {
       if (slam) {
         this.galeSlam = { seat: slam.seat, t0: performance.now() };
         window.setTimeout(() => this.galeBurst2d(), slamImpact2d(slam.hand.filter((t) => t !== slam.tile).length) * 1000);
+      }
+      // 2D：咲的岭上开花（岭上牌自摸；役满时役里不写岭上开花，看这一张是不是岭上摸的）也是结算里手牌倒下、和了牌砸下去，
+      // 砸到那一下从这张牌开出百合（3D、2.5D 在牌桌上放）
+      const g = this.game!;
+      const bloom = !this.table3d && !slam ? e.result.wins.find((w) => w.from === null && this.chars[w.seat]?.id === 'saki' && (g.rinshanDraw || w.result.yaku.some((y) => y.name === '岭上开花'))) : undefined;
+      if (bloom) {
+        this.galeSlam = { seat: bloom.seat, t0: performance.now() };
+        window.setTimeout(() => this.game === g && this.lilyBurst2d(bloom.result.base), slamImpact2d(bloom.hand.filter((t) => t !== bloom.tile).length) * 1000);
       }
       for (const w of e.result.wins) {
         // 郝慧宇和牌喊「食糊」，国标 24 番以上金色
@@ -2676,6 +2685,37 @@ export class App {
     el.classList.add('burst');
     this.gale2dFx?.burst(r ? { x: r.left + r.width / 2 - box.left, y: r.top + r.height / 2 - box.top } : undefined);
     window.setTimeout(() => el.classList.remove('burst'), 2600);
+  }
+
+  // 2D：咲的岭上开花。和了牌砸到结算上那一下，从这张牌开出百合、四周冒小百合、花瓣飘下来（lily2d.ts），
+  // 画在一层盖在结算上面的 canvas 里，放完自己收起来
+  private lilyBurst2d(base: number): void {
+    const host = document.querySelector<HTMLElement>('.stage .table');
+    if (!host) return;
+    host.querySelector(':scope > .lily')?.remove();
+    const el = document.createElement('div');
+    el.className = 'lily';
+    const fx = new Lily2D();
+    el.append(fx.el);
+    host.append(el);
+    const tile = document.querySelector<HTMLElement>('.win.slam .win-tile');
+    const box = el.getBoundingClientRect();
+    // 牌桌整个缩放过（fit）：屏幕上的距离换回这一层里的
+    const k = box.width > 0 ? el.offsetWidth / box.width : 1;
+    // 这张牌落定以后的位置：按排版算（offsetLeft / offsetTop），不看它此刻被动画抬到哪了。
+    // 页面卡的时候定时器会比砸牌的动画先到，照此刻的位置量花就开在半空
+    const dock = tile?.offsetParent as HTMLElement | null;
+    const pr = dock?.getBoundingClientRect();
+    const ps = dock && pr && dock.offsetWidth > 0 ? pr.width / dock.offsetWidth : 1;
+    const at = tile && dock && pr
+      ? {
+          x: (pr.left + (dock.clientLeft + tile.offsetLeft + tile.offsetWidth / 2) * ps - box.left) * k,
+          y: (pr.top + (dock.clientTop + tile.offsetTop + tile.offsetHeight / 2) * ps - box.top) * k,
+        }
+      : { x: el.offsetWidth / 2, y: el.offsetHeight * 0.3 };
+    playSlam();
+    playLily(lilyGrand(base));
+    fx.bloom(at, base, () => el.remove());
   }
 
   private opponentHtml(s: number): string {

@@ -4,6 +4,9 @@ import * as THREE from 'three';
 // 接着花瓣从花里迸出来，一片片打着转、晃悠悠飘落到牌桌上，再慢慢谢掉。
 // 和得越大花瓣越多（lilyCount，看基本点）：花开得越大，倍满起花瓣卷成一道往上旋的花柱，役满起整张牌桌上空还下一场花瓣雨。
 // 花瓣是一张 InstancedMesh（一种弯弯的、尖头往后翻的百合花瓣形状），每帧在 CPU 上算位置和转动，几百片也很轻。
+// 岭上开花是“山岭上开花”：不只牌顶上一朵，四周的桌面上也跟着一圈圈冒出小百合（field，和得越大开得越远、越多），
+// 花开的一下一圈花瓣贴着桌面扫出去、一阵风把花瓣往牌桌中间吹。
+// 摸岭上牌那一下（sprout、trail）：岭上那张牌上先冒一朵小的，牌飞进手里的一路上拖着花瓣。
 
 // 基本点 → 花瓣片数：1 番 30 符约 40 片、满贯约 135、倍满约 215、役满 360，两倍役满封顶约 600
 export function lilyCount(base: number): number {
@@ -24,6 +27,19 @@ export interface LilyOpts {
   scale?: number; // 牌的大小
   area?: number; // 花瓣雨洒多大一片（牌桌半宽）
   inward?: THREE.Vector3; // 往牌桌中间的方向（水平）：花瓣往这边飘，不往镜头上糊
+  field?: LilySpot[]; // 四周跟着开的小百合
+}
+
+// 四周跟着开的一朵小百合：at 在桌面上，delay 是比大的那朵晚多久开，size 是大那朵的几成
+export interface LilySpot {
+  at: THREE.Vector3;
+  delay: number;
+  size: number;
+}
+
+// 这一手四周开几朵小百合：2 番 4 朵、满贯 8 朵、倍满 11 朵、役满 13 朵，两倍役满 16 朵
+export function lilyFieldCount(base: number): number {
+  return Math.round(1 + 15 * lilyGrand(base));
 }
 
 interface Petal {
@@ -42,7 +58,7 @@ interface Petal {
   tint: THREE.Color;
 }
 
-const MAX_PETALS = 720;
+const MAX_PETALS = 960;
 const GRAVITY = 2.6;
 const DRAG = 2.4;
 const LIE = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
@@ -147,6 +163,7 @@ interface Bloom {
   born: number;
   size: number;
   fall: number; // 花被一片片脱落、变成飞的花瓣的时刻（相对 born）
+  lift: number; // 开着开着往上浮多高（自己大小的几成）
   shed: boolean;
   grand: number;
   origin: THREE.Vector3;
@@ -171,6 +188,8 @@ export class LilyFx {
   private dummy = new THREE.Object3D();
   private center = new THREE.Vector3();
   private inward = new THREE.Vector3();
+  // 跟着一张牌飞的花瓣（摸岭上牌）：到 until 为止每隔一小会儿在牌现在的位置撒一片
+  private trails: { get: () => THREE.Vector3 | null; until: number; next: number; scale: number }[] = [];
 
   // 还要多久才放完（秒）
   get remaining(): number {
@@ -178,6 +197,7 @@ export class LilyFx {
     for (const p of this.petals) end = Math.max(end, p.born + p.life);
     for (const q of this.queue) end = Math.max(end, q.at + 6);
     for (const b of this.blooms) end = Math.max(end, b.born + b.fall + 6);
+    for (const t of this.trails) end = Math.max(end, t.until + 3);
     return Math.max(0, end - this.now);
   }
 
@@ -203,7 +223,7 @@ export class LilyFx {
     const s = o.scale ?? 1;
     const grand = lilyGrand(o.base);
     const total = lilyCount(o.base);
-    const size = (0.85 + 0.95 * grand) * s;
+    const size = (1.15 + 1.2 * grand) * s;
     const face = o.face.clone().normalize();
     const inward = o.inward?.clone().setY(0).normalize() ?? new THREE.Vector3();
     this.inward.copy(inward);
@@ -217,6 +237,22 @@ export class LilyFx {
     const first = Math.round(total * (grand > 0.6 ? 0.35 : 0.5));
     const stream = total - first;
     this.queue.push({ at: t0 + 0.08, fn: () => this.burst(at, inward, first, s, grand) });
+    // 一圈花瓣贴着桌面扫出去（另外加的，不占总数）
+    this.queue.push({ at: t0 + 0.05, fn: () => this.sweep(o.at, Math.round(14 + 26 * grand), s, grand) });
+    // 四周的小百合：一圈圈往外开，每朵开的时候带起几片花瓣，谢的时候花被也变成花瓣飞走
+    for (const f of o.field ?? []) {
+      this.queue.push({
+        at: t0 + f.delay,
+        fn: () => {
+          const up = new THREE.Vector3(0, 1, 0).addScaledVector(face, 0.55).normalize();
+          const small = this.makeFlower(f.at, up, size * f.size, grand * 0.5);
+          small.fall = 1.5 + 0.9 * grand + Math.random() * 0.5;
+          small.lift = 0.12;
+          this.blooms.push(small);
+          this.puff(f.at, 3 + Math.round(4 * grand), s * (0.6 + 0.4 * f.size));
+        },
+      });
+    }
     const streamTime = 0.6 + 1.2 * grand;
     const puffs = Math.max(1, Math.round(streamTime / 0.06));
     for (let i = 0; i < puffs; i++) {
@@ -230,9 +266,28 @@ export class LilyFx {
     }
   }
 
+  // 摸岭上牌那一下：岭上那张牌上先冒一朵小百合，带起一小把花瓣（face 朝镜头）
+  sprout(at: THREE.Vector3, face: THREE.Vector3, scale = 1): void {
+    this.ensure();
+    const up = new THREE.Vector3(0, 1, 0).addScaledVector(face.clone().normalize(), 0.6).normalize();
+    const b = this.makeFlower(at.clone(), up, 1.5 * scale, 0);
+    b.fall = 1.0;
+    b.lift = 0.2;
+    this.blooms.push(b);
+    this.center.copy(at);
+    this.puff(at, 16, scale * 1.35);
+  }
+
+  // 花瓣跟着一张牌飞 seconds 秒（get 给牌现在的位置，牌没了给 null）
+  trail(get: () => THREE.Vector3 | null, seconds: number, scale = 1): void {
+    this.ensure();
+    this.trails.push({ get, until: this.now + seconds, next: this.now, scale });
+  }
+
   clear(): void {
     this.petals = [];
     this.queue = [];
+    this.trails = [];
     for (const b of this.blooms) this.dropFlower(b);
     this.blooms = [];
     if (this.mesh) this.mesh.count = 0;
@@ -300,7 +355,7 @@ export class LilyFx {
     glow.position.y = 0.1;
     group.add(glow);
     this.group.add(group);
-    return { group, tepals, stamens, glow, born: this.now, size, fall: 1.15 + 0.9 * grand, shed: false, grand, origin: at.clone() };
+    return { group, tepals, stamens, glow, born: this.now, size, fall: 1.15 + 0.9 * grand, lift: 0.5, shed: false, grand, origin: at.clone() };
   }
 
   private dropFlower(b: Bloom): void {
@@ -320,7 +375,7 @@ export class LilyFx {
     let fade = 1;
     if (k > b.fall) fade = Math.max(0, 1 - (k - b.fall) / 0.45);
     b.group.scale.setScalar(Math.max(0.001, b.size * (0.35 + 0.65 * (1 - (1 - grow) ** 2)) * breathe));
-    b.group.position.copy(b.origin).add(new THREE.Vector3(0, 0.5 * b.size * (1 - Math.exp(-k * 1.5)), 0));
+    b.group.position.copy(b.origin).add(new THREE.Vector3(0, b.lift * b.size * (1 - Math.exp(-k * 1.5)), 0));
     b.group.rotateOnAxis(new THREE.Vector3(0, 1, 0), 0.004);
     for (const m of b.tepals) {
       const outer = m.userData.outer as boolean;
@@ -385,7 +440,32 @@ export class LilyFx {
       const a = Math.random() * Math.PI * 2;
       const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(rand(0.4, 1)).add(up.clone().multiplyScalar(rand(0.7, 1.6))).addScaledVector(inward, rand(0.2, 0.9));
       dir.normalize().multiplyScalar(rand(4, 8 + 5 * grand) * s);
+      // 三成被一阵风往牌桌中间吹过去，飘得远
+      if (i % 3 === 0) dir.addScaledVector(inward, rand(5, 11 + 6 * grand) * s);
       this.spawn(at.clone().add(new THREE.Vector3(rand(-0.2, 0.2), rand(0, 0.3), rand(-0.2, 0.2)).multiplyScalar(s)), dir, rand(0.32, 0.55) * s, rand(0.2, 0.6) * (0.4 + grand));
+    }
+  }
+
+  // 一圈花瓣贴着桌面往四周扫出去（跟着冲击波），扫到一半慢下来、飘起来一点再落下
+  private sweep(at: THREE.Vector3, n: number, s: number, grand: number): void {
+    const a0 = Math.random() * Math.PI * 2;
+    for (let i = 0; i < n; i++) {
+      const a = a0 + ((i + rand(-0.3, 0.3)) / n) * Math.PI * 2;
+      const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+      // 往牌桌里面的那半圈扫得远，往外（镜头、桌边）的近一点
+      const reach = 1 + 0.6 * Math.max(0, dir.dot(this.inward));
+      const v = dir.multiplyScalar(rand(9, 14 + 8 * grand) * reach * s);
+      v.y = rand(0.8, 2.2) * s;
+      this.spawn(new THREE.Vector3(at.x + Math.cos(a) * 0.5 * s, 0.15 * s, at.z + Math.sin(a) * 0.5 * s), v, rand(0.3, 0.46) * s, 0.15);
+    }
+  }
+
+  // 一小把花瓣往上、往四周轻轻迸开（小百合开的那一下、岭上牌上那一朵）
+  private puff(at: THREE.Vector3, n: number, s: number): void {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const v = new THREE.Vector3(Math.cos(a) * rand(0.6, 2.2), rand(2.5, 5.5), Math.sin(a) * rand(0.6, 2.2)).multiplyScalar(s);
+      this.spawn(at.clone().add(new THREE.Vector3(rand(-0.15, 0.15), rand(0.1, 0.3), rand(-0.15, 0.15)).multiplyScalar(s)), v, rand(0.22, 0.36) * s, 0.3, undefined, rand(2.4, 3.6));
     }
   }
 
@@ -418,6 +498,18 @@ export class LilyFx {
       for (const q of due) q.fn();
     }
     this.blooms = this.blooms.filter((b) => this.animateFlower(b));
+    if (this.trails.length) {
+      this.trails = this.trails.filter((t) => this.now < t.until);
+      for (const t of this.trails) {
+        const at = t.get();
+        if (!at) continue;
+        while (t.next <= this.now) {
+          t.next += 0.012;
+          const v = new THREE.Vector3(rand(-1.2, 1.2), rand(0.4, 2.2), rand(-1.2, 1.2)).multiplyScalar(t.scale);
+          this.spawn(at.clone().add(new THREE.Vector3(rand(-0.3, 0.3), rand(-0.2, 0.3), rand(-0.3, 0.3)).multiplyScalar(t.scale)), v, rand(0.3, 0.46) * t.scale, 0, undefined, rand(1.8, 2.8));
+        }
+      }
+    }
     if (!this.mesh) return;
     const live: Petal[] = [];
     const tmpQ = new THREE.Quaternion();

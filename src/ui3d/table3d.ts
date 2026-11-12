@@ -33,7 +33,7 @@ import { SlamRun, SlamStyle, TileSlam } from './tileSlam';
 import { AHEAD_MAX } from './slamEdge';
 import type { SlapOrder } from './slamSlap';
 import { SlamFx } from './slamFx';
-import { LilyFx, lilyGrand } from './lilyFx';
+import { LilyFx, type LilySpot, lilyFieldCount, lilyGrand } from './lilyFx';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -278,7 +278,8 @@ interface RevealState {
   // 到这些时刻重摆一次牌（立起来、落好、开始倒）
   syncs: number[];
   // 要砸的和了牌：不跟着手牌倒，at 时举起来往下砸（自摸是手里那张，荣和是从牌河拿过来）
-  slams: Map<TileId, { seat: number; at: number; from: Placement | null; hit: boolean }>;
+  // lily：咲的岭上开花（原版 2.5D、3D 牌桌没有那只手，和了牌自己举起来砸下去），砸到时开百合（这一手的基本点）
+  slams: Map<TileId, { seat: number; at: number; from: Placement | null; hit: boolean; lily?: number }>;
   // 砸下去那一下：桌上的牌从这里往外震一下
   hops: { at: number; x: THREE.Vector3 }[];
   spotsOn: boolean; // 聚光灯打开了没有
@@ -482,6 +483,8 @@ export class Table3D {
   private slam = new TileSlam();
   private slamFx = new SlamFx();
   private lily = new LilyFx();
+  // 咲这一杠摸的岭上牌正好和（能力喊了“岭上开花”）：下一张她摸的岭上牌上先冒一朵小百合，一路拖着花瓣飞进手里
+  private lilyDraw: number | null = null;
   // 砸牌、百合放到什么时候：这之前先别弹结算
   private fxHold = 0;
   private mist = new WallMist();
@@ -1022,7 +1025,9 @@ export class Table3D {
           const from = { pos: obj.group.position.clone(), quat: obj.group.quaternion.clone(), scale: obj.group.scale.x };
           this.heldDraw = { seat: e.seat, tile: drawn, at: this.now + wait, from };
         } else this.startFlight(drawn, e.seat);
+        if (this.lilyDraw === e.seat && g.rinshanDraw && obj.shown) this.lilySprout(drawn);
       }
+      this.lilyDraw = null;
       const ch = this.characterAt(e.seat);
       if (ch && drawn !== null) ch.avatar?.lookAtPoint(this.tiles[drawn].group.position.clone(), 0.8);
     } else if (e.type === 'discard') {
@@ -1064,6 +1069,8 @@ export class Table3D {
     } else if (e.type === 'ability') {
       // 衣摸到了海底牌：这一张不照常飞，从海里捞上来
       if (e.ability === 'koromo' && e.text === '海底自摸') this.startScoop(g, e.seat);
+      // 咲开杠、岭上那张正好和：记下来，等她摸这张岭上牌时在牌上开一朵小百合
+      if (e.ability === 'saki' && e.text === '岭上开花') this.lilyDraw = e.seat;
       for (const ch of all) {
         if (ch.seat === e.seat) ch.avatar?.setMood('relaxed', 2);
         else ch.avatar?.setMood('surprised', 1.2);
@@ -1425,8 +1432,7 @@ export class Table3D {
     if (tw) {
       const self = this.fallsBack(tw.seat);
       const start = self && standAt !== null ? standAt : this.now + V2_STAND;
-      const rinshan = g.rinshanDraw || tw.result.yaku.some((y) => y.name === '岭上开花');
-      const lily = this.lastSync?.view.ids[tw.seat] === 'saki' && rinshan ? tw.result.base : null;
+      const lily = this.lilyBase(g, tw);
       const sea = tw.tile === this.seaSlamTile;
       // 咲的岭上开花、衣的海底牌是照着拍牌做的特效（百合从拍下去的牌顶上开、海水从落点打散），不换成边缘切
       const style = this.slamStyle(tw.seat, lily === null && !sea);
@@ -1453,11 +1459,13 @@ export class Table3D {
     for (const w of r.wins) {
       // 衣从海里捞上来的海底牌：自摸时也举起来砸下去（改良布局走上面那只手砸）
       const sea = w.from === null && w.tile === this.seaSlamTile && tsumoSlam?.tile !== w.tile;
-      if (!this.galeWin(w.seat) && !sea) continue;
+      // 咲的岭上开花：原版 2.5D、3D 牌桌没有拍牌的手，和了牌也举起来砸下去，砸到时开百合
+      const lily = w.from === null && !tsumoSlam && !sea && !this.galeWin(w.seat) ? this.lilyBase(g, w) : null;
+      if (!this.galeWin(w.seat) && !sea && lily === null) continue;
       const n = g.players[w.seat].hand.filter((t) => t !== w.tile).length;
       const wave = (LOOKS[this.lastSync?.view.ids[w.seat] ?? '']?.reveal ?? 'wave') === 'wave';
       const slamAt = at + (wave ? Math.max(0, n - 1) * stagger : 0) + TOPPLE_TIME + 0.12;
-      slams.set(w.tile, { seat: w.seat, at: slamAt, from: null, hit: false });
+      slams.set(w.tile, { seat: w.seat, at: slamAt, from: null, hit: false, ...(lily !== null ? { lily } : {}) });
       fxAt = Math.max(fxAt, slamAt + SLAM_TIME);
     }
     // 被荣和的立直不成立，还没拿出来的立直棒不拿了
@@ -1468,7 +1476,7 @@ export class Table3D {
       fxAt,
       fxDone: false,
       // 竹井久的倒牌在动作中间（砸下去自己炸开），不劈闪电（也不跟着闪电震屏）
-      boltAt: flat && r.wins.length && flickReveal === null ? at - BOLT_LEAD : null,
+      boltAt: flat && r.wins.length && flickReveal === null && ![...slams.values()].some((x) => x.lily !== undefined) ? at - BOLT_LEAD : null,
       stagger,
       wins: r.wins.map((w) => ({ seat: w.seat, tsumo: w.from === null, tile: w.tile })),
       topple: new Map(),
@@ -2328,11 +2336,56 @@ export class Table3D {
     const top = g.position.clone().add(new THREE.Vector3(0, (TILE_H / 2) * s + 0.12, 0));
     // 花朝着镜头、偏上开
     const face = this.camera.position.clone().sub(top).normalize().add(new THREE.Vector3(0, 0.6, 0)).normalize();
-    this.lily.bloom({ at: top, face, base: lily, scale: s, area: this.dim.tableHalf * 0.85, inward: this.seatPoint(seat, 0, 0, -1) });
+    const inward = this.seatPoint(seat, 0, 0, -1);
+    this.lily.bloom({ at: top, face, base: lily, scale: s, area: this.dim.tableHalf * 0.85, inward, field: this.lilyField(floor, inward, lily, s) });
     this.effects.flash(top, '#fffaf0', 3, 0.45);
     this.effects.pulse(top.clone().setY(2), '#fff4e4', 55, 0.25);
     // 结算等花开完、花瓣飘一会儿再弹（和得越大等得越久）
     this.fxHold = Math.max(this.fxHold, this.now + 2 + 1.6 * big);
+  }
+
+  // 这一手是不是咲的岭上开花（岭上牌自摸；役满时役里不写岭上开花，看这一张是不是岭上摸的）：是就给基本点，不是 null
+  private lilyBase(g: Game, w: { seat: number; from: number | null; result: { base: number; yaku: { name: string }[] } }): number | null {
+    if (w.from !== null || this.lastSync?.view.ids[w.seat] !== 'saki') return null;
+    return g.rinshanDraw || w.result.yaku.some((y) => y.name === '岭上开花') ? w.result.base : null;
+  }
+
+  // 岭上开花四周跟着开的小百合：从砸牌的地方往牌桌里面一圈圈开过去（离得越远开得越晚），和得越大越多、开得越远。
+  // 不开到桌子外面，中间的控制台上不开
+  private lilyField(from: THREE.Vector3, inward: THREE.Vector3, base: number, s: number): LilySpot[] {
+    const grand = lilyGrand(base);
+    const n = lilyFieldCount(base);
+    const half = this.dim.tableHalf * 0.92;
+    const reach = (4.5 + 13 * grand) * Math.max(1, s * 0.8);
+    const dir = inward.clone().setY(0).normalize();
+    const a0 = Math.atan2(dir.z, dir.x);
+    const out: LilySpot[] = [];
+    for (let i = 0, tries = 0; out.length < n && tries < n * 12; tries++) {
+      // 黄金角一圈圈往外排，再抖一点：不排成整齐的队
+      const u = (i + 0.6 + Math.random() * 0.5) / n;
+      const a = a0 + (((i * 0.618 + Math.random() * 0.12) % 1) - 0.5) * Math.PI * 1.5;
+      const r = (1.6 + (reach - 1.6) * Math.sqrt(u)) * Math.max(1, s * 0.8);
+      const x = from.x + Math.cos(a) * r;
+      const z = from.z + Math.sin(a) * r;
+      i++;
+      if (Math.abs(x) > half || Math.abs(z) > half) continue;
+      if (Math.abs(x) < CONSOLE_HALF + 0.6 && Math.abs(z) < CONSOLE_HALF + 0.6) continue;
+      out.push({ at: new THREE.Vector3(x, 0.05, z), delay: 0.12 + r * 0.055 + Math.random() * 0.08, size: 0.38 + Math.random() * 0.24 });
+    }
+    return out;
+  }
+
+  // 咲摸到正好和的那张岭上牌：岭上那张牌上先冒一朵小百合，牌飞进手里的一路上拖着花瓣
+  private lilySprout(tile: TileId): void {
+    const obj = this.tiles[tile];
+    const at = obj.group.position.clone();
+    const s = obj.group.scale.x;
+    const top = at.clone().add(new THREE.Vector3(0, (TILE_T / 2) * s + 0.1, 0));
+    const face = this.camera.position.clone().sub(top).normalize();
+    this.lily.sprout(top, face, s);
+    this.effects.flash(top, '#fffaf0', 2.2 * s, 0.4);
+    this.effects.sparkles(top, '#fff6e6', 14, 1.4 * s, 1.1);
+    this.lily.trail(() => (this.flights.some((f) => f.tile === tile) ? obj.group.position : null), DRAW_FLIGHT + 0.5, s);
   }
 
   // 砸牌：手牌倒完，和了牌从原地（荣和是牌河里那张）举到头顶、牌面朝自己一歪，停一下，再狠狠拍到倒好的手牌右边；
@@ -2386,6 +2439,7 @@ export class Table3D {
         g.quaternion.copy(to.quat);
         g.scale.setScalar(to.scale);
         if (id === this.seaSlamTile) this.seaSlam(to.pos.clone(), e.seat);
+        else if (e.lily !== undefined) this.slamImpact(e.seat, id, to.pos.clone(), e.lily);
         else {
           this.galeBurst(to.pos.clone());
           this.effects.ring(to.pos.clone().setY(0.05), '#ffffff', 3.5, 0.45);
@@ -3719,7 +3773,7 @@ export class Table3D {
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
       for (const w of rv.wins) {
         const slam = rv.slams.has(w.tile) ? this.tiles[w.tile].group.position.clone() : null;
-        this.winFx(w.seat, w.tsumo, slam ? (w.tile === this.seaSlamTile ? MOON_GLOW : '#c870ff') : FX_GOLD, slam);
+        this.winFx(w.seat, w.tsumo, slam ? (w.tile === this.seaSlamTile ? MOON_GLOW : rv.slams.get(w.tile)?.lily !== undefined ? '#fff1e6' : '#c870ff') : FX_GOLD, slam);
       }
     }
     this.animateSlams(rv);
