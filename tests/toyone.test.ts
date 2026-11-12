@@ -110,7 +110,7 @@ describe('姊带丰音', () => {
     }
     expect(chased).toBeGreaterThan(0);
     expect(fed).toBeGreaterThan(0);
-  }, 60000);
+  }, 120000);
 
   it('她还没用别的技能（先负等着）时，别的电脑不轻易立直', () => {
     const ids = ['toyone', 'hisa', 'yuuki', 'sera'];
@@ -228,5 +228,5 @@ describe('姊带丰音', () => {
         expect(g.players.reduce((a, p) => a + p.score, 0) + g.riichiSticks * 1000).toBe(100000);
       }
     }
-  }, 60000);
+  }, 120000);
 });

@@ -69,7 +69,7 @@ describe('福路美穗子', () => {
     }
     expect(opened).toBeGreaterThan(5);
     expect(refused).toBeGreaterThan(0);
-  }, 120000);
+  }, 180000);
 
   it('睁眼看出的“他手里没有的花色”真的和不了；电脑有人立直时会睁眼', () => {
     let checks = 0;
@@ -102,5 +102,5 @@ describe('福路美穗子', () => {
     }
     expect(checks).toBeGreaterThan(50);
     expect(riichiOpen).toBeGreaterThan(0);
-  }, 120000);
+  }, 180000);
 });

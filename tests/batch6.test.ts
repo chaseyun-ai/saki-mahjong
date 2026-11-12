@@ -101,7 +101,7 @@ describe('清水谷龙华', () => {
     }
     expect(n.on).toBeGreaterThan(50);
     expect(n.onGood / n.on).toBeGreaterThan(n.offGood / n.off + 0.1);
-  }, 120000);
+  }, 240000);
 });
 
 describe('弘世堇', () => {

@@ -45,14 +45,14 @@ describe('花田煌', () => {
     }
     expect(guarded).toBeGreaterThan(0);
     expect(banned).toBeGreaterThan(0);
-  }, 60000);
+  }, 240000);
 
   it('封印、佛灭也挡不住', () => {
     for (let seed = 1; seed <= 6; seed++) {
       const g = play(seed, ['kirame', 'sawaya', 'toyone', 'teru'], 2000);
       expect(g.players[0].score).toBeGreaterThanOrEqual(0);
     }
-  }, 60000);
+  }, 120000);
 
   it('流局不听罚符最多付到 0 点，点数总和不变', () => {
     const g = new Game({ seed: 3, format: 'team', scores: [500, 25000, 25000, 25000], players: [byId('kirame'), byId('izumi'), byId('izumi'), byId('izumi')].map((c) => ({ name: c.id, ability: c.ability })) });

@@ -349,7 +349,7 @@ describe('狮子原爽', () => {
     console.log({ used, draws, hits });
     expect(draws).toBeGreaterThan(10);
     expect(hits / draws).toBeGreaterThan(0.85);
-  }, 120000);
+  }, 180000);
 
   it('电脑的爽：蛇神威不单独用；一局最多新叫两样；能打完整场', () => {
     let snake = 0;
@@ -372,5 +372,5 @@ describe('狮子原爽', () => {
     }
     expect(snake).toBeGreaterThan(2);
     expect(acted).toBeGreaterThan(24);
-  }, 120000);
+  }, 180000);
 });

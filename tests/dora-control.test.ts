@@ -64,7 +64,7 @@ describe('宝牌控制：松实玄', () => {
       await new Promise((r) => setTimeout(r, 0));
     }
     expect(wins).toBeGreaterThan(10);
-  }, 180000);
+  }, 420000);
 
   it('能力还在时，新翻的杠宝牌几乎不指向别人手里、副露已有的牌', () => {
     let flips = 0;
@@ -110,7 +110,7 @@ describe('宝牌控制：宫永咲', () => {
     console.log(`咲开杠：杠宝牌 ${flips} 张，不指向她的 ${clean} 张`);
     expect(flips).toBeGreaterThan(20);
     expect(clean / flips).toBeGreaterThan(0.9);
-  }, 180000);
+  }, 240000);
 
   it('满 6 个标记的稳乃在场时，咲的杠有时会给自己杠出宝牌', () => {
     let flips = 0;

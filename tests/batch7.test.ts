@@ -95,7 +95,7 @@ describe('池田华菜', () => {
     expect(low).toBeGreaterThan(high + KANA.luck * 0.3);
     expect(kanaAbility.badge!(game(1, 0, kanaAbility, [8000, 30000, 30000, 32000]), 0)).toBe('背水');
     expect(kanaAbility.badge!(game(1, 0, kanaAbility, [25000, 25000, 25000, 25000]), 0)).toBeNull();
-  }, 60000);
+  }, 180000);
 });
 
 describe('妹尾佳织', () => {

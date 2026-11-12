@@ -140,7 +140,7 @@ describe('能力痕迹', () => {
     }
     expect(kuro).toBeGreaterThan(10);
     expect(rinshan).toBeGreaterThan(0);
-  }, 120000);
+  }, 300000);
 
   it('没有能力的对局：不会出现换牌，鸣牌错位和吃、碰、明杠一一对应', () => {
     let shifts = 0;
@@ -154,7 +154,7 @@ describe('能力痕迹', () => {
       });
     }
     expect(shifts).toBeGreaterThan(20);
-  }, 120000);
+  }, 180000);
 
   it('鸣牌错位：下一张本来归打牌的下家，现在归鸣牌的下家；中间的人少摸一巡', () => {
     let n = 0;

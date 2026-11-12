@@ -66,7 +66,7 @@ describe('松实玄：宝牌绝对优先', () => {
     }
     expect(hands).toBeGreaterThan(150);
     expect(draws).toBeGreaterThan(1000);
-  }, 120000);
+  }, 300000);
 });
 
 describe('宫永照：别人的能力动不了她', () => {

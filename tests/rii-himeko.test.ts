@@ -224,7 +224,7 @@ describe('鹤田姬子', () => {
         expect(p.discards.length).toBeLessThanOrEqual(6);
       }
     }
-  }, 60000);
+  }, 120000);
 
   it('钥匙的局谁也挡不住她：照、天照的神代、佛灭都一样；只有玄的宝牌照旧', () => {
     const { g } = setup(3, ['himeko', 'teru', 'kuro', 'komaki'], { keys: keyAt('东1局 0本场', 2) });

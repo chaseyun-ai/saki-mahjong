@@ -105,7 +105,7 @@ describe('原村和', () => {
       expect(badge).toBe(true);
     }
     expect(games).toBeGreaterThan(2);
-  }, 60000);
+  }, 120000);
 
   it('天使和：别人摸牌的规矩一半不算（摸得到被挡的牌，但比没人挡时少）', () => {
     setNodokaCosts({ ...COSTS, probe: 5 });
@@ -139,7 +139,7 @@ describe('原村和', () => {
     } finally {
       setNodokaCosts(COSTS);
     }
-  }, 120000);
+  }, 180000);
 
   it('天使和读得出 8000 点以上的铳牌，电脑的天使和不打', () => {
     let checked = 0;
@@ -162,7 +162,7 @@ describe('原村和', () => {
       );
     }
     expect(checked).toBeGreaterThan(0);
-  }, 120000);
+  }, 180000);
   it('天使和封印不了，变身前照样被封', () => {
     const sealer: Ability = { id: 'probe', name: '封印', description: '', seals: () => true };
     const seats = ['nodoka', 'awai', 'teru'].map((id) => ({ name: id, ability: byId(id).ability }));

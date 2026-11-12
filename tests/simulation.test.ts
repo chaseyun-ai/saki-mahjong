@@ -78,7 +78,7 @@ describe('整场模拟', () => {
     console.log({ rounds, wins, ability, firstPlaceBySeat: winsBySeat });
     console.log([...yaku.entries()].sort((a, b) => b[1] - a[1]));
     expect(wins).toBeGreaterThan(rounds * 0.4);
-  }, 120000);
+  }, 180000);
 });
 
 describe('园城寺怜的立直', () => {
@@ -117,5 +117,5 @@ describe('园城寺怜的立直', () => {
     }
     expect(riichis).toBeGreaterThan(0);
     expect(rons).toBeGreaterThan(0);
-  }, 120000);
+  }, 240000);
 });

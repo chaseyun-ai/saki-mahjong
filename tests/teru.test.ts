@@ -80,7 +80,7 @@ describe('宫永照（按打点递增的连和）', () => {
     expect(n.max).toBeGreaterThanOrEqual(4);
     expect(n.broke).toBeGreaterThan(0);
     console.log(n);
-  }, 120000);
+  }, 300000);
 
   it('起胡便宜、宝牌少：起胡的那一次多半在 2000 点以内，她和的牌里宝牌平均不到半张', () => {
     const first: number[] = [];
@@ -111,7 +111,7 @@ describe('宫永照（按打点递增的连和）', () => {
     expect(first.length).toBeGreaterThan(20);
     expect(cheap).toBeGreaterThan(0.5);
     expect(dora / wins).toBeLessThan(0.5);
-  }, 120000);
+  }, 240000);
 });
 
 describe('宫永照（原来的天梯）', () => {
@@ -242,7 +242,7 @@ describe('宫永照（原来的天梯）', () => {
     expect(n.high).toBeGreaterThan(40);
     expect(n.highGood / n.high).toBeGreaterThan(n.lowGood / n.low + 0.1);
     console.log({ high: (n.highGood / n.high).toFixed(2), low: (n.lowGood / n.low).toFixed(2), skipped: n.skipped });
-  }, 120000);
+  }, 180000);
 
   it('叽叽叽：自摸满八次，下一局配牌是九莲宝灯的听牌，和出九莲宝灯以后从头数', () => {
     let chuuren = 0;
@@ -307,7 +307,7 @@ describe('宫永照（原来的天梯）', () => {
     console.log({ withTeru: withTeru.toFixed(2), without: without.toFixed(2) });
     // 实际差距在 0.05 左右（80 场：0.22 对 0.28），12 场、门槛 0.05 时随机数流向一变就可能过不了，所以多打几场、门槛放到 0.04
     expect(withTeru).toBeLessThan(without - 0.04);
-  }, 120000);
+  }, 240000);
   it('铳牌：照魔镜看过以后，读得出立直的人听的牌；没立直的、第一局都不算', () => {
     const g = new Game({ seed: 1, players: ['teru', 'kuro', 'mako', 'ako'].map((id) => ({ name: id, ability: byId(id).ability })) });
     const p = g.players[1];

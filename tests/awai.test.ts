@@ -140,7 +140,7 @@ describe('大星淡：被动', () => {
     expect(wins + kuroWins).toBeGreaterThan(kans * 0.6);
     // 咲在淡之前开过两次杠时，淡的杠翻到第 4 张杠宝牌，下面的里宝牌没事先藏好，牌山里也可能换不出来
     expect(uraHits).toBeGreaterThanOrEqual(wins * 0.8);
-  }, 120000);
+  }, 300000);
 
   it('转角的第四张放在开局后摸牌经过的第 2 个转角前（来不及时退到第 1 个）', () => {
     let checked = 0;

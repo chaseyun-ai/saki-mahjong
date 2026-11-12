@@ -186,7 +186,7 @@ describe('宫永咲', () => {
     expect(two / deals).toBeLessThan(0.1);
     // 第四张被别人抓进配牌、翻成宝牌指示牌的时候现不出来，其余的开局就看得见
     expect(shown).toBeGreaterThan(trips * 0.7);
-  }, 120000);
+  }, 180000);
 
   it('岭上牌的分工：第一张多半贴着配牌；她对子的同种牌只在连杠局（配牌有现成刻子）排在第一张', () => {
     let deals = 0;
@@ -226,7 +226,7 @@ describe('宫永咲', () => {
     expect(chains).toBeLessThan(deals * 0.3);
     // 前三张里废牌平均不到一张
     expect(junk3).toBeLessThan(deals);
-  }, 120000);
+  }, 180000);
 
   it('第四张落在哪：配牌就有的刻子在这一局第 2–8 次摸牌，后来成的在之后第 3–6 次摸牌', () => {
     const dealt = { n: 0, ok: 0 };

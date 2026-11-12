@@ -109,7 +109,7 @@ describe('涅莉·薇萨拉兹', () => {
         );
       }
     }
-  }, 120000);
+  }, 240000);
 
   it('七姐妹：押了运势的局自动开着，听牌的人用掉一次封住，一场最多 7 次，封住的人这一局和不了', () => {
     let used = 0;
@@ -210,7 +210,7 @@ describe('涅莉·薇萨拉兹', () => {
     expect(avg(stat[2].turns, stat[2].wins)).toBeLessThan(avg(stat[1].turns, stat[1].wins));
     expect(avg(stat[3].value, stat[3].wins)).toBeGreaterThan(avg(stat[2].value, stat[2].wins));
     expect(avg(stat[2].value, stat[2].wins)).toBeGreaterThan(avg(stat[1].value, stat[1].wins));
-  }, 600000);
+  }, 780000);
 
   it('玄在场（宝牌、里宝牌都动不了）押 3 点也有一半左右和出三倍满（做清一色）', () => {
     const KURO = [

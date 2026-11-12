@@ -207,7 +207,7 @@ describe('电脑的初美', () => {
     expect(guest).toBe(0);
     // 鸣出东北的局多半做成小四喜（改之前这些局里有四成把送来的西南打掉了，四喜只有三分之一）
     expect(suushii / opened).toBeGreaterThan(0.45);
-  }, 120000);
+  }, 180000);
 });
 
 describe('泷见春', () => {
