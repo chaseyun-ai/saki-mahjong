@@ -3,10 +3,13 @@
 // random：从全部角色里随机抽三人（不含她）；plain：三个没有能力的人（二条泉）；也可以写三个角色 id，用逗号隔开（固定对手）
 // 输出一行 JSON：平均顺位、一位率、四位率、终局均分、和了率、平均打点、放铳率，还有角色自己的计数（佳织的役满局等）
 import { CHARACTERS } from '../src/abilities/characters';
+import { NELLY } from '../src/abilities/nelly';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { Rng } from '../src/engine/rng';
 
+// 临时改涅莉的参数（比如试攒运势：NELLY_JSON='{"charge":{"start":0,"gain":1,"cap":6}}'）
+if (process.env.NELLY_JSON) Object.assign(NELLY, JSON.parse(process.env.NELLY_JSON));
 const id = process.argv[2] ?? 'izumi';
 const games = Number(process.argv[3] ?? 200);
 const pool = process.argv[4] ?? 'random';

@@ -3058,9 +3058,9 @@ export class App {
         const v = vals[o.id];
         const { min, max } = o.stepper!;
         const cls = v > 0 ? ' up' : v < 0 ? ' down' : '';
-        return `<div class="pd-step-row"><span class="pd-step-name">${o.name}</span>
+        return `<div class="pd-step-row"><span class="pd-step-name">${o.name}${o.note ? `<small class="pd-step-tag">${o.note}</small>` : ''}</span>
           <button class="pd-step" data-ui="pd-step" data-pd="${o.id}" data-d="-1" ${v <= min ? 'disabled' : ''}>−</button>
-          <span class="pd-step-val${cls}">${v > 0 ? '+' : ''}${v}</span>
+          <span class="pd-step-val${cls}">${v > 0 && min < 0 ? '+' : ''}${v}</span>
           <button class="pd-step" data-ui="pd-step" data-pd="${o.id}" data-d="1" ${v >= max ? 'disabled' : ''}>+</button>
           <span class="pd-step-bar${cls}"><i style="width:${(Math.abs(v) / Math.max(-min, max)) * 100}%"></i></span></div>`;
       })
@@ -3068,8 +3068,9 @@ export class App {
     const err = ab.preDealCheck?.(g, this.me, vals) ?? null;
     return `<div class="modal"><div class="result predeal" style="--c:${this.chars[this.me].color}">
         <h2>分配运势</h2>
-        <p class="pd-sub">给这一场的每一局分运势，加起来要正好是 0。正的局摸牌顺、能用七姐妹；负的局摸牌差。</p>
-        <div class="pd-steps">${rows}</div>
+        ${this.seatMapHtml()}
+        <p class="pd-sub">把运势分到这一场的各局（每局最多 3 点），开局排好就不能改：1 点朝 3 番到满贯，2 点朝跳满，3 点朝三倍满、和牌挡不住。连庄、流局重打的本场不再用；比赛提前结束，排在后面的就浪费了。先按电脑的排法填好了，可以改。</p>
+        <div class="pd-steps${opts.length > 4 ? ' two' : ''}">${rows}</div>
         <p class="pd-check-msg${err ? ' bad' : ''}">${err ?? '可以了'}</p>
         <button class="primary" data-ui="pd-go" ${err ? 'disabled' : ''}>开始</button>
       </div></div>`;

@@ -3582,9 +3582,28 @@ button {
   max-width: 360px;
 }
 
+.pd-steps.two {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(4, auto);
+  grid-auto-flow: column;
+  gap: 4px 28px;
+  max-width: 600px;
+}
+
+.pd-step-tag {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1a1206;
+  background: #ffcf5a;
+  vertical-align: 1px;
+}
+
 .pd-step-row {
   display: grid;
-  grid-template-columns: 3em 32px 3em 32px 1fr;
+  grid-template-columns: 4.8em 32px 2em 32px 1fr;
   align-items: center;
   gap: 6px;
 }
@@ -3709,6 +3728,11 @@ button {
   flex: none;
   font-size: 11px;
   color: var(--gold);
+}
+
+.predeal .primary:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .predeal .primary {

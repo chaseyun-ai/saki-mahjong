@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AWAI } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
-import { NELLY, nellyAiBet, nellyBlocked, nellyPool, nellySenses, nellySensesTenpai, nellySisters, nellyTier } from '../src/abilities/nelly';
+import { NELLY, nellyAiBet, nellyAiCharge, nellyAiPlan, nellyBlocked, nellyPool, nellySenses, nellySensesTenpai, nellySisters, nellyTier } from '../src/abilities/nelly';
 import { teruWinValue } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
@@ -47,7 +47,21 @@ function play(seed: number, ids: string[], setup: (g: Game, me: number) => void,
   return g;
 }
 
+// 这一组测押了以后的打法、七姐妹，用原来的运势池（开场一大笔，NELLY.plan、NELLY.charge 都是 null），每一局都押得出去；
+// 攒运势、开局排运势在后面各一组
+const PLAN = NELLY.plan;
+const CHARGE = NELLY.charge;
+
 describe('涅莉·薇萨拉兹', () => {
+  beforeAll(() => {
+    NELLY.plan = null;
+    NELLY.charge = null;
+  });
+  afterAll(() => {
+    NELLY.plan = PLAN;
+    NELLY.charge = CHARGE;
+  });
+
   it('电脑押运势：坐庄押 3 点，后面坐庄的局留着，多出来的 3 点落后或快结束时押，零头最后押光', () => {
     const spot = { pool: 10, plan: 11, left: 8, dealer: false, dealersLeft: 2, contested: false, behind: false };
     expect(nellyAiBet({ ...spot, dealer: true })).toBe(3);
@@ -247,4 +261,186 @@ describe('涅莉·薇萨拉兹', () => {
     // 玄的能力还在时连里宝牌也中不了，清一色只能靠七对子、一气通贯、断幺九加一盃口凑番，五成左右
     expect(big / rounds).toBeGreaterThan(0.4);
   }, 600000);
+});
+
+describe('涅莉：攒运势', () => {
+  beforeAll(() => {
+    NELLY.plan = null;
+  });
+  afterAll(() => {
+    NELLY.plan = PLAN;
+  });
+
+  it('开场 0 点，没押的局打完攒 1 点、最多 6 点，押了就扣；攒够了才押得出去，有运势才看得出谁听牌', () => {
+    const c = NELLY.charge!;
+    expect(c).toEqual({ start: 0, gain: 1, cap: 6 });
+    let bets = 0;
+    for (const pick of [undefined, 1, 3]) {
+      for (let seed = 1; seed <= 4; seed++) {
+        play(
+          seed,
+          LINEUPS[seed % 4],
+          (g, me) => {
+            let pool = c.start;
+            const check = () => {
+              const bet = nellyTier(g, me);
+              expect(bet).toBeLessThanOrEqual(Math.min(NELLY.maxBet, pool));
+              if (pick !== undefined) expect(bet).toBe(pick <= pool ? pick : 0);
+              expect(nellyPool(g, me)).toBe(pool - bet);
+              expect(nellySenses(g, me)).toBe(pool - bet > 0);
+              expect(g.isImmune(me)).toBe(bet >= 3);
+              if (bet > 0) bets++;
+              return bet;
+            };
+            // 电脑的局第一局在 setup 之前就开始了；玩家的局还停在发牌前
+            let bet: number | null = g.phase !== 'predeal' && g.round >= 1 ? check() : null;
+            // 开场没有运势，第一局押不了
+            if (bet !== null) expect(bet).toBe(0);
+            g.onEvent((e) => {
+              if (e.type !== 'roundStart') return;
+              if (bet !== null) pool = bet > 0 ? pool - bet : Math.min(c.cap, pool + c.gain);
+              bet = check();
+              if (g.round === 1) expect(bet).toBe(0);
+            });
+          },
+          { pick, format: 'team' },
+        );
+      }
+    }
+    expect(bets).toBeGreaterThan(10);
+  }, 120000);
+
+  it('电脑把剩下的局怎么押都算一遍：攒够 3 点等自己坐庄的局押，别人能力最强的局不押，最后一局押光', () => {
+    const r = (n: number, dealers: number[] = [], hot: number[] = []) => Array.from({ length: n }, (_, i) => ({ dealer: dealers.includes(i), contested: hot.includes(i) }));
+    expect(nellyAiCharge(0, r(8))).toBe(0);
+    // 最后一局押光
+    expect(nellyAiCharge(3, r(1))).toBe(3);
+    expect(nellyAiCharge(2, r(1))).toBe(2);
+    expect(nellyAiCharge(6, r(2))).toBe(3);
+    // 攒够 3 点：这一局坐庄就押；下一局才坐庄就留给那一局
+    expect(nellyAiCharge(3, r(4, [0]))).toBe(3);
+    expect(nellyAiCharge(3, r(4, [1]))).toBe(0);
+    // 别人能力最强的局不押
+    expect(nellyAiCharge(3, r(3, [], [0]))).toBe(0);
+    for (let pool = 0; pool <= 6; pool++) for (let n = 1; n <= 8; n++) for (const d of [[], [0], [2]]) expect(nellyAiCharge(pool, r(n, d))).toBeLessThanOrEqual(Math.min(3, pool));
+  });
+
+  it('电脑前面忍着：前三局押不出三倍满，三倍满出在第四局以后', () => {
+    let big = 0;
+    let quiet = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      play(seed, LINEUPS[seed % 4], (g, me) => {
+        g.onEvent((e) => {
+          if (e.type !== 'roundStart') return;
+          const bet = nellyTier(g, me);
+          if (g.round <= 3) expect(bet).toBeLessThan(3);
+          if (bet >= 3) big++;
+          if (bet === 0) quiet++;
+        });
+      });
+    }
+    console.log(`攒运势：电脑押 3 点 ${big} 局，没押 ${quiet} 局`);
+    expect(big).toBeGreaterThan(3);
+    expect(quiet).toBeGreaterThan(big * 2);
+  }, 120000);
+});
+
+describe('涅莉：开局排运势', () => {
+  const sum = (a: number[]) => a.reduce((n, v) => n + v, 0);
+
+  it('电脑的排法：坐庄的局排 3 点，剩下的从最后一局往前排，别人能力最强的局不排，加起来 10 点', () => {
+    expect(NELLY.plan).toEqual({ total: 10 });
+    expect(nellyAiPlan(8, [1, 5])).toEqual([0, 3, 0, 0, 0, 3, 1, 3]);
+    expect(nellyAiPlan(8, [3, 7])).toEqual([0, 0, 0, 3, 0, 1, 3, 3]);
+    expect(nellyAiPlan(4, [0])).toEqual([3, 1, 3, 3]);
+    // 优希的东场、最后一局不排
+    expect(nellyAiPlan(8, [0, 4], [0, 1, 2, 3, 7])).toEqual([0, 0, 0, 0, 3, 3, 3, 1]);
+    // 一局战只有一局：排满 3 点
+    expect(nellyAiPlan(1, [0])).toEqual([3]);
+    for (const slots of [4, 8]) for (let d = 0; d < 4; d++) expect(sum(nellyAiPlan(slots, slots === 8 ? [d, d + 4] : [d]))).toBe(10);
+  });
+
+  it('电脑照排好的押：每一局第一次打时押排的点数，连庄、流局重打的本场不押；还剩的运势是后面没打的局排的', () => {
+    let repeats = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      play(
+        seed,
+        LINEUPS[seed % 4],
+        (g, me) => {
+          const seen = new Set<number>();
+          const check = () => {
+            const slot = g.roundWind * 4 + g.roundNumber;
+            const bet = nellyTier(g, me);
+            const plan = (g.abilityGameState[me] as { plan: number[] }).plan;
+            expect(plan.length).toBe(8);
+            expect(sum(plan)).toBe(10);
+            if (seen.has(slot)) repeats++;
+            expect(bet).toBe(seen.has(slot) ? 0 : plan[slot] ?? 0);
+            seen.add(slot);
+            const rest = sum(plan.filter((_, i) => !seen.has(i)));
+            expect(nellyPool(g, me)).toBe(rest);
+            expect(nellySenses(g, me)).toBe(rest > 0);
+            expect(g.isImmune(me)).toBe(bet >= 3);
+            // 她坐庄的局排的是 3 点
+            if (g.dealer === me && g.honba === 0 && slot < 8) expect(plan[slot]).toBe(3);
+          };
+          // 第一局在 setup 之前就开始了
+          check();
+          g.onEvent((e) => {
+            if (e.type === 'roundStart') check();
+          });
+        },
+        { format: 'team' },
+      );
+    }
+    // 连庄、流局重打的局出现过（不然上面那条没测到）
+    expect(repeats).toBeGreaterThan(0);
+  }, 120000);
+
+  it('玩家：东一局发牌前排一次，加起来要正好 10 点，排好就不再问，每一局照排的押', () => {
+    const ids = LINEUPS[0];
+    const seats = ids.map(byId);
+    const me = ids.indexOf('nelly');
+    const g = new Game({ seed: 5, format: 'team', players: seats.map((c, i) => ({ name: c.id, ability: c.ability, manual: i === me })) });
+    expect(g.phase).toBe('predeal');
+    const ab = g.abilities[me]!;
+    const opts = ab.preDeal!(g, me);
+    expect(opts.length).toBe(8);
+    expect(opts.every((o) => o.enabled && o.stepper && o.stepper.min === 0 && o.stepper.max === 3)).toBe(true);
+    // 先按电脑的排法填好
+    expect(sum(opts.map((o) => o.stepper!.value))).toBe(10);
+    expect(nellyPool(g, me)).toBe(10);
+    const vals: Record<string, number> = Object.fromEntries(opts.map((o) => [o.id, 0]));
+    expect(ab.preDealCheck!(g, me, vals)).toBe('还有 10 点没分');
+    Object.assign(vals, { slot0: 3, slot1: 3, slot2: 3, slot3: 2 });
+    expect(ab.preDealCheck!(g, me, vals)).toBe('多分了 1 点');
+    Object.assign(vals, { slot0: 2, slot1: 0, slot2: 3, slot3: 1, slot6: 1, slot7: 3 });
+    expect(ab.preDealCheck!(g, me, vals)).toBeNull();
+    const plan = [2, 0, 3, 1, 0, 0, 1, 3];
+    ab.setPreDeal!(g, me, [], vals);
+    expect(ab.preDeal!(g, me)).toEqual([]);
+    const seen = new Set<number>();
+    let rounds = 0;
+    g.onEvent((e) => {
+      if (e.type !== 'roundStart') return;
+      rounds++;
+      const slot = g.roundWind * 4 + g.roundNumber;
+      expect(nellyTier(g, me)).toBe(seen.has(slot) ? 0 : plan[slot] ?? 0);
+      seen.add(slot);
+      expect(nellyPool(g, me)).toBe(sum(plan.filter((_, i) => !seen.has(i))));
+    });
+    g.deal();
+    let steps = 0;
+    while (g.phase !== 'gameEnd' && ++steps < 20000) {
+      // 排好以后不再停在发牌前
+      expect(g.phase).not.toBe('predeal');
+      if (g.phase === 'roundEnd') {
+        g.nextRound();
+        continue;
+      }
+      const s = g.waitingSeats()[0];
+      g.act(s, chooseAction(g, s, seats[s].ai));
+    }
+    expect(rounds).toBeGreaterThan(1);
+  }, 60000);
 });
