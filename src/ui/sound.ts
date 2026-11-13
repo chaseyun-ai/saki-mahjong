@@ -220,7 +220,7 @@ export function playSplash(): void {
   }
 }
 
-// 宫永咲的岭上开花：百合开出来的那一下，一串很轻的高音铃往上走，后面拖一阵风声（花瓣飘起来）。big 0–1：和得越大铃越多、风越长
+// 宫永咲的岭上开花：牌砸下去、旋风卷出去的那一下，一串很轻的高音铃往上走，后面拖一阵风声（花瓣、星光飘起来）。big 0–1：和得越大铃越多、风越长
 export function playLily(big = 0): void {
   const a = audio();
   if (!a) return;

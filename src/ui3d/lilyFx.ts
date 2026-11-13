@@ -1,72 +1,150 @@
 import * as THREE from 'three';
 
-// 宫永咲的岭上开花：岭上牌砸到桌上的那一下，牌顶上开出一朵百合（六片花被往外翻卷、六根雄蕊顶着橙色花药、中间一根柱头），
-// 接着花瓣从花里迸出来，一片片打着转、晃悠悠飘落到牌桌上，再慢慢谢掉。
-// 和得越大花瓣越多（lilyCount，看基本点）：花开得越大，倍满起花瓣卷成一道往上旋的花柱，役满起整张牌桌上空还下一场花瓣雨。
-// 花瓣是一张 InstancedMesh（一种弯弯的、尖头往后翻的百合花瓣形状），每帧在 CPU 上算位置和转动，几百片也很轻。
-// 岭上开花是“山岭上开花”：不只牌顶上一朵，四周的桌面上也跟着一圈圈冒出小百合（field，和得越大开得越远、越多），
-// 花开的一下一圈花瓣贴着桌面扫出去、一阵风把花瓣往牌桌中间吹。
-// 摸岭上牌那一下（sprout、trail）：岭上那张牌上先冒一朵小的，牌飞进手里的一路上拖着花瓣。
+// 宫永咲的岭上开花：岭上牌砸到桌上的那一下，
+// 1. 牌上炸开一团白光，几道细细的光芒；
+// 2. 一阵白色的旋风贴着桌面从牌底下卷出去（一道道毛笔扫出来似的风痕，边转边往外扩，先是厚厚一团、越扩越稀，最后剩几道细弧淡掉）；
+// 3. 牌上留一团薄荷绿的光，慢慢暗下去；
+// 4. 几片半透明的花瓣被风卷起来，打着转飘过牌桌；
+// 5. 一颗颗四角的星光在牌四周和半张牌桌上空一闪一闪，慢慢飘散。
+// 和得越大，风卷得越远、花瓣和星光越多（看基本点）。全是程序画的（着色器、canvas），没有贴图素材。
+// 摸岭上牌那一下（sprout、trail）：岭上那张牌上先亮一下、冒一小把星光，牌飞进手里的一路上拖着星光。
 
-// 基本点 → 花瓣片数：1 番 30 符约 40 片、满贯约 135、倍满约 215、役满 360，两倍役满封顶约 600
+// 基本点 → 花瓣片数：1 番 30 符 6 片、满贯 11 片、倍满 14 片、役满 20 片，两倍役满封顶 29 片
 export function lilyCount(base: number): number {
   const b = Math.min(Math.max(base, 0), 16000);
-  return Math.round(24 + 336 * (b / 8000) ** 0.8);
+  return Math.round(5 + 15 * (b / 8000) ** 0.7);
 }
 
-// 0（小和）到 1（两倍役满）：花开多大、花柱、花瓣雨（音效也跟着）
+// 0（小和）到 1（两倍役满）：风卷多远、光多亮、留多久（音效也跟着）
 export function lilyGrand(base: number): number {
   const b = Math.min(Math.max(base, 240), 16000);
   return Math.log(b / 240) / Math.log(16000 / 240);
 }
 
+// 基本点 → 星光颗数：小和 60 颗、满贯 160 颗上下、役满 230 颗，两倍役满封顶 260 颗
+export function lilyStars(base: number): number {
+  return Math.round(60 + 200 * lilyGrand(base));
+}
+
 export interface LilyOpts {
-  at: THREE.Vector3; // 花开在哪（牌顶上）
-  face: THREE.Vector3; // 花朝哪开（一般朝着镜头、偏上）
+  at: THREE.Vector3; // 光在哪亮（牌上）
+  floor: THREE.Vector3; // 旋风从桌面上哪卷出去（牌底下）
   base: number; // 这一手的基本点（WinResult.base）
   scale?: number; // 牌的大小
-  area?: number; // 花瓣雨洒多大一片（牌桌半宽）
-  inward?: THREE.Vector3; // 往牌桌中间的方向（水平）：花瓣往这边飘，不往镜头上糊
-  field?: LilySpot[]; // 四周跟着开的小百合
+  area?: number; // 牌桌半宽：星光、旋风不出这个范围太多
+  inward?: THREE.Vector3; // 往牌桌中间的方向（水平）：花瓣、星光偏往这边
 }
 
-// 四周跟着开的一朵小百合：at 在桌面上，delay 是比大的那朵晚多久开，size 是大那朵的几成
-export interface LilySpot {
-  at: THREE.Vector3;
-  delay: number;
-  size: number;
-}
+const rand = (a: number, b: number) => a + Math.random() * (b - a);
+const MAX_PETALS = 96;
+const MAX_STARS = 1200;
+const VORTEX_TIME = 1.5;
+const MINT = '#7dffc4';
 
-// 这一手四周开几朵小百合：2 番 4 朵、满贯 8 朵、倍满 11 朵、役满 13 朵，两倍役满 16 朵
-export function lilyFieldCount(base: number): number {
-  return Math.round(1 + 15 * lilyGrand(base));
-}
+const NOISE = /* glsl */ `
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}`;
 
-interface Petal {
-  pos: THREE.Vector3;
-  vel: THREE.Vector3;
-  quat: THREE.Quaternion;
-  axis: THREE.Vector3; // 自转轴
-  spin: number; // 自转多快（弧度/秒）
-  phase: number;
-  sway: number; // 左右晃多大
-  size: number;
-  born: number;
-  life: number;
-  landed: boolean;
-  swirl: number; // 绕着花打转的劲
-  tint: THREE.Color;
-}
+// 旋风：一张贴着桌面的方片，在极坐标里画一条绕了好几圈的对数螺线带，带里是一道道顺着螺线拉长的风痕。
+// 前沿（front）一开始冲得快、越来越慢；风痕一开始密得连成一片，往后阈值抬高、只剩几道细弧；中间慢慢空出来
+const VORTEX_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+const VORTEX_FRAG = /* glsl */ `
+precision highp float;
+uniform float uT;
+uniform float uDur;
+uniform float uSeed;
+uniform float uDir;
+uniform float uOpacity;
+uniform vec3 uTint;
+varying vec2 vUv;
+${NOISE}
+void main() {
+  vec2 p = vUv * 2.0 - 1.0;
+  float r = length(p);
+  if (r > 1.0) discard;
+  float front = 0.07 + 0.93 * (1.0 - exp(-3.3 * uT));
+  // 转过的角度：一开始转得猛，慢下来以后还在悠悠地转
+  float ang = atan(p.y, p.x) * uDir - (3.6 * (1.0 - exp(-1.8 * uT)) + 0.7 * uT);
+  // 三条旋臂的对数螺线：s 每过一整数是一条风带，w 是带里的横向位置，a 是顺着风带的角度（跨圈连续）
+  float s = 1.7 * log(r / front + 0.002) - 3.0 * ang / 6.2831853;
+  float n = floor(s);
+  float w = s - n;
+  float a = ang + 6.2831853 * n / 3.0;
+  float k = 0.6 * vnoise(vec2(w * 3.2 + uSeed + n * 1.7, a * 0.9 + uSeed * 3.1)) + 0.4 * vnoise(vec2(w * 7.5 + 7.3, a * 2.1 - uSeed));
+  float thin = smoothstep(0.1, 0.95, uT);
+  float thr = mix(0.2, 0.55, thin);
+  float streak = smoothstep(thr, thr + mix(0.3, 0.16, thin), k) * smoothstep(0.0, 0.2, w) * smoothstep(1.0, 0.8, w);
+  // 笔锋：风痕里一丝丝的细毛，脊上再提亮一道
+  streak *= 0.72 + 0.28 * vnoise(vec2(w * 34.0 + n * 9.1, a * 1.4));
+  streak += 0.45 * smoothstep(thr + 0.22, thr + 0.4, k);
+  float outer = 1.0 - smoothstep(front * 0.7, front, r);
+  float hollow = front * 0.5 * smoothstep(0.15, 1.0, uT) + 0.001;
+  float inner = smoothstep(hollow * 0.45, hollow, r);
+  float core = (1.0 - smoothstep(0.0, front * 0.85, r)) * (1.0 - smoothstep(0.05, 0.32, uT));
+  float rim = 0.5 + 0.5 * smoothstep(front * 0.25, front * 0.85, r);
+  float fade = smoothstep(0.0, 0.04, uT) * (1.0 - smoothstep(uDur * 0.5, uDur, uT));
+  float alpha = clamp(streak * rim * inner + core * 0.9, 0.0, 1.0) * outer * fade * uOpacity;
+  // 靠里的一圈染上薄荷绿
+  float green = (1.0 - smoothstep(front * 0.1, front * 0.75, r)) * smoothstep(0.08, 0.35, uT);
+  gl_FragColor = vec4(mix(vec3(1.0), uTint, green * 0.75), alpha);
+}`;
 
-const MAX_PETALS = 960;
-const GRAVITY = 2.6;
-const DRAG = 2.4;
-const LIE = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+// 星光：一批点，位置、闪烁全在顶点着色器里按时间算（CPU 只在冒出来的时候写一次）
+const STAR_VERT = /* glsl */ `
+uniform float uNow;
+uniform float uViewH;
+attribute vec3 aVel;
+attribute vec2 aTime; // 什么时候冒出来、亮多久
+attribute vec3 aMisc; // 大小、相位、有多绿
+varying float vA;
+varying float vGreen;
+void main() {
+  float age = uNow - aTime.x;
+  float k = age / aTime.y;
+  if (age < 0.0 || k > 1.0) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    return;
+  }
+  // 冒出来的劲很快被空气拖住，之后慢慢往上飘
+  vec3 pos = position + aVel * (1.0 - exp(-2.0 * age)) / 2.0 + vec3(0.0, 0.15 * age, 0.0);
+  float tw = 0.5 + 0.5 * sin(age * (5.0 + 7.0 * fract(aMisc.y * 7.31)) + aMisc.y * 6.2831853);
+  vA = smoothstep(0.0, 0.1, k) * (1.0 - smoothstep(0.55, 1.0, k)) * (0.35 + 0.65 * tw);
+  vGreen = aMisc.z;
+  vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float persp = projectionMatrix[2][3] < -0.5 ? 1.0 / max(0.1, -mv.z) : 1.0;
+  gl_PointSize = aMisc.x * 1.9 * (0.65 + 0.35 * tw) * projectionMatrix[1][1] * uViewH * 0.5 * persp;
+}`;
+const STAR_FRAG = /* glsl */ `
+precision highp float;
+uniform vec3 uTint;
+varying float vA;
+varying float vGreen;
+void main() {
+  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  vec2 q = abs(p);
+  // 四角星：|x|^½ + |y|^½ < 1
+  float star = clamp(1.0 - (sqrt(q.x) + sqrt(q.y)), 0.0, 1.0);
+  float body = smoothstep(0.0, 0.22, star);
+  float halo = exp(-dot(p, p) * 6.0) * 0.45;
+  vec3 col = mix(uTint, vec3(1.0), smoothstep(0.12, 0.5, star) * (1.0 - 0.45 * vGreen));
+  gl_FragColor = vec4(col, (body + halo) * vA);
+}`;
 
-// 花瓣的形状：沿 +y 长、x 方向宽，根部窄、四成处最宽、尖头；正面是 -z：横截面中间凹（花瓣中肋，两边往正面翘），越往尖越往背面（+z）翻卷
+// 花瓣的形状：沿 +y 长、x 方向宽，根部窄、四成处最宽、尖头；横截面中间凹，尖上往背面卷一点
 function petalGeometry(len: number, wid: number, curl: number, groove: number): THREE.BufferGeometry {
-  const nu = 14;
-  const nv = 6;
+  const nu = 10;
+  const nv = 4;
   const pos: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];
@@ -75,10 +153,7 @@ function petalGeometry(len: number, wid: number, curl: number, groove: number): 
     const w = wid * Math.sin(Math.PI * u ** 0.72) ** 0.85;
     for (let j = 0; j <= nv; j++) {
       const v = (j / nv) * 2 - 1;
-      const x = v * w;
-      const y = u * len;
-      const z = -groove * v * v * w + curl * u ** 2.2 * len + 0.04 * Math.sin(v * 3 + u * 9) * u * wid;
-      pos.push(x, y, z);
+      pos.push(v * w, (u - 0.5) * len, -groove * v * v * w + curl * u ** 2.2 * len);
       uv.push(j / nv, u);
     }
   }
@@ -93,48 +168,36 @@ function petalGeometry(len: number, wid: number, curl: number, groove: number): 
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx);
-  g.computeVertexNormals();
   return g;
 }
 
-// 花瓣的颜色：根部带一点黄绿，往上是白，尖上一点点粉；中间一道淡淡的中肋，根部几颗小斑点
+// 花瓣：半透明，中间白、边上和两头是薄荷绿，像透着光
 function petalTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 64;
-  c.height = 256;
+  c.height = 128;
   const x = c.getContext('2d')!;
-  const g = x.createLinearGradient(0, 256, 0, 0);
-  g.addColorStop(0, '#c9dc86');
-  g.addColorStop(0.2, '#eef3d2');
-  g.addColorStop(0.45, '#fbfaf4');
-  g.addColorStop(0.8, '#fbf1f3');
-  g.addColorStop(1, '#f6d3de');
+  const g = x.createLinearGradient(0, 128, 0, 0);
+  g.addColorStop(0, 'rgba(120,235,170,0.85)');
+  g.addColorStop(0.35, 'rgba(225,255,236,0.8)');
+  g.addColorStop(0.7, 'rgba(200,255,225,0.7)');
+  g.addColorStop(1, 'rgba(130,240,185,0.55)');
   x.fillStyle = g;
-  x.fillRect(0, 0, 64, 256);
-  // 中肋
-  const rib = x.createLinearGradient(0, 256, 0, 40);
-  rib.addColorStop(0, 'rgba(170,200,110,0.55)');
-  rib.addColorStop(1, 'rgba(220,230,200,0)');
+  x.fillRect(0, 0, 64, 128);
+  // 两边再绿一点、透一点
+  const e = x.createLinearGradient(0, 0, 64, 0);
+  e.addColorStop(0, 'rgba(90,225,150,0.55)');
+  e.addColorStop(0.3, 'rgba(90,225,150,0)');
+  e.addColorStop(0.7, 'rgba(90,225,150,0)');
+  e.addColorStop(1, 'rgba(90,225,150,0.55)');
+  x.fillStyle = e;
+  x.fillRect(0, 0, 64, 128);
+  // 中肋：一道亮线
+  const rib = x.createLinearGradient(0, 128, 0, 10);
+  rib.addColorStop(0, 'rgba(255,255,255,0.9)');
+  rib.addColorStop(1, 'rgba(255,255,255,0)');
   x.fillStyle = rib;
-  x.fillRect(29, 40, 6, 216);
-  // 几道脉纹
-  x.strokeStyle = 'rgba(200,215,170,0.25)';
-  x.lineWidth = 1;
-  for (const dx of [-14, -7, 7, 14]) {
-    x.beginPath();
-    x.moveTo(32 + dx * 0.3, 250);
-    x.quadraticCurveTo(32 + dx, 140, 32 + dx * 0.6, 40);
-    x.stroke();
-  }
-  // 根部的小斑点（淡淡的粉）
-  x.fillStyle = 'rgba(226,120,150,0.35)';
-  for (let i = 0; i < 14; i++) {
-    const px = 32 + (Math.sin(i * 12.9898) * 0.5) * 30;
-    const py = 200 - (Math.abs(Math.sin(i * 78.233)) * 70);
-    x.beginPath();
-    x.arc(px, py, 1.3, 0, Math.PI * 2);
-    x.fill();
-  }
+  x.fillRect(30, 10, 4, 118);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -142,352 +205,363 @@ function petalTexture(): THREE.CanvasTexture {
 
 function glowTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
-  c.width = c.height = 64;
+  c.width = c.height = 128;
   const x = c.getContext('2d')!;
-  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
   g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.25, 'rgba(255,250,235,0.6)');
-  g.addColorStop(1, 'rgba(255,240,220,0)');
+  g.addColorStop(0.2, 'rgba(255,255,255,0.75)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.22)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
   x.fillStyle = g;
-  x.fillRect(0, 0, 64, 64);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+  x.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
 }
 
-interface Bloom {
-  group: THREE.Group;
-  tepals: THREE.Mesh[];
-  stamens: THREE.Group;
-  glow: THREE.Sprite;
-  born: number;
+// 光芒：从中间往外的十几道细线，长短粗细不一
+function rayTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const x = c.getContext('2d')!;
+  x.translate(128, 128);
+  x.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2 + Math.sin(i * 12.9898) * 0.25;
+    const len = 60 + 66 * Math.abs(Math.sin(i * 78.233));
+    const g = x.createLinearGradient(0, 0, len, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.save();
+    x.rotate(a);
+    x.fillStyle = g;
+    x.beginPath();
+    x.moveTo(0, -1.6 - (i % 3) * 0.7);
+    x.lineTo(len, 0);
+    x.lineTo(0, 1.6 + (i % 3) * 0.7);
+    x.fill();
+    x.restore();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+interface Petal {
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  quat: THREE.Quaternion;
+  axis: THREE.Vector3; // 自转轴
+  spin: number;
+  phase: number;
+  sway: number;
   size: number;
-  fall: number; // 花被一片片脱落、变成飞的花瓣的时刻（相对 born）
-  lift: number; // 开着开着往上浮多高（自己大小的几成）
-  shed: boolean;
-  grand: number;
-  origin: THREE.Vector3;
+  born: number;
+  life: number;
+  swirl: number; // 被旋风带着绕圈的劲
+  tint: THREE.Color;
 }
 
-const rand = (a: number, b: number) => a + Math.random() * (b - a);
-const TINTS = ['#ffffff', '#fff7fa', '#fffbf0', '#fdf2f6', '#ffffff'].map((c) => new THREE.Color(c));
+interface Vortex {
+  mesh: THREE.Mesh;
+  mat: THREE.ShaderMaterial;
+  born: number;
+  dur: number;
+}
+
+// 一团光：kind 'flash' 一闪就没，'rays' 光芒往外一冲，'mint' 留着慢慢暗
+interface Glow {
+  sprite: THREE.Sprite;
+  born: number;
+  dur: number;
+  size: number;
+  peak: number;
+  kind: 'flash' | 'rays' | 'mint';
+}
+
+const TINTS = ['#ffffff', '#e6fff0', '#c8ffe0', '#f4fff8'].map((c) => new THREE.Color(c));
 
 export class LilyFx {
   readonly group = new THREE.Group();
   private now = 0;
+  private end = 0;
+  private vortices: Vortex[] = [];
+  private glows: Glow[] = [];
   private petals: Petal[] = [];
   private mesh: THREE.InstancedMesh | null = null;
-  private mat: THREE.MeshStandardMaterial | null = null;
+  private petalMat: THREE.MeshBasicMaterial | null = null;
   private petalGeo: THREE.BufferGeometry | null = null;
-  private tepalGeo: THREE.BufferGeometry | null = null;
-  private tex: THREE.CanvasTexture | null = null;
+  private petalTex: THREE.CanvasTexture | null = null;
   private glowTex: THREE.CanvasTexture | null = null;
-  private blooms: Bloom[] = [];
-  // 还没发出去的花瓣：[时刻, 怎么发]
+  private rayTex: THREE.CanvasTexture | null = null;
+  private plane: THREE.PlaneGeometry | null = null;
+  private stars: THREE.Points | null = null;
+  private starMat: THREE.ShaderMaterial | null = null;
+  private starAt = 0; // 下一颗星光写到哪一格（写满了从头覆盖最老的）
+  private starDirty = false;
+  // 还没放出去的：[时刻, 放什么]
   private queue: { at: number; fn: () => void }[] = [];
   private dummy = new THREE.Object3D();
   private center = new THREE.Vector3();
-  private inward = new THREE.Vector3();
-  // 跟着一张牌飞的花瓣（摸岭上牌）：到 until 为止每隔一小会儿在牌现在的位置撒一片
-  private trails: { get: () => THREE.Vector3 | null; until: number; next: number; scale: number }[] = [];
+  private dir = 1; // 旋风往哪边转
+  // 跟着一张牌飞的星光（摸岭上牌）：到 until 为止每隔一小会儿在牌现在的位置撒一颗
+  private trails: { get: () => THREE.Vector3 | null; until: number; next: number; petal: number; scale: number }[] = [];
 
   // 还要多久才放完（秒）
   get remaining(): number {
-    let end = this.now;
-    for (const p of this.petals) end = Math.max(end, p.born + p.life);
-    for (const q of this.queue) end = Math.max(end, q.at + 6);
-    for (const b of this.blooms) end = Math.max(end, b.born + b.fall + 6);
-    for (const t of this.trails) end = Math.max(end, t.until + 3);
-    return Math.max(0, end - this.now);
+    return Math.max(0, this.end - this.now);
   }
 
   private ensure(): void {
     if (this.mesh) return;
-    this.tex = petalTexture();
+    this.petalTex = petalTexture();
     this.glowTex = glowTexture();
-    this.petalGeo = petalGeometry(1, 0.34, 0.28, 0.35);
-    this.tepalGeo = petalGeometry(1, 0.3, 0.55, 0.45);
-    // 颜色压一点，不然在聚光灯和 ACES 下整片白成一团，看不出花瓣的弯
-    this.mat = new THREE.MeshStandardMaterial({ map: this.tex, color: '#e9e4e6', side: THREE.DoubleSide, roughness: 0.6, emissive: '#ffffff', emissiveMap: this.tex, emissiveIntensity: 0.1 });
-    this.mesh = new THREE.InstancedMesh(this.petalGeo, this.mat, MAX_PETALS);
+    this.rayTex = rayTexture();
+    this.plane = new THREE.PlaneGeometry(2, 2);
+    this.plane.rotateX(-Math.PI / 2);
+    this.petalGeo = petalGeometry(1, 0.3, 0.22, 0.4);
+    this.petalMat = new THREE.MeshBasicMaterial({ map: this.petalTex, side: THREE.DoubleSide, transparent: true, depthWrite: false, toneMapped: false });
+    this.mesh = new THREE.InstancedMesh(this.petalGeo, this.petalMat, MAX_PETALS);
     this.mesh.count = 0;
     this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 13;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.setColorAt(0, new THREE.Color('#ffffff'));
+    this.mesh.setColorAt(0, TINTS[0]);
     this.group.add(this.mesh);
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_STARS * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aVel', new THREE.BufferAttribute(new Float32Array(MAX_STARS * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aTime', new THREE.BufferAttribute(new Float32Array(MAX_STARS * 2).fill(-1e6), 2).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aMisc', new THREE.BufferAttribute(new Float32Array(MAX_STARS * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    this.starMat = new THREE.ShaderMaterial({
+      uniforms: { uNow: { value: 0 }, uViewH: { value: 720 }, uTint: { value: new THREE.Color(MINT) } },
+      vertexShader: STAR_VERT,
+      fragmentShader: STAR_FRAG,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.stars = new THREE.Points(g, this.starMat);
+    this.stars.frustumCulled = false;
+    this.stars.renderOrder = 12;
+    const size = new THREE.Vector2();
+    this.stars.onBeforeRender = (renderer) => {
+      this.starMat!.uniforms.uViewH.value = renderer.getDrawingBufferSize(size).y;
+    };
+    this.group.add(this.stars);
   }
 
-  // 开一朵：花在 at 开出来，花瓣按这一手多大迸出来、飘下来
+  // 岭上牌砸到桌上：白光、旋风、薄荷绿的光、花瓣、星光
   bloom(o: LilyOpts): void {
     this.ensure();
     const s = o.scale ?? 1;
+    const u = Math.max(1, s * 0.8); // 牌放大了（改良布局自己的手牌），特效跟着大一点，但不照着全放大
     const grand = lilyGrand(o.base);
-    const total = lilyCount(o.base);
-    const size = (1.15 + 1.2 * grand) * s;
-    const face = o.face.clone().normalize();
     const inward = o.inward?.clone().setY(0).normalize() ?? new THREE.Vector3();
-    this.inward.copy(inward);
-    // 花开在牌顶上方一点，开着开着往上浮（自己的牌在画面最底下，花不会被画面底边切掉）
-    const at = o.at.clone().add(new THREE.Vector3(0, 0.35 * s, 0)).addScaledVector(inward, 0.4 * s);
-    this.center.copy(at);
-    const b = this.makeFlower(at, face, size, grand);
-    this.blooms.push(b);
+    const area = o.area ?? 14;
+    const reach = Math.min((9 + 6 * grand) * u, area * 1.3);
+    const at = o.at.clone();
+    const floor = o.floor.clone();
+    this.center.copy(floor);
+    this.dir = Math.random() < 0.5 ? 1 : -1;
     const t0 = this.now;
-    // 花开的一下先迸出一半，剩下的接着从花心一股股往上冒；花被脱落时再添六片大的
-    const first = Math.round(total * (grand > 0.6 ? 0.35 : 0.5));
-    const stream = total - first;
-    this.queue.push({ at: t0 + 0.08, fn: () => this.burst(at, inward, first, s, grand) });
-    // 一圈花瓣贴着桌面扫出去（另外加的，不占总数）
-    this.queue.push({ at: t0 + 0.05, fn: () => this.sweep(o.at, Math.round(14 + 26 * grand), s, grand) });
-    // 四周的小百合：一圈圈往外开，每朵开的时候带起几片花瓣，谢的时候花被也变成花瓣飞走
-    for (const f of o.field ?? []) {
-      this.queue.push({
-        at: t0 + f.delay,
-        fn: () => {
-          const up = new THREE.Vector3(0, 1, 0).addScaledVector(face, 0.55).normalize();
-          const small = this.makeFlower(f.at, up, size * f.size, grand * 0.5);
-          small.fall = 1.5 + 0.9 * grand + Math.random() * 0.5;
-          small.lift = 0.12;
-          this.blooms.push(small);
-          this.puff(f.at, 3 + Math.round(4 * grand), s * (0.6 + 0.4 * f.size));
-        },
-      });
+    this.end = Math.max(this.end, t0 + 2.6 + 0.9 * grand);
+
+    this.glow(at, 'flash', (4.2 + 2.2 * grand) * u, 0.42, 1, '#ffffff');
+    this.glow(at, 'rays', (6.5 + 3 * grand) * u, 0.36, 0.9, '#f2fff8');
+    this.glow(at, 'mint', (5.2 + 2.4 * grand) * u, 2.2 + 0.9 * grand, 1, MINT);
+    this.glow(at, 'mint', (2.4 + 0.8 * grand) * u, 1.8 + 0.8 * grand, 0.9, '#d8fff0');
+    this.vortex(floor, reach, VORTEX_TIME + 0.25 * grand, 1, Math.random() * 40);
+    // 里面再叠一层小一点、晚一点的，风痕有前有后
+    this.queue.push({ at: t0 + 0.09, fn: () => this.vortex(floor, reach * 0.62, VORTEX_TIME * 0.85, 0.7, Math.random() * 40) });
+
+    // 花瓣：被风从牌边卷起来，一片片陆续起飞；有两三片大的飘得高、往牌桌中间去
+    const petals = lilyCount(o.base);
+    for (let i = 0; i < petals; i++) {
+      const big = i < 2 + Math.round(2 * grand);
+      this.queue.push({ at: t0 + 0.06 + (i / petals) * 0.5 + rand(0, 0.08), fn: () => this.whirl(floor, inward, u, grand, big) });
     }
-    const streamTime = 0.6 + 1.2 * grand;
-    const puffs = Math.max(1, Math.round(streamTime / 0.06));
-    for (let i = 0; i < puffs; i++) {
-      const n = Math.round(((i + 1) * stream) / puffs) - Math.round((i * stream) / puffs);
-      if (n > 0) this.queue.push({ at: t0 + 0.25 + (i * streamTime) / puffs, fn: () => this.rise(at, n, s, grand) });
+
+    // 星光：一半绕着牌往上冒（一直闪到最后），一半跟着风撒到半张牌桌上空
+    const stars = lilyStars(o.base);
+    const near = Math.round(stars * 0.45);
+    for (let i = 0; i < near; i++) {
+      const a = rand(0, Math.PI * 2);
+      const r = rand(0.2, 2.4) ** 1.2 * u;
+      const p = new THREE.Vector3(at.x + Math.cos(a) * r, rand(0.1, 2.6) * u, at.z + Math.sin(a) * r).addScaledVector(inward, rand(0, 1.2) * u);
+      const v = new THREE.Vector3(Math.cos(a) * rand(0.3, 2.2), rand(0.4, 3.2), Math.sin(a) * rand(0.3, 2.2)).multiplyScalar(u);
+      this.star(p, v, t0 + 0.1 + rand(0, 1) ** 1.4 * (1.3 + 0.7 * grand), rand(0.6, 1.3), rand(0.2, 0.42) * u, rand(0.3, 1));
     }
-    // 役满起：整张牌桌上空下一场花瓣雨（算在总数里）
-    if (grand > 0.85 && o.area) {
-      const rain = Math.round(total * 0.3);
-      for (let i = 0; i < 12; i++) this.queue.push({ at: t0 + 0.5 + i * 0.18, fn: () => this.rain(o.area!, Math.round(rain / 12), s) });
+    const a0 = Math.atan2(inward.z, inward.x);
+    for (let i = near; i < stars; i++) {
+      // 偏往牌桌里面那半边撒
+      const a = a0 + rand(-1, 1) * Math.PI * (Math.random() < 0.8 ? 0.6 : 1);
+      const d = Math.sqrt(rand(0.03, 1)) * reach * 1.05;
+      const p = new THREE.Vector3(floor.x + Math.cos(a) * d, rand(0.3, 3.6) * u, floor.z + Math.sin(a) * d);
+      p.x = THREE.MathUtils.clamp(p.x, -area * 1.15, area * 1.15);
+      p.z = THREE.MathUtils.clamp(p.z, -area * 1.15, area * 1.15);
+      // 顺着风转的方向带一点
+      const v = new THREE.Vector3(-Math.sin(a) * this.dir, 0, Math.cos(a) * this.dir).multiplyScalar(rand(0.2, 1)).add(new THREE.Vector3(rand(-0.3, 0.3), rand(0, 0.5), rand(-0.3, 0.3)));
+      this.star(p, v, t0 + 0.16 + (d / reach) * 0.4 + rand(0, 0.9 + 0.5 * grand), rand(0.8, 1.7), rand(0.2, 0.46) * u, rand(0, 0.8));
     }
   }
 
-  // 摸岭上牌那一下：岭上那张牌上先冒一朵小百合，带起一小把花瓣（face 朝镜头）
-  sprout(at: THREE.Vector3, face: THREE.Vector3, scale = 1): void {
+  // 摸岭上牌那一下：岭上那张牌上亮一团薄荷绿的光，冒一小把星光、两三片花瓣
+  sprout(at: THREE.Vector3, scale = 1): void {
     this.ensure();
-    const up = new THREE.Vector3(0, 1, 0).addScaledVector(face.clone().normalize(), 0.6).normalize();
-    const b = this.makeFlower(at.clone(), up, 1.5 * scale, 0);
-    b.fall = 1.0;
-    b.lift = 0.2;
-    this.blooms.push(b);
+    const u = Math.max(1, scale * 0.8);
     this.center.copy(at);
-    this.puff(at, 16, scale * 1.35);
+    this.end = Math.max(this.end, this.now + 1.6);
+    this.glow(at, 'flash', 2.6 * u, 0.35, 0.85, '#ffffff');
+    this.glow(at, 'mint', 2.4 * u, 1.3, 0.7, MINT);
+    for (let i = 0; i < 26; i++) {
+      const a = rand(0, Math.PI * 2);
+      const p = at.clone().add(new THREE.Vector3(Math.cos(a) * rand(0.1, 0.8), rand(0, 0.6), Math.sin(a) * rand(0.1, 0.8)).multiplyScalar(u));
+      const v = new THREE.Vector3(Math.cos(a) * rand(0.4, 2), rand(0.8, 3), Math.sin(a) * rand(0.4, 2)).multiplyScalar(u);
+      this.star(p, v, this.now + rand(0, 0.35), rand(0.6, 1.2), rand(0.2, 0.38) * u, rand(0.2, 1));
+    }
+    for (let i = 0; i < 3; i++) this.puff(at, u);
   }
 
-  // 花瓣跟着一张牌飞 seconds 秒（get 给牌现在的位置，牌没了给 null）
+  // 星光跟着一张牌飞 seconds 秒（get 给牌现在的位置，牌没了给 null）
   trail(get: () => THREE.Vector3 | null, seconds: number, scale = 1): void {
     this.ensure();
-    this.trails.push({ get, until: this.now + seconds, next: this.now, scale });
+    this.end = Math.max(this.end, this.now + seconds + 1);
+    this.trails.push({ get, until: this.now + seconds, next: this.now, petal: this.now + 0.1, scale: Math.max(1, scale * 0.8) });
   }
 
   clear(): void {
     this.petals = [];
     this.queue = [];
     this.trails = [];
-    for (const b of this.blooms) this.dropFlower(b);
-    this.blooms = [];
+    this.end = this.now;
+    for (const v of this.vortices) this.dropVortex(v);
+    this.vortices = [];
+    for (const g of this.glows) this.dropGlow(g);
+    this.glows = [];
     if (this.mesh) this.mesh.count = 0;
+    if (this.stars) {
+      const t = this.stars.geometry.getAttribute('aTime') as THREE.BufferAttribute;
+      (t.array as Float32Array).fill(-1e6);
+      t.needsUpdate = true;
+    }
   }
 
   dispose(): void {
     this.clear();
     this.petalGeo?.dispose();
-    this.tepalGeo?.dispose();
-    this.mat?.dispose();
-    this.tex?.dispose();
+    this.petalMat?.dispose();
+    this.petalTex?.dispose();
     this.glowTex?.dispose();
+    this.rayTex?.dispose();
+    this.plane?.dispose();
+    this.starMat?.dispose();
     if (this.mesh) {
       this.group.remove(this.mesh);
       this.mesh.dispose();
     }
+    if (this.stars) {
+      this.group.remove(this.stars);
+      this.stars.geometry.dispose();
+    }
     this.mesh = null;
+    this.stars = null;
   }
 
-  // ---------- 花 ----------
+  // ---------- 光、旋风 ----------
 
-  private makeFlower(at: THREE.Vector3, face: THREE.Vector3, size: number, grand: number): Bloom {
-    const group = new THREE.Group();
-    group.position.copy(at);
-    group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), face);
-    group.scale.setScalar(0.001);
-    const tepals: THREE.Mesh[] = [];
-    for (let i = 0; i < 6; i++) {
-      const outer = i % 2 === 0;
-      const m = new THREE.Mesh(this.tepalGeo!, this.mat!);
-      // 花被的根在花心，往外长；外三片宽一点、里三片窄一点
-      m.scale.set(outer ? 1.08 : 0.9, outer ? 1 : 1.04, 1);
-      m.userData.yaw = (i * Math.PI) / 3 + (outer ? 0 : 0.05);
-      m.userData.outer = outer;
-      group.add(m);
-      tepals.push(m);
-    }
-    // 雄蕊：六根细丝顶着橙褐色的花药；柱头一根，顶上三裂
-    const stamens = new THREE.Group();
-    const filament = new THREE.MeshStandardMaterial({ color: '#e9f0c8', emissive: '#e9f0c8', emissiveIntensity: 0.25, roughness: 0.6 });
-    const anther = new THREE.MeshStandardMaterial({ color: '#c85a1c', emissive: '#a8420e', emissiveIntensity: 0.35, roughness: 0.7 });
-    const stigma = new THREE.MeshStandardMaterial({ color: '#cfe08a', emissive: '#a9c060', emissiveIntensity: 0.3, roughness: 0.6 });
-    const fil = new THREE.CylinderGeometry(0.012, 0.016, 0.62, 5);
-    fil.translate(0, 0.31, 0);
-    const anth = new THREE.CapsuleGeometry(0.035, 0.11, 3, 6);
-    for (let i = 0; i < 6; i++) {
-      const a = (i * Math.PI) / 3 + 0.5;
-      const stem = new THREE.Group();
-      stem.rotation.order = 'YXZ';
-      stem.rotation.set(0.34, a, 0);
-      const f = new THREE.Mesh(fil, filament);
-      const h = new THREE.Mesh(anth, anther);
-      h.position.y = 0.64;
-      h.rotation.z = Math.PI / 2;
-      stem.add(f, h);
-      stamens.add(stem);
-    }
-    const pistil = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.72, 5).translate(0, 0.36, 0), stigma);
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), stigma);
-    tip.position.y = 0.74;
-    stamens.add(pistil, tip);
-    stamens.userData.mats = [filament, anther, stigma];
-    group.add(stamens);
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex!, color: '#fff3d6', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
-    glow.position.y = 0.1;
-    group.add(glow);
-    this.group.add(group);
-    return { group, tepals, stamens, glow, born: this.now, size, fall: 1.15 + 0.9 * grand, lift: 0.5, shed: false, grand, origin: at.clone() };
+  private glow(at: THREE.Vector3, kind: Glow['kind'], size: number, dur: number, peak: number, color: string): void {
+    const mat = new THREE.SpriteMaterial({ map: kind === 'rays' ? this.rayTex! : this.glowTex!, color, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true, opacity: 0, toneMapped: false });
+    if (kind === 'rays') mat.rotation = rand(0, Math.PI * 2);
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.copy(at);
+    sprite.renderOrder = 11;
+    this.group.add(sprite);
+    this.glows.push({ sprite, born: this.now, dur, size, peak, kind });
   }
 
-  private dropFlower(b: Bloom): void {
-    this.group.remove(b.group);
-    for (const m of b.stamens.userData.mats as THREE.Material[]) m.dispose();
-    b.stamens.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
-    b.glow.material.dispose();
+  private dropGlow(g: Glow): void {
+    this.group.remove(g.sprite);
+    g.sprite.material.dispose();
   }
 
-  private animateFlower(b: Bloom): boolean {
-    const k = this.now - b.born;
-    // 0.38 秒开到最大（稍微张过头再回来），之后慢慢转、轻轻呼吸
-    const open = k < 0.38 ? 1 - (1 - k / 0.38) ** 3 : 1;
-    const over = k < 0.6 ? Math.sin(Math.PI * Math.min(1, k / 0.6)) * 0.12 : 0;
-    const grow = Math.min(1, k / 0.22);
-    const breathe = 1 + 0.03 * Math.sin(k * 3.2);
-    let fade = 1;
-    if (k > b.fall) fade = Math.max(0, 1 - (k - b.fall) / 0.45);
-    b.group.scale.setScalar(Math.max(0.001, b.size * (0.35 + 0.65 * (1 - (1 - grow) ** 2)) * breathe));
-    b.group.position.copy(b.origin).add(new THREE.Vector3(0, b.lift * b.size * (1 - Math.exp(-k * 1.5)), 0));
-    b.group.rotateOnAxis(new THREE.Vector3(0, 1, 0), 0.004);
-    for (const m of b.tepals) {
-      const outer = m.userData.outer as boolean;
-      // 从合着（贴着花心往上）张开到往外平摊、尖往后卷
-      const pitch = (0.2 + (outer ? 1.18 : 1.08) * (open + over)) * (k > b.fall ? 1 + (k - b.fall) * 0.6 : 1);
-      m.rotation.set(0, 0, 0);
-      m.rotation.order = 'YXZ';
-      m.rotation.y = m.userData.yaw as number;
-      m.rotation.x = pitch;
-      m.visible = fade > 0.02;
-    }
-    b.stamens.scale.setScalar(Math.max(0.001, Math.min(1, k / 0.3) * fade));
-    const gl = b.glow.material;
-    gl.opacity = (k < 0.1 ? k / 0.1 : Math.exp(-(k - 0.1) * 1.4) * 0.6 + 0.25) * fade;
-    b.glow.scale.setScalar(2.4 + 0.6 * Math.sin(k * 4));
-    // 花被脱落：每片花被变成一片飞走的大花瓣
-    if (k > b.fall && !b.shed) {
-      b.shed = true;
-      b.group.updateMatrixWorld(true);
-      for (const m of b.tepals) {
-        const p = new THREE.Vector3();
-        const q = new THREE.Quaternion();
-        const sc = new THREE.Vector3();
-        m.matrixWorld.decompose(p, q, sc);
-        const out = new THREE.Vector3(0, 1, 0).applyQuaternion(q).multiplyScalar(rand(1.5, 2.6));
-        out.y += rand(1.2, 2.4);
-        this.spawn(p, out, sc.y * 0.9, 0.2, q, rand(3.5, 5));
-      }
-    }
-    if (fade <= 0) {
-      this.dropFlower(b);
-      return false;
-    }
-    return true;
+  private vortex(at: THREE.Vector3, radius: number, dur: number, opacity: number, seed: number): void {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uT: { value: 0 }, uDur: { value: dur }, uSeed: { value: seed }, uDir: { value: this.dir }, uOpacity: { value: opacity }, uTint: { value: new THREE.Color(MINT) } },
+      vertexShader: VORTEX_VERT,
+      fragmentShader: VORTEX_FRAG,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(this.plane!, mat);
+    mesh.position.set(at.x, 0.04, at.z);
+    mesh.scale.set(radius, 1, radius);
+    mesh.renderOrder = 10;
+    mesh.frustumCulled = false;
+    this.group.add(mesh);
+    this.vortices.push({ mesh, mat, born: this.now, dur });
+  }
+
+  private dropVortex(v: Vortex): void {
+    this.group.remove(v.mesh);
+    v.mat.dispose();
+  }
+
+  // ---------- 星光 ----------
+
+  private star(pos: THREE.Vector3, vel: THREE.Vector3, born: number, life: number, size: number, green: number): void {
+    const g = this.stars!.geometry;
+    const i = this.starAt;
+    this.starAt = (i + 1) % MAX_STARS;
+    (g.getAttribute('position') as THREE.BufferAttribute).setXYZ(i, pos.x, pos.y, pos.z);
+    (g.getAttribute('aVel') as THREE.BufferAttribute).setXYZ(i, vel.x, vel.y, vel.z);
+    (g.getAttribute('aTime') as THREE.BufferAttribute).setXY(i, born, life);
+    (g.getAttribute('aMisc') as THREE.BufferAttribute).setXYZ(i, size, Math.random(), green);
+    this.starDirty = true;
+    this.end = Math.max(this.end, born + life);
   }
 
   // ---------- 花瓣 ----------
 
-  private spawn(pos: THREE.Vector3, vel: THREE.Vector3, size: number, swirl: number, quat?: THREE.Quaternion, life?: number): void {
+  private spawn(pos: THREE.Vector3, vel: THREE.Vector3, size: number, swirl: number, life: number): void {
     if (this.petals.length >= MAX_PETALS) return;
     this.petals.push({
-      pos: pos.clone(),
-      vel: vel.clone(),
-      quat: quat?.clone() ?? new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 6.28), rand(0, 6.28), rand(0, 6.28))),
+      pos,
+      vel,
+      quat: new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 6.28), rand(0, 6.28), rand(0, 6.28))),
       axis: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize(),
-      spin: rand(2, 6) * (Math.random() < 0.5 ? -1 : 1),
+      spin: rand(2.5, 6.5) * (Math.random() < 0.5 ? -1 : 1),
       phase: rand(0, 6.28),
-      sway: rand(0.4, 1.1),
+      sway: rand(0.3, 0.9),
       size,
       born: this.now,
-      life: life ?? rand(4.2, 6.2),
-      landed: false,
+      life,
       swirl,
       tint: TINTS[Math.floor(Math.random() * TINTS.length)],
     });
+    this.end = Math.max(this.end, this.now + life);
   }
 
-  // 花开的一下：往上、往外迸开一圈，偏往牌桌中间（inward）
-  private burst(at: THREE.Vector3, inward: THREE.Vector3, n: number, s: number, grand: number): void {
-    const up = new THREE.Vector3(0, 1, 0);
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(rand(0.4, 1)).add(up.clone().multiplyScalar(rand(0.7, 1.6))).addScaledVector(inward, rand(0.2, 0.9));
-      dir.normalize().multiplyScalar(rand(4, 8 + 5 * grand) * s);
-      // 三成被一阵风往牌桌中间吹过去，飘得远
-      if (i % 3 === 0) dir.addScaledVector(inward, rand(5, 11 + 6 * grand) * s);
-      this.spawn(at.clone().add(new THREE.Vector3(rand(-0.2, 0.2), rand(0, 0.3), rand(-0.2, 0.2)).multiplyScalar(s)), dir, rand(0.32, 0.55) * s, rand(0.2, 0.6) * (0.4 + grand));
+  // 被旋风卷起来的一片：从牌边贴着桌面起飞，顺着风转的方向甩出去、往上扬；big 是飘得高、飞得远的大片
+  private whirl(floor: THREE.Vector3, inward: THREE.Vector3, u: number, grand: number, big: boolean): void {
+    const a = rand(0, Math.PI * 2);
+    const out = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+    const tan = new THREE.Vector3(-out.z * this.dir, 0, out.x * this.dir);
+    const pos = floor.clone().addScaledVector(out, rand(0.4, 1.4) * u).setY(rand(0.15, 0.6) * u);
+    const vel = tan.multiplyScalar(rand(3, 6.5) * u).addScaledVector(out, rand(1.5, 4) * u);
+    vel.y = rand(2.2, 4.6) * u;
+    if (big) {
+      vel.addScaledVector(inward, rand(4, 7 + 4 * grand) * u);
+      vel.y += rand(1.5, 3) * u;
     }
+    this.spawn(pos, vel, (big ? rand(0.75, 1.05) : rand(0.4, 0.66)) * u, rand(0.5, 1.2), big ? rand(2, 2.8) : rand(1.3, 2.2));
   }
 
-  // 一圈花瓣贴着桌面往四周扫出去（跟着冲击波），扫到一半慢下来、飘起来一点再落下
-  private sweep(at: THREE.Vector3, n: number, s: number, grand: number): void {
-    const a0 = Math.random() * Math.PI * 2;
-    for (let i = 0; i < n; i++) {
-      const a = a0 + ((i + rand(-0.3, 0.3)) / n) * Math.PI * 2;
-      const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-      // 往牌桌里面的那半圈扫得远，往外（镜头、桌边）的近一点
-      const reach = 1 + 0.6 * Math.max(0, dir.dot(this.inward));
-      const v = dir.multiplyScalar(rand(9, 14 + 8 * grand) * reach * s);
-      v.y = rand(0.8, 2.2) * s;
-      this.spawn(new THREE.Vector3(at.x + Math.cos(a) * 0.5 * s, 0.15 * s, at.z + Math.sin(a) * 0.5 * s), v, rand(0.3, 0.46) * s, 0.15);
-    }
-  }
-
-  // 一小把花瓣往上、往四周轻轻迸开（小百合开的那一下、岭上牌上那一朵）
-  private puff(at: THREE.Vector3, n: number, s: number): void {
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const v = new THREE.Vector3(Math.cos(a) * rand(0.6, 2.2), rand(2.5, 5.5), Math.sin(a) * rand(0.6, 2.2)).multiplyScalar(s);
-      this.spawn(at.clone().add(new THREE.Vector3(rand(-0.15, 0.15), rand(0.1, 0.3), rand(-0.15, 0.15)).multiplyScalar(s)), v, rand(0.22, 0.36) * s, 0.3, undefined, rand(2.4, 3.6));
-    }
-  }
-
-  // 从花心一股股往上冒，绕着花打着旋往上升（大的手升得高、旋得猛）
-  private rise(at: THREE.Vector3, n: number, s: number, grand: number): void {
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const r = rand(0.2, 0.7) * s;
-      const p = at.clone().add(new THREE.Vector3(Math.cos(a) * r, rand(0.1, 0.4) * s, Math.sin(a) * r));
-      const v = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a)).multiplyScalar(rand(1, 2.5) * s);
-      v.y = rand(5, 8 + 9 * grand) * s;
-      v.addScaledVector(this.inward, rand(0.5, 1.5) * s);
-      this.spawn(p, v, rand(0.3, 0.52) * s, rand(0.8, 1.6) * (0.3 + grand * 1.4));
-    }
-  }
-
-  // 花瓣雨：从牌桌上空飘下来
-  private rain(area: number, n: number, s: number): void {
-    for (let i = 0; i < n; i++) {
-      const p = new THREE.Vector3(rand(-area, area), rand(9, 14), rand(-area, area));
-      this.spawn(p, new THREE.Vector3(rand(-0.6, 0.6), -rand(0.3, 1), rand(-0.6, 0.6)), rand(0.36, 0.6) * s, 0, undefined, rand(5, 7));
-    }
+  // 一片花瓣轻轻往上飘（摸岭上牌那一下、牌飞的一路上）
+  private puff(at: THREE.Vector3, u: number): void {
+    const a = rand(0, Math.PI * 2);
+    const vel = new THREE.Vector3(Math.cos(a) * rand(0.5, 1.8), rand(1.5, 3.2), Math.sin(a) * rand(0.5, 1.8)).multiplyScalar(u);
+    this.spawn(at.clone().add(new THREE.Vector3(rand(-0.2, 0.2), rand(0, 0.3), rand(-0.2, 0.2)).multiplyScalar(u)), vel, rand(0.36, 0.55) * u, 0.2, rand(1.1, 1.7));
   }
 
   update(dt: number): void {
@@ -497,19 +571,60 @@ export class LilyFx {
       this.queue = this.queue.filter((q) => q.at > this.now);
       for (const q of due) q.fn();
     }
-    this.blooms = this.blooms.filter((b) => this.animateFlower(b));
     if (this.trails.length) {
       this.trails = this.trails.filter((t) => this.now < t.until);
       for (const t of this.trails) {
         const at = t.get();
         if (!at) continue;
         while (t.next <= this.now) {
-          t.next += 0.012;
-          const v = new THREE.Vector3(rand(-1.2, 1.2), rand(0.4, 2.2), rand(-1.2, 1.2)).multiplyScalar(t.scale);
-          this.spawn(at.clone().add(new THREE.Vector3(rand(-0.3, 0.3), rand(-0.2, 0.3), rand(-0.3, 0.3)).multiplyScalar(t.scale)), v, rand(0.3, 0.46) * t.scale, 0, undefined, rand(1.8, 2.8));
+          t.next += 0.016;
+          const v = new THREE.Vector3(rand(-1, 1), rand(-0.2, 1.4), rand(-1, 1)).multiplyScalar(t.scale);
+          this.star(at.clone().add(new THREE.Vector3(rand(-0.35, 0.35), rand(-0.2, 0.3), rand(-0.35, 0.35)).multiplyScalar(t.scale)), v, this.now, rand(0.45, 0.95), rand(0.18, 0.36) * t.scale, rand(0.2, 1));
+        }
+        if (t.petal <= this.now) {
+          t.petal = this.now + 0.14;
+          this.puff(at, t.scale * 0.85);
         }
       }
     }
+
+    this.vortices = this.vortices.filter((v) => {
+      const k = this.now - v.born;
+      if (k >= v.dur) {
+        this.dropVortex(v);
+        return false;
+      }
+      v.mat.uniforms.uT.value = k;
+      return true;
+    });
+
+    this.glows = this.glows.filter((g) => {
+      const k = (this.now - g.born) / g.dur;
+      if (k >= 1) {
+        this.dropGlow(g);
+        return false;
+      }
+      const m = g.sprite.material;
+      if (g.kind === 'mint') {
+        // 很快亮起来，轻轻喘着气，后一半慢慢暗掉
+        const t = this.now - g.born;
+        m.opacity = g.peak * Math.min(1, t / 0.14) * (1 - Math.max(0, (k - 0.45) / 0.55) ** 1.5) * (0.88 + 0.12 * Math.sin(t * 7));
+        g.sprite.scale.setScalar(g.size * (0.8 + 0.2 * Math.min(1, t / 0.3) + 0.04 * Math.sin(t * 5)));
+      } else {
+        const grow = 1 - (1 - Math.min(1, k / 0.35)) ** 3;
+        m.opacity = g.peak * Math.min(1, k / 0.12) * (1 - Math.max(0, (k - 0.3) / 0.7)) ** 1.6;
+        g.sprite.scale.setScalar(g.size * (g.kind === 'rays' ? 0.25 + 0.75 * grow : 0.45 + 0.55 * grow));
+      }
+      return true;
+    });
+
+    if (this.starMat) this.starMat.uniforms.uNow.value = this.now;
+    if (this.starDirty && this.stars) {
+      this.starDirty = false;
+      const g = this.stars.geometry;
+      for (const name of ['position', 'aVel', 'aTime', 'aMisc']) (g.getAttribute(name) as THREE.BufferAttribute).needsUpdate = true;
+    }
+
     if (!this.mesh) return;
     const live: Petal[] = [];
     const tmpQ = new THREE.Quaternion();
@@ -518,38 +633,30 @@ export class LilyFx {
       const age = this.now - p.born;
       if (age > p.life) continue;
       live.push(p);
-      if (!p.landed) {
-        // 重力往下、空气阻力把速度压到很慢（花瓣是飘的），再左右晃、绕着花打旋
-        p.vel.y -= GRAVITY * dt;
-        p.vel.multiplyScalar(Math.exp(-DRAG * dt));
-        const rx = p.pos.x - this.center.x;
-        const rz = p.pos.z - this.center.z;
-        const r = Math.hypot(rx, rz) + 0.6;
-        const sw = (p.swirl * Math.exp(-age * 0.5)) / r;
-        p.vel.x += -rz * sw * dt * 6;
-        p.vel.z += rx * sw * dt * 6;
-        // 往上冒的那几股旋起来以后还有一点上升的劲
-        if (p.swirl > 0.6 && age < 1.2) p.vel.y += p.swirl * 2.2 * dt;
-        const sway = Math.sin(age * 3.1 + p.phase) * p.sway;
-        p.pos.addScaledVector(p.vel, dt);
-        p.pos.x += Math.cos(p.phase) * sway * dt;
-        p.pos.z += Math.sin(p.phase) * sway * dt;
-        // 打着转：越慢的时候转得越像落叶那样翻
-        tmpQ.setFromAxisAngle(p.axis, p.spin * dt);
-        p.quat.premultiply(tmpQ);
-        if (p.pos.y <= 0.02 && p.vel.y < 0) {
-          // 落到桌上：平躺下来，随手转个方向
-          p.landed = true;
-          p.pos.y = 0.015;
-          p.quat.copy(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.phase * 3).multiply(LIE));
-        }
+      // 花瓣很轻：重力小、空气阻力大，被风带着绕圈、左右晃、自己翻着转
+      p.vel.y -= 1.5 * dt;
+      p.vel.multiplyScalar(Math.exp(-1.7 * dt));
+      const rx = p.pos.x - this.center.x;
+      const rz = p.pos.z - this.center.z;
+      const sw = (p.swirl * this.dir * Math.exp(-age * 1.2)) / (Math.hypot(rx, rz) + 0.8);
+      p.vel.x += -rz * sw * dt * 7;
+      p.vel.z += rx * sw * dt * 7;
+      const sway = Math.sin(age * 3.4 + p.phase) * p.sway;
+      p.pos.addScaledVector(p.vel, dt);
+      p.pos.x += Math.cos(p.phase) * sway * dt;
+      p.pos.z += Math.sin(p.phase) * sway * dt;
+      if (p.pos.y < 0.08) {
+        p.pos.y = 0.08;
+        p.vel.y = Math.abs(p.vel.y) * 0.3;
       }
-      // 最后 0.7 秒慢慢缩掉（谢了）
-      const wither = Math.min(1, (p.life - age) / 0.7);
-      const grow = Math.min(1, age / 0.12);
+      tmpQ.setFromAxisAngle(p.axis, p.spin * dt);
+      p.quat.premultiply(tmpQ);
+      // 冒出来的时候长大，最后四成的时间慢慢缩没
+      const fade = Math.min(1, (p.life - age) / (p.life * 0.4));
+      const grow = Math.min(1, age / 0.14);
       this.dummy.position.copy(p.pos);
       this.dummy.quaternion.copy(p.quat);
-      this.dummy.scale.setScalar(Math.max(0.001, p.size * wither * grow));
+      this.dummy.scale.setScalar(Math.max(0.001, p.size * fade ** 0.7 * grow));
       this.dummy.updateMatrix();
       this.mesh.setMatrixAt(n, this.dummy.matrix);
       this.mesh.setColorAt(n, p.tint);

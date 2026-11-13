@@ -372,7 +372,7 @@ export class App {
       </div>`;
     // 「更多」菜单里加一个白水哩、姬子的测试窗口（全部样子、开测试对局）
     this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="rii-test">白水哩 · 姬子测试</button>');
-    // 宫永咲的岭上开花测试：每局暗杠、岭上自摸，看砸牌和百合
+    // 宫永咲的岭上开花测试：每局暗杠、岭上自摸，看砸牌和岭上开花的特效
     this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="saki-test">宫永咲 · 岭上开花测试</button>');
     // 自摸动作测试：挑一个人、坐哪家，每局第二张自摸，看她砸牌的动作
     this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="slam-test">自摸动作测试</button>');
@@ -1176,7 +1176,7 @@ export class App {
         window.setTimeout(() => this.galeBurst2d(), slamImpact2d(slam.hand.filter((t) => t !== slam.tile).length) * 1000);
       }
       // 2D：咲的岭上开花（岭上牌自摸；役满时役里不写岭上开花，看这一张是不是岭上摸的）也是结算里手牌倒下、和了牌砸下去，
-      // 砸到那一下从这张牌开出百合（3D、2.5D 在牌桌上放）
+      // 砸到那一下从这张牌卷出旋风（3D、2.5D 在牌桌上放）
       const g = this.game!;
       const bloom = !this.table3d && !slam ? e.result.wins.find((w) => w.from === null && this.chars[w.seat]?.id === 'saki' && (g.rinshanDraw || w.result.yaku.some((y) => y.name === '岭上开花'))) : undefined;
       if (bloom) {
@@ -2687,7 +2687,7 @@ export class App {
     window.setTimeout(() => el.classList.remove('burst'), 2600);
   }
 
-  // 2D：咲的岭上开花。和了牌砸到结算上那一下，从这张牌开出百合、四周冒小百合、花瓣飘下来（lily2d.ts），
+  // 2D：咲的岭上开花。和了牌砸到结算上那一下，从这张牌卷出一阵白色的旋风，花瓣、星光飘开（lily2d.ts），
   // 画在一层盖在结算上面的 canvas 里，放完自己收起来
   private lilyBurst2d(base: number): void {
     const host = document.querySelector<HTMLElement>('.stage .table');
