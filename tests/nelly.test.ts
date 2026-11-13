@@ -125,9 +125,10 @@ describe('涅莉·薇萨拉兹', () => {
     }
   }, 240000);
 
-  it('七姐妹：押了运势的局自动开着，听牌的人用掉一次上软封印，押几点最多封几家；被封的人摸不到和了牌（自摸不了），荣和照样可以', () => {
+  it('七姐妹：押了运势的局自动开着，听牌的人用掉一次上软封印，押几点最多封几家；被封的人摸不到和了牌（自摸不了），荣和照样可以；一向听的人摸不到让她听牌的牌', () => {
     let used = 0;
     let swapped = 0;
+    let slowed = 0;
     let rons = 0;
     for (let seed = 1; seed <= 16; seed++) {
       play(
@@ -144,10 +145,15 @@ describe('涅莉·薇萨拉兹', () => {
                 expect(nellyBlocked(g, me).length).toBeLessThanOrEqual(nellyTier(g, me));
                 expect(nellySensesTenpai(g, victim)).toBe(true);
                 expect(nellySisters(g, me)).toBeGreaterThanOrEqual(0);
-              } else {
+              } else if (nellyBlocked(g, me).length) {
                 // 换走被封的人要和的牌（谁摸都换，不放切入）
                 swapped++;
-                expect(nellyBlocked(g, me).length).toBeGreaterThan(0);
+              } else {
+                // 还没人被封：慢点听牌，一向听的人摸不到让她听牌的牌
+                slowed++;
+                expect(NELLY.slow[nellyTier(g, me)]).toBeGreaterThan(0);
+                const p = g.players[e.target];
+                expect(shanten(toCounts(p.hand), p.melds.length)).toBe(1);
               }
             }
             if (e.type === 'roundEnd') {
@@ -164,6 +170,7 @@ describe('涅莉·薇萨拉兹', () => {
     }
     expect(used).toBeGreaterThan(5);
     expect(swapped).toBeGreaterThan(0);
+    expect(slowed).toBeGreaterThan(0);
     // 软封印：打出来的照样能荣和
     expect(rons).toBeGreaterThan(0);
   }, 120000);
@@ -187,7 +194,7 @@ describe('涅莉·薇萨拉兹', () => {
     }
   }, 120000);
 
-  it('押了运势：配牌照常发，到那一巡左右才和（3 点 8 巡、2 点 12 巡、1 点 15 巡），档越高和得越大，3 点大多和出三倍满', () => {
+  it('押了运势：配牌照常发，到那一巡左右才和（3 点 7 巡、2 点 12 巡、1 点 15 巡），档越高和得越大，3 点大多和出三倍满', () => {
     const stat = [0, 1, 2, 3].map(() => ({ rounds: 0, wins: 0, value: 0, big: 0, early: 0, turns: 0, sh: 0, over: 0 }));
     for (let seed = 1; seed <= 24; seed++) {
       for (const pick of [1, 2, 3]) {

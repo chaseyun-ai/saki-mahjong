@@ -1104,7 +1104,7 @@ function sumireSkips(g: Game, seat: number, style: AiStyle): boolean {
 const foresees = (g: Game, seat: number) => g.abilities[seat]?.foresightOn?.(g, seat) ?? true;
 
 // 照：这一手和了接不上连和（比上一次小），牌山还多，就先不和、等更大的
-// 涅莉押了运势的局：装装样子，该和的那一巡（押 3 点第 8 巡、2 点第 12 巡、1 点第 15 巡）之前不和（荣和可以早一巡）；
+// 涅莉押了运势的局：装装样子，该和的那一巡（押 3 点第 7 巡、2 点第 12 巡、1 点第 15 巡）之前不和（荣和可以早一巡）；
 // 到了那一巡牌还不够大（不到押的那一档），再等几巡接着做大。牌山快摸完了、有人逼近了就有什么和什么
 function nellyHolds(g: Game, seat: number, tsumo: boolean): boolean {
   if (nellyTier(g, seat) <= 0 || g.isSealed(seat) || g.wall.remaining <= NELLY.late) return false;

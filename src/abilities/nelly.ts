@@ -16,7 +16,7 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 // - 分配运势（每一局发牌前）：这一局押几点，押了就扣掉，和没和都不退：
 //   · 1 点：进张朝 3 番到满贯发展，第 15 巡左右（快流局时）和
 //   · 2 点：朝跳满发展，第 12 巡左右和
-//   · 3 点：朝三倍满发展，第 8 巡左右立直、一发自摸三倍满（立直、一发、自摸加里宝牌，里宝牌往她手里最多的牌上变）。照配牌定好一手三倍满：
+//   · 3 点：朝三倍满发展，第 7 巡左右立直、一发自摸三倍满（立直、一发、自摸加里宝牌，里宝牌往她手里最多的牌上变）。照配牌定好一手三倍满：
 //     宝牌能动就做混一色加宝牌刻子（宝牌指示牌指向它），玄在场宝牌动不了就做清一色（七对子也算），每巡来缺的那张；听牌了别人摸不走她要和的牌。而且这一局她的和牌别人挡不住（别人的能力管不到她：不许和、换走和了牌、封印都不算）
 //   配牌照常发，不动（押 2、3 点时宝牌指示牌指向她配牌里最多的那种牌）。装装样子：到那一巡之前摸不到和了牌（摸牌按巡数慢慢变好，听牌了先来把牌做大的牌：
 //   那门花色、宝牌、字牌对子），到了那一巡牌够大就来和了牌。押 2、3 点立直了里宝牌往她手里最多的牌上变，有宝牌暗刻就在那一巡来第四张开暗杠、岭上开花。押了几点只有她自己知道
@@ -26,6 +26,7 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 //   他的能力照用、照样能听牌。被封的人要和的牌谁都摸不到（埋到牌山后面），所以他们只能荣和别人手里本来就有的牌；
 //   涅莉看得见被封的人在等什么，自己打牌避开（电脑），少点炮给他们。
 //   押几点这一局最多封几家（3 点封三家）。别人能力管不到的人封不住；次数用完了就不封了
+//   （试验，NELLY.slow）押了运势的局还让别人慢点听牌：一向听的人摸牌时摸不到让她听牌的牌（不用次数，吃碰照样能听）
 // 电脑的涅莉：把剩下的局怎么押都算一遍（nellyAiCharge），挑加起来和得最多的押法：3 点最划算（九成和出三倍满），所以多半忍到攒够 3 点、
 // 等自己坐庄的局押下去；别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不押；一样多就往后留。
 // 押了运势的局门清做大，到那一巡之前不和，牌不够大先不和。
@@ -37,6 +38,8 @@ export const NELLY = {
   sisters: 7,
   hide: true, // 七姐妹：被封的人要和的牌谁都摸不到（她们只能荣和别人手里本来就有的牌）
   dodge: true, // 七姐妹：涅莉看得见被封的人在等什么，打牌、摸牌避开
+  // 试验：押了运势的局让别人慢点听牌：一向听的人摸牌时，这么大的机会摸不到让她听牌的牌（按押几点；0 是不管）
+  slow: [0, 1, 1, 1] as number[],
   // 开局排运势（试验中）：东一局发牌前把 total 点分到各局，每局最多 maxBet 点；null 是下面的攒运势
   plan: { total: 10 } as null | { total: number },
   // 攒运势：开场 start 点，没押运势的局打完攒 gain 点，最多攒到 cap 点（null 是原来那样开场一大笔）。
@@ -51,7 +54,7 @@ export const NELLY = {
   // 押 2、3 点：发牌前把宝牌指示牌换成指向她配牌里最多的那种牌（配牌本身不动）
   dora: [false, false, true, true],
   // 押 1/2/3 点时第几巡和（她摸第几张牌）：之前摸不到和了牌
-  turn: [0, 15, 12, 8],
+  turn: [0, 15, 12, 7], // 押 3 点原来是第 8 巡；软封印的人照样能荣和，提早到第 7 巡，给她们和牌的时间少一点
   // 到了那一巡牌还不够大，再等几巡就有什么和什么
   grace: 3,
   late: 8, // 牌山剩这么多以下就有什么和什么
@@ -351,6 +354,25 @@ function sweep(g: Game, seat: number): void {
     // 不写 target：七姐妹要放切入（写了 target 的是悄悄换牌）
     g.emit({ type: 'ability', seat, ability: 'nelly', text: '七姐妹' });
   }
+}
+
+// 慢点听牌（试验）：押了运势的局，drawer 一向听时让她听牌的那几种牌（不管的话是空的）
+function slowKinds(g: Game, seat: number, drawer: number): number[] {
+  const chance = NELLY.slow[tierOf(g, seat)] ?? 0;
+  if (chance <= 0 || drawer === seat || !g.binds(seat, drawer)) return [];
+  const p = g.players[drawer];
+  const counts = toCounts(p.hand);
+  if (shanten(counts, p.melds.length) !== 1) return [];
+  if (chance < 1 && g.rng.next() >= chance) return [];
+  const out: number[] = [];
+  for (let k = 0; k < 34; k++) {
+    if (counts[k] >= 4) continue;
+    counts[k]++;
+    // 摸进来再打一张就听牌：14 张的向听是 0
+    if (shanten(counts, p.melds.length) === 0) out.push(k);
+    counts[k]--;
+  }
+  return out;
 }
 
 const useful = (g: Game, seat: number) => {
@@ -783,7 +805,7 @@ const inSuit = (suit: number) => (t: TileId) => kindOf(t) < 27 && suitOf(kindOf(
 export const nellyAbility: Ability = {
   id: 'nelly',
   name: '运势·七姐妹',
-  description: `${NELLY.plan ? `开场 ${NELLY.plan.total} 点运势，东一局发牌前分到这一场的各局（每局最多 ${NELLY.maxBet} 点），之后不能改；连庄、流局重打的本场不再用，比赛提前结束后面的就浪费了` : NELLY.charge ? `运势是攒出来的：开场 ${NELLY.charge.start} 点，每忍一局（没押运势的局）打完攒 ${NELLY.charge.gain} 点，最多攒 ${NELLY.charge.cap} 点` : `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点`}。押了运势的局（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次给他上软封印，这一局他摸不到和了牌（自摸不了），别人打出来的照样能荣和；押几点最多封几家。`,
+  description: `${NELLY.plan ? `开场 ${NELLY.plan.total} 点运势，东一局发牌前分到这一场的各局（每局最多 ${NELLY.maxBet} 点），之后不能改；连庄、流局重打的本场不再用，比赛提前结束后面的就浪费了` : NELLY.charge ? `运势是攒出来的：开场 ${NELLY.charge.start} 点，每忍一局（没押运势的局）打完攒 ${NELLY.charge.gain} 点，最多攒 ${NELLY.charge.cap} 点` : `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点`}。押了运势的局（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次给他上软封印，这一局他摸不到和了牌（自摸不了），别人打出来的照样能荣和；押几点最多封几家。押了运势的局别人一向听时也摸不到让她听牌的牌，听牌慢一些。`,
   priority: PRIORITY.nelly,
 
   // 三倍满的局别人挡不住她（别人的能力管不到她）
@@ -842,12 +864,14 @@ export const nellyAbility: Ability = {
     // 七姐妹的软封印：被封的人要和的牌谁都摸不到（被封的人自摸不了；别人也摸不到、点不了给她们，她们只能荣和别人手里本来就有的牌）。
     // 换牌时也别把她要和的牌换进去
     const theirs = NELLY.hide ? nellySealedWaits(g, seat) : new Set<number>();
-    if (!stateOf(g, seat).blocked!.length) return;
     const sealedDrawer = stateOf(g, seat).blocked!.includes(drawer);
     const d = g.players[drawer];
+    // 慢点听牌（试验）：一向听的人摸不到让她听牌的牌
+    const slow = sealedDrawer ? [] : slowKinds(g, seat, drawer);
+    if (!stateOf(g, seat).blocked!.length && !slow.length) return;
     const waits = sealedDrawer ? waitingKinds(toCounts(d.hand), d.melds.length) : [];
-    const deny = (t: TileId) => theirs.has(kindOf(t)) || waits.includes(kindOf(t)) || mine.includes(kindOf(t));
-    if (!sealedDrawer) return NELLY.hide ? { seat, ability: 'nelly', text: '七姐妹', deny } : undefined;
+    const deny = (t: TileId) => theirs.has(kindOf(t)) || waits.includes(kindOf(t)) || mine.includes(kindOf(t)) || slow.includes(kindOf(t));
+    if (!sealedDrawer) return NELLY.hide || slow.length ? { seat, ability: 'nelly', text: '七姐妹', deny } : undefined;
     // 被封的人自己的能力锁好的和了牌（咲配牌时就定好的岭上牌之类）：用能力也不让她自摸，锁着也照换
     const w = g.wall;
     const next = rinshan ? w.rinshan[0] : w.live[0];
