@@ -3,7 +3,7 @@ import { CHARACTERS } from '../src/abilities/characters';
 import { toyoneCanUse, toyoneLurks, toyoneMode, toyoneRedHidden, type RokuyouId } from '../src/abilities/toyone';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
-import { RED_FIVES, kindOf } from '../src/engine/tiles';
+import { RED_FIVES, isRed, kindOf } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -41,6 +41,19 @@ function run(g: Game, ids: string[], pick?: (g: Game) => RokuyouId | null, onSte
     g.act(s, chooseAction(g, s, byId(ids[s]).ai));
   }
   return g;
+}
+
+// 给 0 号位拼一手四副露（白、发、中、东的碰）单骑：牌山里挑一张数牌当和了牌，下一张先换成别的
+function tanki(g: Game) {
+  const ofKind = (k: number) => [0, 1, 2, 3].map((i) => k * 4 + i);
+  const target = kindOf(g.wall.live.find((t) => kindOf(t) < 27 && kindOf(t) % 9 > 0 && kindOf(t) % 9 < 8)!);
+  const p = g.players[0];
+  p.melds = [31, 32, 33, 27].map((k) => ({ type: 'pon' as const, tiles: ofKind(k).slice(0, 3) }));
+  p.hand = [ofKind(target).find((t) => !g.wall.live.includes(t))!];
+  const w = g.wall;
+  if (kindOf(w.live[0]) === target) w.bringToLive(0, (t) => kindOf(t) !== target, g.rng);
+  expect(kindOf(w.live[0])).not.toBe(target);
+  return { target };
 }
 
 describe('姊带丰音', () => {
@@ -112,48 +125,126 @@ describe('姊带丰音', () => {
     expect(fed).toBeGreaterThan(0);
   }, 120000);
 
-  it('她还没用别的技能（先负等着）时，别的电脑不轻易立直', () => {
-    const ids = ['toyone', 'hisa', 'yuuki', 'sera'];
-    const plain = ['mako', 'hisa', 'yuuki', 'sera'];
-    // 别人（1–3 号位）立直了几次：丰音在、先负等着的时候；换成真子的同样的牌局
-    let lurking = 0;
-    let without = 0;
-    for (let seed = 1; seed <= 12; seed++) {
+  it('她还没用别的技能（先负等着）时：别的电脑照常立直，只有浩子不轻易立直', () => {
+    const ids = ['toyone', 'hiroko', 'yuuki', 'sera'];
+    const plain = ['mako', 'hiroko', 'yuuki', 'sera'];
+    // 先负等着的时候别人立直了几次（浩子在 1 号位）；换成真子的同样的牌局里立直了几次
+    const lurking = [0, 0, 0, 0];
+    const without = [0, 0, 0, 0];
+    for (let seed = 1; seed <= 16; seed++) {
       const g = newGame(seed, ids);
       expect(toyoneLurks(g, 1)).toBe(!toyoneMode(g, 0));
       expect(toyoneLurks(g, 0)).toBe(false);
       g.onEvent((e) => {
-        if (e.type === 'discard' && e.seat !== 0 && e.riichi && !(g.abilityState[0] as { mode?: string }).mode && g.active(0)) lurking++;
+        if (e.type === 'discard' && e.seat !== 0 && e.riichi && !(g.abilityState[0] as { mode?: string }).mode && g.active(0)) lurking[e.seat]++;
       });
       run(g, ids);
       const h = newGame(seed, plain);
       h.onEvent((e) => {
-        if (e.type === 'discard' && e.seat !== 0 && e.riichi) without++;
+        if (e.type === 'discard' && e.seat !== 0 && e.riichi) without[e.seat]++;
       });
       run(h, plain);
     }
-    expect(without).toBeGreaterThan(10);
-    expect(lurking).toBeLessThan(without / 3);
-  }, 120000);
+    // 优希、夕不知道先负，先负等着的时候照常立直（先负一发动就不算了，所以比整场的少）
+    const others = (lurking[2] + lurking[3]) / (without[2] + without[3]);
+    expect(others).toBeGreaterThan(0.2);
+    // 浩子看过资料，躲着：立直的比例不到别人的一半
+    expect(without[1]).toBeGreaterThan(5);
+    expect(lurking[1] / without[1]).toBeLessThan(others / 2);
+  }, 240000);
 
   it('友引：四副露单骑，下一次摸牌必定自摸', () => {
     const ids = ['toyone', 'mako', 'ako', 'izumi'];
     const g = newGame(4, ids, true);
     g.abilities[0]!.setPreDeal!(g, 0, []);
     dealAll(g);
-    // 拼一手四副露（白、发、中、东的碰）单骑：牌山里挑一张数牌当和了牌
-    const ofKind = (k: number) => [0, 1, 2, 3].map((i) => k * 4 + i);
-    const target = kindOf(g.wall.live.find((t) => kindOf(t) < 27 && kindOf(t) % 9 > 0 && kindOf(t) % 9 < 8)!);
-    const p = g.players[0];
-    p.melds = [31, 32, 33, 27].map((k) => ({ type: 'pon' as const, tiles: ofKind(k).slice(0, 3) }));
-    p.hand = [ofKind(target).find((t) => !g.wall.live.includes(t))!];
-    const w = g.wall;
-    if (kindOf(w.live[0]) === target) w.bringToLive(0, (t) => kindOf(t) !== target, g.rng);
-    expect(kindOf(w.live[0])).not.toBe(target);
+    const { target } = tanki(g);
     g.abilities[0]!.beforeDraw!(g, 0, false);
     expect(toyoneMode(g, 0)).toBe('tomobiki');
-    expect(kindOf(w.live[0])).toBe(target);
+    expect(kindOf(g.wall.live[0])).toBe(target);
     expect(g.events.some((e) => e.type === 'ability' && e.text === '友引')).toBe(true);
+  });
+
+  it('友引：这一局开着别的六曜，四副露单骑也照样自摸', () => {
+    const ids = ['toyone', 'mako', 'ako', 'izumi'];
+    const g = newGame(4, ids, true);
+    g.abilities[0]!.setPreDeal!(g, 0, ['sensho']);
+    dealAll(g);
+    const { target } = tanki(g);
+    g.abilities[0]!.beforeDraw!(g, 0, false);
+    expect(toyoneMode(g, 0)).toBe('sensho');
+    expect(kindOf(g.wall.live[0])).toBe(target);
+    expect(g.events.some((e) => e.type === 'ability' && e.text === '友引')).toBe(true);
+  });
+
+  it('友引：鸣了牌就发动，进张加快；听牌以后副露越多越容易自摸', () => {
+    const ids = ['toyone', 'mako', 'ako', 'izumi'];
+    const g = newGame(4, ids, true);
+    g.abilities[0]!.setPreDeal!(g, 0, []);
+    dealAll(g);
+    const ofKind = (k: number) => [0, 1, 2, 3].map((i) => k * 4 + i);
+    const p = g.players[0];
+    const w = g.wall;
+    // 白的碰，手里 12345 万、678 索、99 筒：听 3、6 万。副露一次：听牌以后三成的摸牌是和了牌
+    p.melds = [31].map((k) => ({ type: 'pon' as const, tiles: ofKind(k).slice(0, 3) }));
+    p.hand = [0, 1, 2, 3, 4, 23, 24, 25].map((k) => ofKind(k).find((t) => !isRed(t))!).concat([ofKind(17)[0], ofKind(17)[1]]);
+    const waits = g.waits(0);
+    expect(waits.sort()).toEqual([2, 5]);
+    const fed = () => {
+      let n = 0;
+      for (let i = 0; i < 60; i++) {
+        if (waits.includes(kindOf(w.live[0]))) w.bringToLive(0, (t) => !waits.includes(kindOf(t)), g.rng);
+        g.abilities[0]!.beforeDraw!(g, 0, false);
+        expect(toyoneMode(g, 0)).toBe('tomobiki');
+        if (waits.includes(kindOf(w.live[0]))) n++;
+      }
+      return n;
+    };
+    const once = fed();
+    expect(once).toBeGreaterThan(6);
+    expect(once).toBeLessThan(32);
+    // 白、发、中的碰，手里 45 万、99 筒：副露三次，听牌以后四分之三的摸牌是和了牌
+    const full = p.hand;
+    p.melds = [31, 32, 33].map((k) => ({ type: 'pon' as const, tiles: ofKind(k).slice(0, 3) }));
+    p.hand = full.filter((t) => [3, 4, 17].includes(kindOf(t)));
+    expect(g.waits(0).sort()).toEqual([2, 5]);
+    const n = fed();
+    expect(n).toBeGreaterThan(34);
+    expect(n).toBeGreaterThan(once);
+    // 白、发的碰，手里 12345 万、99 筒
+    p.melds = p.melds.slice(0, 2);
+    p.hand = full.filter((t) => kindOf(t) < 18);
+    // 没听牌时会把进张换过来（副露两次，手里 1235 万、99 筒、北）：摸到 3 到 7 万、9 筒、北才进张
+    p.hand = p.hand.slice(0, 3).concat(p.hand.slice(4));
+    p.hand.push(ofKind(30)[0]);
+    let sped = 0;
+    for (let i = 0; i < 60; i++) {
+      const good = (t: number) => [2, 3, 4, 5, 6, 17, 30].includes(kindOf(t));
+      if (good(w.live[0])) w.bringToLive(0, (t) => !good(t), g.rng);
+      g.abilities[0]!.beforeDraw!(g, 0, false);
+      if (good(w.live[0])) sped++;
+    }
+    expect(sped).toBeGreaterThan(5);
+  });
+
+  it('加速只帮进向听：赤口开着、听牌以后不把和了牌换到手里', () => {
+    const ids = ['toyone', 'mako', 'ako', 'izumi'];
+    const g = newGame(5, ids, true);
+    g.abilities[0]!.setPreDeal!(g, 0, ['shakku']);
+    dealAll(g);
+    const ofKind = (k: number) => [0, 1, 2, 3].map((i) => k * 4 + i);
+    const p = g.players[0];
+    const w = g.wall;
+    // 123 456 789 万、11 筒、赤五筒 6 筒：听 4、7 筒
+    const red = RED_FIVES.find((t) => kindOf(t) === 13)!;
+    p.hand = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((k) => ofKind(k).find((t) => !isRed(t))!).concat([ofKind(9)[0], ofKind(9)[1], red, ofKind(14)[0]]);
+    const waits = g.waits(0);
+    expect(waits.sort()).toEqual([12, 15]);
+    for (let i = 0; i < 80; i++) {
+      if (waits.includes(kindOf(w.live[0]))) w.bringToLive(0, (t) => !waits.includes(kindOf(t)), g.rng);
+      g.abilities[0]!.beforeDraw!(g, 0, false);
+      expect(waits).not.toContain(kindOf(w.live[0]));
+    }
   });
 
   it('大安：别人的规矩管不到她的摸牌', () => {

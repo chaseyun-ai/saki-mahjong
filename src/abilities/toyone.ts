@@ -8,19 +8,24 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 // - 先负（被动）：平时默听。场上有人立直、她还没立直时发动：手牌进展加快；她追立以后，比她先立直的人摸到的都是她的铳牌
 // - 先胜（主动）：前 10 巡摸牌更容易是进张；第 11 巡起摸牌变慢，还容易摸到别人的铳牌
 // - 赤口（主动）：看得见三张赤宝牌在哪；她手里有赤宝牌时进张 +30%，别人手里有赤宝牌时那家进张 -30%
-// - 友引（被动）：四副露听单骑，下一次摸牌必定自摸（和了要有役）
+// - 友引（被动）：鸣了牌就发动，进张加快；听牌以后副露越多越容易自摸（一次 30%、两次 50%、三次 75%），四副露听单骑下一次摸牌必定自摸（和了要有役）。
+//   四副露单骑的自摸不占六曜：这一局开着别的也照样送
+// 先负、先胜、赤口、友引的加速只帮她进向听；听牌以后和了牌要自己摸（只有友引会送和了牌）
 // - 大安（主动，一场一次）：这一局别人的能力影响不到她的摸牌
 // - 佛灭（主动，一场一次）：这一局所有控场的能力（别人的配牌、摸牌规矩，封印，不许和牌，整理牌山）全部无效。玄的宝牌是作者钦定的，照样算
 // 主动的四种在发牌前选，也可以在这一局里随时按（这一局还没有别的技能起作用时）。
 // 电脑的丰音：大安、佛灭留到落后或者最后两局、桌上有强的控场能力时用；坐庄时一半的概率开先胜；手里有赤宝牌时开赤口
-// 别的电脑：她还没用别的技能（先负等着）时不轻易立直（见 ai.ts 的 toyoneLurks）
+// 别的电脑：照常立直；只有浩子（看过资料）在她还没用别的技能（先负等着）时不轻易立直（见 ai.ts 的 toyoneLurks）
 export const TOYONE = {
-  senbuDraw: 0.5, // 先负发动后摸牌换成进张的概率
+  senbuDraw: 0.7, // 先负发动后摸牌换成进张的概率
   senshoTurns: 10, // 先胜加速的巡数
   senshoDraw: 0.4, // 先胜前 10 巡换成进张的概率
   senshoDeal: 0.4, // 先胜第 11 巡起摸到别人铳牌的概率
   senshoSlow: 0.3, // 先胜第 11 巡起进张被换走的概率
   shakku: 0.3, // 赤口：进张加减的幅度
+  tomobikiMelds: 1, // 友引：副露这么多次起发动，进张加快
+  tomobikiDraw: 0.6, // 友引：摸牌换成进张的概率
+  tomobikiTsumo: [0, 0.3, 0.5, 0.75, 1], // 友引：副露几次、听牌以后，每次摸牌自摸的概率（四副露单骑必定）
   behind: 8000, // 电脑：落后第一这么多就用大安、佛灭
   dealerSensho: 0.5, // 电脑：坐庄时开先胜的概率
 };
@@ -31,7 +36,7 @@ export const ROKUYOU: { id: RokuyouId; name: string; active: boolean; once: bool
   { id: 'senbu', name: '先负', active: false, once: false, desc: '保持默听；有人立直后手牌进展加快，追立以后先立直的人摸到她的铳牌' },
   { id: 'sensho', name: '先胜', active: true, once: false, desc: `前 ${TOYONE.senshoTurns} 巡进张更快；第 ${TOYONE.senshoTurns + 1} 巡起进张变慢，容易摸到别人的铳牌` },
   { id: 'shakku', name: '赤口', active: true, once: false, desc: `看得见赤宝牌在哪；手里有赤宝牌进张 +${TOYONE.shakku * 100}%，别人手里有赤宝牌那家进张 -${TOYONE.shakku * 100}%` },
-  { id: 'tomobiki', name: '友引', active: false, once: false, desc: '四副露听单骑，下一次摸牌必定自摸' },
+  { id: 'tomobiki', name: '友引', active: false, once: false, desc: '鸣了牌进张加快；听牌后副露越多越容易自摸，四副露听单骑下一次摸牌必定自摸' },
   { id: 'taian', name: '大安', active: true, once: true, desc: '这一局别人的能力影响不到她的摸牌（一场一次）' },
   { id: 'butsumetsu', name: '佛灭', active: true, once: true, desc: '这一局所有控场的能力无效（一场一次）' },
 ];
@@ -117,8 +122,10 @@ const useful = (g: Game, seat: number) => {
   };
 };
 
-// 下一张换成进张
+// 下一张换成进张。听牌以后不动：和了牌要她自己摸
 function speedUp(g: Game, seat: number, rinshan: boolean): void {
+  const p = g.players[seat];
+  if (shanten(toCounts(p.hand), p.melds.length) <= 0) return;
   const good = useful(g, seat);
   const w = g.wall;
   if (rinshan) {
@@ -163,11 +170,34 @@ function aiPreDeal(g: Game, seat: number): RokuyouId | null {
 // 友引：四副露听单骑
 const tomobikiReady = (g: Game, seat: number) => g.players[seat].melds.length === 4 && g.waits(seat).length > 0;
 
+// 友引的自摸：把有役的和了牌送到下一张。送到了是 true
+function tomobikiTsumo(g: Game, seat: number, rinshan: boolean): boolean {
+  const p = g.players[seat];
+  if (!g.canWin(seat) || g.waits(seat).length === 0) return false;
+  // 四副露单骑：开着哪一种六曜都必定送。副露少一些的：友引起作用的局里按概率送
+  const open = p.melds.filter((m) => m.type !== 'ankan').length;
+  const sure = tomobikiReady(g, seat);
+  if (!sure && (stateOf(g, seat).mode !== 'tomobiki' || !g.rng.chance(TOYONE.tomobikiTsumo[Math.min(open, 4)] ?? 0))) return false;
+  const w = g.wall;
+  const waits = g.waits(seat);
+  // 有役的和了牌：先放进手里试一下
+  const wins = (t: TileId) => {
+    if (!waits.includes(kindOf(t))) return false;
+    p.hand.push(t);
+    const ok = !!g.winResult(seat, t, true);
+    p.hand.pop();
+    return ok;
+  };
+  const ok = rinshan ? wins(w.rinshan[0]) || w.bringToRinshan(wins, g.rng) : wins(w.live[0]) || w.bringToLive(0, wins, g.rng);
+  if (ok) g.emit({ type: 'ability', seat, ability: 'toyone', text: '友引' });
+  return ok;
+}
+
 export const toyoneAbility: Ability = {
   id: 'toyone',
   name: '六曜',
   description:
-    '六种技能，每一局只有一种起作用。先负（被动）：保持默听，有人立直后加速，追立后先立直的人摸到她的铳牌。先胜：前 10 巡进张快，之后变慢、容易摸到别人的铳牌。赤口：看得见赤宝牌，有赤宝牌的进张 ±30%。友引（被动）：四副露单骑，下一巡必定自摸。大安（一场一次）：别人的能力影响不到她的摸牌。佛灭（一场一次）：这一局控场的能力全部无效。',
+    '六种技能，每一局只有一种起作用。先负（被动）：保持默听，有人立直后加速，追立后先立直的人摸到她的铳牌。先胜：前 10 巡进张快，之后变慢、容易摸到别人的铳牌。赤口：看得见赤宝牌，有赤宝牌的进张 ±30%。友引（被动）：鸣了牌进张加快，听牌后副露越多越容易自摸，四副露单骑下一巡必定自摸。大安（一场一次）：别人的能力影响不到她的摸牌。佛灭（一场一次）：这一局控场的能力全部无效。',
   priority: PRIORITY.toyone,
 
   // 这一局开哪一种：玩家在发牌前选好了，电脑在这里自己决定（不定配牌的规矩）
@@ -200,12 +230,14 @@ export const toyoneAbility: Ability = {
   beforeDraw(g, seat, rinshan) {
     const st = stateOf(g, seat);
     const p = g.players[seat];
-    // 被动的两种：这一局还没有别的技能起作用时自己发动
+    // 被动的两种：这一局还没有别的技能起作用时自己发动。鸣了牌走友引（鸣过牌追立不了，先负用不上）
+    if (!st.mode && p.melds.filter((m) => m.type !== 'ankan').length >= TOYONE.tomobikiMelds) start(g, seat, 'tomobiki', false);
     if (!st.mode && !p.riichi && g.players.some((q) => q.seat !== seat && q.riichi && g.seesRiichi(q.seat, seat))) start(g, seat, 'senbu');
-    if (!st.mode && tomobikiReady(g, seat)) start(g, seat, 'tomobiki', false);
     // 电脑：手里有赤宝牌就开赤口
     if (!st.mode && !g.manual[seat] && p.hand.some(isRed)) start(g, seat, 'shakku');
 
+    // 友引的自摸（四副露单骑开着哪一种都送）
+    if (tomobikiTsumo(g, seat, rinshan)) return;
     const w = g.wall;
     switch (st.mode) {
       case 'senbu':
@@ -230,21 +262,9 @@ export const toyoneAbility: Ability = {
       case 'shakku':
         if (p.hand.some(isRed) && g.rng.chance(TOYONE.shakku)) speedUp(g, seat, rinshan);
         break;
-      case 'tomobiki': {
-        if (!tomobikiReady(g, seat) || !g.canWin(seat)) break;
-        const waits = g.waits(seat);
-        // 有役的和了牌：先放进手里试一下
-        const wins = (t: TileId) => {
-          if (!waits.includes(kindOf(t))) return false;
-          p.hand.push(t);
-          const ok = !!g.winResult(seat, t, true);
-          p.hand.pop();
-          return ok;
-        };
-        const ok = rinshan ? wins(w.rinshan[0]) || w.bringToRinshan(wins, g.rng) : wins(w.live[0]) || w.bringToLive(0, wins, g.rng);
-        if (ok) g.emit({ type: 'ability', seat, ability: 'toyone', text: '友引' });
+      case 'tomobiki':
+        if (g.rng.chance(TOYONE.tomobikiDraw)) speedUp(g, seat, rinshan);
         break;
-      }
     }
   },
 
@@ -296,7 +316,7 @@ export const toyoneAbility: Ability = {
     }
     const playing = g.phase === 'turn' || g.phase === 'calls';
     const choices = ROKUYOU.filter((r) => r.active).map((r) => ({ id: r.id, label: r.name, enabled: playing && toyoneCanUse(g, seat, r.id) }));
-    return { label: '六曜', note: `这一局还没有技能起作用：有人立直会发动先负，四副露单骑会发动友引${tail}`, enabled: playing, choices };
+    return { label: '六曜', note: `这一局还没有技能起作用：有人立直会发动先负，鸣了牌会发动友引${tail}`, enabled: playing, choices };
   },
 
   pressSkill(g, seat, choice) {

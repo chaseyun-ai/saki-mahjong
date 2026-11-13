@@ -22,7 +22,12 @@ const from = Number(process.argv[5] ?? 1);
 const OFF = new Set((process.env.OFF ?? '').split(',').filter(Boolean));
 const BLOCK = new Set((process.env.BLOCK ?? '').split(',').filter(Boolean));
 const VOID = !!process.env.VOID;
-if (process.env.PARAMS) Object.assign(TOYONE, JSON.parse(process.env.PARAMS));
+// PARAMS 也可以写成 senbuDraw=0.7;tomobikiTsumo=0,0,0.25,0.5,1（命令行里不好带引号的时候）
+if (process.env.PARAMS) {
+  const raw = process.env.PARAMS;
+  const num = (v: string) => (v.includes(',') ? v.split(',').map(Number) : Number(v));
+  Object.assign(TOYONE, raw.trim().startsWith('{') ? JSON.parse(raw) : Object.fromEntries(raw.split(';').map((kv) => [kv.split('=')[0], num(kv.split('=')[1])])));
+}
 
 type St = { mode?: RokuyouId; chase?: number[] };
 const st = (g: Game, s: number) => g.abilityState[s] as St;

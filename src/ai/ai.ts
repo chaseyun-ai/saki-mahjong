@@ -719,6 +719,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       (god === 'sakuya' && best.sh === 0 && sakuyaKanReady(g, seat, counts, visible)) ||
       // 丰音的先负发动了：追上去，不弃和
       (style.rokuyou && toyoneMode(g, seat) === 'senbu' && best.sh <= 1) ||
+      // 丰音四副露单骑：下一次摸牌就是友引的自摸，不弃和
+      (style.rokuyou && !sealed && p.melds.length === 4 && best.sh === 0) ||
       // 初美鸣出东北以后奔小四喜（西南会送来），离听牌不远就不弃和
       (kimonGoal !== null && best.sh <= HATSUMI_AI.push));
   // 姬子坐庄、钥匙记在这一局后面的本场：先和小牌连庄去够那一局，一向听以内不弃和（流局时也要听着牌）
@@ -829,8 +831,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     if (style.damaMin && damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) >= style.damaMin) return best.a;
     // 能力发动中的局：牌还小、牌山还多，先默听等改良，牌够大了再立直
     if (growing && g.wall.remaining > BIG.late && ronValue(g, seat, p.hand.filter((t) => t !== best.a.tile), true) < bigEnough(g, seat, BIG.riichi)) return best.a;
-    // 同桌的丰音还没用别的技能（先负等着）：不轻易立直。有役就默听；没役的也默听等自摸，只有听得很宽才立直
-    if (!style.rokuyou && toyoneLurks(g, seat)) {
+    // 浩子（看过资料）：同桌的丰音还没用别的技能（先负等着）就不轻易立直。有役就默听；没役的也默听等自摸，只有听得很宽才立直
+    // 别的人不知道先负，照常立直
+    if (style.scout && !sealed && toyoneLurks(g, seat)) {
       if (damaRon(g, seat, p.hand.filter((t) => t !== best.a.tile)) > 0) return best.a;
       if (ukeire(c, p.melds.length, visible) < TOYONE_WIDE) return best.a;
     }
@@ -1426,8 +1429,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 诚子：对子多、还没吃过，就奔对对和，能碰就碰（碰了不退向听也碰，多钓一条鱼）
   const pairs = counts.filter((n) => n >= 2).length;
   const toitoi = style.fish && p.melds.every((m) => m.type !== 'chi') && pairs + p.melds.length >= 4;
-  // 丰音：副露两次以上、有役，这一局还没有六曜起作用时奔友引（四副露单骑），不退向听就鸣
-  const tomobiki = style.rokuyou && !sealedMe && yakuSecured && p.melds.length >= 2 && toyoneMode(g, seat) === null;
+  // 丰音：副露两次以上、有役就奔友引（四副露单骑，开着哪一种六曜都会自摸），不退向听就鸣
+  const tomobiki = style.rokuyou && !sealedMe && yakuSecured && p.melds.length >= 2;
   let best: Action = pass;
   let bestSh = callCur;
   for (const a of legal) {
