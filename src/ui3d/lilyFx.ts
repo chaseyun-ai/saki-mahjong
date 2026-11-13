@@ -4,15 +4,15 @@ import * as THREE from 'three';
 // 1. 牌上炸开一团白光，几道细细的光芒；
 // 2. 一阵白色的旋风贴着桌面从牌底下卷出去（一道道毛笔扫出来似的风痕，边转边往外扩，先是厚厚一团、越扩越稀，最后剩几道细弧淡掉）；
 // 3. 牌上留一团薄荷绿的光，慢慢暗下去；
-// 4. 几片半透明的花瓣被风卷起来，打着转飘过牌桌；
+// 4. 一片片百合花瓣（白色、淡绿色的边）被风卷起来，打着转飘过牌桌；
 // 5. 一颗颗四角的星光在牌四周和半张牌桌上空一闪一闪，慢慢飘散。
 // 和得越大，风卷得越远、花瓣和星光越多（看基本点）。全是程序画的（着色器、canvas），没有贴图素材。
 // 摸岭上牌那一下（sprout、trail）：岭上那张牌上先亮一下、冒一小把星光，牌飞进手里的一路上拖着星光。
 
-// 基本点 → 花瓣片数：1 番 30 符 6 片、满贯 11 片、倍满 14 片、役满 20 片，两倍役满封顶 29 片
+// 基本点 → 百合花瓣片数：1 番 30 符 10 片、满贯 16 片、倍满 22 片、役满 30 片，两倍役满封顶 44 片
 export function lilyCount(base: number): number {
   const b = Math.min(Math.max(base, 0), 16000);
-  return Math.round(5 + 15 * (b / 8000) ** 0.7);
+  return Math.round(8 + 22 * (b / 8000) ** 0.7);
 }
 
 // 0（小和）到 1（两倍役满）：风卷多远、光多亮、留多久（音效也跟着）
@@ -38,7 +38,7 @@ export interface LilyOpts {
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const MAX_PETALS = 96;
 const MAX_STARS = 1200;
-const VORTEX_TIME = 1.5;
+const VORTEX_TIME = 1.35;
 const MINT = '#7dffc4';
 
 const NOISE = /* glsl */ `
@@ -92,7 +92,7 @@ void main() {
   float core = (1.0 - smoothstep(0.0, front * 0.85, r)) * (1.0 - smoothstep(0.05, 0.32, uT));
   float rim = 0.5 + 0.5 * smoothstep(front * 0.25, front * 0.85, r);
   float fade = smoothstep(0.0, 0.04, uT) * (1.0 - smoothstep(uDur * 0.5, uDur, uT));
-  float alpha = clamp(streak * rim * inner + core * 0.9, 0.0, 1.0) * outer * fade * uOpacity;
+  float alpha = clamp(streak * rim * inner + core * 0.6, 0.0, 1.0) * outer * fade * uOpacity;
   // 靠里的一圈染上薄荷绿
   float green = (1.0 - smoothstep(front * 0.1, front * 0.75, r)) * smoothstep(0.08, 0.35, uT);
   gl_FragColor = vec4(mix(vec3(1.0), uTint, green * 0.75), alpha);
@@ -171,33 +171,43 @@ function petalGeometry(len: number, wid: number, curl: number, groove: number): 
   return g;
 }
 
-// 花瓣：半透明，中间白、边上和两头是薄荷绿，像透着光
+// 百合花瓣：白色，淡绿色的描边（贴图横向是花瓣的宽，两边各一道绿边；花瓣两头窄，绿边自然收成尖），根部带一点黄绿，中间一道淡淡的中肋
 function petalTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 64;
   c.height = 128;
   const x = c.getContext('2d')!;
   const g = x.createLinearGradient(0, 128, 0, 0);
-  g.addColorStop(0, 'rgba(120,235,170,0.85)');
-  g.addColorStop(0.35, 'rgba(225,255,236,0.8)');
-  g.addColorStop(0.7, 'rgba(200,255,225,0.7)');
-  g.addColorStop(1, 'rgba(130,240,185,0.55)');
+  g.addColorStop(0, 'rgba(226,246,214,0.98)');
+  g.addColorStop(0.22, 'rgba(255,255,255,0.98)');
+  g.addColorStop(0.9, 'rgba(255,255,255,0.96)');
+  g.addColorStop(1, 'rgba(232,250,236,0.96)');
   x.fillStyle = g;
   x.fillRect(0, 0, 64, 128);
-  // 两边再绿一点、透一点
+  // 描边：两边各一道淡绿，最外面一线深一点
   const e = x.createLinearGradient(0, 0, 64, 0);
-  e.addColorStop(0, 'rgba(90,225,150,0.55)');
-  e.addColorStop(0.3, 'rgba(90,225,150,0)');
-  e.addColorStop(0.7, 'rgba(90,225,150,0)');
-  e.addColorStop(1, 'rgba(90,225,150,0.55)');
+  e.addColorStop(0, 'rgba(120,214,150,1)');
+  e.addColorStop(0.09, 'rgba(160,232,180,0.95)');
+  e.addColorStop(0.2, 'rgba(200,245,212,0)');
+  e.addColorStop(0.8, 'rgba(200,245,212,0)');
+  e.addColorStop(0.91, 'rgba(160,232,180,0.95)');
+  e.addColorStop(1, 'rgba(120,214,150,1)');
   x.fillStyle = e;
   x.fillRect(0, 0, 64, 128);
-  // 中肋：一道亮线
-  const rib = x.createLinearGradient(0, 128, 0, 10);
-  rib.addColorStop(0, 'rgba(255,255,255,0.9)');
-  rib.addColorStop(1, 'rgba(255,255,255,0)');
+  // 尖上、根上也收一圈绿
+  const tip = x.createLinearGradient(0, 0, 0, 128);
+  tip.addColorStop(0, 'rgba(140,224,165,0.9)');
+  tip.addColorStop(0.07, 'rgba(160,232,180,0)');
+  tip.addColorStop(0.95, 'rgba(160,232,180,0)');
+  tip.addColorStop(1, 'rgba(140,224,165,0.8)');
+  x.fillStyle = tip;
+  x.fillRect(0, 0, 64, 128);
+  // 中肋：一道很淡的绿线，到七成的地方淡掉
+  const rib = x.createLinearGradient(0, 128, 0, 30);
+  rib.addColorStop(0, 'rgba(150,215,160,0.55)');
+  rib.addColorStop(1, 'rgba(150,215,160,0)');
   x.fillStyle = rib;
-  x.fillRect(30, 10, 4, 118);
+  x.fillRect(31, 30, 2, 98);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -275,7 +285,7 @@ interface Glow {
   kind: 'flash' | 'rays' | 'mint';
 }
 
-const TINTS = ['#ffffff', '#e6fff0', '#c8ffe0', '#f4fff8'].map((c) => new THREE.Color(c));
+const TINTS = ['#ffffff', '#fbfffa', '#f6fbf2', '#ffffff'].map((c) => new THREE.Color(c));
 
 export class LilyFx {
   readonly group = new THREE.Group();
@@ -315,7 +325,7 @@ export class LilyFx {
     this.rayTex = rayTexture();
     this.plane = new THREE.PlaneGeometry(2, 2);
     this.plane.rotateX(-Math.PI / 2);
-    this.petalGeo = petalGeometry(1, 0.3, 0.22, 0.4);
+    this.petalGeo = petalGeometry(1, 0.27, 0.3, 0.45);
     this.petalMat = new THREE.MeshBasicMaterial({ map: this.petalTex, side: THREE.DoubleSide, transparent: true, depthWrite: false, toneMapped: false });
     this.mesh = new THREE.InstancedMesh(this.petalGeo, this.petalMat, MAX_PETALS);
     this.mesh.count = 0;
@@ -357,7 +367,7 @@ export class LilyFx {
     const grand = lilyGrand(o.base);
     const inward = o.inward?.clone().setY(0).normalize() ?? new THREE.Vector3();
     const area = o.area ?? 14;
-    const reach = Math.min((9 + 6 * grand) * u, area * 1.3);
+    const reach = Math.min((7.5 + 5 * grand) * u, area * 1.2);
     const at = o.at.clone();
     const floor = o.floor.clone();
     this.center.copy(floor);
@@ -369,15 +379,15 @@ export class LilyFx {
     this.glow(at, 'rays', (6.5 + 3 * grand) * u, 0.36, 0.9, '#f2fff8');
     this.glow(at, 'mint', (5.2 + 2.4 * grand) * u, 2.2 + 0.9 * grand, 1, MINT);
     this.glow(at, 'mint', (2.4 + 0.8 * grand) * u, 1.8 + 0.8 * grand, 0.9, '#d8fff0');
-    this.vortex(floor, reach, VORTEX_TIME + 0.25 * grand, 1, Math.random() * 40);
+    this.vortex(floor, reach, VORTEX_TIME + 0.25 * grand, 0.62, Math.random() * 40);
     // 里面再叠一层小一点、晚一点的，风痕有前有后
-    this.queue.push({ at: t0 + 0.09, fn: () => this.vortex(floor, reach * 0.62, VORTEX_TIME * 0.85, 0.7, Math.random() * 40) });
+    this.queue.push({ at: t0 + 0.09, fn: () => this.vortex(floor, reach * 0.62, VORTEX_TIME * 0.85, 0.4, Math.random() * 40) });
 
-    // 花瓣：被风从牌边卷起来，一片片陆续起飞；有两三片大的飘得高、往牌桌中间去
+    // 百合花瓣：被风从牌边卷起来，一片片陆续起飞；头几片大的飘得高、往牌桌中间去
     const petals = lilyCount(o.base);
     for (let i = 0; i < petals; i++) {
-      const big = i < 2 + Math.round(2 * grand);
-      this.queue.push({ at: t0 + 0.06 + (i / petals) * 0.5 + rand(0, 0.08), fn: () => this.whirl(floor, inward, u, grand, big) });
+      const big = i < 2 + Math.round(petals * 0.15);
+      this.queue.push({ at: t0 + 0.06 + (i / petals) * 0.6 + rand(0, 0.08), fn: () => this.whirl(floor, inward, u, grand, big) });
     }
 
     // 星光：一半绕着牌往上冒（一直闪到最后），一半跟着风撒到半张牌桌上空
@@ -554,7 +564,7 @@ export class LilyFx {
       vel.addScaledVector(inward, rand(4, 7 + 4 * grand) * u);
       vel.y += rand(1.5, 3) * u;
     }
-    this.spawn(pos, vel, (big ? rand(0.75, 1.05) : rand(0.4, 0.66)) * u, rand(0.5, 1.2), big ? rand(2, 2.8) : rand(1.3, 2.2));
+    this.spawn(pos, vel, (big ? rand(0.85, 1.15) : rand(0.5, 0.78)) * u, rand(0.5, 1.2), big ? rand(2.2, 3) : rand(1.6, 2.5));
   }
 
   // 一片花瓣轻轻往上飘（摸岭上牌那一下、牌飞的一路上）

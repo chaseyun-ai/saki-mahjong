@@ -92,11 +92,11 @@ describe('岭上开花特效的花瓣、星光数量', () => {
     const bases = [240, 640, 2000, 3000, 4000, 6000, 8000, 16000, 24000];
     const n = bases.map(lilyCount);
     for (let i = 1; i < n.length; i++) expect(n[i]).toBeGreaterThanOrEqual(n[i - 1]);
-    expect(n[0]).toBeGreaterThanOrEqual(5);
+    expect(n[0]).toBeGreaterThanOrEqual(8);
     expect(n[2]).toBeGreaterThan(n[0]);
     expect(lilyCount(8000)).toBeGreaterThan(lilyCount(2000));
     expect(n.at(-1)).toBe(n.at(-2));
-    expect(n.at(-1)).toBeLessThanOrEqual(30);
+    expect(n.at(-1)).toBeLessThanOrEqual(48);
   });
 
   it('星光：小和也有几十颗，和得越大越多，两倍役满封顶 260 颗', () => {

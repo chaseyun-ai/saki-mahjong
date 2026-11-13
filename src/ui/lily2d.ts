@@ -2,7 +2,7 @@ import { lilyCount, lilyGrand, lilyStars } from '../ui3d/lilyFx';
 
 // 2D 牌桌上宫永咲的岭上开花，和 3D 的（ui3d/lilyFx.ts）同一个样子：
 // 结算里那张和了牌砸下去的一下，牌上炸开一团白光，一阵白色的旋风从牌底下卷出去（一道道毛笔扫出来似的风痕，
-// 边转边往外扩、越扩越稀），牌上留一团薄荷绿的光，几片半透明的花瓣被风卷走，四角的星光在四周一闪一闪。
+// 边转边往外扩、越扩越稀），牌上留一团薄荷绿的光，一片片百合花瓣（白色、淡绿色的边）被风卷走，四角的星光在四周一闪一闪。
 // 和得越大风卷得越远、花瓣和星光越多（按基本点）。画在一张盖在结算上面的 canvas 上，放完自己收起来。
 
 interface Petal {
@@ -127,7 +127,7 @@ export class Lily2D {
     const h = this.el.clientHeight || 800;
     const t0 = this.clock;
     this.start = t0;
-    const reach = Math.min(w, h) * (0.42 + 0.3 * grand);
+    const reach = Math.min(w, h) * (0.36 + 0.26 * grand);
     this.reach = reach;
 
     // 风痕：里面的粗、短，外面的细、长
@@ -142,7 +142,7 @@ export class Lily2D {
     // 花瓣：被风从牌边卷起来，一片片陆续起飞；头两三片大的飘得远
     const petals = lilyCount(base);
     for (let i = 0; i < petals; i++) {
-      const big = i < 2 + Math.round(2 * grand);
+      const big = i < 2 + Math.round(petals * 0.15);
       this.queue.push({ at: t0 + 0.06 + (i / petals) * 0.5 + rand(0, 0.08), fn: () => this.whirl(big) });
     }
 
@@ -234,9 +234,9 @@ export class Lily2D {
       flipSpeed: rand(3, 7),
       sway: rand(20, 55),
       phase: rand(0, 6.28),
-      size: big ? rand(34, 46) : rand(18, 30),
+      size: big ? rand(38, 52) : rand(22, 34),
       born: this.clock,
-      life: big ? rand(2, 2.7) : rand(1.3, 2.2),
+      life: big ? rand(2.2, 3) : rand(1.6, 2.5),
     });
   }
 
@@ -300,7 +300,7 @@ export class Lily2D {
     }
     ctx.restore();
 
-    // 花瓣：半透明，中间白、两头薄荷绿
+    // 百合花瓣：白色，淡绿色的描边，中间一道淡淡的中肋
     for (const p of this.petals) {
       const age = this.clock - p.born;
       const k = Math.min(1, age / 0.14) * Math.min(1, (p.life - age) / (p.life * 0.4)) ** 0.7;
@@ -311,19 +311,23 @@ export class Lily2D {
       ctx.rotate(p.rot);
       // 翻面：横着压扁
       ctx.scale(0.25 + 0.75 * Math.abs(Math.cos(p.flip)), 1);
-      this.petalPath(len, 0.36);
+      this.petalPath(len, 0.3);
       const g = ctx.createLinearGradient(0, 0, 0, -len);
-      g.addColorStop(0, 'rgba(120,235,170,0.8)');
-      g.addColorStop(0.4, 'rgba(232,255,242,0.82)');
-      g.addColorStop(1, 'rgba(130,240,185,0.6)');
+      g.addColorStop(0, 'rgba(228,247,216,0.98)');
+      g.addColorStop(0.25, 'rgba(255,255,255,0.98)');
+      g.addColorStop(1, 'rgba(250,255,250,0.96)');
       ctx.fillStyle = g;
       ctx.globalAlpha = out;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.strokeStyle = 'rgba(132,218,158,0.95)';
+      ctx.lineWidth = Math.max(1, len * 0.045);
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(150,215,160,0.5)';
       ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo(0, -len * 0.08);
-      ctx.lineTo(0, -len * 0.85);
+      ctx.moveTo(0, -len * 0.06);
+      ctx.lineTo(0, -len * 0.7);
       ctx.stroke();
       ctx.restore();
     }
@@ -350,7 +354,7 @@ export class Lily2D {
 
   // 旋风：前沿一开始冲得快、越来越慢；风痕一开始粗得连成一片，越扩越细、弱的先没；中间慢慢空出来，靠里的染上薄荷绿
   private drawVortex(t: number): void {
-    const dur = 1.5 + 0.25 * this.grand;
+    const dur = 1.35 + 0.25 * this.grand;
     if (t >= dur) return;
     const ctx = this.ctx;
     const front = this.reach * (0.07 + 0.93 * (1 - Math.exp(-3.3 * t)));
@@ -366,8 +370,8 @@ export class Lily2D {
     const core = 1 - smooth(0.05, 0.32, t);
     if (core > 0) {
       const g = ctx.createRadialGradient(0, 0, 0, 0, 0, front * 0.9);
-      g.addColorStop(0, `rgba(255,255,255,${(0.9 * core * fade).toFixed(3)})`);
-      g.addColorStop(0.6, `rgba(255,255,255,${(0.6 * core * fade).toFixed(3)})`);
+      g.addColorStop(0, `rgba(255,255,255,${(0.55 * core * fade).toFixed(3)})`);
+      g.addColorStop(0.6, `rgba(255,255,255,${(0.35 * core * fade).toFixed(3)})`);
       g.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
@@ -382,7 +386,7 @@ export class Lily2D {
       const col = `${Math.round(255 - 130 * mint)},255,${Math.round(255 - 59 * mint)}`;
       const wide = front * s.wide * (1.5 - 1.15 * thin);
       // 画两遍：外面一圈淡的、里面一道实的，边上就是软的
-      for (const [mul, alpha] of [[1.9, 0.22], [1, 0.62]] as const) {
+      for (const [mul, alpha] of [[1.9, 0.13], [1, 0.4]] as const) {
         ctx.fillStyle = `rgba(${col},${(alpha * a * (0.5 + 0.5 * s.rho)).toFixed(3)})`;
         ctx.beginPath();
         const n = 14;
