@@ -115,7 +115,7 @@ export const baseAi: AiStyle = { mistakeRate: 0.08, kanEager: false, keepDora: f
 export const CHARACTERS: Character[] = [
   {
     id: 'saki',
-    cost: 4,
+    cost: 5,
     name: '宫永咲',
     school: '清澄高中',
     color: '#d97a8f',
@@ -212,7 +212,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'nelly',
-    cost: 4,
+    cost: 5,
     name: '涅莉·薇萨拉兹',
     school: '临海女子',
     color: '#c2185b',

@@ -531,7 +531,7 @@ export class App {
     const btn = (v: boolean, label: string, note: string) =>
       `<button class="${on === v ? 'on' : ''}" aria-pressed="${on === v}" data-ui="${id}-form" data-v="${v}">${label}<small>${note}</small></button>`;
     // 宫永咲：标准 / 加强（MatchSettings.sakiStrong），只管自己用的咲
-    if (id === 'saki') return `<div class="form-toggle saki">${btn(false, '标准', '强度和别人差不多')}${btn(true, '加强', '更容易成刻、开花、连杠')}</div>`;
+    if (id === 'saki') return `<div class="form-toggle saki">${btn(false, '标准', '5 费魔物的强度')}${btn(true, '加强', '更容易成刻、开花、连杠')}</div>`;
     return `<div class="form-toggle">${btn(false, '常态', '点数变动 10 万后治水')}${btn(true, '治水', '开局就是治水')}</div>`;
   }
 

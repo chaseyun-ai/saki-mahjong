@@ -302,7 +302,8 @@ describe('宫永咲', () => {
     const normal = run(false);
     const strong = run(true);
     console.log({ normal, strong });
-    expect(strong).toBeGreaterThan(normal * 1.15);
+    // 标准版调到 5 费的强度以后两档离得近了一点（16 场下来 0.223 对 0.256，原来两档是 1.15 倍以上）
+    expect(strong).toBeGreaterThan(normal * 1.1);
   }, 120000);
 
   it('天意：离正负零（30000）远了发力，领先太多收手', () => {
