@@ -824,7 +824,10 @@ export class Game {
       const r = a.beforeAnyDraw(this, s, seat, rinshan);
       // 管不到 immune 的人：定的规矩不算（能力自己整理牌山的部分照做，比如衣安排海底）
       // 天使和挡掉一半
-      if (r && this.binds(s, seat) && !this.shrugs(s, seat)) rules.push(r);
+      if (r && this.binds(s, seat) && !this.shrugs(s, seat)) {
+        if (r.first) rules.splice(bust.length + rules.slice(bust.length).filter((x) => x.first).length, 0, r);
+        else rules.push(r);
+      }
     }
     w.deny = union(rules.length);
     if (this.active(seat)?.beforeDraw && !this.quelled(seat) && !this.damped(seat)) this.active(seat)!.beforeDraw!(this, seat, rinshan);

@@ -36,6 +36,8 @@ export interface DrawRule {
   ability: string;
   text: string;
   deny: (t: TileId) => boolean;
+  // 排到前面去（只在不会被击飞的人的规矩后面）：比先动的人定的规矩还大（涅莉的七姐妹：被封的人自己的能力也摸不来和了牌）
+  first?: boolean;
 }
 
 // 控场能力对某一家配牌定的规矩。bad 是这手配牌离规矩还差多少，0 是满足

@@ -145,9 +145,9 @@ describe('涅莉·薇萨拉兹', () => {
                 expect(nellySensesTenpai(g, victim)).toBe(true);
                 expect(nellySisters(g, me)).toBeGreaterThanOrEqual(0);
               } else {
-                // 换走被封的人要摸的和了牌（不放切入）
+                // 换走被封的人要和的牌（谁摸都换，不放切入）
                 swapped++;
-                expect(nellyBlocked(g, me)).toContain(e.target);
+                expect(nellyBlocked(g, me).length).toBeGreaterThan(0);
               }
             }
             if (e.type === 'roundEnd') {

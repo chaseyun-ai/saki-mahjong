@@ -23,7 +23,8 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 // - 感知听牌：手里还有运势（押完这一局还剩 1 点以上）就看得出别人听没听牌（不知道听什么）。
 // - 七姐妹：一场 7 次，不恢复。押了运势的局自动开着：每有一家听牌，用掉一次给他上一个软封印：这一局他摸不到和了牌
 //   （轮到他摸、岭上摸的和了牌都被换走，自摸不了；他自己的能力锁好的和了牌，比如咲的岭上牌，也照换），别人打出来的牌照样能荣和。
-//   他的能力照用、照样能听牌。涅莉自己摸牌时尽量不摸被封的人要和的牌（少点炮给他们）。
+//   他的能力照用、照样能听牌。被封的人要和的牌谁都摸不到（埋到牌山后面），所以他们只能荣和别人手里本来就有的牌；
+//   涅莉看得见被封的人在等什么，自己打牌避开（电脑），少点炮给他们。
 //   押几点这一局最多封几家（3 点封三家）。别人能力管不到的人封不住；次数用完了就不封了
 // 电脑的涅莉：把剩下的局怎么押都算一遍（nellyAiCharge），挑加起来和得最多的押法：3 点最划算（九成和出三倍满），所以多半忍到攒够 3 点、
 // 等自己坐庄的局押下去；别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不押；一样多就往后留。
@@ -34,6 +35,8 @@ export const NELLY = {
   every: 4, // 原来的规矩：每打满几局恢复 1 点
   maxBet: 3, // 一局最多押几点
   sisters: 7,
+  hide: true, // 七姐妹：被封的人要和的牌谁都摸不到（她们只能荣和别人手里本来就有的牌）
+  dodge: true, // 七姐妹：涅莉看得见被封的人在等什么，打牌、摸牌避开
   // 开局排运势（试验中）：东一局发牌前把 total 点分到各局，每局最多 maxBet 点；null 是下面的攒运势
   plan: { total: 10 } as null | { total: number },
   // 攒运势：开场 start 点，没押运势的局打完攒 gain 点，最多攒到 cap 点（null 是原来那样开场一大笔）。
@@ -297,6 +300,12 @@ export function nellySisters(g: Game, seat: number): number {
 // 被七姐妹软封印的人：这一局摸不到和了牌（自摸不了），荣和照样可以
 export function nellyBlocked(g: Game, seat: number): number[] {
   return stateOf(g, seat).blocked!;
+}
+
+// 被七姐妹软封印的人在等的牌（涅莉看得见；能力管不到的人不算）
+export function nellySealedWaits(g: Game, seat: number): Set<number> {
+  const st = stateOf(g, seat);
+  return new Set(st.blocked!.flatMap((o) => (g.binds(seat, o) ? waitingKinds(toCounts(g.players[o].hand), g.players[o].melds.length) : [])));
 }
 
 // 这一局做的花色（没押是 null）
@@ -830,21 +839,28 @@ export const nellyAbility: Ability = {
         else w.bringToLive(0, (t) => !mine.includes(kindOf(t)), g.rng);
       }
     }
-    // 七姐妹的软封印：被封的人摸到的和了牌换走（自摸不了），打出来的牌照样能荣和。换牌时也别把她要和的牌换进去
-    if (!stateOf(g, seat).blocked!.includes(drawer)) return;
+    // 七姐妹的软封印：被封的人要和的牌谁都摸不到（被封的人自摸不了；别人也摸不到、点不了给她们，她们只能荣和别人手里本来就有的牌）。
+    // 换牌时也别把她要和的牌换进去
+    const theirs = NELLY.hide ? nellySealedWaits(g, seat) : new Set<number>();
+    if (!stateOf(g, seat).blocked!.length) return;
+    const sealedDrawer = stateOf(g, seat).blocked!.includes(drawer);
     const d = g.players[drawer];
-    const waits = waitingKinds(toCounts(d.hand), d.melds.length);
-    if (!waits.length) return;
-    const deny = (t: TileId) => waits.includes(kindOf(t)) || mine.includes(kindOf(t));
+    const waits = sealedDrawer ? waitingKinds(toCounts(d.hand), d.melds.length) : [];
+    const deny = (t: TileId) => theirs.has(kindOf(t)) || waits.includes(kindOf(t)) || mine.includes(kindOf(t));
+    if (!sealedDrawer) return NELLY.hide ? { seat, ability: 'nelly', text: '七姐妹', deny } : undefined;
     // 被封的人自己的能力锁好的和了牌（咲配牌时就定好的岭上牌之类）：用能力也不让她自摸，锁着也照换
     const w = g.wall;
     const next = rinshan ? w.rinshan[0] : w.live[0];
     const id = g.active(drawer)?.id;
     const owners = next === undefined ? [] : w.locked.ownersOf(next);
-    if (next !== undefined && waits.includes(kindOf(next)) && owners.length && id && owners.every((o) => o === id || o === `${id}-${drawer}`) && w.forceNext(rinshan, (t) => !deny(t), g.rng)) {
-      g.emit({ type: 'ability', seat, ability: 'nelly', text: '七姐妹', target: drawer });
+    // 牌山里换不出来（最后一张海底之类）也从王牌里换
+    if (next !== undefined && waits.includes(kindOf(next))) {
+      const own = owners.length > 0 && !!id && owners.every((o) => o === id || o === `${id}-${drawer}`);
+      const moved = !owners.length && (rinshan ? w.bringToRinshan((t) => !deny(t), g.rng) : w.bringToLive(0, (t) => !deny(t), g.rng));
+      if (!moved && (own || !owners.length) && w.forceNext(rinshan, (t) => !deny(t), g.rng)) g.emit({ type: 'ability', seat, ability: 'nelly', text: '七姐妹', target: drawer });
     }
-    return { seat, ability: 'nelly', text: '七姐妹', deny };
+    // 被封的人自己的能力定的摸牌规矩（淡的加速驱动之类）也越不过七姐妹；玄这样的作者钦定照样守
+    return { seat, ability: 'nelly', text: '七姐妹', deny, first: !g.isAbsolute(drawer) };
   },
 
   beforeDraw(g, seat, rinshan) {
@@ -1018,22 +1034,23 @@ export const nellyAbility: Ability = {
   },
 };
 
-// 她自己摸牌：软封印的人要和的牌尽量不进她手里（不给她们点自己的炮），她自己要和的牌照来
+// 她自己摸牌：照常挑完以后，摸到的要是软封印的人在等的牌、她自己又用不上（不是她的和了牌、不进张、不是三倍满要的牌），换一张
+// （不进她手里，免得打出去点给被封的人）
 const ownDraw = nellyAbility.beforeDraw!;
 nellyAbility.beforeDraw = (g, seat, rinshan) => {
-  const blocked = stateOf(g, seat).blocked!;
-  const theirs = new Set(blocked.flatMap((o) => (g.binds(seat, o) ? waitingKinds(toCounts(g.players[o].hand), g.players[o].melds.length) : [])));
-  if (rinshan || theirs.size === 0) return ownDraw(g, seat, rinshan);
+  ownDraw(g, seat, rinshan);
+  if (!NELLY.dodge) return;
+  const theirs = nellySealedWaits(g, seat);
   const w = g.wall;
+  const next = rinshan ? w.rinshan[0] : w.live[0];
+  if (theirs.size === 0 || next === undefined || !theirs.has(kindOf(next))) return;
   const me = g.players[seat];
-  const mine = shanten(toCounts(me.hand), me.melds.length) === 0 ? waitingKinds(toCounts(me.hand), me.melds.length) : [];
-  const prev = w.deny;
-  const deny = (t: TileId) => !!prev?.(t) || (theirs.has(kindOf(t)) && !mine.includes(kindOf(t)));
-  w.deny = deny;
-  try {
-    ownDraw(g, seat, rinshan);
-    if (w.live[0] !== undefined && deny(w.live[0])) w.bringToLive(0, () => true, g.rng);
-  } finally {
-    w.deny = prev;
-  }
+  const counts = toCounts(me.hand);
+  const mine = shanten(counts, me.melds.length) === 0 ? waitingKinds(counts, me.melds.length) : [];
+  const plan = tierOf(g, seat) >= 3 ? planBig(g, seat) : null;
+  const good = useful(g, seat);
+  const wanted = (t: TileId) => mine.includes(kindOf(t)) || good(t) || (!!plan && counts[kindOf(t)] < plan[kindOf(t)]);
+  if (wanted(next)) return;
+  if (rinshan) w.bringToRinshan((t) => !theirs.has(kindOf(t)), g.rng);
+  else w.bringToLive(0, (t) => !theirs.has(kindOf(t)), g.rng);
 };

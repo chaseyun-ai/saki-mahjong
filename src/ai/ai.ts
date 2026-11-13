@@ -18,7 +18,7 @@ import { yuukiActive } from '../abilities/yuuki';
 import { makoDanger, makoSuit } from '../abilities/mako';
 import { KYOUKO, kyoukoTargets } from '../abilities/kyouko';
 import { takamiHarvest, takamiSeeds } from '../abilities/takami';
-import { NELLY, nellyBigDiscard, nellyBigReady, nellyDue, nellyFlush, nellyLiveWaits, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier, nellyTurn } from '../abilities/nelly';
+import { NELLY, nellyBigDiscard, nellyBigReady, nellyDue, nellyFlush, nellyLiveWaits, nellySealedWaits, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier, nellyTurn } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { harvestShanten, komakiActiveGod, komakiHarvestSuit } from '../abilities/komaki';
 import { toyoneLurks, toyoneMode } from '../abilities/toyone';
@@ -756,6 +756,16 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (folded) {
     if (slipped && folded.length > 1 && folded[1].risk <= best.risk && folded[1].hit <= best.hit && !doraSlip) best = folded[1];
   } else if (slipped && cands[1].sh === best.sh && cands[1].hit <= best.hit && !doraSlip) best = cands[1];
+
+  // 涅莉押了运势的局：看得见被七姐妹封住的人在等什么，打牌避开（不点炮给她们）。同向听里挑，没有就退一向听，再没有就挑最安全的
+  if (style.waves && !sealed && nellyTier(g, seat) > 0 && NELLY.dodge) {
+    const danger = nellySealedWaits(g, seat);
+    if (danger.size && danger.has(kindOf(best.a.tile))) {
+      const ok = (x: Cand) => !danger.has(kindOf(x.a.tile));
+      const alt = cands.find((x) => ok(x) && x.sh <= best.sh) ?? cands.find((x) => ok(x) && x.sh <= best.sh + 1) ?? [...cands].sort((x, y) => x.hit - y.hit || x.risk - y.risk).find(ok);
+      if (alt) best = alt;
+    }
+  }
 
   // 能立直就立直
   const riichi = discards.find((a) => a.riichi && kindOf(a.tile) === kindOf(best.a.tile));
