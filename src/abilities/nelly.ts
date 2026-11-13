@@ -21,8 +21,10 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 //   配牌照常发，不动（押 2、3 点时宝牌指示牌指向她配牌里最多的那种牌）。装装样子：到那一巡之前摸不到和了牌（摸牌按巡数慢慢变好，听牌了先来把牌做大的牌：
 //   那门花色、宝牌、字牌对子），到了那一巡牌够大就来和了牌。押 2、3 点立直了里宝牌往她手里最多的牌上变，有宝牌暗刻就在那一巡来第四张开暗杠、岭上开花。押了几点只有她自己知道
 // - 感知听牌：手里还有运势（押完这一局还剩 1 点以上）就看得出别人听没听牌（不知道听什么）。
-// - 七姐妹：一场 7 次，不恢复。押了运势的局自动开着：每有一家听牌，用掉一次封住他，这一局他和不了（自摸、荣和都不行）。
-//   押几点这一局最多封几家（3 点封三家）。照这样别人能力管不到的人封不住；次数用完了就不封了
+// - 七姐妹：一场 7 次，不恢复。押了运势的局自动开着：每有一家听牌，用掉一次给他上一个软封印：这一局他摸不到和了牌
+//   （轮到他摸、岭上摸的和了牌都被换走，自摸不了；他自己的能力锁好的和了牌，比如咲的岭上牌，也照换），别人打出来的牌照样能荣和。
+//   他的能力照用、照样能听牌。涅莉自己摸牌时尽量不摸被封的人要和的牌（少点炮给他们）。
+//   押几点这一局最多封几家（3 点封三家）。别人能力管不到的人封不住；次数用完了就不封了
 // 电脑的涅莉：把剩下的局怎么押都算一遍（nellyAiCharge），挑加起来和得最多的押法：3 点最划算（九成和出三倍满），所以多半忍到攒够 3 点、
 // 等自己坐庄的局押下去；别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不押；一样多就往后留。
 // 押了运势的局门清做大，到那一巡之前不和，牌不够大先不和。
@@ -69,7 +71,7 @@ interface NellyGameState {
 }
 interface NellyState {
   bet?: number; // 这一局押了几点
-  blocked?: number[]; // 这一局被七姐妹封住、和不了的人
+  blocked?: number[]; // 这一局被七姐妹软封印的人（摸不到和了牌，荣和照样可以）
   suit?: number; // 这一局做的花色
   honors?: boolean; // 做染手：带字牌（混一色）还是不带（清一色）。undefined 是不做染手
   plan?: number[]; // 押 3 点：要做成的那手牌（14 张，按种类数）
@@ -292,7 +294,7 @@ export function nellySisters(g: Game, seat: number): number {
   return gameStateOf(g, seat).sisters!;
 }
 
-// 被七姐妹封住、这一局和不了的人
+// 被七姐妹软封印的人：这一局摸不到和了牌（自摸不了），荣和照样可以
 export function nellyBlocked(g: Game, seat: number): number[] {
   return stateOf(g, seat).blocked!;
 }
@@ -327,7 +329,7 @@ export function nellySensesTenpai(g: Game, target: number): boolean {
   return shanten(toCounts(p.hand), p.melds.length) <= 0;
 }
 
-// 七姐妹：押了运势的局，每有一家听牌用掉一次封住他
+// 七姐妹：押了运势的局，每有一家听牌用掉一次给他上软封印
 function sweep(g: Game, seat: number): void {
   if (tierOf(g, seat) <= 0) return;
   const gs = gameStateOf(g, seat);
@@ -772,7 +774,7 @@ const inSuit = (suit: number) => (t: TileId) => kindOf(t) < 27 && suitOf(kindOf(
 export const nellyAbility: Ability = {
   id: 'nelly',
   name: '运势·七姐妹',
-  description: `${NELLY.plan ? `开场 ${NELLY.plan.total} 点运势，东一局发牌前分到这一场的各局（每局最多 ${NELLY.maxBet} 点），之后不能改；连庄、流局重打的本场不再用，比赛提前结束后面的就浪费了` : NELLY.charge ? `运势是攒出来的：开场 ${NELLY.charge.start} 点，每忍一局（没押运势的局）打完攒 ${NELLY.charge.gain} 点，最多攒 ${NELLY.charge.cap} 点` : `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点`}。押了运势的局（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次封住他这一局和不了，押几点最多封几家。`,
+  description: `${NELLY.plan ? `开场 ${NELLY.plan.total} 点运势，东一局发牌前分到这一场的各局（每局最多 ${NELLY.maxBet} 点），之后不能改；连庄、流局重打的本场不再用，比赛提前结束后面的就浪费了` : NELLY.charge ? `运势是攒出来的：开场 ${NELLY.charge.start} 点，每忍一局（没押运势的局）打完攒 ${NELLY.charge.gain} 点，最多攒 ${NELLY.charge.cap} 点` : `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点`}。押了运势的局（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次给他上软封印，这一局他摸不到和了牌（自摸不了），别人打出来的照样能荣和；押几点最多封几家。`,
   priority: PRIORITY.nelly,
 
   // 三倍满的局别人挡不住她（别人的能力管不到她）
@@ -812,25 +814,37 @@ export const nellyAbility: Ability = {
     g.emit({ type: 'ability', seat, ability: 'nelly', text: `运势·${TIER_NAMES[v]}` });
   },
 
-  // 每次有人摸牌前看一眼：谁听牌了就用七姐妹封住
+  // 每次有人摸牌前看一眼：谁听牌了就用七姐妹给他上软封印
   beforeAnyDraw(g, seat, drawer, rinshan) {
     sweep(g, seat);
+    if (drawer === seat) return;
     // 押 3 点听着三倍满：别人摸不走她要和的牌
-    if (drawer === seat || tierOf(g, seat) < 3) return;
-    const p = g.players[seat];
-    if (shanten(toCounts(p.hand), p.melds.length) !== 0) return;
-    const waits = waitingKinds(toCounts(p.hand), p.melds.length);
+    let mine: number[] = [];
+    if (tierOf(g, seat) >= 3) {
+      const p = g.players[seat];
+      if (shanten(toCounts(p.hand), p.melds.length) === 0) mine = waitingKinds(toCounts(p.hand), p.melds.length);
+      const w = g.wall;
+      const next = rinshan ? w.rinshan[0] : w.live[0];
+      if (next !== undefined && mine.includes(kindOf(next))) {
+        if (rinshan) w.bringToRinshan((t) => !mine.includes(kindOf(t)), g.rng);
+        else w.bringToLive(0, (t) => !mine.includes(kindOf(t)), g.rng);
+      }
+    }
+    // 七姐妹的软封印：被封的人摸到的和了牌换走（自摸不了），打出来的牌照样能荣和。换牌时也别把她要和的牌换进去
+    if (!stateOf(g, seat).blocked!.includes(drawer)) return;
+    const d = g.players[drawer];
+    const waits = waitingKinds(toCounts(d.hand), d.melds.length);
+    if (!waits.length) return;
+    const deny = (t: TileId) => waits.includes(kindOf(t)) || mine.includes(kindOf(t));
+    // 被封的人自己的能力锁好的和了牌（咲配牌时就定好的岭上牌之类）：用能力也不让她自摸，锁着也照换
     const w = g.wall;
     const next = rinshan ? w.rinshan[0] : w.live[0];
-    if (next === undefined || !waits.includes(kindOf(next))) return;
-    if (rinshan) w.bringToRinshan((t) => !waits.includes(kindOf(t)), g.rng);
-    else w.bringToLive(0, (t) => !waits.includes(kindOf(t)), g.rng);
-  },
-
-  // 七姐妹封住的人这一局和不了（问到时也先看一眼：刚听牌的人马上就封）
-  forbidsWin(g, seat, target) {
-    if (!stateOf(g, seat).blocked!.includes(target)) sweep(g, seat);
-    return stateOf(g, seat).blocked!.includes(target);
+    const id = g.active(drawer)?.id;
+    const owners = next === undefined ? [] : w.locked.ownersOf(next);
+    if (next !== undefined && waits.includes(kindOf(next)) && owners.length && id && owners.every((o) => o === id || o === `${id}-${drawer}`) && w.forceNext(rinshan, (t) => !deny(t), g.rng)) {
+      g.emit({ type: 'ability', seat, ability: 'nelly', text: '七姐妹', target: drawer });
+    }
+    return { seat, ability: 'nelly', text: '七姐妹', deny };
   },
 
   beforeDraw(g, seat, rinshan) {
@@ -1002,4 +1016,24 @@ export const nellyAbility: Ability = {
       `七姐妹还剩 ${gs.sisters} 次`,
     ];
   },
+};
+
+// 她自己摸牌：软封印的人要和的牌尽量不进她手里（不给她们点自己的炮），她自己要和的牌照来
+const ownDraw = nellyAbility.beforeDraw!;
+nellyAbility.beforeDraw = (g, seat, rinshan) => {
+  const blocked = stateOf(g, seat).blocked!;
+  const theirs = new Set(blocked.flatMap((o) => (g.binds(seat, o) ? waitingKinds(toCounts(g.players[o].hand), g.players[o].melds.length) : [])));
+  if (rinshan || theirs.size === 0) return ownDraw(g, seat, rinshan);
+  const w = g.wall;
+  const me = g.players[seat];
+  const mine = shanten(toCounts(me.hand), me.melds.length) === 0 ? waitingKinds(toCounts(me.hand), me.melds.length) : [];
+  const prev = w.deny;
+  const deny = (t: TileId) => !!prev?.(t) || (theirs.has(kindOf(t)) && !mine.includes(kindOf(t)));
+  w.deny = deny;
+  try {
+    ownDraw(g, seat, rinshan);
+    if (w.live[0] !== undefined && deny(w.live[0])) w.bringToLive(0, () => true, g.rng);
+  } finally {
+    w.deny = prev;
+  }
 };

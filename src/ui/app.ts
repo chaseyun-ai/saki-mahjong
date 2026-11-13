@@ -1510,7 +1510,7 @@ export class App {
     const c = this.chars[s];
     const mine = s === this.me;
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? ' active' : '';
-    const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·封住' : c.ability?.badge?.(g, s);
+    const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·软封印' : c.ability?.badge?.(g, s);
     const face = mine
       ? `<img src="${powerPortraitUrl(c.id)}" alt="" onerror="this.remove()" /><span class="halo"></span>`
       : '<span class="sil"></span><span class="noimg">NO IMAGE</span>';
@@ -2222,7 +2222,7 @@ export class App {
     // 臼泽塞用镜片盯上人的那一局也换头像（powered），但框不发光
     const power = (s === this.me && !!this.vision) || !!g.active(s)?.form?.(g, s);
     const src = power || g.active(s)?.powered?.(g, s) ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
-    const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·封住' : c.ability?.badge?.(g, s);
+    const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·软封印' : c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
@@ -2254,7 +2254,7 @@ export class App {
     this.preview.clear();
     const myTurn = g.phase === 'turn' && g.turn === this.me;
     if (!myTurn) this.previewTile = null;
-    // 这一局和不了（被七姐妹封住、照魔镜那一局）就不标听牌
+    // 这一局和不了（照魔镜那一局）就不标听牌
     if (!myTurn || g.players[this.me].riichi || !g.canWin(this.me)) return;
     const byKind = new Map<string, WaitInfo>();
     for (const t of this.discardable()) {
@@ -2366,7 +2366,7 @@ export class App {
 
   // 名牌上能力那一行：这一局和不了的写原因
   private blockedText(s: number): string | null {
-    if (this.sistersBlocked(s)) return '被七姐妹封住';
+    if (this.sistersBlocked(s)) return '被七姐妹软封印';
     if (this.sniper(s) !== null) return '被镜片盯上';
     return null;
   }
@@ -2388,7 +2388,7 @@ export class App {
     });
   }
 
-  // 这一局被涅莉的七姐妹封住、和不了
+  // 这一局被涅莉的七姐妹软封印：摸不到和了牌（自摸不了），荣和照样可以
   // 花田煌：手里有放铳会被击飞、打不出去的牌
   private bustBlocked(): boolean {
     const g = this.game!;
@@ -2862,7 +2862,7 @@ export class App {
     const waitHtml = `<div data-r="waits">${this.waitsSlotHtml()}</div>`;
     const hint =
       g.phase === 'turn' && g.turn === this.me && discardable.size > 0
-        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹封住，这一局和不了）' : ''}${this.sniper(this.me) !== null ? '（被镜片盯上，这一局摸不到和了牌）' : ''}${this.bustBlocked() ? '（灰掉的牌放铳会被击飞，打不出去）' : ''}</div>`
+        ? `<div class="hint">${this.riichiMode ? '选择立直宣言牌' : '点击一张牌打出'}${this.sistersBlocked(this.me) ? '（被七姐妹软封印：这一局摸不到和了牌，别人打出来的照样能荣和）' : ''}${this.sniper(this.me) !== null ? '（被镜片盯上，这一局摸不到和了牌）' : ''}${this.bustBlocked() ? '（灰掉的牌放铳会被击飞，打不出去）' : ''}</div>`
         : '';
     const c = this.chars[this.me];
     return `

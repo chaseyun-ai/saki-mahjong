@@ -125,8 +125,10 @@ describe('涅莉·薇萨拉兹', () => {
     }
   }, 240000);
 
-  it('七姐妹：押了运势的局自动开着，听牌的人用掉一次封住，一场最多 7 次，封住的人这一局和不了', () => {
+  it('七姐妹：押了运势的局自动开着，听牌的人用掉一次上软封印，押几点最多封几家；被封的人摸不到和了牌（自摸不了），荣和照样可以', () => {
     let used = 0;
+    let swapped = 0;
+    let rons = 0;
     for (let seed = 1; seed <= 16; seed++) {
       play(
         seed,
@@ -134,21 +136,36 @@ describe('涅莉·薇萨拉兹', () => {
         (g, me) => {
           g.onEvent((e) => {
             if (e.type === 'ability' && e.seat === me && e.text === '七姐妹') {
-              used++;
               expect(nellyTier(g, me)).toBeGreaterThan(0);
-              const victim = nellyBlocked(g, me).at(-1)!;
-              // 押几点最多封几家
-              expect(nellyBlocked(g, me).length).toBeLessThanOrEqual(nellyTier(g, me));
-              expect(nellySensesTenpai(g, victim)).toBe(true);
-              expect(nellySisters(g, me)).toBeGreaterThanOrEqual(0);
+              if (e.target === undefined) {
+                // 封人：放切入
+                used++;
+                const victim = nellyBlocked(g, me).at(-1)!;
+                expect(nellyBlocked(g, me).length).toBeLessThanOrEqual(nellyTier(g, me));
+                expect(nellySensesTenpai(g, victim)).toBe(true);
+                expect(nellySisters(g, me)).toBeGreaterThanOrEqual(0);
+              } else {
+                // 换走被封的人要摸的和了牌（不放切入）
+                swapped++;
+                expect(nellyBlocked(g, me)).toContain(e.target);
+              }
             }
-            if (e.type === 'roundEnd') for (const w of e.result.wins) expect(nellyBlocked(g, me)).not.toContain(w.seat);
+            if (e.type === 'roundEnd') {
+              for (const w of e.result.wins) {
+                if (!nellyBlocked(g, me).includes(w.seat)) continue;
+                expect(w.from).not.toBeNull();
+                rons++;
+              }
+            }
           });
         },
         { format: 'team' },
       );
     }
     expect(used).toBeGreaterThan(5);
+    expect(swapped).toBeGreaterThan(0);
+    // 软封印：打出来的照样能荣和
+    expect(rons).toBeGreaterThan(0);
   }, 120000);
 
   it('七姐妹一场 7 次、不恢复', () => {
@@ -218,7 +235,8 @@ describe('涅莉·薇萨拉兹', () => {
       expect(stat[v].early / Math.max(1, stat[v].wins)).toBeLessThan(0.1);
     }
     expect(stat[3].wins / stat[3].rounds).toBeGreaterThan(0.6);
-    expect(stat[3].big / stat[3].rounds).toBeGreaterThan(0.7);
+    // 七姐妹是软封印（被封的人荣和照样可以，别家互相点炮也会把这一局提前结束），大多和出三倍满但不到七成
+    expect(stat[3].big / stat[3].rounds).toBeGreaterThan(0.5);
     expect(stat[3].over / Math.max(1, stat[3].big)).toBeLessThan(0.1);
     expect(avg(stat[3].turns, stat[3].wins)).toBeLessThan(avg(stat[2].turns, stat[2].wins));
     expect(avg(stat[2].turns, stat[2].wins)).toBeLessThan(avg(stat[1].turns, stat[1].wins));
@@ -258,8 +276,8 @@ describe('涅莉·薇萨拉兹', () => {
     }
     console.log(`玄在场：押 3 点 ${rounds} 局，三倍满 ${big} 局，超过 12 番 ${over} 局`);
     expect(rounds).toBeGreaterThan(20);
-    // 玄的能力还在时连里宝牌也中不了，清一色只能靠七对子、一气通贯、断幺九加一盃口凑番，五成左右
-    expect(big / rounds).toBeGreaterThan(0.4);
+    // 玄的能力还在时连里宝牌也中不了，清一色只能靠七对子、一气通贯、断幺九加一盃口凑番；七姐妹是软封印，别家照样能荣和，三四成
+    expect(big / rounds).toBeGreaterThan(0.3);
   }, 600000);
 });
 
