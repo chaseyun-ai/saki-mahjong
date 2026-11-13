@@ -1,4 +1,5 @@
 import type { Game } from '../engine/game';
+import { Rng } from '../engine/rng';
 import { shanten, waitingKinds } from '../engine/shanten';
 import { EAST, HAKU, TileId, doraFromIndicator, kindOf, suitOf, toCounts } from '../engine/tiles';
 import { kuroSeat } from './doraControl';
@@ -27,6 +28,8 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 //   涅莉看得见被封的人在等什么，自己打牌避开（电脑），少点炮给他们。
 //   押几点这一局最多封几家（3 点封三家）。别人能力管不到的人封不住；次数用完了就不封了
 //   （试验，NELLY.slow）押了运势的局还让别人慢点听牌：一向听的人摸牌时摸不到让她听牌的牌（不用次数，吃碰照样能听）
+// - （试验，NELLY.kanRoute）押 3 点有一成的局走开杠路线：目标牌里留一组刻子（第四张别人摸不走），立直以后先摸第四张开暗杠，
+//   岭上牌自摸三倍满（一发换成岭上开花；杠了翻的宝牌不中她的牌，番数交给里宝牌调）。手里凑不出这样的刻子就照常一发自摸
 // 电脑的涅莉：把剩下的局怎么押都算一遍（nellyAiCharge），挑加起来和得最多的押法：3 点最划算（九成和出三倍满），所以多半忍到攒够 3 点、
 // 等自己坐庄的局押下去；别人能力最强的局（优希的东场、尧深的收获局、爽最后两局）不押；一样多就往后留。
 // 押了运势的局门清做大，到那一巡之前不和，牌不够大先不和。
@@ -63,6 +66,9 @@ export const NELLY = {
   // 三倍满：11 番，押 3 点最多做到 12 番（不冲累计役满）
   bigHan: 11,
   maxHan: 12,
+  // 试验：押 3 点的局有这么大的机会走开杠的路线：立直以后先摸到暗刻的第四张开暗杠，岭上牌自摸三倍满
+  // （一发没了，换成岭上开花；多翻一张宝牌、一张里宝牌）。手里没有杠了不改听牌的暗刻就照常一发自摸
+  kanRoute: 0.1,
 };
 
 const TIER_NAMES = ['', '3番–满贯', '跳满', '三倍满'];
@@ -81,6 +87,8 @@ interface NellyState {
   suit?: number; // 这一局做的花色
   honors?: boolean; // 做染手：带字牌（混一色）还是不带（清一色）。undefined 是不做染手
   plan?: number[]; // 押 3 点：要做成的那手牌（14 张，按种类数）
+  kan?: boolean; // 押 3 点：这一局走开杠的路线（试验）
+  kanned?: boolean; // 开杠路线：杠过了
 }
 
 const gameStateOf = (g: Game, seat: number) => {
@@ -510,6 +518,40 @@ function kanKind(g: Game, seat: number): number | null {
   return null;
 }
 
+// 押 3 点这一局走不走开杠的路线（第一次问的时候定下来）
+function kanRoute(g: Game, seat: number): boolean {
+  const st = stateOf(g, seat);
+  // 用开局的种子另起一个随机数（不动牌局的 rng，别的能力的随机照旧）
+  st.kan ??= tierOf(g, seat) >= 3 && NELLY.kanRoute > 0 && new Rng((g.seed * 31 + g.round * 7919 + g.honba * 104729 + seat) ^ 0x6e6b616e).chance(NELLY.kanRoute);
+  return st.kan;
+}
+
+// 开杠路线还没杠：目标牌里的刻子（第四张留给她）
+function kanKinds(g: Game, seat: number): number[] {
+  const st = stateOf(g, seat);
+  if (!st.kan || st.kanned || !st.plan) return [];
+  const have = toCounts(g.players[seat].hand);
+  return st.plan.flatMap((n, k) => (n >= 3 && have[k] < 4 ? [k] : []));
+}
+
+// 开杠路线：立直了，手里杠了不改听牌的暗刻（宝牌先），牌山里摸得到第四张
+function routeKan(g: Game, seat: number): number | null {
+  const p = g.players[seat];
+  const counts = toCounts(p.hand);
+  const waits = waitingKinds(counts, p.melds.length).join();
+  const live = g.wall.live.filter((t) => reachable(g, seat, t));
+  // 宝牌的刻子不杠（杠了多一张宝牌，容易冲过 12 番）
+  const kinds = Array.from({ length: 34 }, (_, k) => k).sort((a, b) => Number(isDora(g, a * 4)) - Number(isDora(g, b * 4)));
+  for (const k of kinds) {
+    if (counts[k] !== 3 || !live.some((t) => kindOf(t) === k)) continue;
+    const after = counts.slice();
+    after[k] = 0;
+    if (shanten(after, p.melds.length + 1) !== 0 || waitingKinds(after, p.melds.length + 1).join() !== waits) continue;
+    return k;
+  }
+  return null;
+}
+
 // 手牌换成 hand（13 张）摸 t 自摸的话有几番：lo 是不算里宝牌的（还没立直的算上立直、一发），hi 是里宝牌最多能加到的。
 // 里宝牌在和牌时才定（claimUra），押 3 点会把它定到 11–12 番之间，所以只要 lo ≤ 12 ≤ … hi ≥ 11 就做得成三倍满。
 // 役满算 13 番；和不了是 0
@@ -609,7 +651,10 @@ function planBig(g: Game, seat: number): number[] | null {
   // 玄的能力还在时中不了里宝牌，只能靠役：清一色加七对子、一气通贯、三暗刻、断幺九、一盃口这些凑够 11 番
   const noUra = kuroBlocks(g, seat);
   const chosen: number[] = []; // 4 组面子挑了 sets 里的哪几组
+  const needSet = kanRoute(g, seat);
   const valid = (pairs: boolean) => {
+    // 开杠路线：要有一组刻子，第四张还在牌山里摸得到
+    if (needSet && (pairs || !chosen.some((i) => i >= 7 && cap[sets[i][0]] >= 4))) return false;
     const mixed = t.some((n, k) => n > 0 && k >= 27);
     let lo = (mixed ? 3 : 6) + 3; // 染手、立直一发自摸
     if (pairs) lo += 2;
@@ -713,6 +758,19 @@ function drawBig(g: Game, seat: number): void {
   };
   if (p.riichi) {
     setUra(g, seat);
+    // 开杠路线：先来暗刻的第四张（不是和了牌），开暗杠以后岭上牌自摸
+    const st = stateOf(g, seat);
+    if (kanRoute(g, seat) && !st.kanned) {
+      const k = routeKan(g, seat);
+      if (k !== null && w.bringToLive(0, (t) => kindOf(t) === k && !wins(t), g.rng)) {
+        // 杠了要翻的宝牌指示牌先换成不中她手里牌的（番数留给里宝牌在和牌时调）
+        const held = toCounts(p.hand);
+        // 只在王牌里换（玄藏在王牌里的宝牌不挪进牌山）
+        const at = w.doraIndicators[w.doraRevealed];
+        if (at !== undefined && !isDora(g, at)) w.bringToDora(w.doraRevealed, (t) => held[doraFromIndicator(kindOf(t))] === 0, g.rng, () => false);
+        return;
+      }
+    }
     if (w.bringToLive(0, (t) => fitsBig(projHan(g, seat, p.hand, t)), g.rng)) return;
     if (turn >= due + NELLY.grace && bestWin()) return;
     if (wins(w.live[0])) w.bringToLive(0, (t) => !wins(t), g.rng);
@@ -854,6 +912,8 @@ export const nellyAbility: Ability = {
     if (tierOf(g, seat) >= 3) {
       const p = g.players[seat];
       if (shanten(toCounts(p.hand), p.melds.length) === 0) mine = waitingKinds(toCounts(p.hand), p.melds.length);
+      // 开杠路线：要杠的牌的第四张别人摸不走
+      mine = [...mine, ...kanKinds(g, seat)];
       const w = g.wall;
       const next = rinshan ? w.rinshan[0] : w.live[0];
       if (next !== undefined && mine.includes(kindOf(next))) {
@@ -893,6 +953,24 @@ export const nellyAbility: Ability = {
     const w = g.wall;
     const p = g.players[seat];
     if (rinshan) {
+      // 押 3 点立直以后开杠（开杠路线）：岭上牌是三倍满的和了牌
+      if (v >= 3 && p.riichi) {
+        stateOf(g, seat).kanned = true;
+        setUra(g, seat);
+        // 摸岭上牌前引擎还没记成岭上：估番时算上岭上开花
+        const prev = g.rinshanDraw;
+        g.rinshanDraw = true;
+        try {
+          if (w.bringToRinshan((t) => fitsBig(projHan(g, seat, p.hand, t)), g.rng)) return;
+          // 凑不出 11–12 番：来不超过 12 番的和了牌，都超过就来一张和不了的（不冲累计役满）
+          const han = (t: TileId) => projHan(g, seat, p.hand, t).lo;
+          if (w.bringToRinshan((t) => han(t) > 0 && han(t) <= NELLY.maxHan, g.rng)) return;
+          w.bringToRinshan((t) => han(t) === 0, g.rng);
+          return;
+        } finally {
+          g.rinshanDraw = prev;
+        }
+      }
       // 到了那一巡开杠：岭上牌是最大的和了牌（岭上开花）
       if (p.riichi && NELLY.dora[v]) setUra(g, seat);
       if (nellyTurn(g, seat) < NELLY.turn[v] - 1 || shanten(toCounts(p.hand), p.melds.length) !== 0) return;
