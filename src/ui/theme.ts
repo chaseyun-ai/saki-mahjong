@@ -1,12 +1,16 @@
-// 界面皮肤：选人页上切换，记在浏览器里。CSS 按 <html data-theme> 换样式（src/ui/themes.css），
+// 界面皮肤：选人页上切换，记在浏览器里。CSS 按 <html data-theme> 换样式（src/ui/themes.css，新加的四套在 themes2.css），
 // 3D/2.5D 牌桌的桌布、牌背、桌框颜色在建牌桌时从这里取（tableColors）
 
-export type ThemeId = 'classic' | 'broadcast' | 'washi' | 'awaken';
+export type ThemeId = 'classic' | 'broadcast' | 'washi' | 'awaken' | 'porcelain' | 'neon' | 'manga' | 'arcade';
 
 export const THEMES: { id: ThemeId; name: string }[] = [
   { id: 'broadcast', name: '大赛转播' },
   { id: 'washi', name: '和风雀庄' },
   { id: 'awaken', name: '能力觉醒' },
+  { id: 'porcelain', name: '白瓷简约' },
+  { id: 'neon', name: '赛博霓虹' },
+  { id: 'manga', name: '漫画分镜' },
+  { id: 'arcade', name: '复古街机' },
   { id: 'classic', name: '经典' },
 ];
 
@@ -60,6 +64,46 @@ const TABLES: Record<ThemeId, TableColors> = {
     trim: '#d8c8ff',
     room: '#100a24',
     console: { bg: ['#2e1866', '#0e0626'], line: '#a98bff', ink: '#ffffff', dim: '#c9b8ff', accent: '#ff9ad1', title: "900 1em 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" },
+  },
+  // 白瓷简约：浅色，青瓷色桌布、靛蓝牌背、米白桌框
+  porcelain: {
+    felt: ['#d3e5da', '#b7d2c3', '#93b5a3'],
+    feltLine: 'rgba(61,90,128,0.28)',
+    back: '#3d5a80',
+    frame: '#ebe6dc',
+    trim: '#b9b0a2',
+    room: '#efeae0',
+    console: { bg: ['#ffffff', '#ebe6dc'], line: '#c9c1b2', ink: '#1d232a', dim: '#7a8088', accent: '#c8553d', title: "700 1em 'Noto Serif SC','Noto Sans SC','PingFang SC',serif" },
+  },
+  // 赛博霓虹：近黑的桌布配青色细线，洋红牌背
+  neon: {
+    felt: ['#101a33', '#0a1224', '#050914'],
+    feltLine: 'rgba(46,242,255,0.55)',
+    back: '#c01a9c',
+    frame: '#070a12',
+    trim: '#2ef2ff',
+    room: '#03050a',
+    console: { bg: ['#0a1630', '#02040a'], line: '#2ef2ff', ink: '#e6fbff', dim: '#6f93a8', accent: '#ff2bd6', title: "900 1em 'Orbitron','Noto Sans SC','PingFang SC',sans-serif" },
+  },
+  // 漫画分镜：浅灰纸色桌布、黑牌背、黑桌框
+  manga: {
+    felt: ['#f3f1eb', '#e2dfd6', '#c9c5ba'],
+    feltLine: 'rgba(18,18,18,0.4)',
+    back: '#1a1a1a',
+    frame: '#121212',
+    trim: '#f5f5f5',
+    room: '#e9e6dd',
+    console: { bg: ['#ffffff', '#e7e3d9'], line: '#121212', ink: '#121212', dim: '#6a6a6a', accent: '#e0262d', title: "400 1em 'ZCOOL KuaiLe','Noto Sans SC','PingFang SC',sans-serif" },
+  },
+  // 复古街机：靛蓝桌布配黄线，青色牌背
+  arcade: {
+    felt: ['#2d2b80', '#1f1d5c', '#14123d'],
+    feltLine: 'rgba(255,210,63,0.6)',
+    back: '#3ce7ff',
+    frame: '#0b0920',
+    trim: '#ffd23f',
+    room: '#0b0920',
+    console: { bg: ['#221d5a', '#0b0920'], line: '#ffd23f', ink: '#f4f4f4', dim: '#9d97d6', accent: '#ff4f81', title: "400 1em 'ZCOOL QingKe HuangYou','Noto Sans SC','PingFang SC',sans-serif" },
   },
 };
 

@@ -1,5 +1,6 @@
 import './ui/style.css';
 import './ui/themes.css';
+import './ui/themes2.css';
 import { App } from './ui/app';
 import { DiscardLab } from './lab/discardLab';
 import { BracketPreview } from './story/bracketPreview';

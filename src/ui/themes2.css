@@ -1,0 +1,2342 @@
+/* ---------- 新加的四套界面皮肤（src/ui/theme.ts） ----------
+   白瓷简约（浅色、细线、留白）、赛博霓虹（黑底青线、HUD 角标）、漫画分镜（白纸黑框、网点和集中线）、复古街机（像素描边、扫描线）。
+   排版沿用 themes.css 里非经典皮肤的那一套（左边大立绘、右边角色格子、2.5D 头像框），这里只换颜色、字体、形状和质感。
+   浅色的两套（白瓷、漫画）只在自己改成浅底的面板里把 --ink 换成深色，没改到的对局小面板还是深底浅字，不会看不清 */
+
+/* ======================================================================
+   D 白瓷简约
+   ====================================================================== */
+
+:root[data-theme='porcelain'] {
+  --gold: #c8553d;
+  --ink: #f7f5f0;
+  --ink-quiet: #d9d4c8;
+  --felt: #b7d2c3;
+  --felt-dark: #93b5a3;
+  --tile-back: #3d5a80;
+  --t-bg: #efeae0;
+  --t-paper: #ffffff;
+  --t-dark: #1d232a;
+  --t-mid: #5b636d;
+  --t-soft: #8a9098;
+  --t-line: #e2dccf;
+  --t-hot: #c8553d;
+  --t-plus: #2f8f62;
+  --t-num: 'Manrope', 'Noto Sans SC', sans-serif;
+  --t-title: 'Noto Serif SC', 'STSong', serif;
+  --t-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* 浅底的地方：字换成深色 */
+:root[data-theme='porcelain'] .select-screen,
+:root[data-theme='porcelain'] .setup,
+:root[data-theme='porcelain'] .result,
+:root[data-theme='porcelain'] .waits,
+:root[data-theme='porcelain'] .sel-more-menu {
+  color-scheme: light;
+  --ink: var(--t-dark);
+  --ink-quiet: var(--t-mid);
+  color: var(--t-dark);
+}
+
+:root[data-theme='porcelain'] .select-screen {
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(200, 85, 61, 0.06), transparent 50%),
+    var(--t-bg);
+}
+
+:root[data-theme='porcelain'] .select-screen h1 {
+  font-weight: 600;
+  letter-spacing: 12px;
+  color: var(--t-dark);
+}
+
+:root[data-theme='porcelain'] .select-screen h1::after {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: var(--t-hot);
+  vertical-align: 4px;
+}
+
+:root[data-theme='porcelain'] .subtitle,
+:root[data-theme='porcelain'] .footnote {
+  color: var(--t-soft);
+}
+
+:root[data-theme='porcelain'] .sel-set,
+:root[data-theme='porcelain'] .sel-more summary,
+:root[data-theme='porcelain'] .school-pager button {
+  border: 1px solid var(--t-line);
+  border-radius: 999px;
+  background: var(--t-paper);
+  color: var(--t-dark);
+  box-shadow: 0 1px 2px rgba(29, 35, 42, 0.06);
+}
+
+:root[data-theme='porcelain'] .sel-set:hover,
+:root[data-theme='porcelain'] .sel-more summary:hover,
+:root[data-theme='porcelain'] .school-pager button:hover {
+  border-color: var(--t-dark);
+}
+
+:root[data-theme='porcelain'] .sel-set svg {
+  color: var(--t-hot);
+}
+
+:root[data-theme='porcelain'] .sel-more-menu {
+  border-color: var(--t-line);
+  border-radius: 12px;
+  background: var(--t-paper);
+  box-shadow: 0 12px 32px rgba(29, 35, 42, 0.14);
+}
+
+:root[data-theme='porcelain'] .sel-more-menu button:hover {
+  background: #f3efe7;
+}
+
+:root[data-theme='porcelain'] .sel-modes {
+  border-bottom-color: var(--t-line);
+}
+
+:root[data-theme='porcelain'] .sel-modes > button.on {
+  border-bottom-width: 2px;
+  border-bottom-color: var(--t-dark);
+}
+
+:root[data-theme='porcelain'] .sel-modes > .sel-random {
+  border: 1px solid var(--t-dark);
+  border-radius: 999px;
+  background: var(--t-dark);
+  color: #fff;
+}
+
+:root[data-theme='porcelain'] .sel-modes > .sel-random:hover {
+  background: #333b45;
+}
+
+:root[data-theme='porcelain'] .school-tabs button {
+  border-color: var(--t-line);
+  background: var(--t-paper);
+  color: var(--t-dark);
+}
+
+:root[data-theme='porcelain'] .school-tabs button:hover {
+  border-color: var(--s);
+}
+
+:root[data-theme='porcelain'] .school-tabs button.on {
+  border-color: var(--t-dark);
+  background: var(--t-dark);
+  color: #fff;
+}
+
+:root[data-theme='porcelain'] .school-head {
+  border-bottom: 1px solid var(--t-line);
+}
+
+:root[data-theme='porcelain'] .school-head b {
+  font-family: var(--t-title);
+  font-weight: 600;
+  color: var(--t-dark);
+}
+
+:root[data-theme='porcelain'] .school-head b::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--s);
+  vertical-align: 3px;
+}
+
+:root[data-theme='porcelain'] .char-card {
+  border: 1px solid var(--t-line);
+  border-radius: 16px;
+  background: var(--t-paper);
+  box-shadow: 0 2px 6px rgba(29, 35, 42, 0.05);
+  transition: transform 0.18s, box-shadow 0.18s;
+}
+
+:root[data-theme='porcelain'] .char-card .char-portrait {
+  bottom: 54px;
+  padding-bottom: 0;
+  border-radius: 15px 15px 0 0;
+  background: linear-gradient(170deg, color-mix(in srgb, var(--c) 34%, white), color-mix(in srgb, var(--c) 10%, white));
+  color: color-mix(in srgb, var(--c) 70%, #1d232a);
+  font-family: var(--t-title);
+  font-weight: 600;
+}
+
+:root[data-theme='porcelain'] .char-card .char-name {
+  height: 54px;
+  padding: 8px 4px;
+  background: var(--t-paper);
+  color: var(--t-dark);
+  border-radius: 0 0 15px 15px;
+  font-weight: 700;
+}
+
+:root[data-theme='porcelain'] .char-card .char-name small {
+  color: var(--t-soft);
+  font-weight: 500;
+}
+
+:root[data-theme='porcelain'] .char-cost {
+  border-radius: 999px;
+  background: var(--t-paper);
+  color: var(--t-dark);
+  font-family: var(--t-num);
+  font-weight: 800;
+  box-shadow: 0 1px 3px rgba(29, 35, 42, 0.18);
+}
+
+:root[data-theme='porcelain'] .char-card:hover,
+:root[data-theme='porcelain'] .char-card.armed {
+  transform: translateY(-4px);
+  box-shadow: 0 0 0 2px var(--c), 0 14px 28px rgba(29, 35, 42, 0.14);
+}
+
+@media (max-height: 500px) {
+  :root[data-theme='porcelain'] .char-card .char-portrait {
+    bottom: 40px;
+  }
+
+  :root[data-theme='porcelain'] .char-card .char-name {
+    height: 40px;
+    padding: 4px 2px;
+  }
+}
+
+:root[data-theme='porcelain'] .char-tip {
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--c) 26%, white) 0 34%, transparent 34.2%),
+    linear-gradient(180deg, #f8f6f1, #ece6da);
+  border-right: 1px solid var(--t-line);
+}
+
+:root[data-theme='porcelain'] .char-tip .hero-art span {
+  color: color-mix(in srgb, var(--c) 55%, white);
+  font-family: var(--t-title);
+}
+
+:root[data-theme='porcelain'] .char-tip .hero-art img {
+  filter: drop-shadow(0 12px 24px rgba(29, 35, 42, 0.18));
+}
+
+:root[data-theme='porcelain'] .hero-plate {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--t-dark);
+  box-shadow: 0 16px 40px rgba(29, 35, 42, 0.12);
+}
+
+:root[data-theme='porcelain'] .char-tip .char-name {
+  font-family: var(--t-title);
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+
+:root[data-theme='porcelain'] .char-tip .char-school {
+  color: var(--t-soft);
+  font-weight: 700;
+}
+
+:root[data-theme='porcelain'] .char-tip .char-school span {
+  color: var(--t-soft);
+}
+
+:root[data-theme='porcelain'] .char-tip .char-ability {
+  color: var(--t-hot);
+  font-weight: 700;
+}
+
+:root[data-theme='porcelain'] .char-tip .char-desc {
+  color: var(--t-mid);
+}
+
+:root[data-theme='porcelain'] .hero-more {
+  color: var(--t-hot);
+}
+
+:root[data-theme='porcelain'] .hero-cost {
+  background: var(--t-dark);
+  color: #fff;
+  font-family: var(--t-num);
+}
+
+:root[data-theme='porcelain'] .hero-go {
+  border-radius: 999px;
+  background: var(--t-dark);
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 4px;
+}
+
+:root[data-theme='porcelain'] .hero-go:hover {
+  background: var(--t-hot);
+}
+
+:root[data-theme='porcelain'] .hero-rules {
+  border-color: var(--t-line);
+  border-radius: 999px;
+  color: var(--t-mid);
+}
+
+:root[data-theme='porcelain'] .hero-rules:hover {
+  border-color: var(--t-dark);
+  background: #f3efe7;
+}
+
+/* 2D 牌桌中间的局数、点数：白瓷片 */
+:root[data-theme='porcelain'] .center {
+  --ink: var(--t-dark);
+  --ink-quiet: var(--t-mid);
+  --gold: var(--t-hot);
+  color: var(--t-dark);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--t-line);
+  box-shadow: 0 10px 26px rgba(29, 35, 42, 0.14);
+}
+
+:root[data-theme='porcelain'] .center .score .wind {
+  filter: brightness(0.85);
+}
+
+:root[data-theme='porcelain'] .center .kan-peek {
+  color: #b0476a;
+}
+
+/* 对局：头像是圆角白边的照片，名牌是白色胶囊 */
+:root[data-theme='porcelain'] .seat-frame .portrait {
+  border: 3px solid #fff;
+  border-radius: 18px;
+  background: linear-gradient(170deg, color-mix(in srgb, var(--c) 45%, white), color-mix(in srgb, var(--c) 80%, #1d232a));
+  box-shadow: 0 8px 20px rgba(29, 35, 42, 0.22);
+}
+
+:root[data-theme='porcelain'] .seat-frame.active .portrait {
+  border-color: #fff;
+  box-shadow: 0 0 0 3px var(--t-hot), 0 10px 24px rgba(29, 35, 42, 0.28);
+}
+
+:root[data-theme='porcelain'] .seat-frame .wind {
+  background: #fff;
+  border-color: var(--t-line);
+  color: var(--t-dark);
+  font-weight: 700;
+}
+
+:root[data-theme='porcelain'] .seat-info {
+  margin-top: 6px;
+  border: none;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--t-dark);
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(29, 35, 42, 0.16), inset 0 -2px 0 var(--c);
+}
+
+:root[data-theme='porcelain'] .seat-frame.active .seat-info {
+  background: var(--t-dark);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(29, 35, 42, 0.25), inset 0 -2px 0 var(--t-hot);
+}
+
+:root[data-theme='porcelain'] .act {
+  border-radius: 999px;
+  background: #fff;
+  color: var(--t-dark);
+  box-shadow: 0 6px 16px rgba(29, 35, 42, 0.22), inset 0 -3px 0 #c9c1b2;
+}
+
+:root[data-theme='porcelain'] .act.ron,
+:root[data-theme='porcelain'] .act.tsumo {
+  background: var(--t-hot);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(200, 85, 61, 0.4), inset 0 -3px 0 #8f3524;
+}
+
+:root[data-theme='porcelain'] .act.riichi {
+  box-shadow: 0 6px 16px rgba(29, 35, 42, 0.22), inset 0 -3px 0 var(--t-hot);
+}
+
+:root[data-theme='porcelain'] .act.riichi.on {
+  outline: 3px solid var(--t-hot);
+}
+
+:root[data-theme='porcelain'] .act.chi,
+:root[data-theme='porcelain'] .act.pon,
+:root[data-theme='porcelain'] .act.daiminkan,
+:root[data-theme='porcelain'] .act.ankan,
+:root[data-theme='porcelain'] .act.kakan {
+  box-shadow: 0 6px 16px rgba(29, 35, 42, 0.22), inset 0 -3px 0 var(--tile-back);
+}
+
+:root[data-theme='porcelain'] .act.pass {
+  background: #e9e4da;
+  color: var(--t-mid);
+  box-shadow: 0 6px 16px rgba(29, 35, 42, 0.16);
+}
+
+:root[data-theme='porcelain'] .waits {
+  border: none;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 8px 22px rgba(29, 35, 42, 0.18);
+}
+
+:root[data-theme='porcelain'] .wait-han.ron,
+:root[data-theme='porcelain'] .wait-pts {
+  color: var(--t-hot);
+}
+
+:root[data-theme='porcelain'] .wait-han.tsumo,
+:root[data-theme='porcelain'] .wait-wall {
+  color: var(--t-plus);
+}
+
+:root[data-theme='porcelain'] .hud .hint {
+  color: var(--t-mid);
+  font-weight: 700;
+}
+
+:root[data-theme='porcelain'] .auto-btn {
+  border-color: var(--t-line);
+  background: #fff;
+  color: var(--t-dark);
+  box-shadow: 0 4px 12px rgba(29, 35, 42, 0.16);
+}
+
+:root[data-theme='porcelain'] .auto-btn.on {
+  border-color: var(--t-dark);
+  background: var(--t-dark);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(29, 35, 42, 0.28);
+}
+
+:root[data-theme='porcelain'] .ability-panel,
+:root[data-theme='porcelain'] .nameplate {
+  border-radius: 14px;
+  background: rgba(29, 35, 42, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+:root[data-theme='porcelain'] .modal {
+  background: rgba(239, 234, 224, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+:root[data-theme='porcelain'] .result {
+  border: none;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(29, 35, 42, 0.22);
+}
+
+:root[data-theme='porcelain'] .result h2 {
+  font-family: var(--t-title);
+  font-weight: 600;
+  letter-spacing: 4px;
+  color: var(--t-dark);
+}
+
+:root[data-theme='porcelain'] .summary {
+  font-family: var(--t-num), var(--t-body);
+  font-weight: 800;
+  color: var(--t-hot);
+}
+
+:root[data-theme='porcelain'] .yaku,
+:root[data-theme='porcelain'] .trace {
+  border-color: var(--t-line);
+}
+
+:root[data-theme='porcelain'] .result .ura,
+:root[data-theme='porcelain'] .result .pd-sub,
+:root[data-theme='porcelain'] .trace-turn {
+  color: var(--t-soft);
+}
+
+:root[data-theme='porcelain'] .delta .plus,
+:root[data-theme='porcelain'] .rank-row .plus {
+  color: var(--t-plus);
+}
+
+:root[data-theme='porcelain'] .delta .minus,
+:root[data-theme='porcelain'] .rank-row .minus {
+  color: var(--t-hot);
+}
+
+:root[data-theme='porcelain'] .rank-row {
+  background: #f6f3ec;
+}
+
+:root[data-theme='porcelain'] .primary {
+  border-radius: 999px;
+  background: var(--t-dark);
+  color: #fff;
+  letter-spacing: 2px;
+}
+
+:root[data-theme='porcelain'] .win-art {
+  border-radius: 16px;
+}
+
+:root[data-theme='porcelain'] .rbn-band {
+  color: var(--t-dark);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.94) 18%, rgba(255, 255, 255, 0.94) 82%, transparent);
+  border-top: 1px solid var(--t-line);
+  border-bottom: 1px solid var(--t-line);
+}
+
+:root[data-theme='porcelain'] .rbn-main {
+  font-family: var(--t-title);
+  font-weight: 600;
+  color: var(--t-dark);
+  text-shadow: none;
+}
+
+:root[data-theme='porcelain'] .rbn-sub {
+  color: var(--t-hot);
+}
+
+:root[data-theme='porcelain'] .setup {
+  border: none;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(29, 35, 42, 0.22);
+  --gold: var(--t-hot);
+  --set-name: var(--t-dark);
+  --set-quiet: var(--t-soft);
+  --set-line: var(--t-line);
+  --set-row: #f0ece4;
+  --set-btn: #f7f5f0;
+  --set-btn-line: var(--t-line);
+  --set-field: #fff;
+}
+
+:root[data-theme='porcelain'] .setup h2 {
+  font-family: var(--t-title);
+  font-weight: 600;
+  letter-spacing: 3px;
+}
+
+:root[data-theme='porcelain'] .setup-opts button,
+:root[data-theme='porcelain'] .setup-select,
+:root[data-theme='porcelain'] .setup-input,
+:root[data-theme='porcelain'] .setup-actions button {
+  border-radius: 999px;
+}
+
+:root[data-theme='porcelain'] .setup-opts button.on,
+:root[data-theme='porcelain'] .setup-actions .primary {
+  border-color: var(--t-dark);
+  background: var(--t-dark);
+  color: #fff;
+}
+
+:root[data-theme='porcelain'] .set-x:hover {
+  background: #f3efe7;
+}
+
+/* ======================================================================
+   E 赛博霓虹
+   ====================================================================== */
+
+:root[data-theme='neon'] {
+  --gold: #2ef2ff;
+  --ink: #e6fbff;
+  --ink-quiet: #7fa3b8;
+  --felt: #0a1224;
+  --felt-dark: #050914;
+  --tile-back: #c01a9c;
+  --t-bg: #05070d;
+  --t-panel: rgba(8, 16, 32, 0.88);
+  --t-panel-2: rgba(14, 28, 52, 0.9);
+  --t-line: rgba(46, 242, 255, 0.32);
+  --t-cyan: #2ef2ff;
+  --t-hot: #ff2bd6;
+  --t-plus: #3dff9a;
+  --t-num: 'Orbitron', 'Noto Sans SC', sans-serif;
+  --t-title: 'Orbitron', 'Noto Sans SC', sans-serif;
+  --t-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* HUD 四角的折线角标 */
+  --t-corners:
+    linear-gradient(var(--t-cyan), var(--t-cyan)) 0 0 / 14px 2px no-repeat,
+    linear-gradient(var(--t-cyan), var(--t-cyan)) 0 0 / 2px 14px no-repeat,
+    linear-gradient(var(--t-cyan), var(--t-cyan)) 100% 0 / 14px 2px no-repeat,
+    linear-gradient(var(--t-cyan), var(--t-cyan)) 100% 0 / 2px 14px no-repeat,
+    linear-gradient(var(--t-cyan), var(--t-cyan)) 0 100% / 14px 2px no-repeat,
+    linear-gradient(var(--t-cyan), var(--t-cyan)) 0 100% / 2px 14px no-repeat,
+    linear-gradient(var(--t-cyan), var(--t-cyan)) 100% 100% / 14px 2px no-repeat,
+    linear-gradient(var(--t-cyan), var(--t-cyan)) 100% 100% / 2px 14px no-repeat;
+}
+
+:root[data-theme='neon'] .select-screen {
+  position: relative;
+  background:
+    linear-gradient(rgba(46, 242, 255, 0.05) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, rgba(46, 242, 255, 0.05) 1px, transparent 1px) 0 0 / 40px 40px,
+    radial-gradient(ellipse at 15% 70%, rgba(255, 43, 214, 0.18), transparent 55%),
+    radial-gradient(ellipse at 90% 10%, rgba(46, 242, 255, 0.12), transparent 50%),
+    var(--t-bg);
+}
+
+/* 扫描线 */
+:root[data-theme='neon'] .select-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(transparent 0 2px, rgba(0, 0, 0, 0.22) 2px 3px);
+  z-index: 40;
+}
+
+:root[data-theme='neon'] .select-screen h1 {
+  font-weight: 900;
+  letter-spacing: 8px;
+  color: #fff;
+  text-shadow: 0 0 6px var(--t-cyan), 0 0 18px rgba(46, 242, 255, 0.6), 2px 0 0 rgba(255, 43, 214, 0.75), -2px 0 0 rgba(46, 242, 255, 0.75);
+}
+
+:root[data-theme='neon'] .select-screen h1::before {
+  content: '//';
+  margin-right: 12px;
+  color: var(--t-hot);
+  text-shadow: 0 0 10px var(--t-hot);
+}
+
+:root[data-theme='neon'] .subtitle,
+:root[data-theme='neon'] .footnote {
+  color: #5f8296;
+}
+
+:root[data-theme='neon'] .sel-set,
+:root[data-theme='neon'] .sel-more summary,
+:root[data-theme='neon'] .school-pager button {
+  border: 1px solid var(--t-line);
+  border-radius: 0;
+  background: rgba(8, 16, 32, 0.8);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  letter-spacing: 1px;
+}
+
+:root[data-theme='neon'] .sel-set:hover,
+:root[data-theme='neon'] .sel-more summary:hover,
+:root[data-theme='neon'] .school-pager button:hover {
+  border-color: var(--t-cyan);
+  background: rgba(46, 242, 255, 0.12);
+  color: #fff;
+}
+
+:root[data-theme='neon'] .sel-more-menu {
+  border-color: var(--t-cyan);
+  border-radius: 0;
+  background: #070d1c;
+  box-shadow: 0 0 24px rgba(46, 242, 255, 0.25);
+}
+
+:root[data-theme='neon'] .sel-modes {
+  border-bottom-color: var(--t-line);
+}
+
+:root[data-theme='neon'] .sel-modes > button.on {
+  color: #fff;
+  border-bottom-color: var(--t-cyan);
+  text-shadow: 0 0 10px rgba(46, 242, 255, 0.7);
+}
+
+:root[data-theme='neon'] .sel-modes > .sel-random {
+  border: 1px solid var(--t-hot);
+  border-radius: 0;
+  background: rgba(255, 43, 214, 0.12);
+  color: #ffd6f6;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+
+:root[data-theme='neon'] .school-tabs button {
+  border-radius: 0;
+  border-color: rgba(46, 242, 255, 0.22);
+  background: rgba(8, 16, 32, 0.8);
+}
+
+:root[data-theme='neon'] .school-tabs button.on {
+  border-color: var(--t-cyan);
+  background: var(--t-cyan);
+  color: #031018;
+  box-shadow: 0 0 14px rgba(46, 242, 255, 0.6);
+}
+
+:root[data-theme='neon'] .school-head {
+  border-bottom: 1px solid var(--t-line);
+}
+
+:root[data-theme='neon'] .school-head b {
+  color: #fff;
+  text-shadow: 0 0 10px var(--s);
+}
+
+:root[data-theme='neon'] .school-head b::before {
+  content: '▍';
+  color: var(--s);
+}
+
+:root[data-theme='neon'] .char-card {
+  border: 1px solid rgba(46, 242, 255, 0.25);
+  border-radius: 0;
+  background: linear-gradient(170deg, color-mix(in srgb, var(--c) 45%, #05070d), #05070d 85%);
+}
+
+:root[data-theme='neon'] .char-card::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--t-corners);
+  opacity: 0.55;
+  transition: opacity 0.15s, inset 0.15s;
+}
+
+:root[data-theme='neon'] .char-card .char-portrait {
+  color: color-mix(in srgb, var(--c) 50%, white);
+  text-shadow: 0 0 18px var(--c);
+}
+
+:root[data-theme='neon'] .char-card .char-name {
+  background: linear-gradient(transparent, rgba(3, 6, 14, 0.94) 40%);
+  letter-spacing: 1px;
+}
+
+:root[data-theme='neon'] .char-card .char-name small {
+  color: var(--t-cyan);
+  font-weight: 700;
+}
+
+:root[data-theme='neon'] .char-cost {
+  border-radius: 0;
+  border: 1px solid var(--t-hot);
+  background: rgba(5, 7, 13, 0.85);
+  color: #fff;
+  font-family: var(--t-num);
+  font-size: 14px;
+  text-shadow: 0 0 6px var(--t-hot);
+}
+
+:root[data-theme='neon'] .char-card:hover,
+:root[data-theme='neon'] .char-card.armed {
+  border-color: var(--t-cyan);
+  box-shadow: 0 0 0 1px var(--t-cyan), 0 0 22px rgba(46, 242, 255, 0.45);
+}
+
+:root[data-theme='neon'] .char-card:hover::after,
+:root[data-theme='neon'] .char-card.armed::after {
+  inset: 2px;
+  opacity: 1;
+}
+
+:root[data-theme='neon'] .char-tip {
+  background:
+    repeating-linear-gradient(0deg, rgba(46, 242, 255, 0.06) 0 1px, transparent 1px 6px),
+    radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--c) 45%, transparent), transparent 62%),
+    linear-gradient(180deg, #070b18, #05070d);
+  border-right: 1px solid var(--t-line);
+}
+
+:root[data-theme='neon'] .char-tip .hero-art::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: 70%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px dashed rgba(46, 242, 255, 0.45);
+  box-shadow: 0 0 0 14px rgba(46, 242, 255, 0.04), 0 0 0 15px rgba(46, 242, 255, 0.3);
+}
+
+:root[data-theme='neon'] .char-tip .hero-art span {
+  color: color-mix(in srgb, var(--c) 40%, white);
+  text-shadow: 0 0 30px var(--c);
+}
+
+:root[data-theme='neon'] .char-tip .hero-art img {
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--c) 60%, transparent));
+}
+
+:root[data-theme='neon'] .hero-plate {
+  background: var(--t-corners), rgba(5, 9, 20, 0.88);
+  border: 1px solid var(--t-line);
+  box-shadow: 0 0 30px rgba(46, 242, 255, 0.12);
+}
+
+:root[data-theme='neon'] .char-tip .char-name {
+  color: #fff;
+  text-shadow: 0 0 12px rgba(46, 242, 255, 0.55);
+}
+
+:root[data-theme='neon'] .char-tip .char-school {
+  color: var(--t-cyan);
+  font-weight: 700;
+}
+
+:root[data-theme='neon'] .char-tip .char-ability {
+  color: var(--t-hot);
+  font-weight: 700;
+  text-shadow: 0 0 10px rgba(255, 43, 214, 0.6);
+}
+
+:root[data-theme='neon'] .char-tip .char-desc {
+  color: #a9c4d4;
+}
+
+:root[data-theme='neon'] .hero-cost {
+  border-radius: 0;
+  background: var(--t-hot);
+  color: #fff;
+  font-family: var(--t-num);
+  box-shadow: 0 0 14px rgba(255, 43, 214, 0.6);
+}
+
+:root[data-theme='neon'] .hero-go {
+  border: none;
+  border-radius: 0;
+  background: var(--t-cyan);
+  color: #031018;
+  font-weight: 900;
+  letter-spacing: 6px;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  box-shadow: 0 0 22px rgba(46, 242, 255, 0.6);
+}
+
+:root[data-theme='neon'] .hero-go:hover {
+  background: #fff;
+}
+
+:root[data-theme='neon'] .hero-rules {
+  border-color: var(--t-line);
+  border-radius: 0;
+  color: var(--t-cyan);
+}
+
+:root[data-theme='neon'] .hero-more {
+  color: var(--t-cyan);
+}
+
+/* 对局：头像是方框加四角角标，名牌下面一道霓虹线 */
+:root[data-theme='neon'] .seat-frame .portrait {
+  border: 1px solid rgba(46, 242, 255, 0.5);
+  border-radius: 0;
+  background: linear-gradient(170deg, color-mix(in srgb, var(--c) 70%, #05070d), #05070d);
+  box-shadow: 0 0 18px rgba(0, 0, 0, 0.7);
+}
+
+:root[data-theme='neon'] .seat-frame .portrait::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  pointer-events: none;
+  background: var(--t-corners);
+  opacity: 0.8;
+}
+
+:root[data-theme='neon'] .seat-frame.active .portrait {
+  border-color: var(--t-cyan);
+  box-shadow: 0 0 0 1px var(--t-cyan), 0 0 24px rgba(46, 242, 255, 0.7);
+}
+
+:root[data-theme='neon'] .seat-frame .wind {
+  border-radius: 0;
+  background: #05070d;
+  border-color: var(--t-hot);
+  color: #fff;
+  font-family: var(--t-body);
+  text-shadow: 0 0 6px var(--t-hot);
+}
+
+:root[data-theme='neon'] .seat-info {
+  margin-top: 7px;
+  border: none;
+  border-radius: 0;
+  background: rgba(5, 9, 20, 0.9);
+  box-shadow: inset 0 -2px 0 var(--c), 0 2px 12px color-mix(in srgb, var(--c) 45%, transparent);
+  letter-spacing: 1px;
+}
+
+:root[data-theme='neon'] .seat-frame.active .seat-info {
+  color: #031018;
+  background: var(--t-cyan);
+  box-shadow: 0 0 16px rgba(46, 242, 255, 0.7);
+}
+
+:root[data-theme='neon'] .act {
+  border: 1px solid var(--t-cyan);
+  border-radius: 0;
+  background: rgba(5, 12, 26, 0.9);
+  color: #fff;
+  letter-spacing: 2px;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  box-shadow: inset 0 0 14px rgba(46, 242, 255, 0.3);
+  text-shadow: 0 0 8px rgba(46, 242, 255, 0.8);
+}
+
+:root[data-theme='neon'] .act.ron,
+:root[data-theme='neon'] .act.tsumo {
+  border-color: var(--t-hot);
+  background: var(--t-hot);
+  color: #fff;
+  box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.35);
+  text-shadow: 0 0 6px rgba(80, 0, 60, 0.8);
+}
+
+:root[data-theme='neon'] .act.riichi {
+  border-color: var(--t-hot);
+  box-shadow: inset 0 0 14px rgba(255, 43, 214, 0.4);
+  text-shadow: 0 0 8px rgba(255, 43, 214, 0.9);
+}
+
+:root[data-theme='neon'] .act.riichi.on {
+  outline: none;
+  background: rgba(255, 43, 214, 0.35);
+}
+
+:root[data-theme='neon'] .act.pass {
+  border-color: #3b5568;
+  color: #9fb6c4;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+:root[data-theme='neon'] .waits {
+  border: 1px solid var(--t-line);
+  border-radius: 0;
+  background: var(--t-corners), rgba(5, 9, 20, 0.9);
+  box-shadow: 0 0 18px rgba(46, 242, 255, 0.18);
+}
+
+:root[data-theme='neon'] .waits-title {
+  color: var(--t-cyan);
+  letter-spacing: 2px;
+}
+
+:root[data-theme='neon'] .wait-han.ron,
+:root[data-theme='neon'] .wait-pts {
+  color: var(--t-cyan);
+}
+
+:root[data-theme='neon'] .wait-han.tsumo,
+:root[data-theme='neon'] .wait-wall {
+  color: var(--t-plus);
+}
+
+:root[data-theme='neon'] .hud .hint {
+  color: var(--t-cyan);
+  letter-spacing: 2px;
+  text-shadow: 0 0 8px rgba(46, 242, 255, 0.7);
+}
+
+:root[data-theme='neon'] .auto-btn {
+  border-color: var(--t-line);
+  border-radius: 0;
+  background: rgba(5, 9, 20, 0.85);
+}
+
+:root[data-theme='neon'] .auto-btn.on {
+  border-color: var(--t-hot);
+  background: var(--t-hot);
+  box-shadow: 0 0 16px rgba(255, 43, 214, 0.7);
+}
+
+:root[data-theme='neon'] .ability-panel,
+:root[data-theme='neon'] .nameplate {
+  border-radius: 0;
+  background: rgba(5, 9, 20, 0.9);
+  border-color: var(--t-line);
+}
+
+:root[data-theme='neon'] .center {
+  border: 1px solid var(--t-line);
+  border-radius: 0;
+  background: var(--t-corners), rgba(3, 6, 14, 0.85);
+  box-shadow: 0 0 24px rgba(46, 242, 255, 0.15);
+}
+
+:root[data-theme='neon'] .modal {
+  background: rgba(2, 4, 10, 0.78);
+}
+
+:root[data-theme='neon'] .result {
+  border: 1px solid var(--t-line);
+  border-radius: 0;
+  background: var(--t-corners), linear-gradient(#0a1428, #05070d);
+  box-shadow: 0 0 40px rgba(46, 242, 255, 0.2);
+}
+
+:root[data-theme='neon'] .result h2 {
+  color: #fff;
+  letter-spacing: 4px;
+  text-shadow: 0 0 12px var(--t-cyan);
+}
+
+:root[data-theme='neon'] .summary {
+  font-family: var(--t-num), var(--t-body);
+  font-weight: 900;
+  color: var(--t-hot);
+  text-shadow: 0 0 14px rgba(255, 43, 214, 0.7);
+}
+
+:root[data-theme='neon'] .delta .plus,
+:root[data-theme='neon'] .rank-row .plus {
+  color: var(--t-plus);
+}
+
+:root[data-theme='neon'] .delta .minus,
+:root[data-theme='neon'] .rank-row .minus {
+  color: var(--t-hot);
+}
+
+:root[data-theme='neon'] .primary {
+  border-radius: 0;
+  background: var(--t-cyan);
+  color: #031018;
+  font-weight: 900;
+  letter-spacing: 4px;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  box-shadow: 0 0 20px rgba(46, 242, 255, 0.5);
+}
+
+:root[data-theme='neon'] .win-art {
+  border-radius: 0;
+}
+
+:root[data-theme='neon'] .rbn-band {
+  background: linear-gradient(90deg, transparent, rgba(3, 6, 14, 0.9) 18%, rgba(3, 6, 14, 0.9) 82%, transparent);
+  border-top: 1px solid var(--t-cyan);
+  border-bottom: 1px solid var(--t-hot);
+}
+
+:root[data-theme='neon'] .rbn-main {
+  font-family: var(--t-title);
+  color: #fff;
+  text-shadow: 0 0 10px var(--t-cyan), 0 0 26px rgba(46, 242, 255, 0.6), 3px 0 0 rgba(255, 43, 214, 0.8), -3px 0 0 rgba(46, 242, 255, 0.8);
+}
+
+:root[data-theme='neon'] .rbn-sub {
+  color: var(--t-hot);
+  text-shadow: 0 0 10px rgba(255, 43, 214, 0.7);
+}
+
+:root[data-theme='neon'] .setup {
+  border: 1px solid var(--t-line);
+  border-radius: 0;
+  background: var(--t-corners), linear-gradient(#0a1428, #05070d);
+  box-shadow: 0 0 40px rgba(46, 242, 255, 0.18);
+  --set-quiet: #7fa3b8;
+  --set-line: rgba(46, 242, 255, 0.3);
+  --set-row: rgba(46, 242, 255, 0.1);
+  --set-btn-line: rgba(46, 242, 255, 0.35);
+  --set-field: #050a16;
+}
+
+:root[data-theme='neon'] .setup h2 {
+  letter-spacing: 3px;
+  text-shadow: 0 0 10px rgba(46, 242, 255, 0.6);
+}
+
+:root[data-theme='neon'] .set-sec {
+  color: var(--t-cyan);
+}
+
+:root[data-theme='neon'] .setup-opts button,
+:root[data-theme='neon'] .setup-select,
+:root[data-theme='neon'] .setup-input,
+:root[data-theme='neon'] .setup-actions button {
+  border-radius: 0;
+}
+
+:root[data-theme='neon'] .setup-opts button.on,
+:root[data-theme='neon'] .setup-actions .primary {
+  border-color: var(--t-cyan);
+  background: var(--t-cyan);
+  color: #031018;
+  box-shadow: 0 0 12px rgba(46, 242, 255, 0.5);
+}
+
+/* ======================================================================
+   F 漫画分镜
+   ====================================================================== */
+
+:root[data-theme='manga'] {
+  --gold: #e0262d;
+  --ink: #f7f6f2;
+  --ink-quiet: #d8d6cf;
+  --felt: #e2dfd6;
+  --felt-dark: #c9c5ba;
+  --tile-back: #1a1a1a;
+  --t-bg: #fbfaf5;
+  --t-paper: #ffffff;
+  --t-dark: #121212;
+  --t-mid: #3d3d3d;
+  --t-soft: #6a6a6a;
+  --t-hot: #e0262d;
+  --t-plus: #1f7a45;
+  --t-yellow: #ffe14d;
+  --t-num: 'Bangers', 'ZCOOL KuaiLe', 'Noto Sans SC', sans-serif;
+  --t-title: 'ZCOOL KuaiLe', 'Noto Sans SC', sans-serif;
+  --t-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* 网点 */
+  --t-dots: radial-gradient(rgba(18, 18, 18, 0.22) 1.1px, transparent 1.5px) 0 0 / 6px 6px;
+  --t-pop: 5px 5px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .select-screen,
+:root[data-theme='manga'] .setup,
+:root[data-theme='manga'] .result,
+:root[data-theme='manga'] .waits,
+:root[data-theme='manga'] .sel-more-menu {
+  color-scheme: light;
+  --ink: var(--t-dark);
+  --ink-quiet: var(--t-soft);
+  color: var(--t-dark);
+}
+
+:root[data-theme='manga'] .select-screen {
+  background: var(--t-bg);
+}
+
+:root[data-theme='manga'] .sel-main {
+  background: var(--t-bg);
+}
+
+:root[data-theme='manga'] .select-screen h1 {
+  font-weight: 400;
+  font-size: 42px;
+  letter-spacing: 6px;
+  color: var(--t-dark);
+  transform: rotate(-2deg);
+  transform-origin: left center;
+  text-shadow: 3px 3px 0 var(--t-yellow);
+}
+
+:root[data-theme='manga'] .select-screen h1::after {
+  content: '!!';
+  margin-left: 4px;
+  font-family: var(--t-num);
+  color: var(--t-hot);
+  text-shadow: none;
+}
+
+@media (max-height: 500px) {
+  :root[data-theme='manga'] .select-screen h1 {
+    font-size: 26px;
+  }
+}
+
+:root[data-theme='manga'] .subtitle,
+:root[data-theme='manga'] .footnote {
+  color: var(--t-soft);
+}
+
+:root[data-theme='manga'] .sel-set,
+:root[data-theme='manga'] .sel-more summary,
+:root[data-theme='manga'] .school-pager button {
+  border: 2px solid var(--t-dark);
+  border-radius: 2px;
+  background: var(--t-paper);
+  color: var(--t-dark);
+  box-shadow: 3px 3px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .sel-set:hover,
+:root[data-theme='manga'] .sel-more summary:hover,
+:root[data-theme='manga'] .school-pager button:hover {
+  background: var(--t-yellow);
+}
+
+:root[data-theme='manga'] .sel-set svg {
+  color: var(--t-hot);
+}
+
+:root[data-theme='manga'] .sel-more-menu {
+  border: 2px solid var(--t-dark);
+  border-radius: 2px;
+  background: var(--t-paper);
+  box-shadow: var(--t-pop);
+}
+
+:root[data-theme='manga'] .sel-more-menu button:hover {
+  background: var(--t-yellow);
+}
+
+:root[data-theme='manga'] .sel-modes {
+  border-bottom: 2px solid var(--t-dark);
+}
+
+:root[data-theme='manga'] .sel-modes > button {
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 20px;
+}
+
+:root[data-theme='manga'] .sel-modes > button.on {
+  border-bottom: 5px solid var(--t-hot);
+}
+
+:root[data-theme='manga'] .sel-modes > .sel-random {
+  border: 2px solid var(--t-dark);
+  border-radius: 2px;
+  background: var(--t-yellow);
+  color: var(--t-dark);
+  font-family: var(--t-body);
+  font-weight: 900;
+  font-size: 14px;
+  box-shadow: 3px 3px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .school-tabs button {
+  border: 2px solid var(--t-dark);
+  border-radius: 2px;
+  background: var(--t-paper);
+  color: var(--t-dark);
+  font-weight: 700;
+}
+
+:root[data-theme='manga'] .school-tabs button.on {
+  background: var(--t-dark);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--t-hot);
+}
+
+:root[data-theme='manga'] .school-head {
+  border-bottom: 2px solid var(--t-dark);
+}
+
+:root[data-theme='manga'] .school-head b {
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 26px;
+  color: var(--t-dark);
+  text-shadow: 2px 2px 0 color-mix(in srgb, var(--s) 70%, white);
+}
+
+/* 角色卡是一格格分镜：黑粗框、硬阴影、错落地歪一点 */
+:root[data-theme='manga'] .char-card {
+  overflow: hidden;
+  border: 3px solid var(--t-dark);
+  border-radius: 2px;
+  background: var(--t-paper);
+  box-shadow: var(--t-pop);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+:root[data-theme='manga'] .char-card:nth-child(odd) {
+  transform: rotate(-1.2deg);
+}
+
+:root[data-theme='manga'] .char-card:nth-child(even) {
+  transform: rotate(1deg) translateY(4px);
+}
+
+:root[data-theme='manga'] .char-card .char-portrait {
+  bottom: 50px;
+  padding-bottom: 0;
+  background: var(--t-dots), linear-gradient(170deg, color-mix(in srgb, var(--c) 40%, white), #fff);
+  border-bottom: 3px solid var(--t-dark);
+  color: var(--t-dark);
+  font-family: var(--t-title);
+  font-weight: 400;
+}
+
+:root[data-theme='manga'] .char-card .char-name {
+  height: 50px;
+  padding: 5px 2px;
+  color: var(--t-dark);
+  background: var(--t-paper);
+  font-weight: 900;
+}
+
+:root[data-theme='manga'] .char-card .char-name small {
+  color: var(--t-hot);
+  font-weight: 700;
+}
+
+:root[data-theme='manga'] .char-cost {
+  border: 2px solid var(--t-dark);
+  border-radius: 50%;
+  background: var(--t-yellow);
+  color: var(--t-dark);
+  font-family: var(--t-num);
+  font-size: 16px;
+  line-height: 19px;
+  letter-spacing: 1px;
+}
+
+:root[data-theme='manga'] .char-card:hover,
+:root[data-theme='manga'] .char-card.armed {
+  transform: rotate(0) translate(-2px, -3px);
+  box-shadow: 8px 8px 0 var(--t-hot);
+}
+
+@media (max-height: 500px) {
+  :root[data-theme='manga'] .char-card .char-portrait {
+    bottom: 38px;
+  }
+
+  :root[data-theme='manga'] .char-card .char-name {
+    height: 38px;
+    padding: 2px 1px;
+  }
+}
+
+/* 立绘面板：集中线 */
+:root[data-theme='manga'] .char-tip {
+  background:
+    radial-gradient(circle at 50% 42%, #fff 0 22%, transparent 48%),
+    repeating-conic-gradient(from 0deg at 50% 42%, rgba(18, 18, 18, 0.85) 0 0.6deg, transparent 0.6deg 4deg),
+    #fff;
+  border-right: 4px solid var(--t-dark);
+}
+
+:root[data-theme='manga'] .char-tip .hero-art span {
+  color: var(--t-dark);
+  font-family: var(--t-title);
+  font-weight: 400;
+  -webkit-text-stroke: 3px var(--t-dark);
+  -webkit-text-fill-color: color-mix(in srgb, var(--c) 60%, white);
+}
+
+:root[data-theme='manga'] .char-tip .hero-art img {
+  filter: drop-shadow(3px 0 0 #121212) drop-shadow(-3px 0 0 #121212) drop-shadow(0 3px 0 #121212) drop-shadow(0 -3px 0 #121212);
+}
+
+:root[data-theme='manga'] .hero-plate {
+  border: 3px solid var(--t-dark);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--t-dark);
+  box-shadow: 6px 6px 0 var(--t-dark);
+  transform: rotate(-1deg);
+}
+
+:root[data-theme='manga'] .char-tip .char-name {
+  font-family: var(--t-title);
+  font-weight: 400;
+  letter-spacing: 2px;
+  text-shadow: 3px 3px 0 var(--t-yellow);
+}
+
+:root[data-theme='manga'] .char-tip .char-school {
+  color: var(--t-dark);
+  font-weight: 900;
+}
+
+:root[data-theme='manga'] .char-tip .char-school span {
+  color: var(--t-soft);
+}
+
+:root[data-theme='manga'] .char-tip .char-ability {
+  display: inline-block;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0 8px;
+  background: var(--t-dark);
+  color: #fff;
+  font-weight: 900;
+}
+
+:root[data-theme='manga'] .char-tip .char-desc {
+  margin-top: 6px;
+  color: var(--t-mid);
+}
+
+:root[data-theme='manga'] .hero-more {
+  color: var(--t-hot);
+  font-weight: 700;
+}
+
+:root[data-theme='manga'] .hero-cost {
+  border: 2px solid var(--t-dark);
+  background: var(--t-yellow);
+  color: var(--t-dark);
+  font-family: var(--t-num);
+}
+
+:root[data-theme='manga'] .hero-go {
+  border: 3px solid var(--t-dark);
+  border-radius: 2px;
+  background: var(--t-hot);
+  color: #fff;
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 24px;
+  letter-spacing: 4px;
+  box-shadow: 4px 4px 0 var(--t-dark);
+  text-shadow: 2px 2px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .hero-go:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 6px 6px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .hero-rules {
+  border: 2px solid var(--t-dark);
+  border-radius: 2px;
+  color: var(--t-dark);
+  font-weight: 700;
+}
+
+:root[data-theme='manga'] .hero-rules:hover {
+  background: var(--t-yellow);
+}
+
+/* 2D 牌桌中间：白纸黑框 */
+:root[data-theme='manga'] .center {
+  --ink: var(--t-dark);
+  --ink-quiet: var(--t-soft);
+  --gold: var(--t-hot);
+  color: var(--t-dark);
+  border: 3px solid var(--t-dark);
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: var(--t-pop);
+}
+
+:root[data-theme='manga'] .center .score .wind {
+  filter: brightness(0.8);
+}
+
+:root[data-theme='manga'] .center .kan-peek {
+  color: var(--t-hot);
+}
+
+/* 对局：头像是粗黑框分镜，名字放在对白框里 */
+:root[data-theme='manga'] .seat-frame .portrait {
+  border: 3px solid var(--t-dark);
+  border-radius: 2px;
+  background: var(--t-dots), linear-gradient(170deg, color-mix(in srgb, var(--c) 45%, white), #fff);
+  color: var(--t-dark);
+  text-shadow: none;
+  box-shadow: var(--t-pop);
+}
+
+:root[data-theme='manga'] .seat-frame.active .portrait {
+  border-color: var(--t-dark);
+  box-shadow: 5px 5px 0 var(--t-hot);
+}
+
+:root[data-theme='manga'] .seat-frame .wind {
+  border: 2px solid var(--t-dark);
+  background: var(--t-yellow);
+  color: var(--t-dark);
+  font-weight: 900;
+}
+
+:root[data-theme='manga'] .seat-info {
+  position: relative;
+  overflow: visible;
+  margin-top: 12px;
+  border: 2.5px solid var(--t-dark);
+  border-radius: 50% / 46%;
+  background: #fff;
+  color: var(--t-dark);
+  font-weight: 900;
+  box-shadow: 3px 3px 0 var(--t-dark);
+}
+
+/* 对白框的小尾巴，指向头像 */
+:root[data-theme='manga'] .seat-info::before {
+  content: '';
+  position: absolute;
+  left: 32%;
+  top: -10px;
+  width: 12px;
+  height: 10px;
+  background: var(--t-dark);
+  clip-path: polygon(0 100%, 30% 0, 100% 100%);
+}
+
+:root[data-theme='manga'] .seat-info::after {
+  content: '';
+  position: absolute;
+  left: calc(32% + 3px);
+  top: -5px;
+  width: 7px;
+  height: 7px;
+  background: #fff;
+  clip-path: polygon(0 100%, 30% 0, 100% 100%);
+}
+
+:root[data-theme='manga'] .seat-frame.active .seat-info {
+  background: var(--t-yellow);
+  color: var(--t-dark);
+}
+
+:root[data-theme='manga'] .seat-frame.active .seat-info::after {
+  background: var(--t-yellow);
+}
+
+:root[data-theme='manga'] .act {
+  border: 3px solid var(--t-dark);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--t-dark);
+  font-weight: 900;
+  box-shadow: 4px 4px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .act:hover {
+  filter: none;
+  background: var(--t-yellow);
+}
+
+/* 荣和、自摸：爆炸框 */
+:root[data-theme='manga'] .act.ron,
+:root[data-theme='manga'] .act.tsumo {
+  padding: 18px 30px;
+  border: none;
+  background: var(--t-hot);
+  color: #fff;
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 24px;
+  text-shadow: 2px 2px 0 var(--t-dark);
+  box-shadow: none;
+  clip-path: polygon(50% 0, 60% 18%, 80% 4%, 77% 26%, 100% 22%, 86% 42%, 100% 56%, 82% 64%, 92% 86%, 70% 78%, 62% 100%, 50% 82%, 36% 100%, 30% 78%, 8% 88%, 18% 64%, 0 54%, 16% 42%, 2% 20%, 24% 24%, 22% 2%, 40% 16%);
+  filter: drop-shadow(3px 3px 0 #121212);
+}
+
+:root[data-theme='manga'] .act.ron:hover,
+:root[data-theme='manga'] .act.tsumo:hover {
+  background: #ff3b3b;
+}
+
+:root[data-theme='manga'] .act.riichi {
+  background: var(--t-dark);
+  color: #fff;
+  box-shadow: 4px 4px 0 var(--t-hot);
+}
+
+:root[data-theme='manga'] .act.riichi.on {
+  outline: 3px solid var(--t-hot);
+}
+
+:root[data-theme='manga'] .act.pass {
+  background: #e9e7e1;
+  color: var(--t-mid);
+}
+
+:root[data-theme='manga'] .waits {
+  border: 3px solid var(--t-dark);
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: var(--t-pop);
+}
+
+:root[data-theme='manga'] .waits-title {
+  font-weight: 900;
+}
+
+:root[data-theme='manga'] .wait-han.ron,
+:root[data-theme='manga'] .wait-pts {
+  color: var(--t-hot);
+}
+
+:root[data-theme='manga'] .wait-han.tsumo,
+:root[data-theme='manga'] .wait-wall {
+  color: var(--t-plus);
+}
+
+:root[data-theme='manga'] .hud .hint {
+  padding: 1px 10px;
+  border: 2px solid var(--t-dark);
+  background: #fff;
+  color: var(--t-dark);
+  font-weight: 900;
+  box-shadow: 3px 3px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .auto-btn {
+  border: 2px solid var(--t-dark);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--t-dark);
+  box-shadow: 3px 3px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .auto-btn.on {
+  background: var(--t-yellow);
+  border-color: var(--t-dark);
+  box-shadow: 3px 3px 0 var(--t-hot);
+}
+
+:root[data-theme='manga'] .ability-panel,
+:root[data-theme='manga'] .nameplate {
+  border: 2px solid var(--t-dark);
+  border-radius: 2px;
+  background: rgba(18, 18, 18, 0.9);
+  box-shadow: 4px 4px 0 rgba(18, 18, 18, 0.35);
+}
+
+:root[data-theme='manga'] .modal {
+  background: var(--t-dots), rgba(251, 250, 245, 0.55);
+}
+
+:root[data-theme='manga'] .result {
+  border: 4px solid var(--t-dark);
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 10px 10px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .result h2 {
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 34px;
+  color: var(--t-hot);
+  text-shadow: 3px 3px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .summary {
+  font-family: var(--t-num), var(--t-title);
+  font-size: 30px;
+  letter-spacing: 1px;
+  color: var(--t-dark);
+}
+
+:root[data-theme='manga'] .yaku,
+:root[data-theme='manga'] .trace {
+  border-color: rgba(18, 18, 18, 0.25);
+}
+
+:root[data-theme='manga'] .result .ura,
+:root[data-theme='manga'] .result .pd-sub,
+:root[data-theme='manga'] .trace-turn {
+  color: var(--t-soft);
+}
+
+:root[data-theme='manga'] .delta .plus,
+:root[data-theme='manga'] .rank-row .plus {
+  color: var(--t-plus);
+}
+
+:root[data-theme='manga'] .delta .minus,
+:root[data-theme='manga'] .rank-row .minus {
+  color: var(--t-hot);
+}
+
+:root[data-theme='manga'] .rank-row {
+  background: var(--t-dots), #fff;
+}
+
+:root[data-theme='manga'] .primary {
+  border: 3px solid var(--t-dark);
+  border-radius: 2px;
+  background: var(--t-hot);
+  color: #fff;
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 22px;
+  text-shadow: 2px 2px 0 var(--t-dark);
+  box-shadow: 4px 4px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .win-art {
+  border: 3px solid var(--t-dark);
+  border-radius: 2px;
+}
+
+:root[data-theme='manga'] .rbn-band {
+  border-top: 4px solid var(--t-dark);
+  border-bottom: 4px solid var(--t-dark);
+  background: repeating-linear-gradient(90deg, #fff 0 3px, transparent 3px 7px), #fff;
+  color: var(--t-dark);
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+:root[data-theme='manga'] .rbn-main {
+  font-family: var(--t-title);
+  font-weight: 400;
+  color: var(--t-hot);
+  text-shadow: 3px 3px 0 var(--t-dark);
+}
+
+:root[data-theme='manga'] .rbn-sub {
+  font-weight: 900;
+  color: var(--t-dark);
+}
+
+:root[data-theme='manga'] .setup {
+  border: 4px solid var(--t-dark);
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 10px 10px 0 var(--t-dark);
+  --gold: var(--t-hot);
+  --set-name: var(--t-dark);
+  --set-quiet: var(--t-soft);
+  --set-line: var(--t-dark);
+  --set-row: rgba(18, 18, 18, 0.15);
+  --set-btn: #fff;
+  --set-btn-line: var(--t-dark);
+  --set-field: #fff;
+}
+
+:root[data-theme='manga'] .setup h2 {
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 28px;
+}
+
+:root[data-theme='manga'] .setup-opts button,
+:root[data-theme='manga'] .setup-select,
+:root[data-theme='manga'] .setup-input,
+:root[data-theme='manga'] .setup-actions button {
+  border-width: 2px;
+  border-radius: 2px;
+}
+
+:root[data-theme='manga'] .setup-opts button.on,
+:root[data-theme='manga'] .setup-actions .primary {
+  border-color: var(--t-dark);
+  background: var(--t-dark);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--t-hot);
+}
+
+:root[data-theme='manga'] .set-x:hover {
+  background: var(--t-yellow);
+}
+
+/* ======================================================================
+   G 复古街机
+   ====================================================================== */
+
+:root[data-theme='arcade'] {
+  --gold: #ffd23f;
+  --ink: #f4f4f4;
+  --ink-quiet: #9d97d6;
+  --felt: #1f1d5c;
+  --felt-dark: #14123d;
+  --tile-back: #3ce7ff;
+  --t-bg: #0b0920;
+  --t-panel: #1d1a4a;
+  --t-panel-2: #2a2566;
+  --t-line: #4a43a8;
+  --t-hot: #ff4f81;
+  --t-cyan: #3ce7ff;
+  --t-plus: #5cff6b;
+  --t-num: 'Press Start 2P', 'ZCOOL QingKe HuangYou', monospace;
+  --t-title: 'ZCOOL QingKe HuangYou', 'Noto Sans SC', sans-serif;
+  --t-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --t-px-c: #f4f4f4;
+}
+
+/* 像素描边：上下左右各挪 4px 的硬边，四角缺一格，再加一道往下的黑影。
+   颜色 --t-px-c 每个元素自己能换，所以 --t-px 要在每个元素上重新算（写在 :root 上就只按根上的颜色算一次） */
+:root[data-theme='arcade'] * {
+  --t-px: 0 -4px 0 0 var(--t-px-c), 0 4px 0 0 var(--t-px-c), -4px 0 0 0 var(--t-px-c), 4px 0 0 0 var(--t-px-c), 0 8px 0 0 rgba(0, 0, 0, 0.55);
+}
+
+:root[data-theme='arcade'] .select-screen {
+  position: relative;
+  background:
+    radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55)),
+    linear-gradient(#0b0920, #17134a);
+}
+
+/* 显像管扫描线 */
+:root[data-theme='arcade'] .select-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  background: repeating-linear-gradient(transparent 0 3px, rgba(0, 0, 0, 0.28) 3px 4px);
+}
+
+:root[data-theme='arcade'] .select-screen h1 {
+  font-weight: 400;
+  font-size: 40px;
+  letter-spacing: 6px;
+  color: var(--gold);
+  text-shadow: 4px 4px 0 var(--t-hot), 8px 8px 0 rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme='arcade'] .select-screen h1::after {
+  content: 'INSERT COIN';
+  margin-left: 18px;
+  font: 400 11px var(--t-num);
+  letter-spacing: 1px;
+  color: #fff;
+  text-shadow: none;
+  vertical-align: 10px;
+  animation: arcade-blink 1.1s steps(1) infinite;
+}
+
+@keyframes arcade-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (max-height: 500px) {
+  :root[data-theme='arcade'] .select-screen h1 {
+    font-size: 24px;
+    text-shadow: 3px 3px 0 var(--t-hot);
+  }
+
+  :root[data-theme='arcade'] .select-screen h1::after {
+    display: none;
+  }
+}
+
+:root[data-theme='arcade'] .subtitle,
+:root[data-theme='arcade'] .footnote {
+  color: #8c86c9;
+}
+
+:root[data-theme='arcade'] .sel-set,
+:root[data-theme='arcade'] .sel-more summary,
+:root[data-theme='arcade'] .school-pager button {
+  border: none;
+  border-radius: 0;
+  background: var(--t-panel);
+  box-shadow: var(--t-px);
+  --t-px-c: #8c86c9;
+}
+
+:root[data-theme='arcade'] .sel-set:hover,
+:root[data-theme='arcade'] .sel-more summary:hover,
+:root[data-theme='arcade'] .school-pager button:hover {
+  background: var(--t-panel-2);
+  --t-px-c: var(--gold);
+}
+
+:root[data-theme='arcade'] .sel-more-menu {
+  border: none;
+  border-radius: 0;
+  background: var(--t-panel);
+  box-shadow: var(--t-px);
+}
+
+:root[data-theme='arcade'] .sel-modes {
+  border-bottom: 4px solid var(--t-line);
+}
+
+:root[data-theme='arcade'] .sel-modes > button {
+  font-weight: 900;
+}
+
+:root[data-theme='arcade'] .sel-modes > button.on {
+  margin-bottom: -4px;
+  border-bottom: 4px solid var(--gold);
+  color: var(--gold);
+}
+
+:root[data-theme='arcade'] .sel-modes > button.on::before {
+  content: '▶';
+  margin-right: 6px;
+  font-size: 13px;
+  animation: arcade-blink 0.8s steps(1) infinite;
+}
+
+:root[data-theme='arcade'] .sel-modes > .sel-random {
+  border: none;
+  border-radius: 0;
+  background: var(--t-hot);
+  color: #fff;
+  box-shadow: var(--t-px);
+  --t-px-c: #fff;
+}
+
+:root[data-theme='arcade'] .school-tabs {
+  gap: 10px;
+}
+
+:root[data-theme='arcade'] .school-tabs button {
+  border: none;
+  border-radius: 0;
+  background: var(--t-panel);
+  box-shadow: 0 0 0 2px var(--t-line);
+  font-weight: 700;
+}
+
+:root[data-theme='arcade'] .school-tabs button.on {
+  background: var(--s);
+  color: #0b0920;
+  box-shadow: 0 0 0 2px #fff, 4px 4px 0 2px rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme='arcade'] .school-head {
+  border-bottom: 4px dashed var(--t-line);
+}
+
+:root[data-theme='arcade'] .school-head b {
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 26px;
+  color: var(--s);
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6);
+}
+
+/* 角色卡：像素框，选中时外面一圈黄框闪 */
+:root[data-theme='arcade'] .char-card {
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  background: var(--t-panel);
+  box-shadow: var(--t-px);
+  --t-px-c: #4a43a8;
+  image-rendering: pixelated;
+}
+
+:root[data-theme='arcade'] .char-card .char-portrait {
+  bottom: 46px;
+  padding-bottom: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.18) 50%, transparent 50%) 0 0 / 100% 4px,
+    linear-gradient(170deg, color-mix(in srgb, var(--c) 75%, #0b0920), #0b0920);
+  font-family: var(--t-title);
+  font-weight: 400;
+}
+
+:root[data-theme='arcade'] .char-card .char-name {
+  height: 46px;
+  padding: 5px 2px;
+  background: #0b0920;
+  border-top: 4px solid var(--c);
+}
+
+:root[data-theme='arcade'] .char-card .char-name small {
+  color: var(--gold);
+  font-family: var(--t-body);
+  font-weight: 700;
+}
+
+:root[data-theme='arcade'] .char-cost {
+  border-radius: 0;
+  background: #0b0920;
+  color: var(--gold);
+  font-family: var(--t-num);
+  font-size: 11px;
+  box-shadow: 0 0 0 2px var(--gold);
+}
+
+:root[data-theme='arcade'] .char-card:hover,
+:root[data-theme='arcade'] .char-card.armed {
+  --t-px-c: var(--gold);
+  transform: translateY(-4px);
+}
+
+:root[data-theme='arcade'] .char-card.armed::before {
+  content: '1P';
+  position: absolute;
+  z-index: 3;
+  right: 4px;
+  top: -14px;
+  padding: 3px 4px;
+  background: var(--t-hot);
+  color: #fff;
+  font: 400 10px var(--t-num);
+  animation: arcade-blink 0.9s steps(1) infinite;
+}
+
+@media (max-height: 500px) {
+  :root[data-theme='arcade'] .char-card .char-portrait {
+    bottom: 36px;
+  }
+
+  :root[data-theme='arcade'] .char-tip .char-name {
+    text-shadow: 2px 2px 0 var(--t-hot);
+  }
+
+  :root[data-theme='arcade'] .char-card .char-name {
+    height: 36px;
+    padding: 2px 1px;
+  }
+}
+
+:root[data-theme='arcade'] .char-tip {
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.2) 50%, transparent 50%) 0 0 / 100% 4px,
+    linear-gradient(transparent 62%, rgba(255, 210, 63, 0.18) 62% 63%, transparent 63% 72%, rgba(255, 79, 129, 0.18) 72% 73%, transparent 73%),
+    linear-gradient(180deg, color-mix(in srgb, var(--c) 55%, #0b0920), #0b0920 75%);
+  border-right: 4px solid var(--t-line);
+}
+
+:root[data-theme='arcade'] .char-tip .hero-art span {
+  color: color-mix(in srgb, var(--c) 45%, white);
+  font-family: var(--t-title);
+  font-weight: 400;
+  text-shadow: 8px 8px 0 rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme='arcade'] .char-tip .hero-art img {
+  filter: drop-shadow(6px 6px 0 rgba(0, 0, 0, 0.55));
+}
+
+:root[data-theme='arcade'] .hero-plate {
+  margin: 4px;
+  background: rgba(11, 9, 32, 0.94);
+  box-shadow: var(--t-px);
+}
+
+:root[data-theme='arcade'] .char-tip .char-name {
+  font-family: var(--t-title);
+  font-weight: 400;
+  letter-spacing: 2px;
+  color: #fff;
+  text-shadow: 4px 4px 0 var(--t-hot);
+}
+
+:root[data-theme='arcade'] .char-tip .char-school {
+  color: var(--t-cyan);
+  font-weight: 700;
+}
+
+:root[data-theme='arcade'] .char-tip .char-ability {
+  color: var(--gold);
+  font-family: var(--t-title);
+  font-size: 21px;
+}
+
+:root[data-theme='arcade'] .char-tip .char-ability::before {
+  content: '★ ';
+}
+
+:root[data-theme='arcade'] .char-tip .char-desc {
+  color: #c9c5ee;
+}
+
+:root[data-theme='arcade'] .hero-more {
+  color: var(--t-cyan);
+}
+
+:root[data-theme='arcade'] .hero-cost {
+  border-radius: 0;
+  background: var(--gold);
+  color: #0b0920;
+  font-family: var(--t-num);
+  font-size: 15px;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme='arcade'] .hero-go {
+  border: none;
+  border-radius: 0;
+  background: var(--t-hot);
+  color: #fff;
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 24px;
+  letter-spacing: 6px;
+  box-shadow: var(--t-px);
+  --t-px-c: #fff;
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme='arcade'] .hero-go:hover {
+  background: #ff6b98;
+}
+
+:root[data-theme='arcade'] .hero-rules {
+  border: none;
+  border-radius: 0;
+  color: var(--t-cyan);
+  box-shadow: 0 0 0 2px var(--t-line);
+}
+
+/* 对局：头像像素框，名牌是游戏里的血条牌子 */
+:root[data-theme='arcade'] .seat-frame .portrait {
+  border: none;
+  border-radius: 0;
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.18) 50%, transparent 50%) 0 0 / 100% 4px,
+    linear-gradient(170deg, color-mix(in srgb, var(--c) 75%, #0b0920), #0b0920);
+  box-shadow: var(--t-px);
+  --t-px-c: #f4f4f4;
+  font-family: var(--t-title);
+  font-weight: 400;
+}
+
+:root[data-theme='arcade'] .seat-frame.active .portrait {
+  --t-px-c: var(--gold);
+  box-shadow: var(--t-px), 0 0 0 8px rgba(255, 210, 63, 0.25);
+}
+
+:root[data-theme='arcade'] .seat-frame .wind {
+  border: none;
+  border-radius: 0;
+  background: var(--t-hot);
+  color: #fff;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+:root[data-theme='arcade'] .seat-info {
+  margin-top: 10px;
+  border: none;
+  border-radius: 0;
+  background: #0b0920;
+  letter-spacing: 1px;
+  box-shadow: 0 0 0 2px var(--c), 4px 4px 0 2px rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme='arcade'] .seat-frame.active .seat-info {
+  color: #0b0920;
+  background: var(--gold);
+  box-shadow: 0 0 0 2px #fff, 4px 4px 0 2px rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme='arcade'] .act {
+  border: none;
+  border-radius: 0;
+  background: var(--t-panel-2);
+  color: #fff;
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 20px;
+  box-shadow: var(--t-px);
+  --t-px-c: #f4f4f4;
+}
+
+:root[data-theme='arcade'] .act:active {
+  transform: translateY(4px);
+}
+
+:root[data-theme='arcade'] .act.ron,
+:root[data-theme='arcade'] .act.tsumo {
+  background: var(--t-hot);
+  font-size: 24px;
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme='arcade'] .act.riichi {
+  background: var(--gold);
+  color: #0b0920;
+}
+
+:root[data-theme='arcade'] .act.riichi.on {
+  outline: none;
+  --t-px-c: var(--t-hot);
+}
+
+:root[data-theme='arcade'] .act.chi,
+:root[data-theme='arcade'] .act.pon,
+:root[data-theme='arcade'] .act.daiminkan,
+:root[data-theme='arcade'] .act.ankan,
+:root[data-theme='arcade'] .act.kakan {
+  background: #1f8fa8;
+}
+
+:root[data-theme='arcade'] .act.pass {
+  background: #3a3670;
+  color: #c9c5ee;
+  --t-px-c: #8c86c9;
+}
+
+:root[data-theme='arcade'] .waits {
+  border: none;
+  border-radius: 0;
+  background: rgba(11, 9, 32, 0.94);
+  box-shadow: var(--t-px);
+  --t-px-c: var(--gold);
+}
+
+:root[data-theme='arcade'] .waits-title {
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 15px;
+  color: var(--gold);
+}
+
+:root[data-theme='arcade'] .wait-han.ron,
+:root[data-theme='arcade'] .wait-pts {
+  color: var(--gold);
+}
+
+:root[data-theme='arcade'] .wait-han.tsumo,
+:root[data-theme='arcade'] .wait-wall {
+  color: var(--t-plus);
+}
+
+:root[data-theme='arcade'] .hud .hint {
+  font-family: var(--t-title);
+  font-size: 16px;
+  color: #fff;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.7);
+  animation: arcade-blink 1.4s steps(1) infinite;
+}
+
+:root[data-theme='arcade'] .auto-btn {
+  border: none;
+  border-radius: 0;
+  background: var(--t-panel);
+  font-family: var(--t-title);
+  font-weight: 400;
+  box-shadow: 0 0 0 3px #8c86c9;
+}
+
+:root[data-theme='arcade'] .auto-btn.on {
+  background: var(--t-hot);
+  box-shadow: 0 0 0 3px #fff;
+}
+
+:root[data-theme='arcade'] .ability-panel,
+:root[data-theme='arcade'] .nameplate {
+  border: none;
+  border-radius: 0;
+  background: rgba(11, 9, 32, 0.92);
+  box-shadow: 0 0 0 3px var(--t-line);
+}
+
+:root[data-theme='arcade'] .ab-name {
+  font-family: var(--t-title);
+  font-weight: 400;
+}
+
+:root[data-theme='arcade'] .center {
+  border: none;
+  border-radius: 0;
+  background: rgba(11, 9, 32, 0.9);
+  box-shadow: 0 0 0 4px var(--t-line);
+}
+
+:root[data-theme='arcade'] .center .round {
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 20px;
+}
+
+:root[data-theme='arcade'] .modal {
+  background: repeating-linear-gradient(transparent 0 3px, rgba(0, 0, 0, 0.25) 3px 4px), rgba(11, 9, 32, 0.75);
+}
+
+:root[data-theme='arcade'] .result {
+  border: none;
+  border-radius: 0;
+  background: #0f0c2c;
+  box-shadow: var(--t-px), 0 0 0 12px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme='arcade'] .result h2 {
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 32px;
+  color: var(--gold);
+  text-shadow: 4px 4px 0 var(--t-hot);
+}
+
+:root[data-theme='arcade'] .summary {
+  font-family: var(--t-num), var(--t-title);
+  font-size: 20px;
+  line-height: 1.6;
+  color: #fff;
+}
+
+:root[data-theme='arcade'] .delta .plus,
+:root[data-theme='arcade'] .rank-row .plus {
+  color: var(--t-plus);
+}
+
+:root[data-theme='arcade'] .delta .minus,
+:root[data-theme='arcade'] .rank-row .minus {
+  color: var(--t-hot);
+}
+
+:root[data-theme='arcade'] .primary {
+  border-radius: 0;
+  background: var(--gold);
+  color: #0b0920;
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 22px;
+  letter-spacing: 4px;
+  box-shadow: var(--t-px);
+  --t-px-c: #fff;
+}
+
+:root[data-theme='arcade'] .win-art {
+  border-radius: 0;
+  image-rendering: pixelated;
+}
+
+:root[data-theme='arcade'] .rbn-band {
+  border-top: 4px solid var(--gold);
+  border-bottom: 4px solid var(--t-hot);
+  background: repeating-linear-gradient(transparent 0 3px, rgba(0, 0, 0, 0.3) 3px 4px), rgba(11, 9, 32, 0.92);
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+:root[data-theme='arcade'] .rbn-main {
+  font-family: var(--t-title);
+  font-weight: 400;
+  color: var(--gold);
+  text-shadow: 5px 5px 0 var(--t-hot);
+}
+
+:root[data-theme='arcade'] .rbn-sub {
+  font-family: var(--t-num);
+  font-size: clamp(11px, 2.6vh, 18px);
+  color: #fff;
+}
+
+:root[data-theme='arcade'] .setup {
+  border: none;
+  border-radius: 0;
+  background: #0f0c2c;
+  box-shadow: var(--t-px), 0 0 0 12px rgba(0, 0, 0, 0.35);
+  --set-quiet: #9d97d6;
+  --set-line: var(--t-line);
+  --set-row: rgba(140, 134, 201, 0.18);
+  --set-btn: var(--t-panel);
+  --set-btn-line: #4a43a8;
+  --set-field: #0b0920;
+}
+
+:root[data-theme='arcade'] .setup h2 {
+  font-family: var(--t-title);
+  font-weight: 400;
+  font-size: 26px;
+  color: var(--gold);
+  text-shadow: 3px 3px 0 var(--t-hot);
+}
+
+:root[data-theme='arcade'] .set-sec {
+  font-family: var(--t-title);
+  font-weight: 400;
+  color: var(--t-cyan);
+}
+
+:root[data-theme='arcade'] .setup-opts button,
+:root[data-theme='arcade'] .setup-select,
+:root[data-theme='arcade'] .setup-input,
+:root[data-theme='arcade'] .setup-actions button {
+  border-radius: 0;
+}
+
+:root[data-theme='arcade'] .setup-opts button.on,
+:root[data-theme='arcade'] .setup-actions .primary {
+  border-color: #fff;
+  background: var(--gold);
+  color: #0b0920;
+}
+
+/* 动画少一点的设置：街机的闪烁字停下来 */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme='arcade'] .select-screen h1::after,
+  :root[data-theme='arcade'] .sel-modes > button.on::before,
+  :root[data-theme='arcade'] .char-card.armed::before,
+  :root[data-theme='arcade'] .hud .hint {
+    animation: none;
+  }
+}
