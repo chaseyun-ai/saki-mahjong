@@ -1138,14 +1138,17 @@ function teruWaits(g: Game, seat: number, tsumo: boolean): boolean {
     }
     return true;
   }
-  // 高目放过：这张和出来比“刚好高一档”还大，而别的听牌自摸正好，牌山还多，就等安目（她的能力会把那张送来）
-  if (TERU.mode !== 'points' || !TERU.skipBig || teruLadder(g, seat).level === 0 || g.wall.remaining <= TERU.aiForceWin + 12) return false;
+  // 高目放过：这张和出来比“刚好高一档”还大，而别的听牌自摸正好，牌山还多，就等安目（她的能力会把那张送来）。
+  // 立直了不放：放过以后荣和不了，两种听牌互相等来等去，常常一路等到流局把连和断掉
+  if (TERU.mode !== 'points' || !TERU.skipBig || p.riichi || teruLadder(g, seat).level === 0 || g.wall.remaining <= TERU.aiForceWin + 12) return false;
   const value = teruWinValue(r, tsumo, seat === g.dealer);
   const mine = TERU.tight > 0 && value <= teruSoftCap(g, seat, true) ? 4 : value <= teruSoftCap(g, seat) ? 3 : 2;
   if (mine >= (TERU.tight > 0 ? 4 : 3)) return false;
   const hand = tsumo ? p.hand.filter((t) => t !== tile) : p.hand;
   const visible = visibleCounts(g, seat);
-  return teruOutlook(g, seat, hand.length % 3 === 1 ? hand : p.hand, p.melds, { tsumoOnly: true, live: (k) => k !== kindOf(tile) && visible[k] < 4 }) > mine;
+  // 等的那张要牌山里真有（她看得见牌山）：别人手里、王牌里的等不来
+  const inWall = TERU.wallAware ? teruWallHas(g) : () => true;
+  return teruOutlook(g, seat, hand.length % 3 === 1 ? hand : p.hand, p.melds, { tsumoOnly: true, live: (k) => k !== kindOf(tile) && visible[k] < 4 && inWall(k) }) > mine;
 }
 
 // 13 张的手荣和各听牌是天梯的第几层（振听、没役的不算；riichi：算上立直一番）

@@ -1240,6 +1240,17 @@ button {
   text-decoration: line-through;
 }
 
+/* 照：牌山里还摸得到几张；一张都没有就标红（只剩荣和） */
+.wait-wall {
+  margin-left: 4px;
+  color: #9fd6a8;
+}
+
+.wait-wall.none {
+  color: #ff8a7a;
+  font-weight: 700;
+}
+
 .wait-goal {
   margin-left: 8px;
   color: #e0637c;

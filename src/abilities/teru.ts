@@ -135,6 +135,13 @@ export function teruWallHas(g: Game): (k: Kind) => boolean {
   return (k) => has[k];
 }
 
+// 牌山里（没被别人锁住的活牌）每种牌还有几张：她看得见牌山，待和提示里写给玩家看
+export function teruWallCounts(g: Game): number[] {
+  const n = new Array<number>(34).fill(0);
+  for (const t of g.wall.live) if (!g.wall.locked.has(t)) n[kindOf(t)]++;
+  return n;
+}
+
 // 照魔镜读得出听牌的是哪几家（立直了、镜子照得进去）
 export function teruReads(g: Game, seat: number): Set<number> {
   if (!teruMirrored(g, seat)) return new Set();
@@ -628,9 +635,6 @@ export const teruAbility: Ability = {
     const { level } = teruLadder(g, seat);
     const sh = shanten(counts, p.melds.length);
     if (sh < 0) return;
-    // 宝牌不找她：下一张是宝牌、赤宝牌就先换走
-    const plain = (t: number) => !TERU.doraOut || !isDoraTile(g, t);
-    if (!plain(g.wall.live[0]) && g.rng.chance(TERU.doraOut)) g.wall.bringToLive(0, plain, g.rng);
     const tilt = tiltNow(g, seat);
     // 摸了 t 和了的话是第几层（和不了是 0）
     const tierOf = (t: number, tsumo: boolean) => {
@@ -662,12 +666,19 @@ export const teruAbility: Ability = {
       const r = winOf(t, tsumo);
       return !!r && teruAccepts(g, seat, r, tsumo);
     };
+    // 摸进来就和、而且接得上连和的牌
+    const fitsWin = (t: number) => sh === 0 && accepts(t, true);
+    // 宝牌不找她：下一张是宝牌、赤宝牌就先换走。只有她自己接得上连和的和了牌不换（宝牌、赤宝牌也是和了牌，换走了天梯就白白断在流局上）
+    const plain = (t: number) => !TERU.doraOut || !isDoraTile(g, t);
+    if (!plain(g.wall.live[0]) && !fitsWin(g.wall.live[0]) && g.rng.chance(TERU.doraOut)) g.wall.bringToLive(0, plain, g.rng);
     const useful = (t: number) => {
       counts[kindOf(t)]++;
       const after = shanten(counts, p.melds.length);
       counts[kindOf(t)]--;
-      if (after >= sh || !plain(t)) return false;
-      return after >= 0 || accepts(t, true);
+      if (after >= sh) return false;
+      // 和了牌：接得上就送，是不是宝牌都一样（大了小了由 soft、softest 先挑）
+      if (after < 0) return accepts(t, true);
+      return plain(t);
     };
     // points：和了牌先挑“刚好比上一次高”的，台阶踩得小，连和才长
     const softCap = teruSoftCap(g, seat);

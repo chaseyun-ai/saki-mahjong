@@ -3,7 +3,7 @@ import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { HIROKO_NOTES } from '../abilities/hiroko';
-import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruNote, teruPoints, teruWinValue } from '../abilities/teru';
+import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruNote, teruPoints, teruWallCounts, teruWinValue } from '../abilities/teru';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
@@ -2891,6 +2891,8 @@ export class App {
     const teru = this.chars[this.me]?.id === 'teru' && teruPoints() && teruMirrored(g, this.me) && !g.isSealed(this.me);
     const last = teru ? teruLadder(g, this.me).last : 0;
     const dealer = this.me === g.dealer;
+    // 照看得见牌山：“余”是自己看不见的张数（别人手里、王牌里的也算），“山”才是牌山里还摸得到、她的能力送得来的张数
+    const wall = teru ? teruWallCounts(g) : null;
     const pts = (r: WaitInfo['tiles'][number]['ron'], tsumo: boolean, show: boolean) => {
       if (!r || !show) return '';
       const v = teruWinValue(r, tsumo, dealer);
@@ -2902,7 +2904,7 @@ export class App {
         const label = st === 'ron' ? hanLabel(w.ron!) : st === 'tsumo' ? '仅自摸' : '无役';
         const dead = st === 'none' || w.left === 0;
         const han = teru && st !== 'none' ? pts(w.ron, false, st === 'ron') + pts(w.tsumo, true, true) : `<span class="wait-han ${st}">${label}</span>`;
-        return `<div class="wait${dead ? ' dead' : ''}">${tileHtml(w.kind * 4 + 3, { size: 'pond' })}<span class="wait-left">余 ${w.left}</span>${han}</div>`;
+        return `<div class="wait${dead ? ' dead' : ''}">${tileHtml(w.kind * 4 + 3, { size: 'pond' })}<span class="wait-left">余 ${w.left}${wall ? `<span class="wait-wall${wall[w.kind] ? '' : ' none'}" title="牌山里还摸得到几张（别人手里、王牌里的不算）">山 ${wall[w.kind]}</span>` : ''}</span>${han}</div>`;
       })
       .join('');
     const title = prefix + (status.every((st) => st === 'none') ? '形式听牌（无役）' : '听牌') + (teru && last ? `<span class="wait-goal">要超过 ${last} 点</span>` : '');

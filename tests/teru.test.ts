@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { TERU, TERU_LADDER, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruTier, teruWinValue } from '../src/abilities/teru';
+import { TERU, TERU_LADDER, TERU_TOP, teruAbility, teruAccepts, teruDanger, teruLadder, teruMirrored, teruTier, teruWallCounts, teruWinValue } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import type { WinResult } from '../src/engine/score';
 import { shanten } from '../src/engine/shanten';
-import { parseKinds, parseTiles, toCounts } from '../src/engine/tiles';
+import { Kind, TileId, doraFromIndicator, kindOf, parseKinds, parseTiles, toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -111,6 +111,97 @@ describe('宫永照（按打点递增的连和）', () => {
     expect(first.length).toBeGreaterThan(20);
     expect(cheap).toBeGreaterThan(0.5);
     expect(dora / wins).toBeLessThan(0.5);
+  }, 240000);
+});
+
+// 截一局：照坐在 0 号位、照魔镜看过、连和过一次（上一次 1000 点），手里单骑听 k（宝牌那一种），已经立直
+function teruTankiOnDora(seed: number): { g: Game; k: Kind; inWall: number[] } | null {
+  const g = new Game({ seed, players: ['teru', 'izumi', 'izumi', 'izumi'].map((id) => ({ name: id, ability: byId(id).ability })) });
+  const k = doraFromIndicator(kindOf(g.wall.visibleDoraIndicators()[0]));
+  const w = g.wall;
+  const inWall = w.live.map((t, i) => (kindOf(t) === k && !w.locked.has(t) && i > 0 ? i : -1)).filter((i) => i >= 0);
+  const out = [0, 1, 2, 3].map((i) => k * 4 + i).find((t) => !w.live.includes(t));
+  if (!inWall.length || out === undefined || kindOf(w.live[0]) === k) return null;
+  // 四组顺子避开 k 和它两边，免得多出别的听牌
+  const runs = [0, 3, 6, 9, 12, 15, 18, 21, 24].filter((a) => [a, a + 1, a + 2].every((x) => Math.abs(x - k) > 2) && Math.floor(a / 9) * 9 + 6 >= a).slice(0, 4);
+  if (runs.length < 4) return null;
+  const p = g.players[0];
+  p.hand = [...runs.flatMap((a) => [a * 4 + 1, (a + 1) * 4 + 1, (a + 2) * 4 + 1] as TileId[]), out];
+  p.melds = [];
+  p.discards = [];
+  p.riichi = true;
+  p.ippatsu = false;
+  Object.assign(g.abilityGameState[0], { rounds: 2, level: 1, last: 1000, streak: [1000] });
+  return { g, k, inWall };
+}
+
+describe('宫永照：听着牌、和了牌还在牌山里时不白白流局', () => {
+  const boost = TERU.boost.slice();
+  beforeAll(() => {
+    TERU.boost = TERU.boost.map(() => 1);
+  });
+  afterAll(() => {
+    TERU.boost = boost;
+  });
+
+  it('和了牌是宝牌也照送（宝牌不找她只管不是和了牌的进张）', () => {
+    let tried = 0;
+    for (let seed = 1; seed <= 60 && tried < 6; seed++) {
+      const s = teruTankiOnDora(seed);
+      if (!s) continue;
+      tried++;
+      const { g, k } = s;
+      teruAbility.beforeDraw!(g, 0, false);
+      expect(kindOf(g.wall.live[0])).toBe(k);
+    }
+    expect(tried).toBeGreaterThanOrEqual(3);
+  });
+
+  it('下一张本来就是宝牌的和了牌：不再被换走', () => {
+    let tried = 0;
+    for (let seed = 1; seed <= 60 && tried < 6; seed++) {
+      const s = teruTankiOnDora(seed);
+      if (!s) continue;
+      tried++;
+      const { g, k, inWall } = s;
+      const w = g.wall;
+      [w.live[0], w.live[inWall[0]]] = [w.live[inWall[0]], w.live[0]];
+      const win = w.live[0];
+      for (let n = 0; n < 20; n++) {
+        teruAbility.beforeDraw!(g, 0, false);
+        expect(w.live[0]).toBe(win);
+      }
+      expect(kindOf(win)).toBe(k);
+    }
+    expect(tried).toBeGreaterThanOrEqual(3);
+  });
+
+  it('待和提示的“山”：牌山里没锁住的活牌每种几张', () => {
+    const g = new Game({ seed: 3, players: ['teru', 'izumi', 'izumi', 'izumi'].map((id) => ({ name: id, ability: byId(id).ability })) });
+    const n = teruWallCounts(g);
+    expect(n.reduce((a, b) => a + b, 0)).toBe(g.wall.live.filter((t) => !g.wall.locked.has(t)).length);
+    const t = g.wall.live.find((x) => !g.wall.locked.has(x))!;
+    g.wall.locked.add(t, 'test');
+    expect(teruWallCounts(g)[kindOf(t)]).toBe(n[kindOf(t)] - 1);
+  });
+
+  it('电脑的照立直以后摸到接得上连和的和了牌就自摸，不放过去等别的听牌', () => {
+    const n = { seen: 0 };
+    for (let seed = 1; seed <= 16; seed++) {
+      play(seed, LINEUPS[seed % 4], {
+        before: (g, me) => {
+          // 最后一局另有算名次的打法（allLastHold），不算在这里
+          if (g.phase !== 'turn' || g.turn !== me || !g.players[me].riichi || !teruMirrored(g, me) || g.isLastRounds(1)) return;
+          if (!g.legalActions(me).some((a) => a.type === 'tsumo')) return;
+          const r = g.winResult(me, g.players[me].drawn!, true);
+          if (!r || !teruAccepts(g, me, r, true)) return;
+          n.seen++;
+          expect(chooseAction(g, me, byId('teru').ai).type).toBe('tsumo');
+        },
+      });
+    }
+    console.log(n);
+    expect(n.seen).toBeGreaterThan(5);
   }, 240000);
 });
 
