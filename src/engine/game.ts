@@ -348,6 +348,11 @@ export class Game {
     return from !== null && this.players[seat].discards.length >= from;
   }
 
+  // viewer 的感知类能力察觉不到 seat 听牌了（智叶没立直的听牌）。不看封印：藏听牌是她的技术
+  tenpaiHidden(seat: number, viewer: number): boolean {
+    return seat !== viewer && !!this.abilities[seat]?.hidesTenpai?.(this, seat, viewer);
+  }
+
   // viewer 知不知道 seat 立直了（隐身了就不知道）
   seesRiichi(seat: number, viewer: number): boolean {
     const p = this.players[seat];

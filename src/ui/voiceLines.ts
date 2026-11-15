@@ -109,6 +109,7 @@ const ABILITY_LINES: Record<string, VoiceLine[]> = {
     { key: 'luck', label: '运势', hint: '「波、来てる」', texts: ['运势'] },
     { key: 'sisters', label: '七姐妹', hint: '「星よ…」', texts: ['七姐妹'] },
   ],
+  satoha: [{ key: 'zan', label: '斬', hint: '她和牌结束别人的连庄时', texts: ['斬'] }],
   huiyu: [
     { key: 'fan', label: '番种', hint: '「中国麻将で、行く」', texts: ['番种'] },
     { key: 'cheng', label: '成', hint: '「……成了」', texts: ['成'] },

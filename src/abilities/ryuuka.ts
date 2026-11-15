@@ -43,9 +43,9 @@ export function ryuukaMugoku(g: Game, seat: number): boolean {
   return g.active(seat)?.id === 'ryuuka' && !!stateOf(g, seat).mugoku;
 }
 
-// 无极天感知到的：每家听没听牌（不看有没有役）
-export function ryuukaSensesTenpai(g: Game, target: number): boolean {
-  return akoDistance(g, target) === 0;
+// 无极天感知到的：每家听没听牌（不看有没有役）。viewer 是龙华的座位：智叶藏着的听牌感知不到
+export function ryuukaSensesTenpai(g: Game, target: number, viewer?: number): boolean {
+  return akoDistance(g, target, viewer) === 0;
 }
 
 // 无极天标红的牌种：打出去会被别人荣和

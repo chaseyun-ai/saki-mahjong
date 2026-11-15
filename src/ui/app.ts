@@ -14,6 +14,8 @@ import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi
 import { Gale2D } from './gale2d';
 import { Lily2D } from './lily2d';
 import { AISLINN_DROP, aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
+import { satohaBlade, satohaCut, satohaDistance, satohaRenchanDealer, satohaScouts, satohaSheathed } from '../abilities/satoha';
+import { bladeHtml, iaiSlash, zanFx } from './iai';
 import { type HuiyuCard, huiyuBar, huiyuCards, huiyuMissedRon, huiyuReady, huiyuWinGb } from '../abilities/huiyu';
 import { playGlitch, playRebuild, playShatter } from './sketchFx';
 import { playNetWipe } from './netFx';
@@ -45,7 +47,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playLily, playRiichi, playSlam, playSplash, playWin } from './sound';
+import { playCall, playChime, playClick, playIaiDraw, playIaiSheath, playLily, playRiichi, playSlam, playSplash, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -112,6 +114,9 @@ const AUTO_NEXT = 2600;
 // 郝慧宇：国标这么多番以上，「食糊」和结算面板换金色
 const GB_GOLD_FAN = 24;
 const GB_GOLD = '#e6b422';
+// 智叶的刀光过后多久出「自摸」「荣和」；和牌的字出来以后多久出「斬」（毫秒）
+const IAI_SLASH_MS = 260;
+const IAI_ZAN_MS = 900;
 
 interface Toast {
   id: number;
@@ -1145,6 +1150,11 @@ export class App {
       }
       // 白水哩的钥匙：锁链变金汇成钥匙 / 崩断，在结算时放（见 roundEnd），这里不放切入
       if (e.ability === 'rii') return;
+      // 智叶：拔刀是悄悄换的（鞘里的听牌谁也察觉不到），和牌时才见刀光；「斬」在结算时放（见 roundEnd）。看破只出一行小字
+      if (e.ability === 'satoha') {
+        if (e.text === '看破') this.toast(e.seat, e.text, false);
+        return;
+      }
       playChime(this.sayAbility(e.seat, e.text) ? VOICED_CUE : 1);
       // 臼泽塞的镜片：狙击镜落到被盯上的人的头像上（等这一下重画完再找头像）
       if (e.ability === 'sae') {
@@ -1186,6 +1196,8 @@ export class App {
       for (const w of e.result.wins) {
         // 郝慧宇和牌喊「食糊」，国标 24 番以上金色
         if (this.gbWinFx(w)) continue;
+        // 智叶没立直和牌：先一道刀光；结束了别人的连庄出「斬」
+        if (this.iaiWinFx(w)) continue;
         // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
         const c = this.chars[w.seat];
         const word = w.from === null ? '自摸' : '荣和';
@@ -1609,6 +1621,58 @@ export class App {
     const fresh = key !== this.sketchPlanKey;
     this.sketchPlanKey = key;
     return `<div class="sketch-plan${fresh ? ' fresh' : ''}" title="${plan.yaku.join('、')}"><div class="sp-head"><b>手绘板</b><span>${when} · ${han}</span></div><div class="sp-tiles">${tiles}${melds}<span class="sp-win">${tileHtml(plan.win, { size: 'pond', sketch: true })}</span></div></div>`;
+  }
+
+  // ---------- 辻垣内智叶的居合 ----------
+
+  // 刀光、「斬」挂在哪一层：提示层的上一层，不跟着牌局重画
+  private fxHost(): HTMLElement | null {
+    return document.getElementById('toasts')?.parentElement ?? null;
+  }
+
+  // 她没立直和牌：一道刀光（荣和切向放铳的人，自摸横切另外三家），刀光过后才出「自摸」「荣和」；
+  // 素材页“居合”那格有动画就放那段。和牌结束了别人的连庄，再出「斬」（素材页“斩”那格有动画就放那段）
+  private iaiWinFx(w: WinInfo): boolean {
+    const g = this.game!;
+    const c = this.chars[w.seat];
+    if (c?.id !== 'satoha') return false;
+    const dama = !g.players[w.seat].riichi;
+    const cut = satohaCut(g, w.seat);
+    if (!dama && cut === null) return false;
+    const host = this.fxHost();
+    const word = w.from === null ? '自摸' : '荣和';
+    const show = () => {
+      if (this.game !== g) return;
+      const art = dama ? skillArt(c.id, 'iai') : undefined;
+      if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art, glyph: c.name.slice(-1) })) return;
+      this.bigFx(w.seat, word, 'win');
+    };
+    let wait = 0;
+    if (dama && host) {
+      playIaiDraw();
+      iaiSlash(host, POS[w.seat], w.from === null ? null : POS[w.from]);
+      wait = IAI_SLASH_MS;
+      window.setTimeout(show, wait);
+      window.setTimeout(() => this.game === g && playIaiSheath(), wait + 650);
+    } else show();
+    if (cut !== null) {
+      window.setTimeout(() => {
+        if (this.game !== g) return;
+        this.sayAbility(w.seat, '斬');
+        const art = skillArt(c.id, 'zan');
+        if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word: '斬', kind: 'ability', art, glyph: c.name.slice(-1) })) return;
+        const at = this.fxHost();
+        if (at) zanFx(at, this.chars[cut].name);
+      }, wait + IAI_ZAN_MS);
+    }
+    return true;
+  }
+
+  // 手牌上方的刀：出鞘几分跟着间合走（只有操作她的玩家看得见）
+  private bladeBarHtml(): string {
+    const g = this.game!;
+    if (this.chars[this.me]?.id !== 'satoha' || (g.phase !== 'turn' && g.phase !== 'calls') || this.vision) return '';
+    return bladeHtml(satohaBlade(g, this.me), satohaSheathed(g, this.me), satohaRenchanDealer(g, this.me) !== null);
   }
 
   // ---------- 郝慧宇的国标 ----------
@@ -2221,7 +2285,9 @@ export class App {
     // 第二形态（天使和）也一直用能力发动头像
     // 臼泽塞用镜片盯上人的那一局也换头像（powered），但框不发光
     const power = (s === this.me && !!this.vision) || !!g.active(s)?.form?.(g, s);
-    const src = power || g.active(s)?.powered?.(g, s) ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
+    // 智叶鞘里听着牌的样子只有操作她的玩家看得见，别人看到的始终是平常头像
+    const powered = !!g.active(s)?.powered?.(g, s) && (c.id !== 'satoha' || s === this.me);
+    const src = power || powered ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
     const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·软封印' : c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
@@ -2285,14 +2351,23 @@ export class App {
     if (s === this.me || (g.phase !== 'turn' && g.phase !== 'calls') || g.stealthed(s, this.me)) return '';
     // 龙华的无极天：只看得出听没听牌
     if (this.chars[this.me]?.id === 'ryuuka' && ryuukaMugoku(g, this.me)) {
-      return ryuukaSensesTenpai(g, s) ? '<span class="dist tenpai" title="无极天：听牌了">听</span>' : '';
+      return ryuukaSensesTenpai(g, s, this.me) ? '<span class="dist tenpai" title="无极天：听牌了">听</span>' : '';
     }
     // 涅莉：手里还有运势就看得出谁听牌了
     if (this.chars[this.me]?.id === 'nelly' && !g.isSealed(this.me) && nellySenses(g, this.me)) {
-      return nellySensesTenpai(g, s) ? '<span class="dist tenpai" title="运势：听牌了">听</span>' : '';
+      return nellySensesTenpai(g, s, this.me) ? '<span class="dist tenpai" title="运势：听牌了">听</span>' : '';
+    }
+    // 智叶的间合：一到三道刀痕是还差几步，听牌了变红（旁边另有洋榎那种灯，见 bulbHtml）。连庄的庄家少算一步
+    if (this.chars[this.me]?.id === 'satoha') {
+      if (this.vision) return '';
+      const d = satohaDistance(g, this.me, s);
+      const cut = satohaRenchanDealer(g, this.me) === s;
+      const marks = d === 0 ? '听' : '<i></i>'.repeat(Math.min(3, d));
+      const tip = `间合：${d === 0 ? '听牌了' : `还差 ${d} 步`}${cut ? '（连庄：少算一步）' : ''}`;
+      return `<span class="dist iai${d === 0 ? ' tenpai' : ''}${cut ? ' cut' : ''}" title="${tip}">${marks}${cut ? '<em>连</em>' : ''}</span>`;
     }
     if (this.chars[this.me]?.id !== 'ako' || !akoSense(g, this.me)) return '';
-    const d = akoDistance(g, s);
+    const d = akoDistance(g, s, this.me);
     const inner = d === 0 ? '听' : '●'.repeat(Math.min(3, d));
     return `<span class="dist${d === 0 ? ' tenpai' : ''}" title="距离感：${d === 0 ? '听牌了' : `还差 ${d} 步`}">${inner}</span>`;
   }
@@ -2304,9 +2379,9 @@ export class App {
     return ['hiroe', 'mako'].includes(this.chars[this.me]?.id) && !this.game?.isSealed(this.me);
   }
 
-  // 感知得到别人听牌多大的人：洋榎、真子，和天江衣（只有灯，不知道听哪几张）
+  // 感知得到别人听牌多大的人：洋榎、真子，和天江衣、智叶（只有灯，不知道听哪几张）。智叶的间合是技术，被封印也照旧
   private sensesTenpaiSize(): boolean {
-    return this.isHiroe() || (this.chars[this.me]?.id === 'koromo' && !this.game?.isSealed(this.me));
+    return this.isHiroe() || (this.chars[this.me]?.id === 'koromo' && !this.game?.isSealed(this.me)) || this.chars[this.me]?.id === 'satoha';
   }
 
   // 听牌的人头像旁边的灯：牌越大越亮（只给操作洋榎、衣的玩家看）
@@ -2314,6 +2389,8 @@ export class App {
     const g = this.game!;
     if (!this.sensesTenpaiSize() || s === this.me || this.vision || (g.phase !== 'turn' && g.phase !== 'calls') || g.stealthed(s, this.me)) return '';
     if (this.chars[this.me].id === 'mako' && !makoKnows(g, s)) return '';
+    // 别的智叶藏着的听牌，智叶的间合也看不出
+    if (this.chars[this.me].id === 'satoha' && g.tenpaiHidden(s, this.me)) return '';
     const r = readTenpai(g, s);
     if (!r) return '';
     const lv = bulbLevel(r.value);
@@ -2333,6 +2410,8 @@ export class App {
   private mirrorHtml(s: number): string {
     const g = this.game!;
     if (this.chars[this.me]?.id === 'hiroko' && s !== this.me) return this.notebookHtml(s);
+    // 智叶的看破：打过两局以后也看得到资料本
+    if (this.chars[this.me]?.id === 'satoha' && s !== this.me) return satohaScouts(g, this.me) ? this.notebookHtml(s) : '';
     if (this.chars[this.me]?.id !== 'teru' || s === this.me || !teruMirrored(g, this.me) || g.isSealed(this.me)) return '';
     const c = this.chars[s];
     const proof = !!g.active(s)?.mirrorProof?.(g, s);
@@ -2869,7 +2948,7 @@ export class App {
       <div class="me" style="--c:${c.color}">
         <div class="actions">${buttons.join('')}</div>
         ${this.autoBtnHtml()}${this.assistHtml()}
-        ${this.sketchPlanHtml()}${this.gbBarHtml()}${waitHtml}${hint}${this.riiPickerHtml()}
+        ${this.sketchPlanHtml()}${this.gbBarHtml()}${this.bladeBarHtml()}${waitHtml}${hint}${this.riiPickerHtml()}
         ${
           withHand
             ? `<div class="hand-row">

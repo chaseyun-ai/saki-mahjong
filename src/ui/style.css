@@ -8797,3 +8797,325 @@ canvas.rii-sky {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* ---------- 辻垣内智叶：居合 ---------- */
+
+/* 手牌上方的刀：出鞘几分跟着间合走（位置和爱丽丝的手绘板、郝慧宇的番种栏一样） */
+.iai-bar {
+  position: absolute;
+  left: 220px;
+  bottom: 104px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 14px 4px 10px;
+  border-radius: 8px;
+  background: linear-gradient(160deg, rgba(40, 44, 62, 0.92), rgba(20, 22, 34, 0.92));
+  border: 1px solid rgba(160, 170, 200, 0.35);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  color: #dfe3ee;
+  pointer-events: auto;
+}
+.iai-bar ~ [data-r='waits'] .waits {
+  bottom: 158px;
+}
+.hud .iai-bar {
+  bottom: 21%;
+}
+.hud .iai-bar ~ [data-r='waits'] .waits {
+  bottom: calc(21% + 54px);
+}
+.table .iai-bar ~ .hint {
+  display: none;
+}
+.iai-sword {
+  width: 330px;
+  height: 30px;
+  overflow: visible;
+}
+.iai-saya {
+  transition: transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+/* 立直了：鞘放在一边，刀身全露出来 */
+.iai-saya-bare {
+  opacity: 0;
+}
+.iai-bar.s3 .iai-saya {
+  opacity: 0;
+}
+.iai-bar.s3 .iai-saya-bare {
+  opacity: 0.85;
+}
+.iai-shine {
+  opacity: 0.35;
+}
+.iai-bar.s2 .iai-shine,
+.iai-bar.s3 .iai-shine {
+  opacity: 0.95;
+  stroke-dasharray: 40 400;
+  animation: iai-shine 2.2s linear infinite;
+}
+@keyframes iai-shine {
+  from {
+    stroke-dashoffset: 60;
+  }
+  to {
+    stroke-dashoffset: -260;
+  }
+}
+.iai-tsuba {
+  transition: fill 0.3s;
+}
+/* 鞘里听着牌：刀镡亮起来 */
+.iai-bar.ready .iai-tsuba {
+  fill: #ffd76a;
+  filter: drop-shadow(0 0 4px rgba(255, 215, 106, 0.95));
+}
+.iai-bar.strike {
+  border-color: rgba(255, 215, 106, 0.75);
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.35),
+    0 0 12px rgba(255, 215, 106, 0.35);
+}
+.iai-bar.strike .iai-tsuba {
+  animation: iai-ready 1s ease-in-out infinite;
+}
+@keyframes iai-ready {
+  50% {
+    filter: drop-shadow(0 0 9px rgba(255, 215, 106, 1));
+  }
+}
+.iai-bar.off {
+  filter: grayscale(0.9);
+  opacity: 0.7;
+}
+.iai-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.iai-text b {
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: #f1f3f8;
+}
+.iai-bar.ready .iai-text b {
+  color: #ffd76a;
+}
+.iai-text span {
+  opacity: 0.85;
+}
+
+/* 间合：对手头像旁的刀痕（还差几步），听牌了变红 */
+.dist.iai {
+  top: -9px;
+  bottom: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 16px;
+  color: #cfd6e6;
+  letter-spacing: 0;
+}
+.dist.iai i {
+  display: block;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(#f4f7fb, #9aa5b8);
+  transform: skewX(-24deg);
+}
+.dist.iai.tenpai {
+  color: #fff;
+  background: #c8232f;
+  font-weight: 700;
+  box-shadow: 0 0 8px rgba(200, 35, 47, 0.7);
+}
+.dist.iai em {
+  font-style: normal;
+  font-size: 9px;
+  margin-left: 2px;
+  padding: 0 3px;
+  border-radius: 6px;
+  line-height: 13px;
+  background: #b9a26a;
+  color: #1a1b22;
+}
+
+/* 和牌的刀光：一道白光切过画面，画面沿刀口晃一下 */
+.iai-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+  pointer-events: none;
+}
+.iai-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  animation: iai-flash 0.3s ease-out;
+}
+@keyframes iai-flash {
+  0% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.iai-slash {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.iai-slash b {
+  position: absolute;
+  left: -120vmax;
+  top: -5px;
+  width: 240vmax;
+  height: 10px;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: linear-gradient(rgba(255, 255, 255, 0) 0, #fff 38%, #fff 62%, rgba(255, 255, 255, 0) 100%);
+  box-shadow:
+    0 0 14px 3px rgba(255, 255, 255, 0.9),
+    0 0 44px 10px rgba(170, 200, 255, 0.55);
+  animation: iai-slash 0.8s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+}
+@keyframes iai-slash {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  14% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  45% {
+    transform: scaleX(1) scaleY(0.5);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scaleX(1) scaleY(0.08);
+    opacity: 0;
+  }
+}
+.iai-jolt > *:not(.iai-fx) {
+  animation: iai-jolt 0.16s steps(2, end);
+}
+@keyframes iai-jolt {
+  0% {
+    translate: calc(cos(var(--iai-deg, 0deg)) * 7px) calc(sin(var(--iai-deg, 0deg)) * 7px);
+  }
+  50% {
+    translate: calc(cos(var(--iai-deg, 0deg)) * -4px) calc(sin(var(--iai-deg, 0deg)) * -4px);
+  }
+  100% {
+    translate: 0 0;
+  }
+}
+
+/* 「斬」：她和牌结束了别人的连庄，牌桌中央一个毛笔字 */
+.iai-zan {
+  position: absolute;
+  inset: 0;
+  z-index: 61;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.iai-zan-in {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  animation: iai-zan 1.9s ease-out forwards;
+}
+.iai-zan svg {
+  width: min(34vmin, 300px);
+  height: min(34vmin, 300px);
+  filter: drop-shadow(0 0 2px #fff) drop-shadow(0 6px 18px rgba(0, 0, 0, 0.6));
+}
+.iai-zan path {
+  fill: #b3161f;
+  stroke: #fff;
+  stroke-width: 1.2;
+  paint-order: stroke;
+}
+.iai-zan span {
+  padding: 3px 14px;
+  border-radius: 14px;
+  background: rgba(12, 13, 20, 0.82);
+  color: #f1f3f8;
+  font-size: 15px;
+  letter-spacing: 2px;
+}
+/* 一道刀口斜着切过字 */
+.iai-zan-cut {
+  position: absolute;
+  left: -12%;
+  right: -12%;
+  top: 42%;
+  height: 4px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff 20%, #fff 80%, rgba(255, 255, 255, 0));
+  box-shadow: 0 0 10px 2px rgba(255, 255, 255, 0.8);
+  transform: rotate(-24deg) scaleX(0);
+  transform-origin: 0 50%;
+  animation: iai-zan-cut 0.5s 0.32s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+}
+@keyframes iai-zan {
+  0% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+  9% {
+    transform: scale(0.94);
+    opacity: 1;
+  }
+  14% {
+    transform: scale(1);
+  }
+  78% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.06);
+    opacity: 0;
+  }
+}
+@keyframes iai-zan-cut {
+  0% {
+    transform: rotate(-24deg) scaleX(0);
+    opacity: 1;
+  }
+  40% {
+    transform: rotate(-24deg) scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(-24deg) scaleX(1);
+    opacity: 0;
+  }
+}
+@media (max-width: 600px) {
+  .iai-bar {
+    left: 8px;
+  }
+  .iai-sword {
+    width: 176px;
+    height: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .iai-jolt > *:not(.iai-fx) {
+    animation: none;
+  }
+  .iai-flash {
+    animation: none;
+  }
+}

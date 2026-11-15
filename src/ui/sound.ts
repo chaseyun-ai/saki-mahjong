@@ -115,6 +115,62 @@ export function playWin(vol = 1): void {
   tone(a, 131, now, 1.2, 0.25 * vol, 'sine');
 }
 
+// 智叶的居合：出鞘的“铮”。一段往上扫的金属摩擦声，接两个不成倍数的高频泛音，像刀身在震
+export function playIaiDraw(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const len = Math.floor(a.sampleRate * 0.22);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.sin((Math.PI * i) / len) ** 0.6;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.Q.value = 5;
+  filter.frequency.setValueAtTime(2400, now);
+  filter.frequency.exponentialRampToValueAtTime(9000, now + 0.2);
+  const gain = a.createGain();
+  gain.gain.value = 0.5;
+  src.connect(filter).connect(gain).connect(bus('sfx', a));
+  src.start(now);
+  [3140, 4710, 6280].forEach((f, i) => {
+    const osc = a.createOscillator();
+    const g = a.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = f * (1 + i * 0.013);
+    g.gain.setValueAtTime(0.0001, now + 0.12);
+    g.gain.exponentialRampToValueAtTime(0.09 / (i + 1), now + 0.15);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.15 + 0.9 / (i + 1));
+    osc.connect(g).connect(bus('sfx', a));
+    osc.start(now + 0.12);
+    osc.stop(now + 1.2);
+  });
+}
+
+// 智叶的居合：收刀的“咔”。刀镡碰到鞘口的一声短促的木头响
+export function playIaiSheath(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const len = Math.floor(a.sampleRate * 0.035);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 5;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 1300;
+  filter.Q.value = 2.5;
+  const gain = a.createGain();
+  gain.gain.value = 0.7;
+  src.connect(filter).connect(gain).connect(bus('sfx', a));
+  src.start(now);
+  tone(a, 240, now, 0.09, 0.22, 'triangle');
+}
+
 // 自摸砸牌：牌翻起来炸开的“砰”。一记往下沉的闷响（桌子被震了一下），一声更重、更闷的“啪”，后面卷一阵风
 export function playSlam(): void {
   const a = audio();

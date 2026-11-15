@@ -21,12 +21,14 @@ export function akoSense(g: Game, seat: number): boolean {
   return calls(g, seat) > 0 && !g.isSealed(seat);
 }
 
-// 距离感看到的：这家离听牌还差几步（0 是听牌了）
-export function akoDistance(g: Game, target: number): number {
+// 距离感看到的：这家离听牌还差几步（0 是听牌了）。
+// viewer：谁在看。写了的话，藏得住听牌的人（智叶没立直的听牌，Game.tenpaiHidden）听牌了也只看得出还差一步
+export function akoDistance(g: Game, target: number, viewer?: number): number {
   const p = g.players[target];
   let hand = p.hand;
   if ((hand.length + 3 * p.melds.length) % 3 === 2 && p.drawn !== null) hand = hand.filter((t) => t !== p.drawn);
-  return Math.max(0, shanten(toCounts(hand), p.melds.length));
+  const d = Math.max(0, shanten(toCounts(hand), p.melds.length));
+  return d === 0 && viewer !== undefined && g.tenpaiHidden(target, viewer) ? 1 : d;
 }
 
 const useful = (g: Game, seat: number) => {

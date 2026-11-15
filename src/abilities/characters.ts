@@ -44,6 +44,7 @@ import { kaoriAbility } from './kaori';
 import { yumiAbility } from './yumi';
 import { kinueAbility } from './kinue';
 import { huiyuAbility } from './huiyu';
+import { satohaAbility } from './satoha';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -91,6 +92,7 @@ export interface AiStyle {
   beginner?: boolean; // 妹尾佳织：新手运拿到役满听牌的局只摸切、不鸣牌
   pin1?: boolean; // 爱宕娟慧：留着一筒
   twin: boolean; // 鹤田姬子：钥匙的那一局只照着那副牌打，先打不要的牌，不立直、不鸣牌、不荣和，等自摸
+  iai?: boolean; // 辻垣内智叶：靠间合防守（只防真的听牌的人）；听牌时挑听立直家现物的听法；别人连庄的局，碰了能跳过庄家摸牌的就碰；第 3 局起照浩子的资料本打（scout）
   gb?: boolean; // 郝慧宇：照国标番种打，先打番种用不到的牌，听牌挑国标番多的；不立直，只在鸣了日麻还有役时鸣，一向听以内照样推
 }
 
@@ -233,6 +235,21 @@ export const CHARACTERS: Character[] = [
       { id: 'sik', name: '食糊', label: '食糊（和牌）', hint: '她和牌时代替“自摸”“荣和”' },
     ],
     ai: { ...baseAi, mistakeRate: 0.03, gb: true },
+  },
+  {
+    id: 'satoha',
+    cost: 4,
+    name: '辻垣内智叶',
+    school: '临海女子',
+    color: '#3d4a78',
+    ability: satohaAbility,
+    // 居合：默听和牌的刀光；斩：和牌结束别人的连庄
+    skillArts: [
+      { id: 'iai', name: '居合', label: '居合（默听和牌）', hint: '她没立直和牌时，刀光之后放这一段' },
+      { id: 'zan', name: '斬', label: '斩（断连庄）', hint: '她和牌结束别人的连庄' },
+    ],
+    // 全国个人赛第三，几乎不失误。有役、默听够 2600 点就不立直；别人立直时鸣牌消一发
+    ai: { ...baseAi, mistakeRate: 0.01, damaMin: 2600, jam: true, iai: true },
   },
   {
     id: 'sawaya',

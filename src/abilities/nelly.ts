@@ -343,9 +343,10 @@ export function nellySenses(g: Game, seat: number): boolean {
   return g.round >= 1 && nellyPool(g, seat) > 0;
 }
 
-// target 听牌了没有（涅莉感知到的，只看听没听）
-export function nellySensesTenpai(g: Game, target: number): boolean {
+// target 听牌了没有（涅莉感知到的，只看听没听）。viewer 是涅莉的座位：智叶藏着的听牌感知不到
+export function nellySensesTenpai(g: Game, target: number, viewer?: number): boolean {
   const p = g.players[target];
+  if (viewer !== undefined && g.tenpaiHidden(target, viewer)) return false;
   return shanten(toCounts(p.hand), p.melds.length) <= 0;
 }
 
@@ -356,7 +357,7 @@ function sweep(g: Game, seat: number): void {
   const st = stateOf(g, seat);
   // 押几点这一局最多封几家
   for (let o = 0; o < 4 && gs.sisters! > 0 && st.blocked!.length < tierOf(g, seat); o++) {
-    if (o === seat || st.blocked!.includes(o) || !g.binds(seat, o) || !nellySensesTenpai(g, o)) continue;
+    if (o === seat || st.blocked!.includes(o) || !g.binds(seat, o) || !nellySensesTenpai(g, o, seat)) continue;
     gs.sisters!--;
     st.blocked!.push(o);
     // 不写 target：七姐妹要放切入（写了 target 的是悄悄换牌）
