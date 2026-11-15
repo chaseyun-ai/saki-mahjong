@@ -19,6 +19,7 @@ const yaochu = (k: number) => k >= 27 || k % 9 === 0 || k % 9 === 8;
 
 export const SLAM_TEST_CHARS: { id: string; label: string; note: string }[] = [
   { id: 'hisa', label: '竹井久', note: '原作的摔牌：握着拳把牌放在大拇指指甲盖上伸进来亮牌（手牌同时倒下），大拇指一弹，最高处牌面朝上，手扣住砸下去' },
+  { id: 'teru', label: '宫永照（旋风自摸）', note: '每局都当作连和中自摸（一局一档，连和到第 2 次到第 8 次轮着来，风一局比一局大）：拍下去以后牌立起来转，牌底卷起龙卷风，风散了牌还转一会儿再躺下。2D、原版布局也有（不用改良布局）' },
   { id: 'nodoka', label: '其他人（通用）', note: '原村和来做，下面「通用自摸」选哪一套：拍牌是夹着牌斜着举起来、牌面朝上拍在手牌右边；边缘切是按着牌往自己这边一划、磕在边上弹回来' },
 ];
 
@@ -51,10 +52,15 @@ function bringToFront(g: Game, pick: (t: TileId) => boolean): boolean {
   return true;
 }
 
-// seat 坐庄、每局都这样摆
-export function slamStage(seat: number): Stage {
+// seat 坐庄、每局都这样摆。teru：她是宫永照，每局开局把她的连和记成第 1 到第 7 次（轮着来），这一局自摸就是旋风自摸
+export function slamStage(seat: number, teru = false): Stage {
   return {
     deal: (g) => {
+      if (teru) {
+        const gs = g.abilityGameState[seat] as { rounds?: number; level?: number; last?: number; streak?: number[]; n?: number };
+        const n = (gs.n ?? 0) % 7;
+        Object.assign(gs, { rounds: 2 + n, level: n + 1, last: 100, streak: [100], n: n + 1 });
+      }
       const mine = new Set(g.dealIndices(seat));
       arrange(g, g.wall.live, [...mine], (j) => !mine.has(j));
       // 别人的配牌里不放 5s，幺九牌也不能多到摸一张就够九种九牌：换成配牌以外的中张

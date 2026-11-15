@@ -4,7 +4,9 @@ import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { HIROKO_NOTES } from '../abilities/hiroko';
 import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruNote, teruPoints, teruStreakWith, teruWallCounts, teruWinValue } from '../abilities/teru';
-import { teruMirrors, teruTornado, tornadoSize } from './teruFx';
+import { teruMirrors } from './teruFx';
+import { tornado2d } from './tornado2d';
+import { twisterSize } from '../ui3d/twister';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
@@ -48,7 +50,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playIaiDraw, playIaiSheath, playLily, playRiichi, playSlam, playSplash, playWhirl, playWin } from './sound';
+import { playCall, playChime, playClick, playIaiDraw, playIaiSheath, playLily, playRiichi, playCrackle, playSlam, playSplash, playWhirl, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -222,6 +224,8 @@ export class App {
   private gale2dFx: Gale2D | null = null; // 2D 牌桌上初美的紫色旋风
   // 2D：初美聚着风和牌，结算里手牌先倒、和了牌往下砸（哪一家、什么时候开始；结算重画时动画接着放）
   private galeSlam: { seat: number; t0: number } | null = null;
+  // 2D：照的旋风自摸是哪个座位（结算里砸下去以后那张牌转起来，见 style.css 的 .win.slam.twist）
+  private twist2d: number | null = null;
   private netTimer: number | null = null;
   // 怜“看下一巡”（演算）：玩家操作怜时用。
   // 演算中 vision 不是 null：this.game 换成牌局的复制品放到牌桌上演，真的牌局和演算前的表情先存在 vision 里，退出时换回来。
@@ -687,7 +691,7 @@ export class App {
     const st = this.settings;
     this.team = null;
     this.auto = true;
-    const game = new Game({ seed, format: st.length, startScore: st.start, rules: { ...rulesOf(st), tobi: false }, firstDealer: seat, stage: slamStage(seat), players: players.map((c) => ({ name: c.name, ability: null, manual: false })) });
+    const game = new Game({ seed, format: st.length, startScore: st.start, rules: { ...rulesOf(st), tobi: false }, firstDealer: seat, stage: slamStage(seat, charId === 'teru'), players: players.map((c) => ({ name: c.name, ability: null, manual: false })) });
     this.beginGame(players, game);
   }
 
@@ -826,6 +830,13 @@ export class App {
       };
       // 衣的海底牌砸进海里：水声
       this.table3d.onSeaSlam = () => playSplash();
+      // 照的旋风自摸：风拔地而起时一记闷响加一阵风声，电劈到桌上“噼啪”一声，风散开时再噼啪一下
+      this.table3d.onTwister = (_seat, size, phase) => {
+        if (phase === 'erupt') {
+          playSlam();
+          playWhirl(size);
+        } else playCrackle(phase === 'bolt' ? 0.8 : 0.55);
+      };
       // 第一局在牌桌建好之前就开始了，补一次开局动画
       if (!resume) {
         this.table3d.onEvent({ type: 'roundStart', label: this.game!.roundLabel() }, this.game!);
@@ -1199,13 +1210,21 @@ export class App {
         this.galeSlam = { seat: bloom.seat, t0: performance.now() };
         window.setTimeout(() => this.game === g && this.lilyBurst2d(bloom.result.base), slamImpact2d(bloom.hand.filter((t) => t !== bloom.tile).length) * 1000);
       }
+      // 2D：照连和中自摸，也是结算里手牌倒下、和了牌砸下去；砸到那一下牌转起来，
+      // 从这张牌底下卷起龙卷风，风散了牌还转一会儿才停（3D、2.5D 在牌桌上放）
+      this.twist2d = null;
+      const twirl = !this.table3d && !slam && !bloom ? e.result.wins.find((w) => this.twistSize2d(w) !== null) : undefined;
+      if (twirl) {
+        const size = this.twistSize2d(twirl)!;
+        this.galeSlam = { seat: twirl.seat, t0: performance.now() };
+        this.twist2d = twirl.seat;
+        window.setTimeout(() => this.game === g && this.teruTornado2d(size), slamImpact2d(twirl.hand.filter((t) => t !== twirl.tile).length) * 1000);
+      }
       for (const w of e.result.wins) {
         // 郝慧宇和牌喊「食糊」，国标 24 番以上金色
         if (this.gbWinFx(w)) continue;
         // 智叶没立直和牌：先一道刀光；结束了别人的连庄出「斬」
         if (this.iaiWinFx(w)) continue;
-        // 照连和中自摸：从她手边卷出旋风（照常接着出「自摸」）
-        this.teruTornadoFx(w);
         // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
         const c = this.chars[w.seat];
         const word = w.from === null ? '自摸' : '荣和';
@@ -1646,21 +1665,26 @@ export class App {
     teruMirrors(spots);
   }
 
-  // 照连和中自摸（这一次和了以后连和到第 2 次起）：从她手边朝桌心卷出一道旋风，连和越多越大
-  private teruTornadoFx(w: WinInfo): void {
-    const g = this.game!;
-    if (this.chars[w.seat]?.id !== 'teru' || w.from !== null || !g.active(w.seat)) return;
-    const streak = teruStreakWith(g, w.seat, w.result, true);
-    if (streak < 2) return;
-    const box = (this.root.querySelector<HTMLElement>(this.table3d ? '.stage3d' : '.stage .table') ?? this.root).getBoundingClientRect();
-    // 她手牌在画面上的位置：3D、2.5D 问牌桌；2D 按座位的大概位置
-    const hand = this.table3d?.handScreenPos(w.seat);
-    const three = document.getElementById('three')?.getBoundingClientRect();
-    const spot: Record<string, [number, number]> = { bottom: [0.5, 0.86], right: [0.88, 0.5], top: [0.5, 0.12], left: [0.12, 0.5] };
-    const [px, py] = spot[POS[w.seat]] ?? spot.bottom;
-    const from = hand && three ? { x: three.left + hand.x, y: three.top + hand.y } : { x: box.left + box.width * px, y: box.top + box.height * py };
-    teruTornado(from, { x: box.left + box.width / 2, y: box.top + box.height / 2 }, streak);
-    playWhirl(tornadoSize(streak));
+  // 照的旋风自摸是不是这一手（连和中自摸：这一手和了以后连和到第 2 次起）：是就给风多大（0–1），不是 null
+  private twistSize2d(w: WinInfo): number | null {
+    if (this.chars[w.seat]?.id !== 'teru' || w.from !== null) return null;
+    const n = teruStreakWith(this.game!, w.seat, w.result, true);
+    return n >= 2 ? twisterSize(n) : null;
+  }
+
+  // 2D：和了牌砸到结算上那一下，从这张牌底下卷起龙卷风（tornado2d.ts；牌自己在结算里转）。
+  // 位置按排版算（offsetLeft / offsetTop），不看牌此刻被动画转到哪了
+  private teruTornado2d(size: number): void {
+    const tile = document.querySelector<HTMLElement>('.win.slam .win-tile');
+    const dock = tile?.offsetParent as HTMLElement | null;
+    let at = { x: window.innerWidth / 2, y: window.innerHeight * 0.62 };
+    if (tile && dock) {
+      const pr = dock.getBoundingClientRect();
+      const ps = dock.offsetWidth > 0 ? pr.width / dock.offsetWidth : 1;
+      at = { x: pr.left + (dock.clientLeft + tile.offsetLeft + tile.offsetWidth / 2) * ps, y: pr.top + (dock.clientTop + tile.offsetTop + tile.offsetHeight) * ps };
+    }
+    playSlam();
+    tornado2d(at, size, { onErupt: () => playWhirl(size), onBolt: () => playCrackle(0.7) });
   }
 
   private fxHost(): HTMLElement | null {
@@ -3314,7 +3338,9 @@ export class App {
     const how = w.from === null ? '自摸' : `荣和（${this.chars[w.from].name} 放铳）`;
     // 2D 初美砸牌：结算重画时用负的 animation-delay 接着放，不从头再来
     const since = this.galeSlam?.seat === w.seat && !this.table3d ? (performance.now() - this.galeSlam.t0) / 1000 : Infinity;
-    const slam = since < 4;
+    // 照的旋风自摸：牌砸下去以后还要转（风卷完、再转一会儿），放得久一点
+    const twist = this.twist2d === w.seat;
+    const slam = since < (twist ? 5 : 4);
     const hand = w.hand
       .filter((t) => t !== w.tile)
       .sort((a, b) => a - b)
@@ -3335,7 +3361,7 @@ export class App {
         ? `<div class="win-art">${url ? `<img src="${url}" alt="" onerror="this.remove()" />` : `<span class="win-glyph">${this.chars[w.seat].name.slice(-1)}</span>`}</div>`
         : '';
     return `
-      <div class="win${slam ? ' slam' : ''}" style="--c:${this.chars[w.seat].color}${slam ? `;--t:${(-since).toFixed(3)}s;--slam:${slamStart2d(w.hand.filter((t) => t !== w.tile).length).toFixed(3)}s` : ''}">
+      <div class="win${slam ? ' slam' : ''}${slam && twist ? ' twist' : ''}" style="--c:${this.chars[w.seat].color}${slam ? `;--t:${(-since).toFixed(3)}s;--slam:${slamStart2d(w.hand.filter((t) => t !== w.tile).length).toFixed(3)}s` : ''}">
         ${art}<div class="win-body">
         <h2>${this.chars[w.seat].name} ${how}</h2>
         <div class="win-hand">${hand}<span class="gap"></span>${tileHtml(w.tile, { size: 'pond', classes: ['win-tile'] })}<span class="gap"></span>${this.meldsHtml(w.melds, w.seat)}</div>

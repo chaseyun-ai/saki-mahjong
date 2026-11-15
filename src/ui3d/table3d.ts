@@ -34,6 +34,9 @@ import { AHEAD_MAX } from './slamEdge';
 import type { SlapOrder } from './slamSlap';
 import { SlamFx } from './slamFx';
 import { LilyFx, lilyGrand } from './lilyFx';
+import { TWISTER, TWISTER_TIME, Twister, twisterShape, twisterSize, type ArcKind } from './twister';
+import { teruStreakWith } from '../abilities/teru';
+import type { WinResult } from '../engine/score';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -173,6 +176,8 @@ const EDGE_NDC = -0.995;
 // 边缘切：自己的那张最后比平常多往桌子中间躺多少（牌宽；手牌就贴着画面底边，不挪的话磕完没地方弹回来）
 const EDGE_REST_IN = 0.6;
 const V2_LILY_HOLD = 1.05;
+// 宫永照的旋风自摸：牌立起来转、起风、风散、牌再转一会儿躺回去，都放完再倒牌（twister.ts 的 TWISTER）
+const V2_TWIST_HOLD = TWISTER_TIME + 0.1;
 // 天江衣的海底捞月砸下去：等水花落下、海水退干净再倒牌
 const V2_SEA_HOLD = 0.95;
 // 水面：透华的静水贴着桌布；衣的海最高涨到牌山顶上再高一点（牌山两层 = 2 个牌厚）
@@ -279,14 +284,16 @@ interface RevealState {
   syncs: number[];
   // 要砸的和了牌：不跟着手牌倒，at 时举起来往下砸（自摸是手里那张，荣和是从牌河拿过来）
   // lily：咲的岭上开花（原版 2.5D、3D 牌桌没有那只手，和了牌自己举起来砸下去），砸到时卷起旋风（这一手的基本点）
-  slams: Map<TileId, { seat: number; at: number; from: Placement | null; hit: boolean; lily?: number }>;
+  // twist：宫永照连和中自摸（风多大，0–1）：砸到桌上以后牌立起来转、卷起龙卷风（twister.ts）
+  slams: Map<TileId, { seat: number; at: number; from: Placement | null; hit: boolean; lily?: number; twist?: number }>;
   // 砸下去那一下：桌上的牌从这里往外震一下
   hops: { at: number; x: THREE.Vector3 }[];
   spotsOn: boolean; // 聚光灯打开了没有
   // 改良布局的自摸砸牌：start 时手伸进来，hitAt 拍到桌上；lily 是咲的岭上开花（这一手的基本点），没有是 null
   // sea：天江衣从海里捞上来的海底牌，砸下去把海水打散。style：这个人砸牌用哪一套动作（looks.ts），
   // hisa（竹井久）握着拳把那张托在大拇指指甲盖上伸进来，最后牌面朝上躺在倒牌后和了牌的位置，砸下去以后就一直躺在那里；拳头停稳亮牌那一下（revealAt）手牌一起倒
-  tsumoSlam: { seat: number; tile: TileId; start: number; hitAt: number; revealAt?: number; started: boolean; lily: number | null; sea: boolean; style: SlamStyle } | null;
+  // twist：宫永照连和中自摸（风多大，0–1），拍下去以后牌立起来转、卷起龙卷风；不是 null
+  tsumoSlam: { seat: number; tile: TileId; start: number; hitAt: number; revealAt?: number; started: boolean; lily: number | null; sea: boolean; twist: number | null; style: SlamStyle } | null;
 }
 
 interface Flight {
@@ -483,6 +490,10 @@ export class Table3D {
   private slam = new TileSlam();
   private slamFx = new SlamFx();
   private lily = new LilyFx();
+  // 宫永照的旋风自摸：龙卷风（twister.ts），和那张立在桌上转的和了牌（拍下去那一刻起，躺回去为止）
+  private twister = new Twister();
+  // spot：风从桌面上哪起（牌就在这里转）。自己的就在牌躺的地方；别家的牌在画面上沿、两边，风会冒出画面，挪到她跟前一点（牌被风卷过去）
+  private twist: { id: TileId; seat: number; t0: number; to: Placement; spot: THREE.Vector3; size: number; phi: number; settle: { phi0: number; phi1: number; from: THREE.Vector3 } | null } | null = null;
   // 咲这一杠摸的岭上牌正好和（能力喊了“岭上开花”）：下一张她摸的岭上牌上先亮一团光，一路拖着星光飞进手里
   private lilyDraw: number | null = null;
   // 砸牌、岭上开花的特效放到什么时候：这之前先别弹结算
@@ -512,6 +523,8 @@ export class Table3D {
   onSlam: ((seat: number, lily: number | null, phase: 'press' | 'hit') => void) | null = null;
   // 天江衣的海底牌砸进海里炸开的那一下（放水声用；扣进水里那一下照常是 onSlam 的 'press'）
   onSeaSlam: ((seat: number) => void) | null = null;
+  // 宫永照的旋风自摸（放音效用）：erupt 风拔地而起，bolt 电劈到桌上，break 风散开
+  onTwister: ((seat: number, size: number, phase: 'erupt' | 'bolt' | 'break') => void) | null = null;
   // 每帧画之前调用（动画已经推进到这一帧），调试场景在这里更新辅助线和读数
   beforeRender: (() => void) | null = null;
   // 鼠标移到能打的牌上、或者移开（null）时通知外面，用来显示打这张以后听什么
@@ -604,7 +617,10 @@ export class Table3D {
     this.buildTiles();
     this.scene.add(this.dice.group);
     this.effects = new Effects(this.scene);
-    this.scene.add(this.slam.group, this.slamFx.group, this.lily.group);
+    this.scene.add(this.slam.group, this.slamFx.group, this.lily.group, this.twister.group);
+    this.twister.onErupt = (base, top, size) => this.twisterErupt(base, top, size);
+    this.twister.onArc = (a, b, kind) => this.twisterArc(a, b, kind);
+    this.twister.onBreak = (mid, size) => this.twisterBreak(mid, size);
     this.scene.add(this.himeko.group);
     this.scene.add(this.mist.group);
     this.buildRiichiSticks();
@@ -994,6 +1010,8 @@ export class Table3D {
     this.slam.clear();
     this.slamFx.clear();
     this.lily.clear();
+    this.twister.clear();
+    this.twist = null;
     this.fxHold = 0;
     this.clearChains();
     this.gone.clear();
@@ -1439,17 +1457,18 @@ export class Table3D {
       const start = self && standAt !== null ? standAt : this.now + V2_STAND;
       const lily = this.lilyBase(g, tw);
       const sea = tw.tile === this.seaSlamTile;
-      // 咲的岭上开花、衣的海底牌是照着拍牌做的特效（旋风从拍下去的牌底下卷出去、海水从落点打散），不换成边缘切
-      const style = this.slamStyle(tw.seat, lily === null && !sea);
+      const twist = lily === null && !sea ? this.twistSize(g, tw) : null;
+      // 咲的岭上开花、衣的海底牌、照的旋风自摸是照着拍牌做的特效（旋风从拍下去的牌底下卷出去、海水从落点打散、牌立起来转），不换成边缘切
+      const style = this.slamStyle(tw.seat, lily === null && !sea && twist === null);
       if (style === 'edge' && self) this.edgeRest = tw.tile;
-      tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt: start, started: false, lily, sea, style };
+      tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt: start, started: false, lily, sea, twist, style };
       // 现在就排上（到 start 才动手）：这里才知道手牌什么时候倒（动作给的 revealAt）、什么时候拍下去
       this.startTsumoSlam(tsumoSlam, g);
     }
     // 手牌在动作里给的时刻倒（自己的先在桌上立起来），拍下去、停够了再放和牌特效
     const flickReveal = tsumoSlam?.revealAt ?? null;
     const placeAt = standAt !== null && selfTsumo && !tsumoSlam ? standAt + V2_PLACE : null;
-    const slamDone = tsumoSlam ? tsumoSlam.hitAt + (tsumoSlam.lily !== null ? V2_LILY_HOLD : tsumoSlam.sea ? V2_SEA_HOLD : V2_SLAM_HOLD) : 0;
+    const slamDone = tsumoSlam ? tsumoSlam.hitAt + (tsumoSlam.twist !== null ? V2_TWIST_HOLD : tsumoSlam.lily !== null ? V2_LILY_HOLD : tsumoSlam.sea ? V2_SEA_HOLD : V2_SLAM_HOLD) : 0;
     const at =
       flickReveal ?? Math.max(this.now + (r.wins.length ? (flat ? REVEAL_DELAY_25D : REVEAL_DELAY) : 0.3), standAt !== null ? (placeAt ?? standAt) + V2_HOLD : 0, slamDone);
     const stagger = flat ? TOPPLE_STAGGER_25D : TOPPLE_STAGGER;
@@ -1466,12 +1485,14 @@ export class Table3D {
       const sea = w.from === null && w.tile === this.seaSlamTile && tsumoSlam?.tile !== w.tile;
       // 咲的岭上开花：原版 2.5D、3D 牌桌没有拍牌的手，和了牌也举起来砸下去，砸到时卷起旋风
       const lily = w.from === null && !tsumoSlam && !sea && !this.galeWin(w.seat) ? this.lilyBase(g, w) : null;
-      if (!this.galeWin(w.seat) && !sea && lily === null) continue;
+      // 照连和中自摸：和了牌也举起来砸下去，砸到以后立起来转、卷起龙卷风
+      const twist = w.from === null && !tsumoSlam && !sea && !this.galeWin(w.seat) && lily === null ? this.twistSize(g, w) : null;
+      if (!this.galeWin(w.seat) && !sea && lily === null && twist === null) continue;
       const n = g.players[w.seat].hand.filter((t) => t !== w.tile).length;
       const wave = (LOOKS[this.lastSync?.view.ids[w.seat] ?? '']?.reveal ?? 'wave') === 'wave';
       const slamAt = at + (wave ? Math.max(0, n - 1) * stagger : 0) + TOPPLE_TIME + 0.12;
-      slams.set(w.tile, { seat: w.seat, at: slamAt, from: null, hit: false, ...(lily !== null ? { lily } : {}) });
-      fxAt = Math.max(fxAt, slamAt + SLAM_TIME);
+      slams.set(w.tile, { seat: w.seat, at: slamAt, from: null, hit: false, ...(lily !== null ? { lily } : {}), ...(twist !== null ? { twist } : {}) });
+      fxAt = Math.max(fxAt, slamAt + SLAM_TIME + (twist !== null ? TWISTER_TIME + 0.1 : 0));
     }
     // 被荣和的立直不成立，还没拿出来的立直棒不拿了
     this.handAnims = this.handAnims.filter((a) => a.kind !== 'stick');
@@ -1481,7 +1502,7 @@ export class Table3D {
       fxAt,
       fxDone: false,
       // 竹井久的倒牌在动作中间（砸下去自己炸开），不劈闪电（也不跟着闪电震屏）
-      boltAt: flat && r.wins.length && flickReveal === null && ![...slams.values()].some((x) => x.lily !== undefined) ? at - BOLT_LEAD : null,
+      boltAt: flat && r.wins.length && flickReveal === null && ![...slams.values()].some((x) => x.lily !== undefined || x.twist !== undefined) ? at - BOLT_LEAD : null,
       stagger,
       wins: r.wins.map((w) => ({ seat: w.seat, tsumo: w.from === null, tile: w.tile })),
       topple: new Map(),
@@ -2160,6 +2181,7 @@ export class Table3D {
       // 衣的海底牌：立起来时聚的是月光
       onCharge: (at, dur) => this.slamFx.charge(at, to.scale, dur, ts.sea ? MOON_GLOW : undefined),
       onHit: (at) => {
+        if (ts.twist !== null) return this.twistStart(ts.seat, ts.tile, to, ts.twist);
         if (!ts.sea) return this.slamImpact(ts.seat, ts.tile, at, ts.lily);
         // 衣的海底牌：不扬灰，炸开一阵蓝色的漩涡，把海水打散
         const floor = at.clone().setY(0.02);
@@ -2341,6 +2363,209 @@ export class Table3D {
     this.fxHold = Math.max(this.fxHold, this.now + 1.9 + 0.9 * big);
   }
 
+  // 这一手是不是宫永照的旋风自摸（连和中自摸：这一手和了以后连和到第 2 次起）：是就给风多大（0–1），不是 null
+  private twistSize(g: Game, w: { seat: number; from: number | null; result: WinResult }): number | null {
+    if (w.from !== null || this.lastSync?.view.ids[w.seat] !== 'teru') return null;
+    const n = teruStreakWith(g, w.seat, w.result, true);
+    return n >= 2 ? twisterSize(n) : null;
+  }
+
+  // 照的和了牌拍到桌上那一下：牌立起来在原地转，过一会儿牌底卷起龙卷风（twister.ts），风散了牌还转一会儿，最后躺回 to（updateTwist）
+  private twistStart(seat: number, id: TileId, to: Placement, size: number): void {
+    const floor = to.pos.clone().setY(0.02);
+    // 风顶往桌子中间歪
+    const lean = new THREE.Vector3(-floor.x, 0, -floor.z);
+    if (lean.lengthSq() < 1e-4) lean.set(0, 0, -1);
+    lean.normalize();
+    const fit = this.fitTwister(floor, lean, twisterShape(size, to.scale), to.scale, size);
+    this.twist = { id, seat, t0: this.now, to: { pos: to.pos.clone(), quat: to.quat.clone(), scale: to.scale }, spot: fit.spot, size, phi: 0, settle: null };
+    this.twister.play({ floor: fit.spot, scale: to.scale, size, lean, area: this.dim.tableHalf, height: fit.height, leanAmt: fit.leanAmt });
+    // 结算等风卷完、牌转完躺好再弹
+    this.fxHold = Math.max(this.fxHold, this.now + TWISTER_TIME + 0.2);
+  }
+
+  // 风多高、风顶往桌子中间歪多少：照镜头算，风顶和半腰要留在画面里。对家、上下家的牌在画面上沿、两边，
+  // 风直直往上就冒出画面了：先试着往桌子中间多歪一点，还不行再压矮一点（自己的风多半原样）
+  private fitTwister(floor: THREE.Vector3, lean: THREE.Vector3, shape: { height: number; leanAmt: number }, scale: number, size: number): { spot: THREE.Vector3; height: number; leanAmt: number } {
+    const cam = this.camera.clone();
+    cam.position.copy(this.camera.position);
+    cam.quaternion.copy(this.camera.quaternion);
+    cam.updateMatrixWorld();
+    const R1 = (2.4 + 1.1 * size) * scale;
+    const p = new THREE.Vector3();
+    let base = floor;
+    // 风的半腰（连那一圈的半径）要在画面里；风顶只要不出左右两边（冒出上沿一截没关系，雀魂别家的龙卷风也冒出画面）
+    // 左右也连半径算（画面横向）
+    const side = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion);
+    const inside = (h: number, H: number, L: number) => {
+      p.copy(base).addScaledVector(lean, L * h * h).setY(base.y + H * h);
+      // 风顶的大圈、风丝比风带还往外一些
+      const r = (0.35 * scale + (R1 - 0.35 * scale) * h ** 1.5) * 1.3;
+      const up = p.clone().setY(p.y + r).project(cam);
+      const l = p.clone().addScaledVector(side, -r).project(cam);
+      const rr = p.clone().addScaledVector(side, r).project(cam);
+      const c = p.project(cam);
+      return (h >= 1 || up.y < 0.95) && l.x > -0.98 && rr.x < 0.98 && c.z < 1;
+    };
+    // 先在牌躺的地方试（风原样、往桌子中间多歪一点、压矮一点）；对家、上下家的牌就在画面上沿、两边，
+    // 怎么都冒出画面的话，风挪到她跟前一点（往桌子中间，最多挪到牌河外沿），牌被风卷过去
+    const most = Math.max(0, floor.length() - this.dim.pondZ - 3 * TILE_H);
+    for (let shift = 0; shift <= most + 1e-3; shift += Math.max(0.5, most / 8)) {
+      base = floor.clone().addScaledVector(lean, shift);
+      for (const hk of [1, 0.88, 0.76, 0.64]) {
+        for (const lk of [0, 0.25, 0.45, 0.65]) {
+          const H = shape.height * hk;
+          const L = Math.max(shape.leanAmt, H * lk);
+          if (inside(0.5, H, L) && inside(0.75, H, L) && inside(1, H, L)) return { spot: base.clone(), height: H, leanAmt: L };
+        }
+      }
+    }
+    // 还是不行：挪到最近，压矮、往中间歪
+    base = floor.clone().addScaledVector(lean, most);
+    for (const hk of [0.64, 0.54, 0.45]) {
+      for (const lk of [0.65, 0.85, 1.1]) {
+        const H = shape.height * hk;
+        const L = Math.max(shape.leanAmt, H * lk);
+        if (inside(0.5, H, L) && inside(1, H, L)) return { spot: base.clone(), height: H, leanAmt: L };
+      }
+    }
+    return { spot: base.clone(), height: shape.height * 0.45, leanAmt: shape.height * 0.5 };
+  }
+
+  // 转牌：立起来（stand）以后越转越快，起风以后被风带着转得最快、微微离地、一边转一边晃；
+  // 风散了还转（after），慢慢慢下来；最后再转半圈多一点停在牌面朝自己的地方，往后一倒，躺回和了牌的位置（settle）
+  private updateTwist(dt: number): void {
+    const tw = this.twist;
+    if (!tw) return;
+    const T = TWISTER;
+    const tile = this.tiles[tw.id];
+    const g = tile.group;
+    const k = this.now - tw.t0;
+    const s = tw.to.scale;
+    const windOn = T.erupt + T.hold + T.fade;
+    const lieAt = windOn + T.after;
+    if (k >= lieAt + T.settle) {
+      g.position.copy(tw.to.pos);
+      g.quaternion.copy(tw.to.quat);
+      g.scale.setScalar(s);
+      this.twist = null;
+      return;
+    }
+    this.held.add(tw.id);
+    const smooth = (a: number, b: number, x: number) => {
+      const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+    const UPV = new THREE.Vector3(0, 1, 0);
+    // 立着的样子：躺着的样子往回立起来（牌面朝自己），再绕竖轴转 phi
+    const upright = tw.to.quat.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2));
+    const stand = (phi: number) => new THREE.Quaternion().setFromAxisAngle(UPV, phi).multiply(upright);
+    // 转速（弧度/秒）：拍下去以后越转越快，起风后最快，风散以后慢慢慢下来
+    const slow = 2 * Math.PI * 1.3;
+    const fast = 2 * Math.PI * 2.6;
+    const w = k < T.erupt ? slow * smooth(0, T.erupt, k) : k < windOn ? fast : fast * Math.exp(-(k - windOn) / 0.32) + 2.2;
+    // 离地多高：起风以后被风托起来一点、一上一下地晃，风散以后落回去
+    const lift = (k < T.erupt ? 0.04 : 0.04 + 0.2 * smooth(T.erupt, T.erupt + 0.35, k) * (1 - smooth(windOn - 0.1, windOn + 0.3, k))) * s + (k >= T.erupt && k < windOn + 0.3 ? 0.04 * s * Math.sin(k * 11) : 0);
+    // 风里转的时候微微歪着、歪的方向跟着转（像陀螺那样晃）
+    const wobble = 0.12 * smooth(T.erupt, T.erupt + 0.2, k) * (1 - smooth(windOn, windOn + 0.4, k));
+    const standY = (TILE_H / 2) * s + lift;
+    // 风不在牌躺的地方（别家）：立起来以后被风卷过去（hop 段弧线飞过去），风散以后再飞回来
+    const hop = (f: number, from: THREE.Vector3, to: THREE.Vector3) => from.clone().lerp(to, f).setY(standY + Math.sin(Math.PI * f) * 1.6 * s);
+    const away = tw.spot.distanceTo(tw.to.pos.clone().setY(tw.spot.y)) > 0.2;
+    const home = tw.to.pos.clone().setY(standY);
+    const there = tw.spot.clone().setY(standY);
+    const back = lieAt - 0.32;
+    const at = !away ? home : k < T.stand ? home : k < T.erupt ? hop(smooth(T.stand, T.erupt, k), home, there) : k < back ? there : hop(smooth(back, lieAt, k), there, home);
+    if (k < lieAt) {
+      tw.phi += w * dt;
+      let q = stand(tw.phi);
+      if (wobble > 0) q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.cos(k * 7), 0, Math.sin(k * 7)), wobble).multiply(q);
+      const pos = at;
+      if (k < T.stand) {
+        // 从躺着翻起来立住
+        const f = 1 - (1 - k / T.stand) ** 3;
+        g.quaternion.copy(tw.to.quat).slerp(q, f);
+        g.position.copy(tw.to.pos).lerp(pos, f);
+      } else {
+        g.quaternion.copy(q);
+        g.position.copy(pos);
+      }
+      g.scale.setScalar(s);
+      return;
+    }
+    // 停下来、躺回去：再转到下一个牌面朝自己的地方（至少再转小半圈），往后一倒
+    if (!tw.settle) {
+      const full = Math.PI * 2;
+      const phi1 = Math.ceil((tw.phi + 1.2) / full) * full;
+      tw.settle = { phi0: tw.phi, phi1, from: g.position.clone() };
+    }
+    const f = (k - lieAt) / T.settle;
+    const turn = 1 - (1 - Math.min(1, f / 0.7)) ** 2;
+    const phi = tw.settle.phi0 + (tw.settle.phi1 - tw.settle.phi0) * turn;
+    const fall = smooth(0.35, 1, f) ** 1.6;
+    g.quaternion.copy(stand(phi)).slerp(tw.to.quat, fall);
+    g.position.copy(tw.settle.from).lerp(tw.to.pos, fall);
+    g.scale.setScalar(s);
+  }
+
+  // 起风那一下：牌底一闪（白光、紫光、贴着桌面推开两圈），一把火星、一把沙土崩出去，一道电从风顶劈到牌上，四周亮一下、画面一震，桌上的牌跟着跳
+  private twisterErupt(base: THREE.Vector3, top: THREE.Vector3, size: number): void {
+    const tw = this.twist;
+    const s = tw?.to.scale ?? 1;
+    this.shake = Math.max(this.shake, 0.55 + 0.25 * size);
+    const up = base.clone().setY(base.y + 0.9 * s);
+    this.effects.flash(up, '#ffffff', 5 * s, 0.35);
+    this.effects.flash(up, '#b98cff', 9 * s, 0.6, true);
+    this.effects.ring(base, '#e6dcff', (5 + 2 * size) * s, 0.6);
+    this.effects.ring(base, '#ffffff', 3 * s, 0.4, 0.8);
+    this.effects.burst(base, '#d8c8ff', 36, 10 * s, 0.7);
+    this.effects.sparks(base, '#cdb79e', {
+      count: Math.round(24 + 16 * size),
+      life: [0.35, 0.7],
+      vel: (v) => {
+        const a = Math.random() * Math.PI * 2;
+        const sp = (3 + Math.random() * 5) * s;
+        v.set(Math.cos(a) * sp, 0.5 + Math.random() * 2.5, Math.sin(a) * sp);
+      },
+      gravity: 9,
+      drag: 2.5,
+      size: [0.03, 0.06],
+      stretch: 0.03,
+      jitter: 0.4 * s,
+      hot: '#efe3d0',
+    });
+    this.effects.arc(top, base.clone().setY(base.y + 0.3 * s), '#b48cff', this.camera.position, 0.32, 1.7, 3);
+    this.effects.pulse(base.clone().setY(base.y + 3 * s), '#c9a8ff', 90, 0.2);
+    this.reveal?.hops.push({ at: this.now, x: base.clone() });
+    this.onTwister?.(tw?.seat ?? 0, size, 'erupt');
+  }
+
+  // 龙卷风上的一道电弧：在风上爬的、往天上劈的细一些；劈到桌上的粗，落点闪一下、推开一圈、迸几颗火星，画面轻轻一震
+  private twisterArc(a: THREE.Vector3, b: THREE.Vector3, kind: ArcKind): void {
+    const tw = this.twist;
+    const s = tw?.to.scale ?? 1;
+    const ground = kind === 'ground';
+    const width = ground ? 1.5 : kind === 'sky' ? 1.15 : kind === 'residual' ? 0.8 : 1;
+    const dur = ground ? 0.28 : kind === 'residual' ? 0.2 : 0.14 + Math.random() * 0.08;
+    this.effects.arc(a, b, kind === 'residual' ? '#9d6bff' : '#b48cff', this.camera.position, dur, width * s, kind === 'crawl' ? 1 : 2);
+    this.effects.pulse(a.clone().lerp(b, 0.5), '#c4a2ff', ground ? 60 : 20, 0.08);
+    if (!ground) return;
+    this.effects.flash(b.clone().setY(b.y + 0.4 * s), '#e8dcff', 3 * s, 0.3);
+    this.effects.ring(b, '#c9a8ff', 2.5 * s, 0.4, 0.7);
+    this.effects.burst(b, '#d9c4ff', 16, 7 * s, 0.5);
+    this.shake = Math.max(this.shake, 0.22);
+    this.onTwister?.(tw?.seat ?? 0, tw?.size ?? 0, 'bolt');
+  }
+
+  // 风散开那一下：半腰一大团紫光，四周亮一下
+  private twisterBreak(mid: THREE.Vector3, size: number): void {
+    const tw = this.twist;
+    const s = tw?.to.scale ?? 1;
+    this.effects.flash(mid, '#a77bff', (8 + 3 * size) * s, 0.6);
+    this.effects.pulse(mid, '#b58fff', 70, 0.25);
+    this.onTwister?.(tw?.seat ?? 0, size, 'break');
+  }
+
   // 这一手是不是咲的岭上开花（岭上牌自摸；役满时役里不写岭上开花，看这一张是不是岭上摸的）：是就给基本点，不是 null
   private lilyBase(g: Game, w: { seat: number; from: number | null; result: { base: number; yaku: { name: string }[] } }): number | null {
     if (w.from !== null || this.lastSync?.view.ids[w.seat] !== 'saki') return null;
@@ -2407,7 +2632,10 @@ export class Table3D {
         g.quaternion.copy(to.quat);
         g.scale.setScalar(to.scale);
         if (id === this.seaSlamTile) this.seaSlam(to.pos.clone(), e.seat);
-        else if (e.lily !== undefined) this.slamImpact(e.seat, id, to.pos.clone(), e.lily);
+        else if (e.twist !== undefined) {
+          this.slamPress(e.seat, to.pos.clone().setY(0.02), to.scale);
+          this.twistStart(e.seat, id, to, e.twist);
+        } else if (e.lily !== undefined) this.slamImpact(e.seat, id, to.pos.clone(), e.lily);
         else {
           this.galeBurst(to.pos.clone());
           this.effects.ring(to.pos.clone().setY(0.05), '#ffffff', 3.5, 0.45);
@@ -3741,7 +3969,8 @@ export class Table3D {
       if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
       for (const w of rv.wins) {
         const slam = rv.slams.has(w.tile) ? this.tiles[w.tile].group.position.clone() : null;
-        this.winFx(w.seat, w.tsumo, slam ? (w.tile === this.seaSlamTile ? MOON_GLOW : '#c870ff') : FX_GOLD, slam, rv.slams.get(w.tile)?.lily !== undefined);
+        const own = rv.slams.get(w.tile);
+        this.winFx(w.seat, w.tsumo, slam ? (w.tile === this.seaSlamTile ? MOON_GLOW : '#c870ff') : FX_GOLD, slam, own?.lily !== undefined || own?.twist !== undefined);
       }
     }
     this.animateSlams(rv);
@@ -3994,8 +4223,10 @@ export class Table3D {
     }
     this.animateReveal();
     this.slam.update(this.now);
+    this.updateTwist(dt);
     this.slamFx.update(dt);
     this.lily.update(dt);
+    this.twister.update(dt, this.camera, this.renderer);
     this.effects.update(dt);
     this.updateSpots(dt);
     this.mist.update(dt);

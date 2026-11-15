@@ -613,6 +613,58 @@ export class Effects {
     });
   }
 
+  // 一小道电弧（宫永照的龙卷风上爬的电、往天上劈的、风散以后的残电）：a 到 b 一道分形折线带几根分叉，
+  // 很快摸过去，一闪一闪亮 duration 秒，最后断成一串珠子散掉。不放回击的光、冲击波和火星（要的话自己放）。
+  // width 是粗细的倍数，eye 是镜头位置
+  arc(a: THREE.Vector3, b: THREE.Vector3, color: THREE.ColorRepresentation, eye: THREE.Vector3, duration = 0.2, width = 1, branches = 2): void {
+    const L = a.distanceTo(b);
+    if (L < 1e-3) return;
+    const seed = Math.floor(Math.random() * 1000);
+    const jag = 0.12;
+    const strands: Strand[] = [{ pts: Array.from({ length: 41 }, (_, i) => boltPath(a, b, i / 40, seed, jag, 2, 5)), t0: 0, tScale: 1, inten: 1, width: 0.06 * width, branch: false }];
+    for (let k = 0; k < branches; k++) {
+      const h = seed * 1.7 + k * 13.1;
+      const tb = 0.15 + 0.6 * hash(h);
+      const sA = boltPath(a, b, tb, seed, jag, 2, 5);
+      const T = boltPath(a, b, tb + 0.06, seed, jag, 2, 5).sub(sA).normalize();
+      const len = (0.2 + 0.3 * hash(h + 3)) * L;
+      const sB = sA.clone().addScaledVector(deviate(T, h), len);
+      strands.push({ pts: Array.from({ length: 13 }, (_, i) => boltPath(sA, sB, i / 12, h * 5.3, jag * 1.3, 2, 3, 1)), t0: tb, tScale: len / L, inten: 0.55, width: 0.04 * width, branch: true });
+    }
+    const geo = boltGeometry(strands, eye);
+    const base = col(color);
+    const shared = {
+      uReveal: { value: 0 },
+      uIntensity: { value: 0 },
+      uBranch: { value: 1 },
+      uResidual: { value: 0 },
+      uLen: { value: L },
+      uSeed: { value: seed },
+      uCore: { value: col('#fbf6ff') },
+      uEdge: { value: base },
+    };
+    const core = new THREE.Mesh(geo, glowMat(BOLT_CORE_FRAG, { ...shared, uWidth: { value: 1 } }, BOLT_VERT));
+    const glow = new THREE.Mesh(geo, glowMat(BOLT_GLOW_FRAG, { ...shared, uWidth: { value: 5 } }, BOLT_VERT));
+    // 画在龙卷风的风带（renderOrder 7–9）后面才画：电弧在风带前面时不被风带盖住
+    glow.renderOrder = 10;
+    core.renderOrder = 11;
+    const group = new THREE.Group();
+    group.add(glow, core);
+    // 一闪一闪：第一下最亮，后面两下弱一点
+    const flick = [0.3, 0.55 + 0.1 * Math.random(), 0.78 + 0.08 * Math.random()];
+    this.add(group, duration, (k) => {
+      shared.uReveal.value = Math.min(1, k / 0.18);
+      let env = 0;
+      for (let i = 0; i < flick.length; i++) {
+        const d = k - (i === 0 ? 0.15 : flick[i]);
+        if (d >= 0) env = Math.max(env, (i === 0 ? 1 : 0.6) * Math.exp(-d / 0.09));
+      }
+      shared.uIntensity.value = (k < 0.18 ? 0.5 + 0.5 * (k / 0.18) : env) * 1.3 + 0.1;
+      shared.uBranch.value = 0.4 + 0.6 * Math.exp(-k / 0.3);
+      shared.uResidual.value = THREE.MathUtils.clamp((k - 0.6) / 0.4, 0, 1);
+    });
+  }
+
   // 回击、复击打中地面的那一下
   private strike(at: THREE.Vector3, color: THREE.Color, n: number): void {
     const up = at.clone().setY(at.y + 1);

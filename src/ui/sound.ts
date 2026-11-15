@@ -255,6 +255,50 @@ export function playWhirl(size = 0): void {
   }
 }
 
+// 电弧“噼啪”一声：高频的噪声一截一截地断开（像电火花），底下垫一下低沉的“嗡”。vol 0–1
+export function playCrackle(vol = 1): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const dur = 0.22;
+  const len = Math.floor(a.sampleRate * dur);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  // 一截一截：每 6–20 毫秒换一次开关，开着的时候是噪声，越往后开得越少
+  let on = true;
+  let next = 0;
+  for (let i = 0; i < len; i++) {
+    if (i >= next) {
+      on = Math.random() < 0.75 - (0.5 * i) / len;
+      next = i + Math.floor(a.sampleRate * (0.006 + Math.random() * 0.014));
+    }
+    data[i] = on ? (Math.random() * 2 - 1) * (1 - i / len) : 0;
+  }
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const hp = a.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 2200;
+  const g = a.createGain();
+  g.gain.value = 0.32 * vol;
+  src.connect(hp).connect(g).connect(bus('sfx', a));
+  src.start(now);
+  const osc = a.createOscillator();
+  const og = a.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(110, now);
+  osc.frequency.exponentialRampToValueAtTime(55, now + 0.18);
+  og.gain.setValueAtTime(0.0001, now);
+  og.gain.exponentialRampToValueAtTime(0.09 * vol, now + 0.01);
+  og.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+  const lp = a.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 600;
+  osc.connect(lp).connect(og).connect(bus('sfx', a));
+  osc.start(now);
+  osc.stop(now + 0.22);
+}
+
 // 天江衣的海底捞月砸进海里：一记闷响，“哗”地一下水被拍开（滤过的噪声，高频很快收掉），后面一串零零落落的水珠落回水面
 export function playSplash(): void {
   const a = audio();
