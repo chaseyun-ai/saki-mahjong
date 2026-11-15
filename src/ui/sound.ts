@@ -223,6 +223,38 @@ export function playSlam(): void {
   ws.stop(now + 0.62);
 }
 
+// 宫永照的旋风自摸：一阵卷起来的风声（滤过的噪声，频率先往上卷再落下来），size 0–1，连和越多越响、越长
+export function playWhirl(size = 0): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const dur = 1.3 + 0.6 * size;
+  const len = Math.floor(a.sampleRate * dur);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  for (const [f0, f1, f2, q, vol] of [
+    [320, 1900 + 700 * size, 520, 1.3, 0.2 + 0.12 * size],
+    [140, 620, 180, 0.8, 0.14 + 0.1 * size],
+  ]) {
+    const src = a.createBufferSource();
+    src.buffer = buf;
+    const filter = a.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = q;
+    filter.frequency.setValueAtTime(f0, now);
+    filter.frequency.exponentialRampToValueAtTime(f1, now + dur * 0.35);
+    filter.frequency.exponentialRampToValueAtTime(f2, now + dur);
+    const gain = a.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(vol, now + dur * 0.25);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    src.connect(filter).connect(gain).connect(bus('sfx', a));
+    src.start(now);
+    src.stop(now + dur + 0.02);
+  }
+}
+
 // 天江衣的海底捞月砸进海里：一记闷响，“哗”地一下水被拍开（滤过的噪声，高频很快收掉），后面一串零零落落的水珠落回水面
 export function playSplash(): void {
   const a = audio();

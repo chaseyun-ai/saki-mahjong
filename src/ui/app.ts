@@ -3,7 +3,8 @@ import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { HIROKO_NOTES } from '../abilities/hiroko';
-import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruNote, teruPoints, teruWallCounts, teruWinValue } from '../abilities/teru';
+import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruNote, teruPoints, teruStreakWith, teruWallCounts, teruWinValue } from '../abilities/teru';
+import { teruMirrors, teruTornado, tornadoSize } from './teruFx';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
@@ -47,7 +48,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playIaiDraw, playIaiSheath, playLily, playRiichi, playSlam, playSplash, playWin } from './sound';
+import { playCall, playChime, playClick, playIaiDraw, playIaiSheath, playLily, playRiichi, playSlam, playSplash, playWhirl, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -845,6 +846,9 @@ export class App {
       const g = this.game!;
       const chisui = g.events.find((e) => e.type === 'ability' && e.ability === 'toka' && e.text === '治水');
       if (chisui && g.round === 1) window.setTimeout(() => this.game === g && this.onGameEvent(chisui), Math.max(600, this.busyMs()));
+      // 照魔镜也是：第一局在牌桌建好之前就开始了，补放一次（切入、语音、对手头像上的镜子）
+      const mirror = g.events.find((e) => e.type === 'ability' && e.ability === 'teru' && e.text === '照魔镜');
+      if (mirror && g.round === 1) window.setTimeout(() => this.game === g && this.onGameEvent(mirror), Math.max(900, this.busyMs()));
     }
     this.step();
   }
@@ -1156,6 +1160,8 @@ export class App {
         return;
       }
       playChime(this.sayAbility(e.seat, e.text) ? VOICED_CUE : 1);
+      // 照魔镜：另外三家的头像上各罩一面镜子（等这一下重画完再找头像）
+      if (e.ability === 'teru' && e.text === '照魔镜') requestAnimationFrame(() => this.teruMirrorFx(e.seat));
       // 臼泽塞的镜片：狙击镜落到被盯上的人的头像上（等这一下重画完再找头像）
       if (e.ability === 'sae') {
         const t = this.game!.abilityState[e.seat].target as number | undefined;
@@ -1198,6 +1204,8 @@ export class App {
         if (this.gbWinFx(w)) continue;
         // 智叶没立直和牌：先一道刀光；结束了别人的连庄出「斬」
         if (this.iaiWinFx(w)) continue;
+        // 照连和中自摸：从她手边卷出旋风（照常接着出「自摸」）
+        this.teruTornadoFx(w);
         // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
         const c = this.chars[w.seat];
         const word = w.from === null ? '自摸' : '荣和';
@@ -1626,6 +1634,35 @@ export class App {
   // ---------- 辻垣内智叶的居合 ----------
 
   // 刀光、「斬」挂在哪一层：提示层的上一层，不跟着牌局重画
+  // 照魔镜：另外三家的头像上各罩一面镜子。隐身的桃子看不见她的人，镜子也不往她头上罩
+  private teruMirrorFx(seat: number): void {
+    const g = this.game;
+    if (!g) return;
+    const spots = [1, 2, 3]
+      .map((d) => (seat + d) % 4)
+      .filter((s) => !g.stealthed(s, this.me))
+      .map((s) => (document.querySelector(`[data-seat="${s}"] .portrait, [data-seat="${s}"] .avatar`) ?? document.querySelector(`[data-seat="${s}"]`))?.getBoundingClientRect())
+      .filter((r): r is DOMRect => !!r && r.width > 0);
+    teruMirrors(spots);
+  }
+
+  // 照连和中自摸（这一次和了以后连和到第 2 次起）：从她手边朝桌心卷出一道旋风，连和越多越大
+  private teruTornadoFx(w: WinInfo): void {
+    const g = this.game!;
+    if (this.chars[w.seat]?.id !== 'teru' || w.from !== null || !g.active(w.seat)) return;
+    const streak = teruStreakWith(g, w.seat, w.result, true);
+    if (streak < 2) return;
+    const box = (this.root.querySelector<HTMLElement>(this.table3d ? '.stage3d' : '.stage .table') ?? this.root).getBoundingClientRect();
+    // 她手牌在画面上的位置：3D、2.5D 问牌桌；2D 按座位的大概位置
+    const hand = this.table3d?.handScreenPos(w.seat);
+    const three = document.getElementById('three')?.getBoundingClientRect();
+    const spot: Record<string, [number, number]> = { bottom: [0.5, 0.86], right: [0.88, 0.5], top: [0.5, 0.12], left: [0.12, 0.5] };
+    const [px, py] = spot[POS[w.seat]] ?? spot.bottom;
+    const from = hand && three ? { x: three.left + hand.x, y: three.top + hand.y } : { x: box.left + box.width * px, y: box.top + box.height * py };
+    teruTornado(from, { x: box.left + box.width / 2, y: box.top + box.height / 2 }, streak);
+    playWhirl(tornadoSize(streak));
+  }
+
   private fxHost(): HTMLElement | null {
     return document.getElementById('toasts')?.parentElement ?? null;
   }

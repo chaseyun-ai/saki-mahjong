@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { TERU, TERU_LADDER, TERU_TOP, teruAbility, teruAccepts, teruBuild, teruDanger, teruLadder, teruMirrored, teruPace, teruReads, teruTier, teruWallCounts, teruWinValue } from '../src/abilities/teru';
+import { TERU, TERU_LADDER, TERU_TOP, teruAbility, teruAccepts, teruBuild, teruDanger, teruLadder, teruMirrored, teruPace, teruReads, teruStreakWith, teruTier, teruWallCounts, teruWinValue } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import type { WinResult } from '../src/engine/score';
@@ -254,6 +254,20 @@ describe('宫永照：做大牌、放慢、照得穿智叶的鞘', () => {
     expect(teruBuild(table(['teru', 'izumi', 'izumi', 'izumi'], 2, 2000), 0)).toBeNull();
     // 要混一色的档（折成闲家 4000）：不是从头只留一门，最快的做法接不上才拆
     expect(teruBuild(table(['teru', 'izumi', 'izumi', 'izumi'], 2, 6000), 0)).toEqual({ strict: false });
+  });
+
+  it('旋风自摸看的连和次数：这一手和了以后连和到第几次，结算前就算得出来', () => {
+    const win = (pays: number) => ({ ron: 0, tsumoOtherPays: pays, tsumoDealerPays: pays * 2 }) as unknown as WinResult;
+    // 照坐庄：自摸拿到 pays × 3
+    expect(teruStreakWith(table(['teru', 'izumi', 'izumi', 'izumi'], 0, 0), 0, win(500), true)).toBe(1);
+    expect(teruStreakWith(table(['teru', 'izumi', 'izumi', 'izumi'], 2, 2000), 0, win(1000), true)).toBe(3);
+    // 和小了：从这一次重新数
+    expect(teruStreakWith(table(['teru', 'izumi', 'izumi', 'izumi'], 4, 12000), 0, win(1000), true)).toBe(1);
+    expect(teruStreakWith(table(['teru', 'izumi', 'izumi', 'izumi'], 8, 2000), 0, win(4000), true)).toBe(8);
+    // 镜子局：不算
+    const g = table(['teru', 'izumi', 'izumi', 'izumi'], 0, 0);
+    (g.abilityGameState[0] as { rounds?: number }).rounds = 1;
+    expect(teruStreakWith(g, 0, win(500), true)).toBe(0);
   });
 
   it('照魔镜照得穿智叶的鞘：她没立直的听牌也读得出听什么；别人没立直的听牌照旧读不出', () => {
