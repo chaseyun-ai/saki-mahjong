@@ -66,6 +66,8 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
   const seats = new Rng(seed * 7919).shuffle([...chars]);
   // 记下控场能力给这一次摸牌定的规矩，摸牌时对账
   let rules: DrawRule[] = [];
+  // 排在最前面的不击飞的规矩（rules 里的）
+  const bustRules = new WeakSet<DrawRule>();
   let lockedBefore: Set<TileId> | null = null;
   // 对账开始时的里宝牌指示牌：不击飞的规矩按点数算，点数里有里宝牌
   let uraBefore: string | null = null;
@@ -86,11 +88,18 @@ export function playBrawl(chars: Character[], seed: number, stats: BrawlStats): 
           const bust = (g as unknown as { bustRules(d: number, r: boolean): DrawRule[] }).bustRules(drawer, rinshan);
           for (const b of bust) {
             const banned = new Set([...g.wall.live, ...g.wall.rinshan, ...g.wall.uraIndicators].filter((t) => b.deny(t)));
-            rules.push({ ...b, deny: (t) => banned.has(t) });
+            const fixed = { ...b, deny: (t: TileId) => banned.has(t) };
+            bustRules.add(fixed);
+            rules.push(fixed);
           }
         }
         const r = inner(g, seat, drawer, rinshan);
-        if (r && mine && g.binds(seat, drawer)) rules.push(r);
+        if (r && mine && g.binds(seat, drawer)) {
+          // 排到前面去的规矩（涅莉的七姐妹）：和规则引擎一样，只排在不击飞的规矩后面，换不出都满足的牌时先守它
+          const head = rules.filter((x) => bustRules.has(x)).length;
+          if (r.first) rules.splice(head + rules.slice(head).filter((x) => x.first).length, 0, r);
+          else rules.push(r);
+        }
         return r;
       },
     };
