@@ -149,6 +149,28 @@ export function playIaiDraw(): void {
   });
 }
 
+// 智叶的居合：拇指把刀镡推开鞘口的一声轻响（很轻，一局里可能响好几回）
+export function playIaiPush(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const len = Math.floor(a.sampleRate * 0.02);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 4;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 2900;
+  filter.Q.value = 3;
+  const gain = a.createGain();
+  gain.gain.value = 0.3;
+  src.connect(filter).connect(gain).connect(bus('sfx', a));
+  src.start(now);
+  tone(a, 4200, now + 0.01, 0.16, 0.035, 'sine');
+}
+
 // 智叶的居合：收刀的“咔”。刀镡碰到鞘口的一声短促的木头响
 export function playIaiSheath(): void {
   const a = audio();
