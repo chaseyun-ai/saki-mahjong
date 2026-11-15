@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { TERU, TERU_LADDER, TERU_TOP, teruAbility, teruAccepts, teruDanger, teruLadder, teruMirrored, teruTier, teruWallCounts, teruWinValue } from '../src/abilities/teru';
+import { TERU, TERU_LADDER, TERU_TOP, teruAbility, teruAccepts, teruBuild, teruDanger, teruLadder, teruMirrored, teruPace, teruReads, teruTier, teruWallCounts, teruWinValue } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import type { WinResult } from '../src/engine/score';
@@ -137,11 +137,14 @@ function teruTankiOnDora(seed: number): { g: Game; k: Kind; inWall: number[] } |
 
 describe('宫永照：听着牌、和了牌还在牌山里时不白白流局', () => {
   const boost = TERU.boost.slice();
+  const pace = TERU.pace;
   beforeAll(() => {
     TERU.boost = TERU.boost.map(() => 1);
+    TERU.pace = [[0, 1]];
   });
   afterAll(() => {
     TERU.boost = boost;
+    TERU.pace = pace;
   });
 
   it('和了牌是宝牌也照送（宝牌不找她只管不是和了牌的进张）', () => {
@@ -203,6 +206,76 @@ describe('宫永照：听着牌、和了牌还在牌山里时不白白流局', (
     console.log(n);
     expect(n.seen).toBeGreaterThan(5);
   }, 240000);
+});
+
+describe('宫永照：做大牌、放慢、照得穿智叶的鞘', () => {
+  // 照坐 0 号位（东一局坐庄）、照魔镜看过、连和 level 次、上一次和了 last 点
+  const table = (ids: string[], level: number, last: number) => {
+    const g = new Game({ seed: 5, players: ids.map((id) => ({ name: id, ability: byId(id).ability })) });
+    Object.assign(g.abilityGameState[0], { rounds: 2, level, last, streak: [last] });
+    return g;
+  };
+
+  it('牌越大越慢：摸牌的帮助按要比多少点高分档，没起胡用 boost[0]', () => {
+    const cheap = teruPace(table(['teru', 'izumi', 'izumi', 'izumi'], 1, 1500), 0);
+    const mid = teruPace(table(['teru', 'izumi', 'izumi', 'izumi'], 3, 7800), 0);
+    const big = teruPace(table(['teru', 'izumi', 'izumi', 'izumi'], 5, 24000), 0);
+    expect(cheap).toBeGreaterThan(mid);
+    expect(mid).toBeGreaterThan(big);
+    expect(teruPace(table(['teru', 'izumi', 'izumi', 'izumi'], 0, 0), 0)).toBe(TERU.boost[0]);
+  });
+
+  it('要做大牌的局：电脑的照不和小牌把连和断掉，放过去、拆染手以外的牌往清一色做', () => {
+    // 坐庄，上一次 12000 点（折成闲家 8000）：要清一色。手里一气通贯加自摸只有 6000 点，换一张也接不上
+    const g = table(['teru', 'izumi', 'izumi', 'izumi'], 3, 12000);
+    const p = g.players[0];
+    const hand = parseTiles('123456789p55p45s');
+    const win = parseTiles('6s')[0];
+    p.hand = [...hand, win];
+    p.drawn = win;
+    p.melds = [];
+    p.discards = [];
+    // 不是第一巡（不然是天和）
+    (g as unknown as { noCallsYet: boolean }).noCallsYet = false;
+    expect(g.dealer).toBe(0);
+    expect(g.legalActions(0).some((a) => a.type === 'tsumo')).toBe(true);
+    expect(teruAccepts(g, 0, g.winResult(0, win, true)!, true)).toBe(false);
+    expect(teruBuild(g, 0)).toEqual({ strict: true });
+    const a = chooseAction(g, 0, { ...byId('teru').ai, mistakeRate: 0 });
+    expect(a.type).toBe('discard');
+    // 打出去的是索子（染手以外的牌）
+    expect(a.type === 'discard' && Math.floor(kindOf(a.tile) / 9)).toBe(2);
+    // 关掉以后照旧：接不上也和（和小了重新起头）
+    TERU.build = false;
+    expect(chooseAction(g, 0, { ...byId('teru').ai, mistakeRate: 0 }).type).toBe('tsumo');
+    TERU.build = true;
+    // 没起胡、要的打点还小：不往染手做
+    expect(teruBuild(table(['teru', 'izumi', 'izumi', 'izumi'], 0, 0), 0)).toBeNull();
+    expect(teruBuild(table(['teru', 'izumi', 'izumi', 'izumi'], 2, 2000), 0)).toBeNull();
+    // 要混一色的档（折成闲家 4000）：不是从头只留一门，最快的做法接不上才拆
+    expect(teruBuild(table(['teru', 'izumi', 'izumi', 'izumi'], 2, 6000), 0)).toEqual({ strict: false });
+  });
+
+  it('照魔镜照得穿智叶的鞘：她没立直的听牌也读得出听什么；别人没立直的听牌照旧读不出', () => {
+    const g = table(['teru', 'satoha', 'izumi', 'izumi'], 0, 0);
+    // 断幺九一杯口，坎三万，没立直
+    for (const s of [1, 2]) {
+      g.players[s].hand = parseTiles('24m456p678s234m55s');
+      g.players[s].drawn = null;
+      g.players[s].melds = [];
+      g.players[s].discards = [];
+      g.players[s].riichi = false;
+    }
+    expect(g.tenpaiHidden(1, 0)).toBe(true);
+    expect([...teruDanger(g, 0)]).toEqual(parseKinds('3m'));
+    expect([...teruReads(g, 0)]).toEqual([1]);
+    TERU.sheathRead = false;
+    expect(teruDanger(g, 0).size).toBe(0);
+    TERU.sheathRead = true;
+    // 第一局只看不和：还读不出
+    (g.abilityGameState[0] as { rounds?: number }).rounds = 1;
+    expect(teruDanger(g, 0).size).toBe(0);
+  });
 });
 
 describe('宫永照（原来的天梯）', () => {

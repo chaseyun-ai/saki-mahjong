@@ -23,7 +23,7 @@ import { NELLY, nellyBigDiscard, nellyBigReady, nellyDue, nellyFlush, nellyLiveW
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { harvestShanten, komakiActiveGod, komakiHarvestSuit } from '../abilities/komaki';
 import { toyoneLurks, toyoneMode } from '../abilities/toyone';
-import { TERU, teruAccepts, teruCheapNext, teruDanger, teruFits, teruLadder, teruMirrored, teruOutlook, teruRaisable, teruReads, teruRising, teruSoftCap, teruTier, teruTiltSet, teruUnder, teruWallHas, teruWinValue } from '../abilities/teru';
+import { TERU, teruAccepts, teruBuild, teruCheapNext, teruDanger, teruFits, teruLadder, teruMirrored, teruOutlook, teruRaisable, teruReads, teruRising, teruSoftCap, teruTier, teruTiltSet, teruUnder, teruWallHas, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import { himekoBroken, himekoExtra, himekoKeyAhead, himekoPlan } from '../abilities/himeko';
 import { riiBind, riiHoldsShort } from '../abilities/rii';
@@ -418,6 +418,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     hit: number; // 洋榎：读出来别人和得了这张
     aim: number; // 堇：打这张以后听的是目标多余的牌
     fit: number; // 照：打这张以后听的牌和了正好接得上天梯
+    reach?: boolean; // 照：打这张以后（听牌，或者再摸一张听牌）有接得上连和的和法
     plan?: number; // 照（打点递增的试验版）：打这张以后和出来怎么样（听牌是 0–3 档，一向听是按进张加权的分）
     trap: number; // 洋榎：听牌时听的是自己打过的牌的筋（引っ掛け）
     gen: number; // 智叶：听牌时听的是立直家的现物（另外两家会当安全牌打出来）
@@ -621,8 +622,10 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const haiteiRich = onHaitei;
   const richOrder = (x: Cand, y: Cand) =>
     haiteiRich && x.sh === 0 && y.sh === 0 && x.uke > 0 && y.uke > 0 ? (isDoraTile(g, x.a.tile) ? 1 : 0) - (isDoraTile(g, y.a.tile) ? 1 : 0) : 0;
+  // 照要做大牌的局：染手以外的牌先打，宁可退向听（见下面的 teruBuild）
+  let teruStrict = false;
   const attackOrder = (x: Cand, y: Cand) =>
-    x.hit - y.hit || (flush ? keep(x) - keep(y) : 0) || x.sh - y.sh || x.dry - y.dry || (y.plan ?? 0) - (x.plan ?? 0) || richOrder(x, y) || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || genOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || x.std - y.std || x.trip - y.trip || y.uke - x.uke || x.feed - y.feed || x.val - y.val;
+    x.hit - y.hit || (flush || teruStrict ? keep(x) - keep(y) : 0) || x.sh - y.sh || x.dry - y.dry || (y.plan ?? 0) - (x.plan ?? 0) || richOrder(x, y) || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || genOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || x.std - y.std || x.trip - y.trip || y.uke - x.uke || x.feed - y.feed || x.val - y.val;
   // 照（打点递增的试验版）：向听最少的打法里，听牌的按和出来怎么样分档，一向听的按“摸到哪些牌能听成什么样”算分
   if (style.streak && !sealed && TERU.mode === 'points' && TERU.plan && teruMirrored(g, seat)) {
     const min = Math.min(...cands.map((x) => x.sh));
@@ -636,7 +639,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       if (x.sh !== min || min > 1) continue;
       const hand = p.hand.filter((t) => t !== x.a.tile);
       if (min === 0) {
-        x.plan = reach ? teruOutlook(g, seat, hand, p.melds, { live: inWall }) * 100 + (alive(hand) ? 10 : 0) + teruOutlook(g, seat, hand, p.melds, { live }) : teruOutlook(g, seat, hand, p.melds, { live });
+        const out = teruOutlook(g, seat, hand, p.melds, { live: inWall });
+        x.reach = out > 0;
+        x.plan = reach ? out * 100 + (alive(hand) ? 10 : 0) + teruOutlook(g, seat, hand, p.melds, { live }) : out;
         continue;
       }
       const c = toCounts(hand);
@@ -661,8 +666,17 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
         }
         // 接不上的听牌只有牌山里还有才值一点（还能和小的重新起头），听死了的不值
         score += left * (best > 0 || any ? W[best] : 0);
+        if (best > 0) x.reach = true;
       }
       x.plan = score;
+    }
+    // 要做大牌的局：最快的做法怎么和都接不上（换一张就接得上的牌牌山里也没有），就不守着这手小牌，拆了往染手做；
+    // 要的打点到了 TERU.buildFrom，从两向听以前就只留那一门
+    const build = teruSet ? teruBuild(g, seat) : null;
+    if (build) {
+      const top = cands.filter((x) => x.sh === min);
+      if (min > 1) teruStrict = build.strict;
+      else teruStrict = !top.some((x) => x.reach) && !(min === 0 && TERU.raise && top.some((x) => teruRaisable(g, seat, p.hand.filter((t) => t !== x.a.tile))));
     }
   }
   cands.sort(attackOrder);
@@ -1155,7 +1169,8 @@ function teruWaits(g: Game, seat: number, tsumo: boolean): boolean {
       const rest = tsumo ? p.hand.filter((t) => t !== tile) : p.hand;
       const reach = TERU.wallAware ? teruWallHas(g) : undefined;
       const hand = rest.length % 3 === 1 ? rest : p.hand;
-      if (teruOutlook(g, seat, hand, p.melds, reach ? { live: reach } : {}) === 0 && (p.riichi || !TERU.raise || !teruRaisable(g, seat, hand))) return false;
+      // 要做大牌的局、牌山还多：不和这手小的（和了就是自己把连和断了），放过去，拆了往染手做
+      if (teruOutlook(g, seat, hand, p.melds, reach ? { live: reach } : {}) === 0 && (p.riichi || !TERU.raise || !teruRaisable(g, seat, hand))) return !p.riichi && !!teruBuild(g, seat);
     }
     return true;
   }

@@ -9,7 +9,8 @@ import type { Ability } from './types';
 // 宫永照（白糸台）：
 // - 照魔镜：第一局只看不和（这一局她和不了牌），看过以后整场都看得穿别人：
 //   玩家操作她时，别人的头像旁边多一面镜子，点开能看到这家能力现在的状态（Ability.insight）；
-//   读得出立直的人听什么（teruDanger）：电脑的照不打给他们，玩家操作她时手里的这种铳牌标红
+//   读得出立直的人听什么（teruDanger）：电脑的照不打给他们，玩家操作她时手里的这种铳牌标红；
+//   智叶藏在鞘里的默听也照得穿（TERU.sheathRead，原作里智叶的默听对她没用）
 // - 别人的能力动不了她（Ability.immune）：不被封印，别人对她的配牌、摸牌定的规矩不算；只有玄的宝牌她也得守
 // - 连续和了（按打点递增，原作的规矩）：每次和了拿到的点数（本场、立直棒不算，坐庄的 1.5 倍照算）比上一次高，连和就接得上；
 //   从多少点起胡都行。和小了算新一轮连和的第一次；别人和了、流局就断。
@@ -18,6 +19,9 @@ import type { Ability } from './types';
 //   要的打点高了，配牌和进张先偏断幺九，再偏混一色、清一色。
 //   压制：别人要摸的进张有 TERU.press 的概率被换走。
 //   电脑的照按真实的番符挑打法（TERU.plan）：能默听就不立直，鸣了刚好高一档才鸣，会和大的高目放过去等安目
+//   牌越大越慢：起胡以后摸牌的帮助按“要比多少点高”分档（TERU.pace）
+//   要做大牌的局电脑的照不和小牌把连和断掉（TERU.build）：最快的做法接不上就拆了往混一色、清一色做，
+//   要的打点到了 TERU.buildFrom 从头就只留那一门；牌山剩 TERU.buildLeft 张以内才能和就和
 // - 叽叽叽：一轮连和里自摸满 TERU.kiki 次，下一局配牌直接是九莲宝灯的听牌
 // 原来的天梯（八层，正好和出下一层）还留着：Object.assign(TERU, TERU_LADDER) 就换回去
 export const TERU = {
@@ -65,6 +69,18 @@ export const TERU = {
   settleDraw: false, // 这种时候能力还主动送一张普通的和了牌（试过，太强：和小了还留在起胡以后的档位上，等于断不掉）
   startRiichi: true, // 电脑的照：没起胡时，默听荣和不了（没役）就立直
   readFold: true, // 电脑的照：读得出听牌的立直家，不是铳牌的牌一律当安全牌（不再照一般人那样弃和拆搭子）
+  build: true, // 电脑的照：要做大牌的局不和小的断连和，宁可退向听也往染手做（混一色、清一色，够不着再加立直）
+  buildFrom: 7700, // build：要比这么多点高（坐庄折回去）起，从配牌就只留染手那一门；不到这么多时，最快的做法接不上才拆
+  buildLeft: 20, // build：牌山剩这么多张以内不再拆牌（来不及做了，能和就和）
+  // points：起胡以后摸牌换成进张的概率，按“这一局要比多少点高”（坐庄折回去）分档：牌越大越慢。没起胡用 boost[0]
+  pace: [
+    [0, 0.35],
+    [2000, 0.3],
+    [3900, 0.25],
+    [7700, 0.2],
+    [12000, 0.15],
+  ] as [number, number][],
+  sheathRead: true, // 照魔镜照得穿智叶的鞘：她没立直的听牌也读得出听什么（原作里智叶的默听对照没用）
 };
 
 // 原来的天梯和它的数值：Object.assign(TERU, TERU_LADDER) 换回去
@@ -142,16 +158,22 @@ export function teruWallCounts(g: Game): number[] {
   return n;
 }
 
-// 照魔镜读得出听牌的是哪几家（立直了、镜子照得进去）
-export function teruReads(g: Game, seat: number): Set<number> {
-  if (!teruMirrored(g, seat)) return new Set();
-  return new Set(readOthers(g, seat).filter((r) => g.seesRiichi(r.seat, seat) && !g.active(r.seat)?.mirrorProof?.(g, r.seat)).map((r) => r.seat));
+// 镜子照得出 target 听什么：立直了的人；还有藏着听牌的人（智叶的鞘，镜子照得穿）。小莳的天照照不进去
+function mirrorSees(g: Game, seat: number, target: number): boolean {
+  if (g.active(target)?.mirrorProof?.(g, target)) return false;
+  return g.seesRiichi(target, seat) || (TERU.sheathRead && g.tenpaiHidden(target, seat));
 }
 
-// 照魔镜读得出的铳牌：看得见立直的人听的牌（小莳的天照照不进去）；第一局只看不和，不算
+// 照魔镜读得出听牌的是哪几家（立直了、镜子照得进去；智叶没立直的听牌也算）
+export function teruReads(g: Game, seat: number): Set<number> {
+  if (!teruMirrored(g, seat)) return new Set();
+  return new Set(readOthers(g, seat).filter((r) => mirrorSees(g, seat, r.seat)).map((r) => r.seat));
+}
+
+// 照魔镜读得出的铳牌：看得见立直的人听的牌（小莳的天照照不进去），智叶藏在鞘里的听牌也读得出；第一局只看不和，不算
 export function teruDanger(g: Game, seat: number): Set<Kind> {
   if (!teruMirrored(g, seat)) return new Set();
-  return new Set(readOthers(g, seat).filter((r) => g.seesRiichi(r.seat, seat) && !g.active(r.seat)?.mirrorProof?.(g, r.seat)).flatMap((r) => r.ron));
+  return new Set(readOthers(g, seat).filter((r) => mirrorSees(g, seat, r.seat)).flatMap((r) => r.ron));
 }
 
 // 天梯：站在第几层、下一次要和第几层、上一次断掉的原因、叽叽叽的次数
@@ -452,6 +474,26 @@ export function teruTiltSet(g: Game, seat: number): ((k: Kind) => boolean) | nul
   return (k) => SUIT(k) === suit || (tilt.honors && k >= 27);
 }
 
+// 电脑的照这一局是不是往染手做大牌（要的打点到了混一色、清一色的档，牌山还多）：
+// strict：从配牌起就只留那一门；不然只在最快的做法怎么都接不上时才拆
+export function teruBuild(g: Game, seat: number): { strict: boolean } | null {
+  if (!TERU.build || !teruPoints() || !teruMirrored(g, seat) || (gameStateOf(g, seat).level ?? 0) === 0) return null;
+  if (g.wall.remaining <= TERU.buildLeft) return null;
+  const tilt = tiltNow(g, seat);
+  if (!tilt || tilt.simples) return null;
+  return { strict: teruLast(g, seat) / (seat === g.dealer ? 1.5 : 1) >= TERU.buildFrom };
+}
+
+// 这一局她摸牌换成进张的概率。points：起胡以后按要比多少点高分档（TERU.pace），牌越大越慢；别的按站在第几层
+export function teruPace(g: Game, seat: number): number {
+  const level = gameStateOf(g, seat).level ?? 0;
+  if (!teruPoints() || level === 0) return TERU.boost[level];
+  const v = teruLast(g, seat) / (seat === g.dealer ? 1.5 : 1);
+  let out = TERU.pace[0][1];
+  for (const [from, chance] of TERU.pace) if (v >= from) out = chance;
+  return out;
+}
+
 // 4 番以上配牌偏混一色，跳满以上偏清一色：要几张、带不带字牌（按要和的下一层算）
 function tiltOf(level: number): { honors: boolean; want: number } | null {
   if (level >= 5 && level < TERU_TOP) return { honors: false, want: level >= 6 ? 11 : 10 };
@@ -515,7 +557,7 @@ export const teruAbility: Ability = {
     gs.broke = '平行宇宙';
   },
   description:
-    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看），也读得出立直的人听什么（手里打出去会放铳的牌标红）。连续和了：每次和了拿到的点数比上一次高，连和就接得上（本场、立直棒不算，坐庄的 1.5 倍算），从多少点起胡都行；和小了算新一轮的第一次，别人和了、流局就断。起胡前牌运平平，配牌多半带一对役牌或者偏断幺九，适合鸣牌和个 1000 点；起胡以后配牌和摸牌帮得多，快听牌时先送“刚好比上一次高一档”的和了牌，宝牌多半不找她。压制：别人的进张常被换走。叽叽叽：一轮连和里自摸满八次，下一局必定九莲宝灯。',
+    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看），也读得出立直的人听什么（手里打出去会放铳的牌标红），智叶藏在鞘里的默听也照得穿。连续和了：每次和了拿到的点数比上一次高，连和就接得上（本场、立直棒不算，坐庄的 1.5 倍算），从多少点起胡都行；和小了算新一轮的第一次，别人和了、流局就断。起胡前牌运平平，配牌多半带一对役牌或者偏断幺九，适合鸣牌和个 1000 点；起胡以后配牌和摸牌都帮她，要和的牌越大帮得越少、做得越慢；快听牌时先送“刚好比上一次高一档”的和了牌，宝牌多半不找她。压制：别人的进张常被换走。叽叽叽：一轮连和里自摸满八次，下一局必定九莲宝灯。',
 
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);
@@ -702,6 +744,7 @@ export const teruAbility: Ability = {
     const suit = per.indexOf(Math.max(...per));
     const onSuit = (t: number) => !tilt || (tilt.simples ? isSimple(kindOf(t)) : SUIT(kindOf(t)) === suit || (tilt.honors && kindOf(t) >= 27));
     const before = g.wall.live[0];
+    const boost = teruPace(g, seat);
     // points：听牌了、没立直，但哪张和了都不比上一次高：送一张“摸进来、换一张打出去以后接得上”的牌
     const inWall = TERU.wallAware ? teruWallHas(g) : () => true;
     const fitsAfter = (hand: TileId[]) => fitsAfterHand(g, seat, hand, inWall);
@@ -735,22 +778,22 @@ export const teruAbility: Ability = {
     };
     const lead = (t: number) => leadClass(t) >= 3;
     if (stuck) {
-      if (g.rng.chance(TERU.boost[level]) && !g.wall.bringToLive(0, raise, g.rng) && TERU.settleDraw && level > 0) {
+      if (g.rng.chance(boost) && !g.wall.bringToLive(0, raise, g.rng) && TERU.settleDraw && level > 0) {
         // 怎么换都接不上了：送一张普通的和了牌，和小了重新起头
         const any = (t: number) => plain(t) && !!winOf(t, true);
         g.wall.bringToLive(0, any, g.rng);
       }
     } else if (points && TERU.softDraw && sh === 1) {
-      if (g.rng.chance(TERU.boost[level]) && !(leadClass(before) === (TERU.tight > 0 ? 4 : 3) && onSuit(before))) {
+      if (g.rng.chance(boost) && !(leadClass(before) === (TERU.tight > 0 ? 4 : 3) && onSuit(before))) {
         if (!(TERU.tight > 0 && g.wall.bringToLive(0, (t) => leadClass(t) === 4, g.rng)) && !(lead(before) && onSuit(before)) && !g.wall.bringToLive(0, (t) => lead(t) && onSuit(t), g.rng) && !g.wall.bringToLive(0, lead, g.rng) && !(useful(before) && onSuit(before)) && !g.wall.bringToLive(0, (t) => useful(t) && onSuit(t), g.rng) && !useful(before)) g.wall.bringToLive(0, useful, g.rng);
       }
     } else if (points || TERU.mode === 'steps') {
       const tightOn = points && TERU.tight > 0 && sh === 0;
-      if (g.rng.chance(TERU.boost[level]) && !((tightOn ? softest(before) : soft(before)) && onSuit(before))) {
+      if (g.rng.chance(boost) && !((tightOn ? softest(before) : soft(before)) && onSuit(before))) {
         const hold = TERU.strict && points && sh === 0 && p.ippatsu;
         if (!(tightOn && g.wall.bringToLive(0, softest, g.rng)) && !(tightOn && soft(before) && onSuit(before)) && !g.wall.bringToLive(0, (t) => soft(t) && onSuit(t), g.rng) && !hold && !(useful(before) && onSuit(before)) && !g.wall.bringToLive(0, (t) => useful(t) && onSuit(t), g.rng) && !useful(before)) g.wall.bringToLive(0, useful, g.rng);
       }
-    } else if (g.rng.chance(TERU.boost[level]) && !(useful(before) && onSuit(before))) {
+    } else if (g.rng.chance(boost) && !(useful(before) && onSuit(before))) {
       if (!g.wall.bringToLive(0, (t) => useful(t) && onSuit(t), g.rng) && !useful(before)) g.wall.bringToLive(0, useful, g.rng);
     }
     // 听牌了、荣和接得上天梯：摸到会自摸错层的牌就换成和不了的，留着等荣和（牌山快摸完了不挡）
