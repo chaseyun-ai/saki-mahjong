@@ -8895,9 +8895,41 @@ canvas.rii-sky {
     filter: drop-shadow(0 0 9px rgba(255, 215, 106, 1));
   }
 }
-/* 立直了：刀出鞘，没有加成，整把暗一点 */
+/* 立直了：鞘往下退掉，露出整段刀身（刀身和鞘一样往下淡掉） */
+.iai-bare {
+  opacity: 0;
+}
+.iai-blade.s3 .iai-bare {
+  opacity: 1;
+}
 .iai-blade.s3 .iai-saya {
-  opacity: 0.6;
+  opacity: 0;
+}
+.iai-blade.s3.moving .iai-bare {
+  animation: iai-bare 1100ms ease-out var(--skip, 0ms) both;
+}
+.iai-blade.s3.moving .iai-saya {
+  animation: iai-saya-off 1100ms cubic-bezier(0.4, 0, 0.6, 1) var(--skip, 0ms) both;
+}
+@keyframes iai-bare {
+  0%,
+  25% {
+    opacity: 0;
+  }
+  70%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes iai-saya-off {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(46px);
+  }
 }
 .iai-blade.off {
   filter: grayscale(0.9);
@@ -9172,7 +9204,9 @@ canvas.rii-sky {
   .iai-flash {
     animation: none;
   }
-  .iai-move.go {
+  .iai-move.go,
+  .iai-blade.s3.moving .iai-bare,
+  .iai-blade.s3.moving .iai-saya {
     animation: none;
   }
 }

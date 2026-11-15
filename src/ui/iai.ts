@@ -11,13 +11,13 @@ const ZAN = {
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const STAGE_NAMES = ['收在鞘里', '推镡一寸', '出鞘三分', '刀已出鞘'];
-// 刀从鞘里推出来多少（viewBox 里的长度）：收着、拇指把刀镡推开一寸、三分、立直以后
-export const IAI_DRAWN = [0, 10, 30, 58];
+// 刀从鞘里推出来多少（viewBox 里的长度）：收着、拇指把刀镡推开一寸、三分；立直以后鞘退掉，刀再提起一点
+export const IAI_DRAWN = [0, 10, 30, 40];
 // 推出来、收回去那一下走多久（毫秒）
 export const IAI_PUSH_MS = 1100;
 
 // 头像旁竖着的刀，刀柄朝上。只给操作她的玩家看：别人离听牌越近，刀从鞘里推出来越多；鞘里听着牌、拔得了刀时刀镡亮起来；
-// 立直以后刀出鞘。不画整把刀：鞘往下淡掉。
+// 立直以后刀出鞘：鞘往下退掉，露出刀身。不画整把刀：鞘（出鞘后是刀身）往下淡掉。
 // move：刚换了档位——从哪儿推到现在的位置、已经走了多久。画面每次重画都是新的节点，动画靠这个接着放
 export function bladeHtml(b: SatohaBlade, tenpai: boolean, renchan: boolean, move?: { from: number; elapsed: number }): string {
   const bare = b.stage === 3;
@@ -26,7 +26,7 @@ export function bladeHtml(b: SatohaBlade, tenpai: boolean, renchan: boolean, mov
   const near = b.gap <= 0 ? '有人听牌' : b.gap === 1 ? '有人一向听' : '还没人逼近';
   const what = b.off ? '被封住了：进张、拔刀不起作用' : tenpai ? (b.ready ? `听牌没立直：每次摸牌有 ${pct(b.chance)} 的概率摸到和了牌` : '听牌没立直，但没有役，拔不了刀') : `没听牌：进张 +${pct(b.chance)}`;
   const title = bare ? '立直了：刀已出鞘，藏不住，也没有进张、拔刀的加成' : `间合：${near}${renchan ? '（庄家在连庄，少算一步）' : ''}。${what}`;
-  const cls = `iai-blade s${b.stage}${b.ready && !b.off ? ' ready' : ''}${b.off ? ' off' : ''}${b.ready && b.stage === 2 && !b.off ? ' strike' : ''}`;
+  const cls = `iai-blade s${b.stage}${move ? ' moving' : ''}${b.ready && !b.off ? ' ready' : ''}${b.off ? ' off' : ''}${b.ready && b.stage === 2 && !b.off ? ' strike' : ''}`;
   const go = move ? ` go${to > move.from ? ' out' : ''}` : '';
   const vars = `--to:${-to}px${move ? `;--from:${-move.from}px;--skip:${-Math.round(move.elapsed)}ms` : ''}`;
   // 刀柄的柄卷：一格一格的菱形
@@ -54,6 +54,11 @@ export function bladeHtml(b: SatohaBlade, tenpai: boolean, renchan: boolean, mov
         <rect x="38.4" y="158" width="4.6" height="9.5" rx="1.6" fill="#1c1a22" stroke="rgba(255,255,255,0.3)" stroke-width="0.5"/>
         <path d="M41 160.5 q7 3 3.4 10 q-2.6 5 -8 4.4 M41 164.5 q6 6 1 12" stroke="#7a68b8" stroke-width="1.6" stroke-linecap="round" fill="none"/>
       </g>
+      <g class="iai-bare" mask="url(#iai-fade)"><g class="iai-move${go}">
+        <path d="M25 141 L35 141 L35 236 Q35 272 31.5 300 L22.5 300 Q25.5 272 25 236 Z" fill="url(#iai-steel)"/>
+        <path d="M34 141 L34 236 Q34 272 30.8 300" stroke="rgba(255,255,255,0.7)" stroke-width="0.7" fill="none"/>
+        <path class="iai-shine" d="M27.4 143 L27.4 236 Q27.6 262 26 284" stroke="#fff" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+      </g></g>
       <g class="iai-move${go}">
         <rect class="iai-habaki" x="24" y="134.6" width="12" height="7" rx="0.8" fill="#dcbb62" stroke="rgba(0,0,0,0.35)" stroke-width="0.4"/>
         <rect class="iai-tsuka" x="23" y="74" width="14" height="54" rx="2.4" fill="#2f2a45" stroke="rgba(255,255,255,0.4)" stroke-width="0.7"/>
