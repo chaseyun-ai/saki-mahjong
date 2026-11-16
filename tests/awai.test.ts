@@ -14,6 +14,7 @@ import { doraFromIndicator, kindOf, toCounts } from '../src/engine/tiles';
 import { isCornerDraw } from '../src/engine/wall';
 
 const saved = { ...AWAI };
+const HONOR_KINDS = [27, 28, 29, 30, 31, 32, 33];
 afterEach(() => Object.assign(AWAI, saved));
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
@@ -176,7 +177,7 @@ describe('大星淡：被动', () => {
 });
 
 describe('大星淡：星空能量', () => {
-  it('开局 100 点，每局回复 5 点，不超过 100；按技能扣能量，每样一局一次', () => {
+  it('开局 100 点，用掉不回复；按技能扣能量，每样一局一次', () => {
     const { g, chars } = manualGame(['saki', 'nodoka', 'mako']);
     expect(awaiEnergy(g, 0)).toBe(100);
     runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
@@ -186,16 +187,27 @@ describe('大星淡：星空能量', () => {
     g.abilities[0]!.pressSkill!(g, 0, 'domain');
     expect(awaiEnergy(g, 0)).toBe(80);
     restart(g);
-    expect(awaiEnergy(g, 0)).toBe(85);
+    expect(awaiEnergy(g, 0)).toBe(80);
     expect(awaiCanUse(g, 0, 'domain')).toBe(true);
     restart(g);
     restart(g);
-    restart(g);
-    restart(g);
-    expect(awaiEnergy(g, 0)).toBe(100);
-    (g.abilityGameState[0] as { energy: number }).energy = 15;
+    expect(awaiEnergy(g, 0)).toBe(80);
+    // 平行宇宙要 50
+    (g.abilityGameState[0] as { energy: number }).energy = 45;
     expect(awaiCanUse(g, 0, 'parallel')).toBe(false);
     expect(awaiCanUse(g, 0, 'decohere')).toBe(true);
+  });
+
+  it('AWAI.regen 调回去的话每过一局回复，不超过上限', () => {
+    AWAI.regen = 5;
+    const { g, chars } = manualGame(['saki', 'nodoka', 'mako']);
+    runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
+    g.abilities[0]!.pressSkill!(g, 0, 'domain');
+    expect(awaiEnergy(g, 0)).toBe(80);
+    restart(g);
+    expect(awaiEnergy(g, 0)).toBe(85);
+    for (let i = 0; i < 4; i++) restart(g);
+    expect(awaiEnergy(g, 0)).toBe(100);
   });
 });
 
@@ -242,42 +254,119 @@ describe('大星淡：主动技能', () => {
     expect(tsumo).toBeGreaterThan(3);
   });
 
-  it('星符汇聚：只能在打出第一张牌前按；之后每次摸牌都是大七星还缺的字牌', () => {
-    const { g, chars } = manualGame(['saki', 'nodoka', 'mako'], 11);
-    runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
-    expect(awaiCanUse(g, 0, 'stars')).toBe(true);
-    g.abilities[0]!.pressSkill!(g, 0, 'stars');
-    expect(awaiStarPlan(g, 0)).toBe(true);
-    expect(awaiWaitingForCorner(g, 0)).toBeNull();
-    const p = g.players[0];
-    const honorPairs = () => {
+  it('星符汇聚：按下时七种字牌各来一张进手牌（牌一张不多一张不少），转角暗杠不留了', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const { g, chars } = manualGame(['saki', 'nodoka', 'mako'], seed);
+      runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
+      const p = g.players[0];
+      const size = p.hand.length;
+      const drawnBefore = p.drawn;
+      expect(awaiCanUse(g, 0, 'stars')).toBe(true);
+      g.abilities[0]!.pressSkill!(g, 0, 'stars');
+      expect(awaiStarPlan(g, 0)).toBe(true);
+      expect(awaiWaitingForCorner(g, 0)).toBeNull();
+      expect(p.hand.length).toBe(size);
       const c = toCounts(p.hand);
-      return [27, 28, 29, 30, 31, 32, 33].reduce((n, k) => n + Math.min(2, c[k]), 0);
-    };
-    let draws = 0;
-    for (let i = 0; i < 12 && g.phase !== 'roundEnd'; i++) {
-      // 电脑替她打：先打数牌
-      g.act(0, chooseAction(g, 0, chars[0].ai));
-      const before = honorPairs();
-      if (!runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0 && p.drawn !== null)) break;
-      // 还缺的字牌被别人摸走了（咲的对子长成刻子也会拿走字牌）、牌山里没有了时摸不到。
-      // 咲看见的牌（岭上牌、杠材的第四张）是锁着的，换不来
-      const need = [27, 28, 29, 30, 31, 32, 33].filter((k) => toCounts(p.hand.filter((t) => t !== p.drawn))[k] < 2);
-      const left = before < 14 && need.length > 0;
-      if (left && honorPairs() !== before + 1) {
-        expect(g.wall.live.concat(g.wall.rinshan).some((t) => need.includes(kindOf(t)) && !g.wall.locked.has(t))).toBe(false);
-      } else if (before < 14) expect(honorPairs()).toBe(before + 1);
-      draws++;
+      expect(HONOR_KINDS.every((k) => c[k] >= 1)).toBe(true);
+      // 刚摸的那张还在手里（换的是别的牌），或者换成了字牌
+      expect(p.drawn !== null && p.hand.includes(p.drawn)).toBe(true);
+      if (p.drawn !== drawnBefore) expect(kindOf(p.drawn!)).toBeGreaterThanOrEqual(27);
+      const all = [...g.wall.live, ...g.wall.rinshan, ...g.wall.doraIndicators, ...g.wall.uraIndicators, ...g.players.flatMap((q) => [...q.hand, ...q.discards.map((d) => d.tile), ...q.melds.flatMap((m) => m.tiles)])];
+      expect(all.length).toBe(136);
+      expect(new Set(all).size).toBe(136);
+      for (const q of g.players) expect(q.hand.length).toBe(q.seat === 0 ? size : 13);
+      // 每种还缺的那张留在牌山最后面、锁着；牌山里没有的从别人手里拿来了（咲、和没有挡得住的）
+      const kept = g.wall.live.filter((t) => g.wall.locked.has(t) && kindOf(t) >= 27 && c[kindOf(t)] < 2);
+      const need = HONOR_KINDS.reduce((n, k) => n + Math.max(0, 2 - c[k]), 0);
+      expect(kept.length).toBeGreaterThanOrEqual(Math.min(need, 5));
+      for (const t of kept) expect(g.wall.live.indexOf(t)).toBeLessThan(g.wall.live.length - 4);
     }
-    console.log({ draws, honors: honorPairs() });
-    expect(draws).toBeGreaterThan(5);
   });
 
-  it('星符汇聚：打出第一张牌以后按不了', () => {
+  it('星符汇聚：之后每次摸牌都是大七星还缺的字牌，没人抢先和的话第 8 巡前后自摸大七星', () => {
+    let yakuman = 0;
+    let rounds = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const chars = ['awai', 'izumi', 'izumi', 'izumi'].map(byId);
+      const g = new Game({ seed, players: chars.map((c) => ({ name: c.id, ability: c.ability })) });
+      if (!runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0 && g.players[0].discards.length === 0)) continue;
+      rounds++;
+      const p = g.players[0];
+      const pairs = () => {
+        const c = toCounts(p.hand);
+        return HONOR_KINDS.reduce((n, k) => n + Math.min(2, c[k]), 0);
+      };
+      g.abilities[0]!.pressSkill!(g, 0, 'stars');
+      let ended: { yakuman: number; turn: number } | null = null;
+      g.onEvent((e) => {
+        if (e.type !== 'roundEnd' || ended) return;
+        const w = e.result.wins.find((x) => x.seat === 0);
+        ended = { yakuman: w?.result.yakuman ?? 0, turn: p.discards.length + 1 };
+      });
+      for (let i = 0; i < 20 && !ended; i++) {
+        g.act(0, chooseAction(g, 0, chars[0].ai));
+        const before = pairs();
+        if (!runUntil(g, chars, () => !!ended || (g.phase === 'turn' && g.turn === 0 && p.drawn !== null))) break;
+        if (ended) break;
+        // 还缺的字牌牌山里留着：每摸一张多一张用得上的字牌
+        if (before < 14) expect(pairs()).toBe(before + 1);
+      }
+      const end = ended as { yakuman: number; turn: number } | null;
+      if (end?.yakuman) {
+        yakuman++;
+        expect(end.turn).toBeLessThanOrEqual(9);
+      }
+    }
+    console.log({ rounds, yakuman });
+    expect(rounds).toBeGreaterThan(5);
+    expect(yakuman).toBeGreaterThanOrEqual(rounds - 2);
+  });
+
+  it('星符汇聚：AWAI.starsPull 关掉就不动别人的手牌；她管不到的人（照）手里的字牌拿不走', () => {
+    const hands = (g: Game) => [1, 2, 3].map((s) => [...g.players[s].hand].sort((a, b) => a - b).join());
+    AWAI.starsPull = false;
+    for (let seed = 1; seed <= 4; seed++) {
+      const { g, chars } = manualGame(['saki', 'nodoka', 'mako'], seed);
+      runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
+      const before = hands(g);
+      g.abilities[0]!.pressSkill!(g, 0, 'stars');
+      expect(hands(g)).toEqual(before);
+    }
+    AWAI.starsPull = true;
+    for (let seed = 1; seed <= 6; seed++) {
+      const { g, chars } = manualGame(['teru', 'nodoka', 'mako'], seed);
+      runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
+      const before = hands(g)[0];
+      g.abilities[0]!.pressSkill!(g, 0, 'stars');
+      expect(hands(g)[0]).toBe(before);
+    }
+  });
+
+  it('星符汇聚：打出第一张牌以后按不了；没轮到自己（别人在打牌、在考虑鸣牌）时也按不了', () => {
     const { g, chars } = manualGame(['saki', 'nodoka', 'mako'], 11);
     runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
     g.act(0, g.legalActions(0).find((a) => a.type === 'discard' && !a.riichi)!);
     expect(awaiCanUse(g, 0, 'stars')).toBe(false);
+    // 换到她不坐庄的局：轮到她之前（别人摸牌打牌、问她鸣不鸣）都按不了，轮到她、摸了牌才能按
+    let checked = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      const { g, chars } = manualGame(['saki', 'nodoka', 'mako'], seed);
+      for (let n = 0; n < 8 && (g.dealer === 0 || g.phase === 'roundEnd'); n++) {
+        runUntil(g, chars, () => g.phase === 'roundEnd' || g.phase === 'gameEnd', 4000);
+        if (g.phase !== 'roundEnd') break;
+        g.nextRound();
+      }
+      if (g.dealer === 0 || g.phase === 'gameEnd') continue;
+      for (let i = 0; i < 12 && g.players[0].discards.length === 0 && g.phase !== 'roundEnd'; i++) {
+        const mine = g.phase === 'turn' && g.turn === 0;
+        expect(awaiCanUse(g, 0, 'stars')).toBe(mine);
+        if (mine) break;
+        checked++;
+        const s = g.waitingSeats()[0];
+        g.act(s, s === 0 ? { type: 'pass' } : chooseAction(g, s, chars[s].ai));
+      }
+    }
+    expect(checked).toBeGreaterThan(3);
   });
 
   it('高维领域：别人控牌山的能力失效（玄照样），黑暗笼罩牌桌', () => {
@@ -314,7 +403,7 @@ describe('大星淡：主动技能', () => {
     expect(lit.size).toBe(g.wall.live.filter((t) => w.includes(kindOf(t))).length);
   });
 
-  it('平行宇宙：照的连续和了、漫的计数器清零，牌山重洗，扣 30', () => {
+  it('平行宇宙：照的连续和了、漫的计数器清零，牌山重洗，扣 50', () => {
     const { g, chars } = manualGame(['teru', 'suzu', 'nodoka']);
     runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
     (g.abilityGameState[1] as { level: number }).level = 4;
@@ -323,7 +412,7 @@ describe('大星淡：主动技能', () => {
     g.abilities[0]!.pressSkill!(g, 0, 'parallel');
     expect(teruLadder(g, 1).level).toBe(0);
     expect(suzuCounter(g, 2)).toBe(0);
-    expect(awaiEnergy(g, 0)).toBe(70);
+    expect(awaiEnergy(g, 0)).toBe(50);
     expect([...g.wall.live].sort((a, b) => a - b)).toEqual([...before].sort((a, b) => a - b));
     expect(g.wall.live).not.toEqual(before);
   });
