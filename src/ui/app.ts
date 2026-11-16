@@ -58,10 +58,10 @@ import { paceOf, vary } from './vary';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
-import { backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
+import { TileSize, backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
 import { FlowPage, PointSeat, ResultFlow, animatePoints, drawBannerHtml, pointsPageHtml, ranksOf } from './resultFlow';
 import { meldLayout } from './meldLayout';
-import { WaitInfo, hanLabel, waitInfo, waitStatus } from './waitInfo';
+import { WaitInfo, drawWaits, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
@@ -3364,17 +3364,12 @@ export class App {
     const r = g.roundResult!;
     const title = r.kind === 'win' ? '' : r.kind === 'exhaustive' ? '<h2>荒牌流局</h2>' : `<h2>途中流局：${r.reason}</h2>`;
     const wins = r.wins.map((w) => this.winHtml(w)).join('');
-    const tenpai =
-      r.kind === 'exhaustive'
-        ? `<div class="tenpai-list">${[0, 1, 2, 3]
-            .map((s) => `<span class="${r.tenpai[s] ? 'yes' : ''}">${this.chars[s].name}：${r.tenpai[s] ? '听牌' : '未听'}</span>`)
-            .join('')}</div>`
-        : '';
     // 2.5D 的和牌结算左边放和牌的人的立绘（雀魂那样）
     const art = this.mode === '25d' && r.wins.length > 0;
+    // 荒牌流局：每家听什么写在下面点数那一行里（见 deltasHtml）
     return `
       <div class="modal"><div class="result${art ? ' with-art' : ''}">
-        ${title}${wins}${tenpai}
+        ${title}${wins}
         ${this.deltasHtml(r)}
         ${this.traceHtml()}
         <button class="primary" data-ui="next">继续</button>
@@ -3434,13 +3429,24 @@ export class App {
 
   private deltasHtml(r: RoundResult): string {
     const g = this.game!;
-    return `<div class="deltas">${[0, 1, 2, 3]
+    // 荒牌流局：名字后面写这一家听哪几张，没听的写「未听」
+    const waits = r.kind === 'exhaustive' ? drawWaits(g) : null;
+    return `<div class="deltas${waits ? ' draw' : ''}">${[0, 1, 2, 3]
       .map((s) => {
         const d = r.deltas[s];
         const cls = d > 0 ? 'plus' : d < 0 ? 'minus' : '';
-        return `<div class="delta"><span>${this.nameHtml(s)}</span><span class="${cls}">${d > 0 ? '+' : ''}${d || ''}</span><span>${g.players[s].score}</span></div>`;
+        const wait = waits ? this.drawWaitHtml(r.tenpai[s], waits[s], 'mini') : '';
+        return `<div class="delta"><span>${this.nameHtml(s)}</span>${wait}<span class="${cls}">${d > 0 ? '+' : ''}${d || ''}</span><span>${g.players[s].score}</span></div>`;
       })
       .join('')}</div>`;
+  }
+
+  // 流局时一家听什么：听牌写「听牌」和听的那几张，没听的写「未听」。
+  // 用 div、b 不用 span：有的皮肤给结算行里除名字以外的 span 换了比分的字体（见 themes.css）
+  private drawWaitHtml(tenpai: boolean, kinds: Kind[], size: TileSize): string {
+    if (!tenpai) return '<div class="draw-wait"><b>未听</b></div>';
+    const tiles = kinds.map((k) => tileHtml(k * 4 + 3, { size })).join('');
+    return `<div class="draw-wait yes"><b>听牌</b>${tiles ? `<div class="draw-wait-tiles">${tiles}</div>` : ''}</div>`;
   }
 
   // 能力痕迹：这一局牌山被动过的地方，按发生的先后讲出来
@@ -3470,7 +3476,7 @@ export class App {
     document.getElementById('rf')?.replaceChildren();
   }
 
-  // 流局：牌桌中间的大字；倒牌倒下去以后，每家手牌上挂「听牌 / 不听」（途中流局不挂）
+  // 流局：牌桌中间的大字；倒牌倒下去以后，每家手牌上挂「听牌 / 未听」，听牌的带上听哪几张（途中流局不挂）
   private drawBanner(g: Game): void {
     const r = g.roundResult;
     const layer = document.getElementById('rf');
@@ -3482,6 +3488,8 @@ export class App {
     this.flowTimer = window.setTimeout(() => {
       this.flowTimer = null;
       if (this.game !== g || this.flow || !this.table3d) return;
+      // 听牌的人牌子上接着写听哪几张
+      const waits = drawWaits(g);
       const tags = [0, 1, 2, 3]
         .map((s) => ({ s, at: this.table3d!.handScreenPos(s) }))
         .filter((x): x is { s: number; at: { x: number; y: number } } => !!x.at)
@@ -3490,9 +3498,23 @@ export class App {
           const w = this.root.clientWidth;
           const h = this.root.clientHeight;
           const y = at.y - (s === this.me ? h * 0.1 : 28);
-          return { x: Math.min(w - 60, Math.max(60, at.x)), y: Math.min(h - 20, Math.max(48, y)), tenpai: r.tenpai[s] };
+          const tiles = waits[s].map((k) => tileHtml(k * 4 + 3, { size: 'mini' })).join('');
+          return { s, x: Math.min(w - 60, Math.max(60, at.x)), y: Math.min(h - 20, Math.max(48, y)), tenpai: r.tenpai[s], waits: tiles };
         });
       layer.innerHTML = drawBannerHtml(main, sub, tags);
+      // 自己的牌子带上牌以后变宽，手机上会压到手牌左边的待和提示框：压到了就挪到提示框右边
+      const mine = tags.findIndex((t) => t.s === this.me);
+      const el = mine < 0 ? undefined : layer.querySelectorAll<HTMLElement>('.rf-tag')[mine];
+      const box = this.root.querySelector('.waits')?.getBoundingClientRect();
+      if (el && box && box.width) {
+        const base = layer.getBoundingClientRect();
+        const { x, y } = tags[mine];
+        const [tw, th] = [el.offsetWidth, el.offsetHeight];
+        const left = base.left + x - tw / 2;
+        const top = base.top + y - th;
+        if (left < box.right + 8 && left + tw > box.left && top < box.bottom && top + th > box.top)
+          el.style.left = `${Math.min(base.width - tw / 2 - 8, box.right + 8 - base.left + tw / 2).toFixed(0)}px`;
+      }
     }, 1400);
   }
 
@@ -3568,9 +3590,12 @@ export class App {
     const before = after.map((s, i) => s - r.deltas[i]);
     const rb = ranksOf(before, g.firstDealer);
     const ra = ranksOf(after, g.firstDealer);
+    // 荒牌流局：点数卡下面写这一家听哪几张（手牌上的牌子只挂一会儿，这一页停得久）
+    const waits = r.kind === 'exhaustive' ? drawWaits(g) : null;
     return [0, 1, 2, 3].map((s) => {
       const c = this.chars[s];
-      return { seat: s, rel: (s - this.me + 4) % 4, name: c.name, color: c.color, portrait: portraitUrl(c.id, this.faceOf(s)), glyph: c.name.slice(-1), before: before[s], after: after[s], rankBefore: rb[s], rankAfter: ra[s], mine: s === this.me };
+      const wait = waits ? this.drawWaitHtml(r.tenpai[s], waits[s], 'mini') : undefined;
+      return { seat: s, rel: (s - this.me + 4) % 4, name: c.name, color: c.color, portrait: portraitUrl(c.id, this.faceOf(s)), glyph: c.name.slice(-1), before: before[s], after: after[s], rankBefore: rb[s], rankAfter: ra[s], mine: s === this.me, wait };
     });
   }
 

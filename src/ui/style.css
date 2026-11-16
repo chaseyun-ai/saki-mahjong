@@ -1887,15 +1887,57 @@ button {
   }
 }
 
-.tenpai-list {
+/* 荒牌流局：点数那一行里名字后面写这一家听哪几张，没听的写「未听」 */
+.deltas.draw .delta {
+  grid-template-columns: minmax(5.5em, auto) minmax(0, 1fr) 100px 100px;
+  align-items: center;
+  column-gap: 12px;
+}
+
+.draw-wait {
   display: flex;
-  justify-content: center;
-  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.draw-wait b {
+  flex: none;
+  font-weight: 700;
   color: var(--ink-quiet);
 }
 
-.tenpai-list .yes {
+.draw-wait.yes b {
   color: var(--gold);
+}
+
+.draw-wait-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+/* 和风雀庄的结算是浅色纸面：金字、浅褐字看不清，换成朱红和深褐 */
+:root[data-theme='washi'] .draw-wait b {
+  color: #6b4a2c;
+}
+
+:root[data-theme='washi'] .draw-wait.yes b {
+  color: var(--t-hot);
+}
+
+/* 窄屏：听的牌挪到名字下面一行，点数两列收窄 */
+@media (max-width: 600px) {
+  .deltas.draw .delta {
+    grid-template-columns: minmax(0, 1fr) 72px 72px;
+  }
+
+  .deltas.draw .draw-wait {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin-top: 2px;
+  }
 }
 
 .deltas {

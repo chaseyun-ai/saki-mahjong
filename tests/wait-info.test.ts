@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Game } from '../src/engine/game';
 import { Meld } from '../src/engine/score';
 import { kindOf, parseKinds, parseTiles, toCounts } from '../src/engine/tiles';
-import { hanLabel, waitInfo, waitStatus } from '../src/ui/waitInfo';
+import { drawWaits, hanLabel, waitInfo, waitStatus } from '../src/ui/waitInfo';
 
 const SEAT = 1; // 南家，不是庄家，东风也不是他的役牌
 
@@ -200,4 +200,37 @@ describe('打牌前预览', () => {
     // 确实测到了不少能听牌的情况
     expect(marked).toBeGreaterThan(200);
   }, 60000);
+});
+
+describe('荒牌流局时每家听什么', () => {
+  // 四家的手牌：0 听一四七万，1 没听，2 单骑东（东四张全在自己手里就算一种都不听），3 听一四万
+  function drawn(kind: 'exhaustive' | 'abortive', tenpai: boolean[]) {
+    const { g } = table('23m456p678s55s');
+    g.players[0].hand = parseTiles('23456m456p678s55s');
+    g.players[1].hand = parseTiles('159m16p9p158s2347z');
+    g.players[2].hand = parseTiles('123m456p789s1111z');
+    g.players[3].hand = parseTiles('23m456p678s789s55s');
+    g.roundResult = { kind, wins: [], tenpai, deltas: [0, 0, 0, 0] };
+    return g;
+  }
+
+  it('听牌的列出听哪几种，没听的是空的', () => {
+    const g = drawn('exhaustive', [true, false, true, true]);
+    const w = drawWaits(g);
+    expect(w[0]).toEqual(kinds('147m'));
+    expect(w[1]).toEqual([]);
+    expect(w[3]).toEqual(kinds('14m'));
+  });
+
+  it('那一种四张全在自己手里的不算', () => {
+    const g = drawn('exhaustive', [true, false, true, true]);
+    expect(drawWaits(g)[2]).toEqual([]);
+  });
+
+  it('途中流局、和牌都不列', () => {
+    expect(drawWaits(drawn('abortive', [true, false, true, true]))).toEqual([[], [], [], []]);
+    const g = drawn('exhaustive', [true, false, true, true]);
+    g.roundResult = null;
+    expect(drawWaits(g)).toEqual([[], [], [], []]);
+  });
 });

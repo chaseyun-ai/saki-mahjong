@@ -109,6 +109,21 @@
   border-color: #ffd0a8;
 }
 
+/* 听牌的牌子上接着摆听的那几张 */
+.rf-tag.with-tiles {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 4px 14px;
+  white-space: nowrap;
+}
+
+.rf-tag-waits {
+  display: flex;
+  gap: 3px;
+  letter-spacing: 0;
+}
+
 /* ---------- 和牌：一个和牌的人一页 ---------- */
 
 .rf-win {
@@ -518,6 +533,35 @@
   color: #9aa6b8;
 }
 
+/* 荒牌流局：点数卡下面一行，听牌写「听牌」和听的那几张，没听的写「未听」 */
+.rf-card .draw-wait {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  animation: rf-fade 0.3s ease-out 0.4s both;
+}
+
+.rf-card .draw-wait b {
+  font: 700 15px/1 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  letter-spacing: 1px;
+  color: #dfe5ee;
+}
+
+.rf-card .draw-wait.yes b {
+  color: #ffd36b;
+}
+
+.rf-card .draw-wait-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
 /* ---------- 横过来的手机 ---------- */
 
 @media (max-height: 500px) {
@@ -613,6 +657,21 @@
 
   .rf-card.bottom {
     bottom: 14%;
+  }
+
+  .rf-card .draw-wait {
+    margin-top: 4px;
+    padding-top: 4px;
+  }
+
+  .rf-card .draw-wait b {
+    font-size: 12px;
+  }
+
+  .rf-card .draw-wait .tile.t-mini,
+  .rf-tag-waits .tile.t-mini {
+    width: 17px;
+    height: 23px;
   }
 }
 

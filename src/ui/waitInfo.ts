@@ -77,3 +77,10 @@ function seenCounts(g: Game, seat: number): number[] {
   }
   return toCounts(tiles);
 }
+
+// 荒牌流局时每家听哪几种牌（结算里给大家看）：听牌的人按一局结束时的手牌算，没听牌的是空的。
+// 那一种四张全在自己手里的不算（摸不到也荣和不了），所以听牌的人也可能一种都没有
+export function drawWaits(g: Game): Kind[][] {
+  const r = g.roundResult;
+  return g.players.map((p, s) => (r?.kind === 'exhaustive' && r.tenpai[s] ? waitingKinds(toCounts(p.hand), p.melds.length) : []));
+}

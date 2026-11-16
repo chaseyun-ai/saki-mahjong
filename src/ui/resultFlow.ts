@@ -1,7 +1,7 @@
 import './resultFlow.css';
 
 // 新结算（试做，视觉设置「结算画面：新」）：一局结束以后照雀魂的节奏分几页放，盖在 3D / 2.5D 牌桌上面。
-//   荒牌流局、途中流局：牌桌中间先出大字，每家手牌上挂「听牌 / 不听」
+//   荒牌流局、途中流局：牌桌中间先出大字，每家手牌上挂「听牌 / 未听」，听牌的带上听哪几张
 //   和牌：每个和牌的人一页（全屏立绘、手牌、宝牌里宝牌、役一条条出来、最后盖番符章），再进点数移动
 //   点数移动：四家的点数卡摆在各自那一边，箭头从付点的人指向收点的人，数字滚过去，名次重排
 // 每页右下角「继续」带倒数，数到 0 自己翻页；最后一页翻完交回 app 进下一局。
@@ -92,10 +92,13 @@ export class ResultFlow {
 
 // ---------- 流局的大字 ----------
 
-// 牌桌中间的大字（荒牌流局 / 途中流局：四风连打…），tags 是挂在每家手牌上的「听牌 / 不听」
-export function drawBannerHtml(main: string, sub: string, tags: { x: number; y: number; tenpai: boolean }[]): string {
+// 牌桌中间的大字（荒牌流局 / 途中流局：四风连打…），tags 是挂在每家手牌上的「听牌 / 未听」，waits 是听的那几张牌
+export function drawBannerHtml(main: string, sub: string, tags: { x: number; y: number; tenpai: boolean; waits?: string }[]): string {
   const t = tags
-    .map((g) => `<span class="rf-tag${g.tenpai ? ' yes' : ''}" style="left:${g.x.toFixed(0)}px;top:${g.y.toFixed(0)}px">${g.tenpai ? '听牌' : '不听'}</span>`)
+    .map(
+      (g) =>
+        `<div class="rf-tag${g.tenpai ? ' yes' : ''}${g.tenpai && g.waits ? ' with-tiles' : ''}" style="left:${g.x.toFixed(0)}px;top:${g.y.toFixed(0)}px">${g.tenpai ? '听牌' : '未听'}${g.tenpai && g.waits ? `<div class="rf-tag-waits">${g.waits}</div>` : ''}</div>`,
+    )
     .join('');
   return `<div class="rf-draw"><div class="rf-draw-band"><span class="rf-draw-main">${main}</span>${sub ? `<span class="rf-draw-sub">${sub}</span>` : ''}</div>${t}</div>`;
 }
@@ -114,6 +117,8 @@ export interface PointSeat {
   rankBefore: number; // 1..4
   rankAfter: number;
   mine: boolean;
+  // 荒牌流局时点数卡下面那一行：听哪几张 / 未听（和牌、途中流局没有）
+  wait?: string;
 }
 
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -132,6 +137,7 @@ export function pointsPageHtml(round: string, seats: PointSeat[], extra = ''): s
           <span class="rf-line"><span class="rf-cname">${p.name}</span><span class="rf-delta ${cls}">${d > 0 ? '+' : ''}${d ? d.toLocaleString('en-US') : '±0'}</span></span>
           <span class="rf-score" data-from="${p.before}" data-to="${p.after}">${p.before.toLocaleString('en-US')}</span>
         </span>
+        ${p.wait ?? ''}
       </div>`;
     })
     .join('');
