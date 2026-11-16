@@ -24,7 +24,8 @@ import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
-import { TableColors, tableColors } from '../ui/theme';
+import { type FeltPattern, TableColors, tableColors } from '../ui/theme';
+import { drawConsoleLook } from './consoleLooks';
 import { hash01, pondJitter, varyDiscard, vary } from '../ui/vary';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
@@ -677,8 +678,11 @@ export class Table3D {
     this.scene.add(key);
 
     // 桌子：黑色亮面，桌框只比桌布高一点，内侧一圈金属包边；尺寸变了会整个重建（buildTable）
-    const frameMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.frame, roughness: 0.32, metalness: 0.25 }));
-    const trimMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.trim, roughness: 0.3, metalness: 0.8 }));
+    // 桌框、包边的质感：牌桌风格里有写就照写的（原木是不反光的木头，翻牌屏是铝），没写是原来的黑色亮面和金属包边
+    const [frameRough, frameMetal] = this.colors.frameFinish ?? [0.32, 0.25];
+    const [trimRough, trimMetal] = this.colors.trimFinish ?? [0.3, 0.8];
+    const frameMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.frame, roughness: frameRough, metalness: frameMetal }));
+    const trimMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.trim, roughness: trimRough, metalness: trimMetal }));
     this.tableMats = {
       frame: frameMat,
       trim: trimMat,
@@ -710,9 +714,9 @@ export class Table3D {
 
     // 中央控制台：顶面画点数和局数
     const consoleMats = [
-      wet(new THREE.MeshStandardMaterial({ color: '#0c0d0f', roughness: 0.25, metalness: 0.3 })),
-      // 顶面的点数、局数是自己发光的屏幕，淹在水里也照样看得清（不泡水）
-      new THREE.MeshStandardMaterial({ map: this.consoleTex, roughness: 0.2, emissive: '#ffffff', emissiveMap: this.consoleTex, emissiveIntensity: 0.35 }),
+      wet(new THREE.MeshStandardMaterial({ color: this.colors.consoleBody ?? '#0c0d0f', roughness: 0.25, metalness: 0.3 })),
+      // 顶面的点数、局数是自己发光的屏幕，淹在水里也照样看得清（不泡水）；木牌、皮面这种不是屏幕的，发光弱一点
+      new THREE.MeshStandardMaterial({ map: this.consoleTex, roughness: 0.2, emissive: '#ffffff', emissiveMap: this.consoleTex, emissiveIntensity: this.colors.consoleGlow ?? 0.35 }),
     ];
     const h = this.consoleH;
     const box = new THREE.Mesh(new RoundedBoxGeometry(CONSOLE_HALF * 2, h, CONSOLE_HALF * 2, 4, Math.min(0.25, h / 2)), consoleMats[0]);
@@ -3311,6 +3315,36 @@ export class Table3D {
     const title = (px: number) => k.title.replace('1em', `${px}px`);
     c.setTransform(4, 0, 0, 4, 0, 0);
     c.imageSmoothingQuality = 'high';
+    // 选了牌桌风格：仪表盘照那一套画（consoleLooks.ts），位置和原来一样
+    if (this.colors.look && this.colors.look !== 'skin') {
+      drawConsoleLook(
+        c,
+        this.colors,
+        {
+          wind: WIND_CN[g.roundWind],
+          no: g.roundNumber + 1,
+          honba: g.honba,
+          remaining: g.phase === 'predeal' ? null : g.wall.remaining,
+          sticks: g.shownSticks(view.me),
+          dora: [0, 1, 2, 3, 4].map((i) => {
+            const t = g.wall.doraIndicators[i];
+            return i < g.wall.doraRevealed && t !== undefined ? faceIndex(t) : null;
+          }),
+        },
+        [0, 1, 2, 3].map((s) => ({
+          rel: (s - view.me + 4) % 4,
+          wind: WIND_CN[g.seatWind(s) - 27],
+          score: g.shownScore(s, view.me),
+          riichi: g.seesRiichi(s, view.me),
+          active: g.phase === 'turn' && g.turn === s,
+          color: view.colors[s],
+        })),
+        (cx, face, x, y, w, h) => this.atlas.drawFace(cx, face, x, y, w, h),
+        !this.v2,
+      );
+      this.consoleTex.needsUpdate = true;
+      return;
+    }
     const bg = c.createRadialGradient(M, M, 40, M, M, M * 1.4);
     bg.addColorStop(0, k.bg[0]);
     bg.addColorStop(1, k.bg[1]);
@@ -4569,6 +4603,88 @@ function hatchTexture(): THREE.CanvasTexture {
   return t;
 }
 
+// 噪点：每个像素明暗随机差一点（amount 是最大差多少）
+function feltNoise(ctx: CanvasRenderingContext2D, amount: number): void {
+  const img = ctx.getImageData(0, 0, 1024, 1024);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * amount;
+    img.data[i] += n;
+    img.data[i + 1] += n;
+    img.data[i + 2] += n;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function feltPattern(ctx: CanvasRenderingContext2D, pattern: FeltPattern): void {
+  const rnd = Math.random;
+  if (pattern === 'baize') {
+    // 绿呢：短短的绒毛，往各个方向倒
+    for (let i = 0; i < 26000; i++) {
+      const x = rnd() * 1024;
+      const y = rnd() * 1024;
+      const a = rnd() * Math.PI * 2;
+      const l = 2 + rnd() * 5;
+      ctx.strokeStyle = rnd() < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+      ctx.stroke();
+    }
+    feltNoise(ctx, 10);
+  } else if (pattern === 'wood') {
+    // 木纹：一整块板，横向起伏的纹路，有粗有细；偶尔一道浅色的
+    for (let i = 0; i < 170; i++) {
+      const y0 = rnd() * 1024;
+      const amp = 4 + rnd() * 14;
+      const f = 0.003 + rnd() * 0.006;
+      const ph = rnd() * Math.PI * 2;
+      const light = rnd() < 0.18;
+      ctx.strokeStyle = light ? `rgba(255,214,160,${0.03 + rnd() * 0.04})` : `rgba(20,10,4,${0.06 + rnd() * 0.12})`;
+      ctx.lineWidth = 0.8 + rnd() * (light ? 5 : 2.6);
+      ctx.beginPath();
+      for (let x = -8; x <= 1032; x += 8) {
+        const y = y0 + Math.sin(x * f + ph) * amp + Math.sin(x * f * 2.7 + ph * 1.3) * amp * 0.3;
+        if (x < 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    feltNoise(ctx, 6);
+  } else if (pattern === 'linen') {
+    // 亚麻：横竖交织的细线
+    for (let y = 0; y < 1024; y += 3) {
+      ctx.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${0.015 + rnd() * 0.03})` : `rgba(0,0,0,${0.03 + rnd() * 0.04})`;
+      ctx.fillRect(0, y, 1024, 1.2);
+    }
+    for (let x = 0; x < 1024; x += 3) {
+      ctx.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${0.015 + rnd() * 0.02})` : `rgba(0,0,0,${0.02 + rnd() * 0.035})`;
+      ctx.fillRect(x, 0, 1.2, 1024);
+    }
+    feltNoise(ctx, 6);
+  } else if (pattern === 'leather') {
+    // 皮面：一粒一粒的小疙瘩，上面亮一点、下面暗一点
+    for (let i = 0; i < 30000; i++) {
+      const x = rnd() * 1024;
+      const y = rnd() * 1024;
+      const r = 1.2 + rnd() * 2.6;
+      ctx.fillStyle = 'rgba(0,0,0,0.14)';
+      ctx.beginPath();
+      ctx.arc(x, y + 0.8, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.035)';
+      ctx.beginPath();
+      ctx.arc(x - 0.5, y - 0.6, r * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    feltNoise(ctx, 5);
+  } else if (pattern === 'matte') {
+    feltNoise(ctx, 5);
+  } else {
+    feltNoise(ctx, 10);
+  }
+}
+
 // zones：改良布局时桌子的半宽，从控制台四角往桌角画四条细线，把桌面分成四家的地盘（雀魂那样）；0 是原版的一圈方框
 function feltTexture(colors: TableColors, zones = 0): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -4581,15 +4697,8 @@ function feltTexture(colors: TableColors, zones = 0): THREE.CanvasTexture {
   grad.addColorStop(1, colors.felt[2]);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 1024, 1024);
-  // 细微的布纹噪点
-  const img = ctx.getImageData(0, 0, 1024, 1024);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const n = (Math.random() - 0.5) * 10;
-    img.data[i] += n;
-    img.data[i + 1] += n;
-    img.data[i + 2] += n;
-  }
-  ctx.putImageData(img, 0, 0);
+  // 桌面的材质（牌桌风格里写的；皮肤自带的牌桌是 cloth，就是原来那层细噪点）。纹路都压得很淡，不跟牌抢眼
+  feltPattern(ctx, colors.pattern ?? 'cloth');
   ctx.strokeStyle = colors.feltLine;
   ctx.lineWidth = 3;
   if (zones) {

@@ -2,7 +2,7 @@ import { CHARACTERS, type Character } from '../abilities/characters';
 import type { Rules } from '../engine/game';
 import type { Rng } from '../engine/rng';
 import { SCHOOLS, membersOf } from './schools';
-import { THEMES, type ThemeId, tableColors } from './theme';
+import { TABLE_STYLES, THEMES, type TableStyleId, type ThemeId, skinTableColors, tableColors } from './theme';
 
 // 选人页右上角的两个设置面板：对局设置（规则、对手）和视觉设置（皮肤、牌桌视角、动画）。
 // 改了马上记在浏览器里，点头像、按出场都照这里的设置开局
@@ -356,10 +356,10 @@ export function saveTableMode(m: TableMode): void {
   }
 }
 
-// 视觉设置：界面皮肤（带桌布和牌背的小色样）、牌桌视角、摸牌路径、微变化、和牌聚光灯和转镜头；页面主人多一行素材
-export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMode, skins: boolean): string {
+// 视觉设置：界面皮肤（带桌布和牌背的小色样）、牌桌风格（桌面和仪表盘一套）、牌桌视角、摸牌路径、微变化、和牌聚光灯和转镜头；页面主人多一行素材
+export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMode, skins: boolean, table: TableStyleId): string {
   const themes = THEMES.map((t) => {
-    const c = tableColors(t.id);
+    const c = skinTableColors(t.id);
     const on = t.id === theme;
     return `<button class="set-theme${on ? ' on' : ''}" aria-pressed="${on}" data-ui="vis-theme" data-v="${t.id}" style="--f:${c.felt[1]};--b:${c.back};--a:${c.console.accent}"><i aria-hidden="true"></i>${t.name}</button>`;
   }).join('');
@@ -368,7 +368,14 @@ export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMod
     const on = m.id === mode;
     return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="vis-mode" data-v="${m.id}">${m.name}</button>`;
   }).join('');
+  // 牌桌风格的小色样：桌布色上放一块仪表盘色的小方块，方块里一道字的颜色
+  const tableNote = TABLE_STYLES.find((t) => t.id === table)?.note;
+  const tables = TABLE_STYLES.map((t) => {
+    const c = tableColors(theme, t.id);
+    const on = t.id === table;
+    return `<button class="set-theme set-table${on ? ' on' : ''}" aria-pressed="${on}" data-ui="vis-table" data-v="${t.id}" style="--f:${c.felt[1]};--b:${c.back};--c:${c.console.bg[0]};--k:${c.console.ink === c.console.bg[0] ? c.console.accent : c.console.ink};--a:${c.console.line}"><i aria-hidden="true"></i>${t.name}</button>`;
+  }).join('');
   const art = skins ? section('素材') + rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图、语音 ›</button>', '只有页面主人看得到') : '';
-  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand', 'slam', 'slamStyle', 'slamOrder', 'result'] : ['layout', 'result']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
+  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌风格', tables, tableNote, 'set-themes set-tables') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand', 'slam', 'slamStyle', 'slamOrder', 'result'] : ['layout', 'result']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
   return panelHtml('visual', '视觉设置', '改了马上生效', body, '');
 }

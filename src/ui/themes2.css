@@ -337,11 +337,14 @@
   color: #b0476a;
 }
 
-/* 对局：头像是圆角白边的照片，名牌是白色胶囊 */
+/* 对局：头像是圆角白边的照片，名牌是白色胶囊。
+   没有头像图的角色只写一个字：底子是浅色的角色色，字用深一档的角色色（白字在黄、粉这些浅色角色上看不清） */
 :root[data-theme='porcelain'] .seat-frame .portrait {
   border: 3px solid #fff;
   border-radius: 18px;
-  background: linear-gradient(170deg, color-mix(in srgb, var(--c) 45%, white), color-mix(in srgb, var(--c) 80%, #1d232a));
+  background: linear-gradient(170deg, color-mix(in srgb, var(--c) 30%, white), color-mix(in srgb, var(--c) 50%, white));
+  color: color-mix(in srgb, var(--c) 38%, #1d232a);
+  text-shadow: none;
   box-shadow: 0 8px 20px rgba(29, 35, 42, 0.22);
 }
 

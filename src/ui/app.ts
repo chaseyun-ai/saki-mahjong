@@ -69,7 +69,7 @@ import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { preloadVoices, sayVoice, stopVoices } from './voice';
 import { VoiceCue, cueKeys } from './voiceLines';
 import { TeamFlow } from './teamFlow';
-import { THEMES, ThemeId, currentTheme, setTheme } from './theme';
+import { TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentTableStyle, currentTheme, setTableStyle, setTheme } from './theme';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
@@ -457,7 +457,7 @@ export class App {
       this.panel === 'match'
         ? matchPanelHtml(this.settings)
         : this.panel === 'visual'
-          ? visualPanelHtml(this.settings, currentTheme(), this.mode, this.canSkins)
+          ? visualPanelHtml(this.settings, currentTheme(), this.mode, this.canSkins, currentTableStyle())
           : this.panel === 'rii'
             ? riiSetPanelHtml()
             : this.panel === 'riiTest'
@@ -1952,6 +1952,12 @@ export class App {
     if (el.dataset.ui === 'vis-theme' && THEMES.some((t) => t.id === el.dataset.v)) {
       setTheme(el.dataset.v as ThemeId);
       this.renderSelect();
+      return;
+    }
+    // 牌桌风格：下一局建牌桌时用（2D 牌桌马上换）
+    if (el.dataset.ui === 'vis-table' && TABLE_STYLES.some((t) => t.id === el.dataset.v)) {
+      setTableStyle(el.dataset.v as TableStyleId);
+      this.renderPanel();
       return;
     }
     if (el.dataset.ui === 'vis-mode' && TABLE_MODES.some((m) => m.id === el.dataset.v)) {

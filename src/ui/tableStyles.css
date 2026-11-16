@@ -1,0 +1,438 @@
+/* ======================================================================
+   牌桌风格（视觉设置里的「牌桌风格」）：桌面和中央仪表盘配成一套，跟界面皮肤分开选。
+   这里是 2D 牌桌的桌布和中间那块；3D、2.5D 牌桌在 theme.ts（颜色）、table3d.ts（桌面材质）、consoleLooks.ts（仪表盘）里画。
+   跟皮肤走时 <html> 上没有 data-table，这里一条都不生效。
+   中间那块的底色、字色每套都写死，不跟皮肤的 --ink、--gold 走（浅色皮肤会把它们改成深色）。
+   字和底色都量过对比度：正文 4.5:1 以上。
+   能力换出来的牌桌照旧，不套牌桌风格：爱丽丝的手绘板（.table.sketch）、原村和的网麻牌桌（.stage.net）
+   ====================================================================== */
+
+/* 视觉设置里的小色样：桌布色上一块仪表盘色的小方块，方块底下一道字的颜色 */
+.set-table i {
+  position: relative;
+  width: 22px;
+  height: 16px;
+  background: var(--f);
+}
+
+.set-table i::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 3.5px;
+  width: 8px;
+  height: 7px;
+  border-radius: 1.5px;
+  background: var(--c);
+  box-shadow: inset 0 -2.5px 0 var(--k);
+}
+
+/* ---------- 共用：中间那块的字 ---------- */
+
+/* 从上到下：局数；余牌和立直棒并排一行（和 3D 仪表盘的「本场 | 余」一样）；宝牌指示牌；咲的岭上牌、杠材。
+   余牌、立直棒合成一行省出来的高度，留给咲的那两行：都出来时也碰不到上下两家的点数。
+   四家的点数是绝对定位的，不跟着排，位置和原来一样 */
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  flex-flow: row wrap;
+  align-content: center;
+  gap: 2px 14px;
+}
+
+/* 局数后面断一行（局数自己不撑满，翻牌屏那块深色底才不会拉成一长条） */
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center::after {
+  content: '';
+  order: 1;
+  flex-basis: 100%;
+  height: 0;
+}
+
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center > :is(.remain, .sticks) {
+  order: 2;
+}
+
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center > :is(.dora, .rinshan-peek, .kan-peek) {
+  order: 3;
+  flex-basis: 100%;
+  justify-content: center;
+  text-align: center;
+}
+
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {
+  font-size: 19px;
+  font-weight: 900;
+  text-shadow: none;
+}
+
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center .remain,
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center .sticks {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 咲的「岭上」「杠材」：原来 11px，大一号 */
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center :is(.rinshan-peek, .kan-peek) {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center .kan-peek {
+  max-width: 210px;
+}
+
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  filter: none;
+}
+
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .pts {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* 2D 手牌上面那行提示（点击一张牌打出）直接写在桌布上：皮肤的浅灰字是照皮肤自己的桌布挑的，换了桌布（比如绿呢）就不够亮，
+   统一用近白色，五种桌布上都在 5:1 以上。白瓷、漫画的提示自带白底胶囊，不动 */
+:root[data-table]:not([data-theme='porcelain'], [data-theme='manga']) .stage:not(.net) .table:not(.sketch) .hint {
+  color: #e8edf3;
+}
+
+/* 理和鸣切四个开关关着的时候：原来是 35% 的白字，压在新桌面上看不清，调成和新皮肤一样（2D、2.5D、3D 都管） */
+:root[data-table] .assist-bar button:not(.on) {
+  background: rgba(14, 20, 28, 0.92);
+  color: rgba(255, 255, 255, 0.74);
+}
+
+/* ---------- 自动麻将机：绿呢、黑色机身、琥珀色数码管 ---------- */
+
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) {
+  --felt: #215b44;
+  --felt-dark: #163f30;
+  --tile-back: #2f6fb0;
+  background: radial-gradient(ellipse at 50% 47%, #2a6d4f 0%, #215b44 45%, #163f30 100%);
+}
+
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --ink: #ffb02e;
+  --ink-quiet: #d6cabc;
+  --gold: #ffb02e;
+  color: #d6cabc;
+  border: 2px solid #2c2d30;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #1a1b1d, #070708);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {
+  color: #ffb02e;
+  text-shadow: 0 0 6px rgba(255, 176, 46, 0.55);
+}
+
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center .remain,
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center .sticks {
+  color: #d6cabc;
+}
+
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
+  border: 2px solid var(--c);
+  border-radius: 4px;
+  background: #1d1e21;
+  color: #d6cabc;
+}
+
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .pts {
+  padding: 0 6px;
+  border: 1px solid #3a2a20;
+  border-radius: 4px;
+  background: #0a0605;
+  color: #ffb02e;
+  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  letter-spacing: 1px;
+}
+
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .wind {
+  background: #ffb02e;
+  color: #1a1006;
+}
+
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .pts {
+  border-color: #ffb02e;
+}
+
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active::after {
+  border-color: #ffb02e;
+}
+
+:root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center .kan-peek {
+  color: #ffb02e;
+}
+
+/* ---------- 原木：胡桃木桌面、浅色木牌、墨色字、朱红印 ---------- */
+
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) {
+  --felt: #4e3522;
+  --felt-dark: #3a2718;
+  --tile-back: #2f6a4f;
+  background:
+    repeating-linear-gradient(177deg, rgba(20, 10, 4, 0.12) 0 2px, transparent 2px 9px, rgba(255, 214, 160, 0.035) 9px 12px, transparent 12px 23px),
+    radial-gradient(ellipse at 50% 47%, #5f412a 0%, #4e3522 50%, #3a2718 100%);
+}
+
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --ink: #2b1b0e;
+  --ink-quiet: #5a4029;
+  --gold: #9b2c17;
+  color: #2b1b0e;
+  border: 2.5px solid #7d5d3a;
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(178deg, rgba(150, 108, 58, 0.12) 0 1px, transparent 1px 7px),
+    radial-gradient(#efdfbd, #e4cc9f);
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 255, 255, 0.35),
+    0 8px 22px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {
+  color: #2b1b0e;
+  font-family: 'Noto Serif SC', 'STSong', serif;
+}
+
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .remain,
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .sticks {
+  color: #5a4029;
+}
+
+/* 圆圈比方块大一点：字和圈之间留出空 */
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
+  min-width: 24px;
+  height: 24px;
+  border: 2px solid #2b1b0e;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--c);
+  color: #2b1b0e;
+  font-family: 'Noto Serif SC', 'STSong', serif;
+}
+
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .pts {
+  color: #2b1b0e;
+  font-family: 'Noto Serif SC', 'STSong', serif;
+  font-weight: 900;
+}
+
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .wind {
+  border-color: #9b2c17;
+  background: #9b2c17;
+  color: #fff4e6;
+}
+
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .pts {
+  color: #2b1b0e;
+}
+
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active::after {
+  border-color: #9b2c17;
+}
+
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .kan-peek {
+  color: #9b2c17;
+}
+
+/* ---------- 深夜：炭灰哑光、灰白字加一点青 ---------- */
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) {
+  --felt: #252a30;
+  --felt-dark: #1b1f24;
+  --tile-back: #3d7f86;
+  background: radial-gradient(ellipse at 50% 47%, #2d3239 0%, #252a30 45%, #1b1f24 100%);
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --ink: #eef1f5;
+  --ink-quiet: #a9b1bc;
+  --gold: #5fd3c6;
+  color: #eef1f5;
+  border: 1px solid #353b44;
+  border-radius: 14px;
+  background: #1d2126;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {
+  color: #eef1f5;
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .remain,
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .sticks {
+  color: #a9b1bc;
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
+  border-radius: 5px;
+  background: #2a2f37;
+  box-shadow: inset 0 -3px 0 var(--c);
+  color: #eef1f5;
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .pts {
+  color: #eef1f5;
+  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  font-size: 17px;
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .wind {
+  background: #5fd3c6;
+  color: #10201e;
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .pts {
+  color: #5fd3c6;
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active::after {
+  border-color: #5fd3c6;
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .kan-peek {
+  color: #5fd3c6;
+}
+
+/* ---------- 翻牌屏：藏青亚麻、铝面板、一块块翻牌 ---------- */
+
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) {
+  --felt: #22394f;
+  --felt-dark: #182a3b;
+  --tile-back: #d0612a;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.07) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at 50% 47%, #2b4763 0%, #22394f 45%, #182a3b 100%);
+}
+
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --ink: #1f262d;
+  --ink-quiet: #1f262d;
+  --gold: #ff8a1f;
+  color: #1f262d;
+  border: 2px solid #6c747c;
+  border-radius: 12px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.1) 0 1px, transparent 1px 2px),
+    linear-gradient(#d3d8dd, #b9c0c7);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.55),
+    0 8px 22px rgba(0, 0, 0, 0.45);
+}
+
+/* 翻牌：上半块亮一点，中间一道缝 */
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center :is(.round, .score .wind, .score .pts) {
+  border-radius: 3px;
+  background: linear-gradient(#272a2f 0 calc(50% - 1px), rgba(0, 0, 0, 0.6) calc(50% - 1px) calc(50% + 1px), #1f2226 calc(50% + 1px));
+  color: #f5f5f2;
+}
+
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {
+  padding: 2px 10px;
+  letter-spacing: 3px;
+}
+
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .remain,
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .sticks {
+  color: #1f262d;
+}
+
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
+  box-shadow: inset 0 -3px 0 var(--c);
+}
+
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .pts {
+  padding: 0 5px;
+  font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  letter-spacing: 2px;
+}
+
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .wind {
+  background: #ff8a1f;
+  color: #1a1006;
+}
+
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active::after {
+  border-color: #ff8a1f;
+}
+
+/* 铝面板是浅色的：杠材用深橙，不用原来的粉色 */
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .kan-peek {
+  color: #7a3200;
+}
+
+/* ---------- 酒红皮革：酒红皮面、黑皮面烫金字 ---------- */
+
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) {
+  --felt: #57191f;
+  --felt-dark: #3f1216;
+  --tile-back: #23503f;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.035) 0 1px, transparent 1.6px) 0 0 / 6px 6px,
+    radial-gradient(circle at 70% 60%, rgba(0, 0, 0, 0.16) 0 1.2px, transparent 1.8px) 0 0 / 7px 7px,
+    radial-gradient(ellipse at 50% 47%, #6a2429 0%, #57191f 45%, #3f1216 100%);
+}
+
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --ink: #f1e6cc;
+  --ink-quiet: #c2a874;
+  --gold: #e2c27f;
+  color: #f1e6cc;
+  border: 2px solid #b8955a;
+  border-radius: 10px;
+  background: radial-gradient(#1f1714, #140e0c);
+  outline: 1px solid #b8955a;
+  outline-offset: -7px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {
+  color: #e2c27f;
+  font-family: 'Noto Serif SC', 'STSong', serif;
+}
+
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .remain,
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .sticks {
+  color: #c2a874;
+}
+
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
+  min-width: 24px;
+  height: 24px;
+  border: 2px solid #e2c27f;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--c);
+  color: #e2c27f;
+  font-family: 'Noto Serif SC', 'STSong', serif;
+}
+
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .pts {
+  color: #f1e6cc;
+  font-family: 'Noto Serif SC', 'STSong', serif;
+  font-weight: 900;
+}
+
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .wind {
+  background: #e2c27f;
+  color: #1a1210;
+}
+
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .pts {
+  color: #f1e6cc;
+}
+
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active::after {
+  border-color: #e2c27f;
+}
+
+:root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .kan-peek {
+  color: #e2c27f;
+}
