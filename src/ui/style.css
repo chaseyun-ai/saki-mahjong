@@ -878,6 +878,64 @@ button {
   color: var(--gold);
 }
 
+/* 点差：鼠标停在中间那块上（手机上点一下，3 秒），其他三家的点数换成自己比他多几点：多了蓝字 +、少了红字 -、一样多照常。
+   颜色看底色深浅挑：深色的中间用亮蓝、亮红；白瓷、漫画的白底，网麻的黄点数牌用深蓝、深红（牌桌风格的在 tableStyles.css） */
+.center {
+  --diff-plus: #5ab4ff;
+  --diff-minus: #ff6b6b;
+}
+
+:root:is([data-theme='porcelain'], [data-theme='manga']) .center {
+  --diff-plus: #1a56b0;
+  --diff-minus: #b3212a;
+}
+
+.stage.net .table .center {
+  --diff-plus: #0b3d91;
+  --diff-minus: #8f0f16;
+}
+
+/* 爱丽丝的手绘板：中间那块是白纸，也用深蓝、深红。赛博霓虹、复古街机的中间那块在手绘板上还是深色底，照常用亮色 */
+.table.sketch .center {
+  --diff-plus: #1a56b0;
+  --diff-minus: #a01c24;
+}
+
+:root:is([data-theme='neon'], [data-theme='arcade']) .table.sketch .center {
+  --diff-plus: #5ab4ff;
+  --diff-minus: #ff6b6b;
+}
+
+.score .pts .d {
+  display: none;
+}
+
+.score .pts .d.plus {
+  color: var(--diff-plus);
+}
+
+.score .pts .d.minus {
+  color: var(--diff-minus);
+}
+
+.center.diff-on .score .pts .v {
+  display: none;
+}
+
+.center.diff-on .score .pts .d {
+  display: inline;
+}
+
+@media (hover: hover) {
+  .center:hover .score .pts .v {
+    display: none;
+  }
+
+  .center:hover .score .pts .d {
+    display: inline;
+  }
+}
+
 .score.active::after {
   content: '';
   position: absolute;
@@ -7655,6 +7713,21 @@ html:root .tm-draft .tmd-go {
   color: #ffc2d4;
   max-width: 200px;
   text-align: center;
+}
+
+/* 杠材有两项（两种牌都成了刻子）时一行放不下，要折两三行：行距收紧、行宽放到快满，中间那块各行之间不再留空，
+   上下两家的点数才不会被压到 */
+.center:has(.kan-peek.multi) {
+  row-gap: 0;
+}
+
+.center:has(.kan-peek.multi) .dora {
+  margin-top: 1px;
+}
+
+.center .kan-peek.multi {
+  line-height: 1.25;
+  max-width: 216px;
 }
 
 /* ---------- 白水哩的番缚 ---------- */

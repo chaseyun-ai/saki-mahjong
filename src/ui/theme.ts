@@ -39,10 +39,31 @@ export interface TableColors {
   // 仪表盘侧面的颜色，顶面自己发光的强度
   consoleBody?: string;
   consoleGlow?: number;
+  // 款式（形状）：桌框、包边、仪表盘做成什么样子
+  form?: TableForm;
 }
 
 export type FeltPattern = 'cloth' | 'baize' | 'wood' | 'matte' | 'linen' | 'leather';
 export type ConsoleLook = 'skin' | 'led' | 'plaque' | 'flat' | 'flap' | 'foil';
+// 仪表盘的形状：圆角方盒（原来的）、矮木牌、圆盘、切角方盒、软包（大圆角、边上鼓起来，顶上一圈金边）
+export type ConsoleForm = 'box' | 'plate' | 'disc' | 'chamfer' | 'cushion';
+
+// 牌桌的款式。只有牌桌风格里有；皮肤自带的牌桌不写，就是原来的圆角桌框、金属包边、圆角方仪表盘
+export interface TableForm {
+  // 桌框外圈的四个角：圆角（原来的）、直角（四块木板拼的，角上一道斜拼缝）、大圆角、切角
+  corner: 'round' | 'square' | 'pill' | 'chamfer';
+  // 桌框上下边倒圆多大：大的像一圈软包、木桌的圆边，小的利落
+  bevel: number;
+  // 桌框内侧：金属包边条（原来的）、桌框面上嵌一道铜线、没有、低一级的铝台阶、一圈金色滚边
+  trim: 'strip' | 'inlay' | 'none' | 'step' | 'piping';
+  // 桌框面上一排小件：铆钉、软包的扣子
+  studs?: 'rivet' | 'button';
+  console: ConsoleForm;
+  // 仪表盘的高度是原来的几倍
+  consoleScale: number;
+  // 桌布上那圈线：一道（原来的）、两道、缝线（虚线）、只在四个角上画一截、不画
+  line: 'single' | 'double' | 'stitch' | 'corners' | 'none';
+}
 
 const TABLES: Record<ThemeId, TableColors> = {
   classic: {
@@ -144,6 +165,8 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     trimFinish: [0.32, 0.85],
     consoleBody: '#0d0e10',
     consoleGlow: 0.55,
+    // 雀庄的全自动麻将桌：就是原来的样子，圆角桌框、金属包边、圆角方盒
+    form: { corner: 'round', bevel: 0.14, trim: 'strip', console: 'box', consoleScale: 1, line: 'single' },
   },
   // 原木：深色胡桃木桌面、铜色包边，仪表盘是一块浅色木牌，墨色字，轮到谁盖一个朱红印
   wood: {
@@ -160,6 +183,8 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     trimFinish: [0.35, 0.7],
     consoleBody: '#3a2717',
     consoleGlow: 0.12,
+    // 木桌：直角桌框、圆边，四块木板拼起来，框面上嵌一道铜线；仪表盘是一块矮矮的木牌；桌布上两道线
+    form: { corner: 'square', bevel: 0.22, trim: 'inlay', console: 'plate', consoleScale: 0.55, line: 'double' },
   },
   // 深夜：炭灰哑光桌布，仪表盘只有灰白两色加一点青，不发光、没花纹，适合长时间打
   night: {
@@ -176,6 +201,8 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     trimFinish: [0.4, 0.6],
     consoleBody: '#121417',
     consoleGlow: 0.3,
+    // 什么都收着：大圆角的薄桌框、没有包边，仪表盘是一块薄圆盘，桌布上不画线
+    form: { corner: 'pill', bevel: 0.06, trim: 'none', console: 'disc', consoleScale: 0.8, line: 'none' },
   },
   // 翻牌屏：藏青亚麻桌布、铝框，点数像车站的翻牌显示屏，一位数一块牌
   flap: {
@@ -192,6 +219,8 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     trimFinish: [0.25, 0.9],
     consoleBody: '#8b939b',
     consoleGlow: 0.18,
+    // 车站的铝件：切角桌框、平顶一排铆钉，内侧低一级的亮铝台阶；仪表盘是高一点的切角铝盒；桌布上只在四个角画一截
+    form: { corner: 'chamfer', bevel: 0.04, trim: 'step', studs: 'rivet', console: 'chamfer', consoleScale: 1.35, line: 'corners' },
   },
   // 酒红皮革：酒红皮面、黑胡桃桌框、金色包边，仪表盘是黑皮面烫金字
   club: {
@@ -208,16 +237,18 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     trimFinish: [0.3, 0.9],
     consoleBody: '#19120f',
     consoleGlow: 0.2,
+    // 软包：桌框是鼓起来的一圈皮，钉一排金扣子，内侧一圈金色滚边；仪表盘是软包的大圆角盒子，顶上一圈金边；桌布上一圈缝线
+    form: { corner: 'round', bevel: 0.32, trim: 'piping', studs: 'button', console: 'cushion', consoleScale: 1.1, line: 'stitch' },
   },
 };
 
 export const TABLE_STYLES: { id: TableStyleId; name: string; note: string }[] = [
   { id: 'skin', name: '跟皮肤走', note: '桌布、牌背、仪表盘用界面皮肤自带的那套' },
-  { id: 'auto', name: '自动麻将机', note: '绿呢桌布、黑色机身，点数是琥珀色数码管，像雀庄里的全自动麻将桌' },
-  { id: 'wood', name: '原木', note: '胡桃木桌面、铜色包边；仪表盘是一块浅色木牌，墨色字，轮到谁盖一个朱红印' },
-  { id: 'night', name: '深夜', note: '炭灰哑光桌布，仪表盘只有灰白两色加一点青，不发光、没花纹，适合长时间打' },
-  { id: 'flap', name: '翻牌屏', note: '藏青亚麻桌布、铝框，点数像车站的翻牌显示屏，一位数一块牌' },
-  { id: 'club', name: '酒红皮革', note: '酒红皮面、黑胡桃桌框、金色包边，仪表盘是黑皮面烫金字' },
+  { id: 'auto', name: '自动麻将机', note: '绿呢桌布、黑色机身、圆角方盒仪表盘，点数是琥珀色数码管，像雀庄里的全自动麻将桌' },
+  { id: 'wood', name: '原木', note: '胡桃木桌面、直角木框嵌一道铜线；仪表盘是一块矮矮的浅色木牌，墨色字，轮到谁盖一个朱红印' },
+  { id: 'night', name: '深夜', note: '炭灰哑光桌布、大圆角薄框；仪表盘是一块圆盘，只有灰白两色加一点青，不发光、没花纹，适合长时间打' },
+  { id: 'flap', name: '翻牌屏', note: '藏青亚麻桌布、切角铝框钉一排铆钉；仪表盘是切角铝盒，点数像车站的翻牌显示屏，一位数一块牌' },
+  { id: 'club', name: '酒红皮革', note: '酒红皮面、软包桌框钉金扣子；仪表盘是软包盒子，黑皮面烫金字' },
 ];
 
 const STYLE_KEY = 'saki-table-style';

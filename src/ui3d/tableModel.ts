@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { TableDims } from './tableLayout';
+import type { TableForm } from '../ui/theme';
 
 // 全自动麻将桌的桌框和机身（参考大洋 AMOS）。
 //
@@ -52,24 +53,36 @@ export interface TableMaterials {
   floor: THREE.Material;
 }
 
-// 整张桌子（不含桌布、控制台和抽屉）：桌框、内侧金属包边、机身、地面
-export function buildTableModel(d: TableDims, frameTop: number, mats: TableMaterials): THREE.Group {
+// 皮肤自带的牌桌：圆角桌框、内侧一圈金属包边（牌桌风格里的自动麻将机也是这样）
+const PLAIN: Pick<TableForm, 'corner' | 'bevel' | 'trim' | 'studs'> = { corner: 'round', bevel: 0.14, trim: 'strip' };
+
+// 翻牌屏那种内侧低一级的铝台阶有多宽、比桌框面低多少
+const STEP_W = 0.34;
+const STEP_DROP = 0.08;
+
+// 整张桌子（不含桌布、控制台和抽屉）：桌框、内侧包边、机身、地面。form 是牌桌风格的款式（桌框外圈的角、断面、包边、框面上的小件）
+export function buildTableModel(d: TableDims, frameTop: number, mats: TableMaterials, form: Pick<TableForm, 'corner' | 'bevel' | 'trim' | 'studs'> = PLAIN): THREE.Group {
   const shape = tableShape(d, frameTop);
   const group = new THREE.Group();
 
-  // 桌框：外圈圆角，内圈就是桌布的方形；上下边都倒圆
-  const bevel = 0.14;
+  // 桌框：外圈照款式（圆角、直角、大圆角、切角），内圈就是桌布的方形；上下边都倒圆，倒多大也照款式
+  const bevel = form.bevel;
   // 框窄的时候外圈圆角也要小，免得四个角上框被圆角切断
-  const outerR = Math.min(cornerRadius(d.bodyHalf), (Math.SQRT2 * d.frame - 0.25) / (Math.SQRT2 - 1));
-  const outer = roundedRectShape(d.bodyHalf - bevel, Math.max(0.05, outerR - bevel));
-  outer.holes.push(roundedRectShape(d.tableHalf + bevel, 0.05));
+  const rMax = (Math.SQRT2 * d.frame - 0.25) / (Math.SQRT2 - 1);
+  const outerR = form.corner === 'square' ? 0.1 : form.corner === 'pill' ? Math.min(4, rMax) : Math.min(cornerRadius(d.bodyHalf), rMax);
+  // 切角：切掉的那一截不能让角上的框窄过 0.6
+  const cut = Math.min(1.7, Math.SQRT2 * (d.frame - 0.45));
+  const outer = form.corner === 'chamfer' ? chamferShape(d.bodyHalf - bevel, Math.max(0.05, cut - bevel * (2 - Math.SQRT2))) : roundedRectShape(d.bodyHalf - bevel, Math.max(0.05, outerR - bevel));
+  // 有铝台阶时桌框往外让出台阶的宽度
+  const inner = d.tableHalf + (form.trim === 'step' ? STEP_W : 0);
+  outer.holes.push(roundedRectShape(inner + bevel, 0.05));
   const frameGeo = new THREE.ExtrudeGeometry(outer, {
     depth: FRAME_H - bevel * 2,
     bevelEnabled: true,
     bevelThickness: bevel,
     bevelSize: bevel,
-    bevelSegments: 3,
-    curveSegments: 10,
+    bevelSegments: bevel > 0.2 ? 6 : 3,
+    curveSegments: form.corner === 'pill' ? 16 : 10,
   });
   frameGeo.rotateX(-Math.PI / 2);
   frameGeo.translate(0, shape.frameBottom + bevel, 0);
@@ -78,14 +91,97 @@ export function buildTableModel(d: TableDims, frameTop: number, mats: TableMater
   frame.receiveShadow = true;
   group.add(frame);
 
-  // 桌框内侧一圈金属包边
-  for (let s = 0; s < 4; s++) {
-    const trim = new THREE.Mesh(new THREE.BoxGeometry(d.tableHalf * 2, 0.05, 0.08), mats.trim);
-    trim.position.set(0, frameTop - 0.02, d.tableHalf + 0.05);
-    const side = new THREE.Group();
-    side.rotation.y = (s * Math.PI) / 2;
-    side.add(trim);
-    group.add(side);
+  // 桌框圆边倒得大时，贴着桌布那一圈底下会露一道缝：桌布底下垫一块，颜色和桌框一样
+  const under = new THREE.Mesh(new THREE.PlaneGeometry(d.bodyHalf * 2, d.bodyHalf * 2), mats.frame);
+  under.rotation.x = -Math.PI / 2;
+  under.position.y = -0.03;
+  group.add(under);
+
+  // 每条边各放一份（转 90° 四次）
+  const sides = (make: () => THREE.Object3D) => {
+    for (let s = 0; s < 4; s++) {
+      const side = new THREE.Group();
+      side.rotation.y = (s * Math.PI) / 2;
+      side.add(make());
+      group.add(side);
+    }
+  };
+  // 桌框面中线（框宽的一半）离中心多远
+  const mid = inner + (d.bodyHalf - inner) / 2;
+
+  if (form.trim === 'strip') {
+    // 桌框内侧一圈金属包边
+    sides(() => {
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(d.tableHalf * 2, 0.05, 0.08), mats.trim);
+      trim.position.set(0, frameTop - 0.02, d.tableHalf + 0.05);
+      return trim;
+    });
+  } else if (form.trim === 'inlay') {
+    // 框面中线上嵌一道铜线，四个角上一道 45° 的拼缝（四块木板拼起来的）
+    sides(() => {
+      const line = new THREE.Mesh(new THREE.BoxGeometry(mid * 2 + 0.07, 0.012, 0.07), mats.trim);
+      line.position.set(0, frameTop + 0.002, mid);
+      return line;
+    });
+    const seamMat = new THREE.MeshStandardMaterial({ color: '#120b06', roughness: 0.9 });
+    const seamLen = (d.bodyHalf - inner - bevel * 2) * Math.SQRT2;
+    for (let s = 0; s < 4; s++) {
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(seamLen, 0.008, 0.03), seamMat);
+      const a = (s * Math.PI) / 2 + Math.PI / 4;
+      seam.position.set(Math.cos(a) * mid * Math.SQRT2, frameTop + 0.001, Math.sin(a) * mid * Math.SQRT2);
+      seam.rotation.y = -a;
+      group.add(seam);
+    }
+  } else if (form.trim === 'step') {
+    // 桌框内侧低一级的亮铝台阶：从桌布边伸到桌框底下
+    const ring = roundedRectShape(inner + 0.05, 0.05);
+    ring.holes.push(roundedRectShape(d.tableHalf, 0.02));
+    const stepH = frameTop - STEP_DROP - shape.frameBottom;
+    const stepGeo = new THREE.ExtrudeGeometry(ring, { depth: stepH - 0.04, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2 });
+    stepGeo.rotateX(-Math.PI / 2);
+    stepGeo.translate(0, shape.frameBottom + 0.02, 0);
+    const step = new THREE.Mesh(stepGeo, mats.trim);
+    step.receiveShadow = true;
+    group.add(step);
+  } else if (form.trim === 'piping') {
+    // 软包和桌布接缝的地方一圈金色滚边（圆管），四个角上一颗圆珠接起来
+    const r = 0.06;
+    const y = 0.05;
+    const z = d.tableHalf + 0.035;
+    sides(() => {
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(r, r, z * 2, 10), mats.trim);
+      pipe.rotation.z = Math.PI / 2;
+      pipe.position.set(0, y, z);
+      return pipe;
+    });
+    for (const [x, zz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), mats.trim);
+      ball.position.set(x * z, y, zz * z);
+      group.add(ball);
+    }
+  }
+
+  // 框面中线上一排小件：铆钉（扁圆柱）、软包的扣子（压扁的小球）。四个角留出来
+  if (form.studs) {
+    const geo = form.studs === 'rivet' ? new THREE.CylinderGeometry(0.075, 0.085, 0.04, 14) : new THREE.SphereGeometry(0.085, 14, 10);
+    if (form.studs === 'button') geo.scale(1, 0.55, 1);
+    const span = d.tableHalf - 0.6;
+    const n = Math.max(2, Math.round((span * 2) / 2.2));
+    const studs = new THREE.InstancedMesh(geo, mats.trim, n * 4);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const one = new THREE.Vector3(1, 1, 1);
+    let i = 0;
+    for (let s = 0; s < 4; s++) {
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (s * Math.PI) / 2);
+      for (let j = 0; j < n; j++) {
+        const x = -span + (j * span * 2) / (n - 1);
+        const p = new THREE.Vector3(x, frameTop + (form.studs === 'rivet' ? 0.015 : 0.02), mid).applyQuaternion(q);
+        studs.setMatrixAt(i++, m.compose(p, q, one));
+      }
+    }
+    studs.castShadow = true;
+    group.add(studs);
   }
 
   // 机身：一圈圈圆角方形从上往下连起来
@@ -118,8 +214,23 @@ export function buildTableModel(d: TableDims, frameTop: number, mats: TableMater
   return group;
 }
 
+// 以原点为中心、四个角切掉一截的方形（xy 平面）
+export function chamferShape(h: number, c: number): THREE.Shape {
+  const s = new THREE.Shape();
+  s.moveTo(-h + c, -h);
+  s.lineTo(h - c, -h);
+  s.lineTo(h, -h + c);
+  s.lineTo(h, h - c);
+  s.lineTo(h - c, h);
+  s.lineTo(-h + c, h);
+  s.lineTo(-h, h - c);
+  s.lineTo(-h, -h + c);
+  s.closePath();
+  return s;
+}
+
 // 以原点为中心的圆角方形（xy 平面），挤出后转到水平
-function roundedRectShape(half: number, r: number): THREE.Shape {
+export function roundedRectShape(half: number, r: number): THREE.Shape {
   const s = new THREE.Shape();
   const h = half;
   s.moveTo(-h + r, -h);

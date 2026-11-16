@@ -585,6 +585,9 @@ export class App {
   // 选人页的介绍浮窗：贴在卡片旁边，不出屏幕
   private tipFor: string | null = null;
   private lastPointer = 'mouse';
+  // 2D 牌桌：手指点过中间那块，到这个时候（毫秒）为止写点差
+  private diffUntil = 0;
+  private diffTimer = 0;
   private heroTip(): boolean {
     return currentTheme() !== 'classic';
   }
@@ -1573,7 +1576,7 @@ export class App {
       .map((s) => {
         const active = g.phase === 'turn' && g.turn === s ? ' active' : '';
         const riichi = g.players[s].riichi && g.seesRiichi(s, this.me) ? '<span class="stick"></span>' : '';
-        return `<div class="score ${POS[s]}${active}"><span class="wind">${NET_WIND[g.seatWind(s) - 27]}</span>${riichi}<span class="pts">${g.shownScore(s, this.me)}</span></div>`;
+        return `<div class="score ${POS[s]}${active}"><span class="wind">${NET_WIND[g.seatWind(s) - 27]}</span>${riichi}${this.ptsHtml(s)}</div>`;
       })
       .join('');
     return `
@@ -1890,6 +1893,8 @@ export class App {
       this.closePanel();
       return;
     }
+    // 2D 牌桌：手指点一下中间那块，3 秒内其他三家写点差
+    if (this.lastPointer !== 'mouse' && (e.target as HTMLElement).closest?.('#table .center')) this.flashDiff();
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pick],[data-tile],[data-act],[data-ui]');
     if (!el) return;
     if (el.dataset.pick) {
@@ -2241,7 +2246,7 @@ export class App {
     const net = this.netView;
     table.innerHTML = `
       ${[1, 2, 3].map((s) => this.opponentHtml(s)).join('')}
-      <div class="center">${net ? this.netCenterHtml() : this.centerHtml()}</div>
+      <div class="center${Date.now() < this.diffUntil ? ' diff-on' : ''}">${net ? this.netCenterHtml() : this.centerHtml()}</div>
       ${[0, 1, 2, 3].map((s) => (net ? this.netCardHtml(s) : this.seatFrameHtml(s))).join('')}
       ${[0, 1, 2, 3].map((s) => this.pondHtml(s)).join('')}
       ${this.myAreaHtml(true, false)}
@@ -2750,7 +2755,7 @@ export class App {
         const active = g.phase === 'turn' && g.turn === s ? 'active' : '';
         return `<div class="score ${POS[s]} ${active}" style="--c:${this.chars[s].color}">
           <span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>
-          <span class="pts">${g.shownScore(s, this.me)}</span>
+          ${this.ptsHtml(s)}
           ${g.players[s].riichi && g.seesRiichi(s, this.me) ? '<span class="stick"></span>' : ''}
         </div>`;
       })
@@ -2762,6 +2767,25 @@ export class App {
       <div class="dora">${dora}</div>
       ${this.sakiPeekHtml()}
       ${scores}`;
+  }
+
+  // 中间那块上一家的点数。其他三家另外备一份点差（自己比他多几点）：鼠标停在中间那块上（手机上点一下，3 秒）时换成点差，
+  // 多了是 +、蓝字，少了是 -、红字（颜色看底色深浅，见 style.css 的 --diff-plus）
+  private ptsHtml(s: number): string {
+    const g = this.game!;
+    const score = g.shownScore(s, this.me);
+    if (s === this.me) return `<span class="pts">${score}</span>`;
+    const d = g.shownScore(this.me, this.me) - score;
+    const sign = d > 0 ? ['plus', '+'] : d < 0 ? ['minus', '-'] : ['even', '±'];
+    return `<span class="pts"><span class="v">${score}</span><span class="d ${sign[0]}">${sign[1]}${Math.abs(d)}</span></span>`;
+  }
+
+  // 手指点一下中间那块：3 秒内写点差（鼠标停在上面时 CSS 自己换）。2D 牌桌每次重画都会换掉中间那块，所以记下到什么时候，重画时照着加
+  private flashDiff(): void {
+    this.diffUntil = Date.now() + 3000;
+    document.querySelector('#table .center')?.classList.add('diff-on');
+    clearTimeout(this.diffTimer);
+    this.diffTimer = window.setTimeout(() => document.querySelector('#table .center')?.classList.remove('diff-on'), 3000);
   }
 
   // 宫永咲的王牌感知（2D）：中间放 4 张岭上牌的牌背，鼠标移到上面牌背变透明看得到牌；成刻以后杠材的第四张在牌山第几张、轮到谁摸一直写着
@@ -2777,7 +2801,8 @@ export class App {
       return `${kindLabel(kindOf(t))}（再摸 ${i + 1} 张，${who === this.me ? '轮到你' : `错开了，轮到${this.chars[who].name}`}）`;
     });
     const note = kan.length ? `杠材：${kan.join('、')}` : sakiKanKinds(g, this.me).length ? '杠材不在牌山里' : '';
-    return `<div class="rinshan-peek" title="王牌感知"><span>岭上</span>${tiles}</div>${note ? `<div class="kan-peek">${note}</div>` : ''}`;
+    // 杠材有两项时字多，另外排紧一点（style.css 的 .kan-peek.multi），免得压到上下两家的点数
+    return `<div class="rinshan-peek" title="王牌感知"><span>岭上</span>${tiles}</div>${note ? `<div class="kan-peek${kan.length > 1 ? ' multi' : ''}">${note}</div>` : ''}`;
   }
 
   // 宫永咲的王牌感知开着没有（是她、能力没被封住、在打牌），开着时是她看得穿的牌（岭上牌、牌山里杠材的第四张）

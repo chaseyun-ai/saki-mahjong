@@ -22,10 +22,10 @@ import { faceSvg, glowGlyph } from '../ui/tileArt';
 import { TileBeam } from './tileBeam';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
-import { TableMaterials, buildTableModel } from './tableModel';
+import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 import { type FeltPattern, TableColors, tableColors } from '../ui/theme';
-import { drawConsoleLook } from './consoleLooks';
+import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, skinSignColors } from './consoleLooks';
 import { hash01, pondJitter, varyDiscard, vary } from '../ui/vary';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
@@ -573,6 +573,12 @@ export class Table3D {
   private handEdges: number[] = [];
   private frozen = new Map<number, { hand: TileId[]; drawn: TileId | null; until: number }>();
   private consoleKey = '';
+  // 鼠标指着仪表盘（手机上点一下仪表盘，之后 3 秒）：其他三家的点数换成自己比他多几点
+  private consoleParts: THREE.Object3D[] = [];
+  private consoleHover = false;
+  private diffUntil = 0;
+  // 最近一次是手指（或笔）在点：手指点完，浏览器还会拿点的位置补一个 click，不能当成鼠标一直停在仪表盘上
+  private touchInput = false;
   private resizer = new ResizeObserver(() => this.resize());
   // 牌桌尺寸（可调的参数）和由它算出来的各处位置
   private tableLayout: TableLayout = { ...DEFAULT_LAYOUT };
@@ -642,6 +648,10 @@ export class Table3D {
     el.addEventListener('pointermove', this.onPointerMove);
     // 手机没有悬停：点一下牌山也算移上去
     el.addEventListener('pointerdown', this.onPointerMove);
+    // 手指没有悬停：点一下仪表盘，3 秒内显示点差
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse' && this.hitsConsole()) this.diffUntil = performance.now() + 3000;
+    });
     el.addEventListener('pointerleave', () => this.pointer.set(-9, -9));
     el.addEventListener('click', this.onClick);
     this.loop();
@@ -718,16 +728,85 @@ export class Table3D {
       // 顶面的点数、局数是自己发光的屏幕，淹在水里也照样看得清（不泡水）；木牌、皮面这种不是屏幕的，发光弱一点
       new THREE.MeshStandardMaterial({ map: this.consoleTex, roughness: 0.2, emissive: '#ffffff', emissiveMap: this.consoleTex, emissiveIntensity: this.colors.consoleGlow ?? 0.35 }),
     ];
+    this.buildConsole(consoleMats[0], consoleMats[1], trimMat);
+  }
+
+  // 中央控制台的机身照牌桌风格的款式：圆角方盒（原来的）、矮木牌、圆盘、切角方盒、软包。
+  // 顶面贴图都照 CONSOLE_TOP 的方块铺，圆盘、切角、软包只露出形状里面那块（贴图上的字都排在形状里面，见 consoleLooks.ts）
+  private buildConsole(bodyMat: THREE.Material, topMat: THREE.Material, trimMat: THREE.Material): void {
+    const form = this.colors.form?.console ?? 'box';
     const h = this.consoleH;
-    const box = new THREE.Mesh(new RoundedBoxGeometry(CONSOLE_HALF * 2, h, CONSOLE_HALF * 2, 4, Math.min(0.25, h / 2)), consoleMats[0]);
-    box.position.y = h / 2;
+    const H = CONSOLE_HALF;
+    const T = CONSOLE_TOP;
+    // 挤出来的机身：上下边倒圆
+    const extrude = (sh: THREE.Shape, bevel: number, segs: number) => {
+      const g = new THREE.ExtrudeGeometry(sh, { depth: h - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: segs, curveSegments: 16 });
+      g.rotateX(-Math.PI / 2);
+      g.translate(0, bevel, 0);
+      return g;
+    };
+    // 不是方的顶面：贴图坐标照 CONSOLE_TOP 的方块算，和方的顶面一样大
+    const flatTop = (sh: THREE.Shape) => {
+      const g = new THREE.ShapeGeometry(sh, 24);
+      const p = g.getAttribute('position');
+      const uv = g.getAttribute('uv');
+      for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / (T * 2) + 0.5, p.getY(i) / (T * 2) + 0.5);
+      return g;
+    };
+    let body: THREE.BufferGeometry;
+    let top: THREE.BufferGeometry = new THREE.PlaneGeometry(T * 2, T * 2);
+    const extras: THREE.Mesh[] = [];
+    if (form === 'plate') {
+      // 矮木牌：棱角只倒一点
+      body = new RoundedBoxGeometry(H * 2, h, H * 2, 2, Math.min(0.05, h / 2));
+      body.translate(0, h / 2, 0);
+    } else if (form === 'disc') {
+      // 圆盘：上下边倒一点圆
+      const e = 0.07;
+      const pts = [new THREE.Vector2(0, 0)];
+      for (let i = 0; i <= 6; i++) {
+        const a = -Math.PI / 2 + (i / 6) * (Math.PI / 2);
+        pts.push(new THREE.Vector2(H - e + Math.cos(a) * e, e + Math.sin(a) * e));
+      }
+      for (let i = 0; i <= 6; i++) {
+        const a = (i / 6) * (Math.PI / 2);
+        pts.push(new THREE.Vector2(H - e + Math.cos(a) * e, h - e + Math.sin(a) * e));
+      }
+      pts.push(new THREE.Vector2(0, h));
+      body = new THREE.LatheGeometry(pts, 96);
+      top = new THREE.CircleGeometry(T, 96);
+    } else if (form === 'chamfer') {
+      const b = 0.05;
+      body = extrude(chamferShape(H - b, CONSOLE_CUT - b * (2 - Math.SQRT2)), b, 2);
+      top = flatTop(chamferShape(T, TOP_CUT));
+    } else if (form === 'cushion') {
+      // 软包：大圆角，边上鼓起来；顶上沿着边一圈金边
+      const b = CONSOLE_CUSHION_BEVEL;
+      body = extrude(roundedRectShape(H - b, CONSOLE_CUSHION_R - b), b, 5);
+      top = flatTop(roundedRectShape(T, TOP_CUSHION_R));
+      const rim = roundedRectShape(H - b + 0.01, CONSOLE_CUSHION_R - b);
+      rim.holes.push(roundedRectShape(H - b - 0.06, CONSOLE_CUSHION_R - b - 0.06));
+      const rimGeo = new THREE.ExtrudeGeometry(rim, { depth: 0.03, bevelEnabled: false, curveSegments: 16 });
+      rimGeo.rotateX(-Math.PI / 2);
+      rimGeo.translate(0, h, 0);
+      extras.push(new THREE.Mesh(rimGeo, trimMat));
+    } else {
+      body = new RoundedBoxGeometry(H * 2, h, H * 2, 4, Math.min(0.25, h / 2));
+      body.translate(0, h / 2, 0);
+    }
+    const box = new THREE.Mesh(body, bodyMat);
     box.receiveShadow = true;
     box.castShadow = true;
     this.scene.add(box);
-    const top = new THREE.Mesh(new THREE.PlaneGeometry(CONSOLE_HALF * 2 - 0.3, CONSOLE_HALF * 2 - 0.3), consoleMats[1]);
-    top.rotation.x = -Math.PI / 2;
-    top.position.y = h + 0.005;
-    this.scene.add(top);
+    const face = new THREE.Mesh(top, topMat);
+    face.rotation.x = -Math.PI / 2;
+    face.position.y = h + 0.005;
+    this.scene.add(face);
+    for (const m of extras) {
+      m.castShadow = true;
+      this.scene.add(m);
+    }
+    this.consoleParts = [box, face, ...extras];
   }
 
   // 桌布、桌框、机身、地面，按现在的尺寸建；换尺寸时把旧的扔掉重建
@@ -743,7 +822,7 @@ export class Table3D {
       this.water.dispose();
       this.water = null;
     }
-    const group = buildTableModel(d, FRAME_TOP, this.tableMats!);
+    const group = buildTableModel(d, FRAME_TOP, this.tableMats!, this.colors.form);
     const felt = new THREE.Mesh(new THREE.PlaneGeometry(d.tableHalf * 2, d.tableHalf * 2), this.feltMat!);
     felt.rotation.x = -Math.PI / 2;
     felt.receiveShadow = true;
@@ -1132,7 +1211,8 @@ export class Table3D {
       return this.toWorld(seat, me, 0, STICK_LEN / 2, this.dim.pondZ - 0.5, new THREE.Euler(0, 0, Math.PI / 2));
     }
     // 改良布局：放在中央控制台顶上靠这一家的边上（雀魂那样）。放在牌河和控制台之间的话，自己的立直棒会被自己牌河第一排挡住
-    if (this.v2) return this.toWorld(seat, me, 0, this.consoleH + 0.085, CONSOLE_HALF - 0.24, STANDING);
+    // 圆盘仪表盘边上放不下一整根，还是放在牌河前面（仪表盘上另外画一根小的）
+    if (this.v2 && !this.discConsole) return this.toWorld(seat, me, 0, this.consoleH + 0.085, CONSOLE_HALF - 0.24, STANDING);
     const out = this.style === '25d' && (seat - me + 4) % 4 === 2 ? TOP_STICK_OUT_25D : 0;
     return this.toWorld(seat, me, 0, 0.09, this.dim.pondZ - 0.35 + out, STANDING);
   }
@@ -1163,8 +1243,13 @@ export class Table3D {
     return this.dim.handZ + (hs - 1) * 1.2 + (this.v2 ? this.view25.out ?? V2_HAND_OUT : 0);
   }
 
+  // 仪表盘的高度：牌桌风格的款式里有高矮（木牌矮、翻牌屏的铝盒高）
   private get consoleH(): number {
-    return this.style === '25d' ? CONSOLE_H_25D : CONSOLE_H;
+    return (this.style === '25d' ? CONSOLE_H_25D : CONSOLE_H) * (this.colors.form?.consoleScale ?? 1);
+  }
+
+  private get discConsole(): boolean {
+    return this.colors.form?.console === 'disc';
   }
 
   // 抽屉里那根立直棒的位置（抽屉拉开时）
@@ -3304,10 +3389,14 @@ export class Table3D {
       g.phase === 'predeal',
       view.me,
       view.colors,
+      this.consoleHover,
     ]);
     if (key === this.consoleKey) return;
     this.consoleKey = key;
     const k = this.colors.console;
+    // 点差：指着仪表盘时，其他三家写自己比他多几点（自己那边照常写点数）
+    const mine = g.shownScore(view.me, view.me);
+    const diffOf = (s: number) => (this.consoleHover && s !== view.me ? mine - g.shownScore(s, view.me) : null);
     const c = this.consoleCanvas.getContext('2d')!;
     const S = 512;
     const M = S / 2;
@@ -3338,9 +3427,10 @@ export class Table3D {
           riichi: g.seesRiichi(s, view.me),
           active: g.phase === 'turn' && g.turn === s,
           color: view.colors[s],
+          diff: diffOf(s),
         })),
         (cx, face, x, y, w, h) => this.atlas.drawFace(cx, face, x, y, w, h),
-        !this.v2,
+        !this.v2 || this.discConsole,
       );
       this.consoleTex.needsUpdate = true;
       return;
@@ -3411,12 +3501,15 @@ export class Table3D {
       c.fillStyle = active ? k.bg[1] : k.ink;
       c.font = "900 34px 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif";
       c.fillText(WIND_CN[g.seatWind(s) - 27], -116, 192);
-      // 点数
+      // 点数（指着仪表盘时其他三家写点差：多了蓝、少了红）；负分、点差的红蓝看底色深浅挑，浅色皮肤上用深一档的
       c.font = num(66);
       const score = g.shownScore(s, view.me);
-      c.fillStyle = score < 0 ? '#ff6b6b' : active ? k.accent : k.ink;
+      const diff = diffOf(s);
+      const [plus, minus] = skinSignColors(k.bg[1]);
+      const ink = active ? k.accent : k.ink;
+      c.fillStyle = diff === null ? (score < 0 ? minus : ink) : diff > 0 ? plus : diff < 0 ? minus : ink;
       c.textAlign = 'left';
-      c.fillText(score.toLocaleString('en-US'), -78, 192);
+      c.fillText(diff === null ? score.toLocaleString('en-US') : diffText(diff), -78, 192, 218);
       c.textAlign = 'center';
       if (g.seesRiichi(s, view.me) && !this.v2) drawStick(c, 0, 143, 160, 11);
       c.restore();
@@ -3639,6 +3732,7 @@ export class Table3D {
   private onPointerMove = (e: PointerEvent): void => {
     const r = this.renderer.domElement.getBoundingClientRect();
     this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    if (e.pointerType) this.touchInput = e.pointerType !== 'mouse';
   };
 
   private onClick = (e: MouseEvent): void => {
@@ -3646,6 +3740,21 @@ export class Table3D {
     const id = this.pick();
     if (id !== null && this.clickable.has(id)) this.onTileClick(id);
   };
+
+  // 鼠标（或刚点下的手指）是不是指着仪表盘
+  private hitsConsole(): boolean {
+    if (this.pointer.x < -1.5) return false;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    return this.raycaster.intersectObjects(this.consoleParts.filter((o) => o.visible), false).length > 0;
+  }
+
+  // 指着仪表盘就把其他三家的点数换成点差，移开（手指点的过了 3 秒）换回来
+  private checkConsoleHover(): void {
+    const on = performance.now() < this.diffUntil || (!this.touchInput && this.hitsConsole());
+    if (on === this.consoleHover) return;
+    this.consoleHover = on;
+    if (this.lastSync) this.drawConsole(this.lastSync.g, this.lastSync.view);
+  }
 
   // 宫永咲的王牌感知：鼠标指着岭上牌（或者它们的投影）时，岭上牌也投影出来
   private checkWallHover(): void {
@@ -4252,6 +4361,7 @@ export class Table3D {
   private tick(dt: number): void {
     this.now += dt;
     this.checkWallHover();
+    this.checkConsoleHover();
     const hover = this.pick();
     if (hover !== this.hovered) {
       this.hoverSnap = { ids: [this.hovered, hover].filter((x): x is TileId => x !== null), until: this.now + 0.12 };
@@ -4701,18 +4811,45 @@ function feltTexture(colors: TableColors, zones = 0): THREE.CanvasTexture {
   feltPattern(ctx, colors.pattern ?? 'cloth');
   ctx.strokeStyle = colors.feltLine;
   ctx.lineWidth = 3;
-  if (zones) {
+  // 那圈线的画法照牌桌风格的款式：一道（原来的）、两道、缝线、只画四个角、不画
+  const line = colors.form?.line ?? 'single';
+  if (line === 'stitch') ctx.setLineDash([16, 10]);
+  if (line === 'double') ctx.lineWidth = 2;
+  if (line === 'none') {
+    // 不画
+  } else if (zones) {
+    // 改良布局：从仪表盘四个角斜着画到桌角。仪表盘不是方的时，从它斜对角那一点往外画
     const px = 512 / zones;
-    const a = (CONSOLE_HALF + 0.25) * px;
+    const form = colors.form?.console ?? 'box';
+    const corner =
+      form === 'disc' ? CONSOLE_HALF / Math.SQRT2 : form === 'chamfer' ? CONSOLE_HALF - CONSOLE_CUT / 2 : form === 'cushion' ? CONSOLE_HALF - CONSOLE_CUSHION_R * (1 - Math.SQRT1_2) : CONSOLE_HALF;
+    const a = (corner + 0.25) * px;
     for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      // 只画四个角：靠桌角的那一截
+      const from = line === 'corners' ? 512 - 90 : a;
+      const offs = line === 'double' ? [-4, 4] : [0];
+      for (const o of offs) {
+        ctx.beginPath();
+        ctx.moveTo(512 + sx * from + o * sy, 512 + sy * from - o * sx);
+        ctx.lineTo(512 + sx * 512 + o * sy, 512 + sy * 512 - o * sx);
+        ctx.stroke();
+      }
+    }
+  } else if (line === 'corners') {
+    // 四个角各一个直角，像显示屏的取景框
+    const L = 70;
+    for (const [x, y, dx, dy] of [[150, 150, 1, 1], [874, 150, -1, 1], [874, 874, -1, -1], [150, 874, 1, -1]]) {
       ctx.beginPath();
-      ctx.moveTo(512 + sx * a, 512 + sy * a);
-      ctx.lineTo(512 + sx * 512, 512 + sy * 512);
+      ctx.moveTo(x + dx * L, y);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x, y + dy * L);
       ctx.stroke();
     }
   } else {
     ctx.strokeRect(150, 150, 724, 724);
+    if (line === 'double') ctx.strokeRect(161, 161, 702, 702);
   }
+  ctx.setLineDash([]);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;

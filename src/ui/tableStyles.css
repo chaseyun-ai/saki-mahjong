@@ -1,6 +1,9 @@
 /* ======================================================================
    牌桌风格（视觉设置里的「牌桌风格」）：桌面和中央仪表盘配成一套，跟界面皮肤分开选。
-   这里是 2D 牌桌的桌布和中间那块；3D、2.5D 牌桌在 theme.ts（颜色）、table3d.ts（桌面材质）、consoleLooks.ts（仪表盘）里画。
+   这里是 2D 牌桌的桌布、桌边一圈和中间那块；3D、2.5D 牌桌在 theme.ts（颜色、款式）、table3d.ts（桌面材质、仪表盘的形状）、
+   tableModel.ts（桌框的形状）、consoleLooks.ts（仪表盘上的字）里画。
+   每套除了颜色，形状也不一样（和 3D 里对应）：自动麻将机是圆角方块，原木是钉了铜钉的直角木牌，深夜是大圆角，
+   翻牌屏是切角铝板，酒红皮革是缝了一圈线的软包。
    跟皮肤走时 <html> 上没有 data-table，这里一条都不生效。
    中间那块的底色、字色每套都写死，不跟皮肤的 --ink、--gold 走（浅色皮肤会把它们改成深色）。
    字和底色都量过对比度：正文 4.5:1 以上。
@@ -79,6 +82,17 @@
   max-width: 210px;
 }
 
+/* 杠材有两项时：字回到 11px、行距收紧，各行之间不留空（和 style.css 的 .kan-peek.multi 一样的道理） */
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center .kan-peek.multi {
+  max-width: 216px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center:has(.kan-peek.multi) {
+  row-gap: 0;
+}
+
 :root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
   display: inline-grid;
   place-items: center;
@@ -114,9 +128,15 @@
   --felt-dark: #163f30;
   --tile-back: #2f6fb0;
   background: radial-gradient(ellipse at 50% 47%, #2a6d4f 0%, #215b44 45%, #163f30 100%);
+  /* 桌边：黑色机身一圈，里面一道银线 */
+  box-shadow:
+    inset 0 0 0 8px #151617,
+    inset 0 0 0 10px #9aa0a6;
 }
 
 :root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --diff-plus: #4fb3ff;
+  --diff-minus: #ff4636;
   --ink: #ffb02e;
   --ink-quiet: #d6cabc;
   --gold: #ffb02e;
@@ -180,16 +200,29 @@
   background:
     repeating-linear-gradient(177deg, rgba(20, 10, 4, 0.12) 0 2px, transparent 2px 9px, rgba(255, 214, 160, 0.035) 9px 12px, transparent 12px 23px),
     radial-gradient(ellipse at 50% 47%, #5f412a 0%, #4e3522 50%, #3a2718 100%);
+  /* 桌边：深色木框，里面一道铜线 */
+  box-shadow:
+    inset 0 0 0 10px #2c1d12,
+    inset 0 0 0 12px #b58e4f,
+    inset 0 0 0 13px #2c1d12;
 }
 
+/* 木牌：直角，四个角各钉一颗铜钉 */
 :root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --diff-plus: #1a4a94;
+  --diff-minus: #9b2c17;
   --ink: #2b1b0e;
   --ink-quiet: #5a4029;
   --gold: #9b2c17;
+  --nail: #e2c48a 0 2.5px, #6d4c2b 2.5px 3.5px, transparent 4px;
   color: #2b1b0e;
   border: 2.5px solid #7d5d3a;
-  border-radius: 10px;
+  border-radius: 3px;
   background:
+    radial-gradient(circle at 9px 9px, var(--nail)),
+    radial-gradient(circle at calc(100% - 9px) 9px, var(--nail)),
+    radial-gradient(circle at 9px calc(100% - 9px), var(--nail)),
+    radial-gradient(circle at calc(100% - 9px) calc(100% - 9px), var(--nail)),
     repeating-linear-gradient(178deg, rgba(150, 108, 58, 0.12) 0 1px, transparent 1px 7px),
     radial-gradient(#efdfbd, #e4cc9f);
   box-shadow:
@@ -249,15 +282,20 @@
   --felt-dark: #1b1f24;
   --tile-back: #3d7f86;
   background: radial-gradient(ellipse at 50% 47%, #2d3239 0%, #252a30 45%, #1b1f24 100%);
+  /* 桌边：薄薄一圈，不加包边 */
+  box-shadow: inset 0 0 0 5px #15181b;
 }
 
+/* 圆润的一块：圆角很大（3D 里是圆盘）。四边的点数、中间的字都在圆角里面 */
 :root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --diff-plus: #6cb6ff;
+  --diff-minus: #ff8a7a;
   --ink: #eef1f5;
   --ink-quiet: #a9b1bc;
   --gold: #5fd3c6;
   color: #eef1f5;
   border: 1px solid #353b44;
-  border-radius: 14px;
+  border-radius: 64px;
   background: #1d2126;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
 }
@@ -311,27 +349,33 @@
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px),
     repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.07) 0 1px, transparent 1px 3px),
     radial-gradient(ellipse at 50% 47%, #2b4763 0%, #22394f 45%, #182a3b 100%);
+  /* 桌边：铝框，里面低一级的亮铝台阶 */
+  box-shadow:
+    inset 0 0 0 9px #9aa3ab,
+    inset 0 0 0 10px #6c747c,
+    inset 0 0 0 14px #dfe3e7;
 }
 
 :root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --diff-plus: #6cbcff;
+  --diff-minus: #ff8a7a;
   --ink: #1f262d;
   --ink-quiet: #1f262d;
   --gold: #ff8a1f;
   color: #1f262d;
-  border: 2px solid #6c747c;
-  border-radius: 12px;
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.1) 0 1px, transparent 1px 2px),
-    linear-gradient(#d3d8dd, #b9c0c7);
-  box-shadow:
-    inset 0 0 0 2px rgba(255, 255, 255, 0.55),
-    0 8px 22px rgba(0, 0, 0, 0.45);
+  /* 切角的铝板（四个角切掉，切口里各一颗螺丝）：画在底图里，不用 clip-path，免得把伸出去的左右两家点数切掉 */
+  border: none;
+  border-radius: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 220' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23d3d8dd'/%3E%3Cstop offset='1' stop-color='%23b9c0c7'/%3E%3C/linearGradient%3E%3Cpattern id='b' width='8' height='2' patternUnits='userSpaceOnUse'%3E%3Crect width='8' height='1' fill='%23fff' fill-opacity='.1'/%3E%3C/pattern%3E%3CradialGradient id='s' cx='.35' cy='.35' r='.7'%3E%3Cstop offset='0' stop-color='%23f2f4f6'/%3E%3Cstop offset='1' stop-color='%238a929a'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpath d='M24 1H196L219 24V196L196 219H24L1 196V24Z' fill='url(%23g)' stroke='%236c747c' stroke-width='2'/%3E%3Cpath d='M24 1H196L219 24V196L196 219H24L1 196V24Z' fill='url(%23b)'/%3E%3Cpath d='M25.2 4H194.8L216 25.2V194.8L194.8 216H25.2L4 194.8V25.2Z' fill='none' stroke='%23fff' stroke-opacity='.55' stroke-width='1.5'/%3E%3Cg fill='url(%23s)' stroke='%235d646b' stroke-width='.8'%3E%3Ccircle cx='18.5' cy='18.5' r='3.2'/%3E%3Ccircle cx='201.5' cy='18.5' r='3.2'/%3E%3Ccircle cx='18.5' cy='201.5' r='3.2'/%3E%3Ccircle cx='201.5' cy='201.5' r='3.2'/%3E%3C/g%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  box-shadow: none;
+  filter: drop-shadow(0 8px 11px rgba(0, 0, 0, 0.45));
 }
 
 /* 翻牌：上半块亮一点，中间一道缝 */
 :root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center :is(.round, .score .wind, .score .pts) {
   border-radius: 3px;
-  background: linear-gradient(#272a2f 0 calc(50% - 1px), rgba(0, 0, 0, 0.6) calc(50% - 1px) calc(50% + 1px), #1f2226 calc(50% + 1px));
+  /* 中间那道缝是实心的深色：半透明的话后面的浅色铝板会透出来，变成一道浅线横穿过字 */
+  background: linear-gradient(#272a2f 0 calc(50% - 1px), #0b0c0e calc(50% - 1px) calc(50% + 1px), #1f2226 calc(50% + 1px));
   color: #f5f5f2;
 }
 
@@ -379,19 +423,31 @@
     radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.035) 0 1px, transparent 1.6px) 0 0 / 6px 6px,
     radial-gradient(circle at 70% 60%, rgba(0, 0, 0, 0.16) 0 1.2px, transparent 1.8px) 0 0 / 7px 7px,
     radial-gradient(ellipse at 50% 47%, #6a2429 0%, #57191f 45%, #3f1216 100%);
+  /* 桌边：鼓起来的一圈皮（里外暗、中间亮），里面一道金色滚边 */
+  box-shadow:
+    inset 0 0 0 4px #120b09,
+    inset 0 0 0 9px #2a1c16,
+    inset 0 0 0 12px #1b120e,
+    inset 0 0 0 14px #c9a45c;
 }
 
+/* 软包：大圆角、边上鼓起来（上亮下暗），金色滚边，里面一圈缝线 */
 :root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --diff-plus: #8fc2ff;
+  --diff-minus: #ff7f6e;
   --ink: #f1e6cc;
   --ink-quiet: #c2a874;
   --gold: #e2c27f;
   color: #f1e6cc;
   border: 2px solid #b8955a;
-  border-radius: 10px;
+  border-radius: 28px;
   background: radial-gradient(#1f1714, #140e0c);
-  outline: 1px solid #b8955a;
+  outline: 1.5px dashed #b8955a;
   outline-offset: -7px;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    inset 0 9px 14px rgba(255, 255, 255, 0.06),
+    inset 0 -10px 16px rgba(0, 0, 0, 0.55),
+    0 8px 22px rgba(0, 0, 0, 0.5);
 }
 
 :root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {

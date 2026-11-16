@@ -1,10 +1,23 @@
 import type { TableColors } from '../ui/theme';
+import { CONSOLE_HALF } from './tableLayout';
 
 // 牌桌风格的中央仪表盘（theme.ts 里牌桌风格的 look）：自动麻将机的数码管、原木的木牌、深夜的纯色、翻牌屏、烫金皮面。
 // 跟皮肤走时不用这里，还是 table3d.ts 原来那种。
 // 画在 512×512 的坐标里（贴图 2048，调用前已经放大 4 倍）。几样东西各套都放在同一个位置，换风格不挪地方：
 // 中间方屏（半宽 124）从上到下是局数、本场和余牌、宝牌指示牌、供托；四边各家朝着自己，左边风位、右边点数，
 // 最外一条（y 224 上下）只在轮到这家时亮。改良布局的立直棒是立体的，压在最外一条上，所以那里不放字
+
+// 仪表盘的形状（theme.ts 的 form.console）：机身在 table3d.ts 里建，这里的字和花纹照形状排，不出形状
+// 顶面贴图那一块的半宽（世界单位），对应贴图 512 坐标里的 256
+export const CONSOLE_TOP = CONSOLE_HALF - 0.15;
+// 切角：机身外圈每个角沿边切掉多长；软包：外圈圆角半径、边上鼓起来多少
+export const CONSOLE_CUT = 0.62;
+export const CONSOLE_CUSHION_R = 0.85;
+export const CONSOLE_CUSHION_BEVEL = 0.14;
+// 顶面贴图那块：切角切掉多长、软包的圆角（世界单位）。比机身往里收 0.1，切口、圆角和机身平行
+export const TOP_CUT = CONSOLE_CUT - 0.09;
+export const TOP_CUSHION_R = CONSOLE_CUSHION_R - CONSOLE_CUSHION_BEVEL - 0.01;
+const PX = 256 / CONSOLE_TOP;
 
 export interface ConsoleSeat {
   // 画面上的方位：0 自己（下边），1 下家（右边），2 对家，3 上家
@@ -15,6 +28,8 @@ export interface ConsoleSeat {
   active: boolean;
   // 角色的颜色：风位旁边留一小条，认人用
   color: string;
+  // 鼠标指着仪表盘时（手机上是点一下）：自己比这家多几点，多了写 +、少了写 -；自己那边和平时是 null，照常写点数
+  diff: number | null;
 }
 
 export interface ConsoleInfo {
@@ -57,7 +72,8 @@ export function drawConsoleLook(c: CanvasRenderingContext2D, k: TableColors, inf
     c.translate(M, M);
     c.rotate((-s.rel * Math.PI) / 2);
     look.seat(c, k, s);
-    if (s.riichi && sticksOnConsole) stick(c, 0, 143, 160, 11);
+    // 圆盘上点数往里收了，立直棒也往里挪一点，不压到点数
+    if (s.riichi && sticksOnConsole) stick(c, 0, k.form?.console === 'disc' ? 137 : 143, 160, 11);
     c.restore();
   }
   c.restore();
@@ -80,6 +96,31 @@ function seeded(seed: number): () => number {
 function rr(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number | number[]): void {
   c.beginPath();
   c.roundRect(x, y, w, h, r);
+}
+
+// 顶面的外轮廓往里缩 inset（贴图坐标）：方的照给的圆角 r；圆盘是圆，切角、软包照机身的切口、圆角（往里缩时切口、圆角跟着小一点，和外圈平行）
+function outline(c: CanvasRenderingContext2D, k: TableColors, inset: number, r: number): void {
+  const f = k.form?.console ?? 'box';
+  c.beginPath();
+  if (f === 'disc') {
+    c.arc(M, M, M - inset, 0, Math.PI * 2);
+  } else if (f === 'chamfer') {
+    const h = M - inset;
+    const cut = TOP_CUT * PX - inset * (2 - Math.SQRT2);
+    c.moveTo(M - h + cut, M - h);
+    c.lineTo(M + h - cut, M - h);
+    c.lineTo(M + h, M - h + cut);
+    c.lineTo(M + h, M + h - cut);
+    c.lineTo(M + h - cut, M + h);
+    c.lineTo(M - h + cut, M + h);
+    c.lineTo(M - h, M + h - cut);
+    c.lineTo(M - h, M - h + cut);
+    c.closePath();
+  } else if (f === 'cushion') {
+    c.roundRect(inset, inset, S - inset * 2, S - inset * 2, Math.max(2, TOP_CUSHION_R * PX - inset));
+  } else {
+    c.roundRect(inset, inset, S - inset * 2, S - inset * 2, r);
+  }
 }
 
 function stick(c: CanvasRenderingContext2D, cx: number, cy: number, len: number, th: number): void {
@@ -137,6 +178,29 @@ function infoRow(c: CanvasRenderingContext2D, info: ConsoleInfo, y: number, colo
 
 const scoreText = (n: number) => n.toLocaleString('en-US');
 
+// 点差的写法：+1,200、-300、±0。数码管、翻牌不写千分位的逗号
+export function diffText(n: number, commas = true): string {
+  const a = commas ? scoreText(Math.abs(n)) : String(Math.abs(n));
+  return n > 0 ? `+${a}` : n < 0 ? `-${a}` : `±${a}`;
+}
+
+// 这一家那条边上写什么、用什么颜色：平时是点数（负分用 minus 色）；指着仪表盘时其他三家写点差，多了 plus 色（蓝）、少了 minus 色（红），一样多照常
+function scoreFace(s: ConsoleSeat, ink: string, plus: string, minus: string, commas = true): [string, string] {
+  if (s.diff === null) return [commas ? scoreText(s.score) : String(s.score), s.score < 0 ? minus : ink];
+  return [diffText(s.diff, commas), s.diff > 0 ? plus : s.diff < 0 ? minus : ink];
+}
+
+// 原来那种仪表盘（跟皮肤走）的点差颜色：深色底用亮蓝、亮红，白瓷、漫画这种浅色底用深蓝、深红（都在 5:1 以上）
+export function skinSignColors(bg: string): [plus: string, minus: string] {
+  const h = bg.replace('#', '');
+  const lin = (i: number) => {
+    const v = parseInt(h.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const lum = 0.2126 * lin(0) + 0.7152 * lin(2) + 0.0722 * lin(4);
+  return lum > 0.4 ? ['#1a56b0', '#b3212a'] : ['#5ab4ff', '#ff6b6b'];
+}
+
 // ---------- 七段数码管 ----------
 
 const SEGS: Record<string, string> = {
@@ -181,6 +245,17 @@ function segDigit(c: CanvasRenderingContext2D, ch: string, x: number, y: number,
   const g = t * 0.2;
   const on = SEGS[ch] ?? '';
   const mid = y + h / 2;
+  // 点差的“+”“±”：七段里没有，用两段十字拼（±是十字往上挪，底下加一横）
+  if (ch === '+' || ch === '±') {
+    c.fillStyle = lit;
+    const cx = x + w / 2;
+    const arm = Math.min(w / 2 - g, h * 0.24);
+    const cy = ch === '+' ? mid : y + arm + t / 2;
+    segment(c, cx - arm, cy, cx + arm, cy, t);
+    segment(c, cx, cy - arm, cx, cy + arm, t);
+    if (ch === '±') segment(c, cx - arm, y + h - t / 2, cx + arm, y + h - t / 2, t);
+    return;
+  }
   const parts: Record<string, [number, number, number, number]> = {
     a: [x + g, y + t / 2, x + w - g, y + t / 2],
     g: [x + g, mid, x + w - g, mid],
@@ -222,6 +297,7 @@ function segNumber(c: CanvasRenderingContext2D, text: string, right: number, y: 
 
 const LED_ON = '#ffb02e';
 const LED_RED = '#ff4636';
+const LED_BLUE = '#4fb3ff';
 // 没亮的那几段：只比窗底亮一点点，看得出是数码管，又不会被认成数字
 const LED_GHOST = '#170d09';
 const LED_WIN = '#0a0605';
@@ -290,9 +366,9 @@ const led: Look = {
     c.fillText(s.wind, -116, 189);
     // 点数窗：六位数码管，靠右；数字高 46，和原来仪表盘上点数的字差不多大
     ledWindow(c, k, -86, 156, 222, 62, s.active);
-    const text = String(s.score);
+    const [text, ink] = scoreFace(s, LED_ON, LED_BLUE, LED_RED, false);
     const w = text.length > 6 ? 23 : 28;
-    segNumber(c, text, 127, 164, w, 46, 6, 6, 6, s.score < 0 ? LED_RED : LED_ON, LED_GHOST, s.score < 0 ? LED_RED : LED_ON);
+    segNumber(c, text, 127, 164, w, 46, 6, 6, 6, ink, LED_GHOST, ink);
     if (s.active) {
       c.fillStyle = LED_ON;
       c.shadowColor = LED_ON;
@@ -307,6 +383,8 @@ const led: Look = {
 // ---------- 原木：浅色木牌、墨色字，轮到谁盖朱红印 ----------
 
 const VERMILION = '#9b2c17';
+// 点差多了用的蓝：浅木牌上 5.5:1
+const INDIGO = '#1a4a94';
 
 const plaque: Look = {
   base(c, k) {
@@ -376,11 +454,12 @@ const plaque: Look = {
     c.font = `900 32px ${SERIF}`;
     c.fillStyle = s.active ? '#fff4e6' : k.console.ink;
     c.fillText(s.wind, -116, 190);
-    // 点数：太长（六位数、负数）就横着压一压，不出这条边
+    // 点数：太长（六位数、负数、点差）就横着压一压，不出这条边
+    const [text, ink] = scoreFace(s, k.console.ink, INDIGO, VERMILION);
     c.font = `900 62px ${SERIF}`;
-    c.fillStyle = s.score < 0 ? VERMILION : k.console.ink;
+    c.fillStyle = ink;
     c.textAlign = 'left';
-    c.fillText(scoreText(s.score), -74, 191, 210);
+    c.fillText(text, -74, 191, 210);
     c.textAlign = 'center';
     if (s.active) {
       c.fillStyle = VERMILION;
@@ -401,10 +480,11 @@ const flat: Look = {
     c.fillRect(0, 0, S, S);
     c.strokeStyle = k.console.line;
     c.lineWidth = 2;
-    rr(c, 10, 10, S - 20, S - 20, 12);
+    outline(c, k, 10, 12);
     c.stroke();
+    // 中间方屏：圆盘上圆角大一点
     c.fillStyle = '#23272d';
-    rr(c, M - 120, M - 120, 240, 240, 16);
+    rr(c, M - 120, M - 120, 240, 240, k.form?.console === 'disc' ? 36 : 16);
     c.fill();
   },
   center(c, k, info, tile) {
@@ -416,24 +496,29 @@ const flat: Look = {
     sticksRow(c, info, M + 98, k.console.ink, `700 30px ${NUM}`);
   },
   seat(c, k, s) {
-    rr(c, -138, 166, 44, 44, 8);
+    // 圆盘：边上越往外越窄，这一排往中间收一点、整排窄一点，点数的字还是和原来一样大（66px）
+    const disc = k.form?.console === 'disc';
+    const [bx, by, bw] = disc ? [-120, 156, 40] : [-138, 166, 44];
+    rr(c, bx, by, bw, bw, 8);
     c.fillStyle = s.active ? k.console.accent : '#2a2f37';
     c.fill();
     // 角色色：方块下面一小条
     c.fillStyle = s.color;
-    rr(c, -138, 214, 44, 4, 2);
+    rr(c, bx, by + bw + 3, bw, 4, 2);
     c.fill();
-    c.font = `900 28px ${SANS}`;
+    c.font = `900 ${disc ? 26 : 28}px ${SANS}`;
     c.fillStyle = s.active ? '#10201e' : k.console.ink;
-    c.fillText(s.wind, -116, 189);
-    c.font = `700 68px ${NUM}`;
-    c.fillStyle = s.score < 0 ? '#ff8a7a' : k.console.ink;
+    c.fillText(s.wind, bx + bw / 2, by + bw / 2 + 1);
+    const [text, ink] = scoreFace(s, k.console.ink, '#6cb6ff', '#ff8a7a');
+    const [sx, sy, sw] = disc ? [-70, 178, 186] : [-80, 191, 214];
+    c.font = `700 ${disc ? 66 : 68}px ${NUM}`;
+    c.fillStyle = ink;
     c.textAlign = 'left';
-    c.fillText(scoreText(s.score), -80, 191, 214);
+    c.fillText(text, sx, sy, sw);
     c.textAlign = 'center';
     if (s.active) {
       c.fillStyle = k.console.accent;
-      rr(c, -80, 223, 214, 5, 2.5);
+      rr(c, sx, disc ? 207 : 223, disc ? 176 : 214, disc ? 4 : 5, 2.5);
       c.fill();
     }
   },
@@ -444,6 +529,26 @@ const flat: Look = {
 const FLAP = '#1f2226';
 const FLAP_TOP = '#272a2f';
 const FLAP_ON = '#ff8a1f';
+
+// 一颗一字螺丝
+function screw(c: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  const g = c.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
+  g.addColorStop(0, '#f2f4f6');
+  g.addColorStop(1, '#8a929a');
+  c.fillStyle = g;
+  c.beginPath();
+  c.arc(x, y, r, 0, Math.PI * 2);
+  c.fill();
+  c.strokeStyle = '#5d646b';
+  c.lineWidth = 1;
+  c.stroke();
+  c.strokeStyle = '#4a5056';
+  c.lineWidth = 1.5;
+  c.beginPath();
+  c.moveTo(x - r * 0.6, y + r * 0.35);
+  c.lineTo(x + r * 0.6, y - r * 0.35);
+  c.stroke();
+}
 
 // 一块翻牌：上下两半颜色差一点，中间一道缝
 function flapTile(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, ch: string, font: string, ink: string, fill = FLAP): void {
@@ -485,12 +590,17 @@ const flap: Look = {
     }
     c.strokeStyle = k.console.line;
     c.lineWidth = 2;
-    rr(c, 10, 10, S - 20, S - 20, 12);
+    outline(c, k, 10, 12);
     c.stroke();
     c.strokeStyle = 'rgba(255,255,255,0.6)';
     c.lineWidth = 1;
-    rr(c, 13, 13, S - 26, S - 26, 10);
+    outline(c, k, 13, 10);
     c.stroke();
+    // 切角的铝盒：四个切口里各一颗螺丝
+    if (k.form?.console === 'chamfer') {
+      const d = M - (TOP_CUT * PX) / 2 - 14;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) screw(c, M + sx * d, M + sy * d, 6);
+    }
   },
   center(c, k, info, tile) {
     // 局数：东、几、局三块大翻牌
@@ -518,9 +628,9 @@ const flap: Look = {
     rr(c, -142, 223, 46, 4, 2);
     c.fill();
     // 点数一位一块：块高 64、数字 56px，和原来仪表盘上点数的字差不多大；位数多了块窄一点
-    const text = String(s.score);
+    const [text, ink] = scoreFace(s, k.console.ink, '#6cbcff', '#ff8a7a', false);
     const w = text.length > 6 ? 26 : text.length > 5 ? 31 : 34;
-    flapRow(c, text, 134, 156, w, 64, 4, `700 56px ${NUM}`, s.score < 0 ? '#ff8a7a' : k.console.ink);
+    flapRow(c, text, 134, 156, w, 64, 4, `700 56px ${NUM}`, ink);
     if (s.active) {
       c.fillStyle = FLAP_ON;
       rr(c, -84, 223, 218, 5, 2.5);
@@ -549,13 +659,13 @@ const foil: Look = {
       c.arc(x, y, r, 0, Math.PI * 2);
       c.fill();
     }
-    // 金色双线框
+    // 金色双线框（软包顶上已经有一圈立体的金边，这里照它的圆角往里画）
     c.strokeStyle = k.console.line;
     c.lineWidth = 2;
-    rr(c, 12, 12, S - 24, S - 24, 10);
+    outline(c, k, 12, 10);
     c.stroke();
     c.lineWidth = 1;
-    rr(c, 18, 18, S - 36, S - 36, 7);
+    outline(c, k, 18, 7);
     c.stroke();
     c.lineWidth = 1.5;
     rr(c, M - 120, M - 120, 240, 240, 8);
@@ -591,10 +701,11 @@ const foil: Look = {
     c.font = `900 30px ${SERIF}`;
     c.fillStyle = s.active ? '#1a1210' : k.console.accent;
     c.fillText(s.wind, -116, 190);
+    const [text, ink] = scoreFace(s, k.console.ink, '#8fc2ff', '#ff7f6e');
     c.font = `900 62px ${SERIF}`;
-    c.fillStyle = s.score < 0 ? '#ff7f6e' : k.console.ink;
+    c.fillStyle = ink;
     c.textAlign = 'left';
-    c.fillText(scoreText(s.score), -74, 191, 210);
+    c.fillText(text, -74, 191, 210);
     c.textAlign = 'center';
     if (s.active) {
       c.fillStyle = k.console.accent;
