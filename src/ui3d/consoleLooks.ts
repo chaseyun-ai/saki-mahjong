@@ -5,9 +5,12 @@ import { CONSOLE_HALF } from './tableLayout';
 // 跟皮肤走时不用这里，还是 table3d.ts 原来那种。
 // 画在 512×512 的坐标里（贴图 2048，调用前已经放大 4 倍）。几样东西各套都放在同一个位置，换风格不挪地方：
 // 中间方屏（半宽 124）从上到下是局数、本场和余牌、宝牌指示牌、供托；四边各家朝着自己，左边风位、右边点数，
-// 最外一条（y 224 上下）只在轮到这家时亮。改良布局的立直棒是立体的，压在最外一条上，所以那里不放字
+// 最外一条（y 224 上下）只在轮到这家时亮。立直棒是立体的（table3d.ts），放在顶上靠这家的那条边、压在最外一条上，所以那里不放字；
+// 圆盘上是小一号的，放在更外面一圈
 
-// 仪表盘的形状（theme.ts 的 form.console）：机身在 table3d.ts 里建，这里的字和花纹照形状排，不出形状
+// 仪表盘的形状（theme.ts 的 shape，视觉设置里「仪表盘形状」，可以跟牌桌风格走，也可以单独选）：机身在 table3d.ts 里建，
+// 这里的字和花纹照形状排，不出形状。方盒、矮牌、切角、软包四边的排法一样；圆盘边上越往外越窄，四家那一排往中间收、窄一点
+// 风位的字比第一版大一圈（方的 38 到 44px，圆盘 32 到 38px），点数的字照旧
 // 顶面贴图那一块的半宽（世界单位），对应贴图 512 坐标里的 256
 export const CONSOLE_TOP = CONSOLE_HALF - 0.15;
 // 切角：机身外圈每个角沿边切掉多长；软包：外圈圆角半径、边上鼓起来多少
@@ -24,7 +27,6 @@ export interface ConsoleSeat {
   rel: number;
   wind: string;
   score: number;
-  riichi: boolean;
   active: boolean;
   // 角色的颜色：风位旁边留一小条，认人用
   color: string;
@@ -59,7 +61,7 @@ interface Look {
   seat(c: CanvasRenderingContext2D, k: TableColors, s: ConsoleSeat): void;
 }
 
-export function drawConsoleLook(c: CanvasRenderingContext2D, k: TableColors, info: ConsoleInfo, seats: ConsoleSeat[], tile: DrawTile, sticksOnConsole: boolean): void {
+export function drawConsoleLook(c: CanvasRenderingContext2D, k: TableColors, info: ConsoleInfo, seats: ConsoleSeat[], tile: DrawTile): void {
   const look = LOOKS[k.look ?? 'flat'] ?? LOOKS.flat;
   c.save();
   c.textAlign = 'center';
@@ -72,8 +74,6 @@ export function drawConsoleLook(c: CanvasRenderingContext2D, k: TableColors, inf
     c.translate(M, M);
     c.rotate((-s.rel * Math.PI) / 2);
     look.seat(c, k, s);
-    // 圆盘上点数往里收了，立直棒也往里挪一点，不压到点数
-    if (s.riichi && sticksOnConsole) stick(c, 0, k.form?.console === 'disc' ? 137 : 143, 160, 11);
     c.restore();
   }
   c.restore();
@@ -98,9 +98,14 @@ function rr(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: num
   c.roundRect(x, y, w, h, r);
 }
 
-// 顶面的外轮廓往里缩 inset（贴图坐标）：方的照给的圆角 r；圆盘是圆，切角、软包照机身的切口、圆角（往里缩时切口、圆角跟着小一点，和外圈平行）
-function outline(c: CanvasRenderingContext2D, k: TableColors, inset: number, r: number): void {
-  const f = k.form?.console ?? 'box';
+// 实际用的仪表盘形状
+const shapeOf = (k: TableColors) => k.shape ?? 'box';
+const isDisc = (k: TableColors) => shapeOf(k) === 'disc';
+
+// 顶面的外轮廓往里缩 inset（贴图坐标）：方的照给的圆角 r；圆盘是圆，切角、软包照机身的切口、圆角（往里缩时切口、圆角跟着小一点，和外圈平行）。
+// 跟皮肤走的原来那种仪表盘（table3d.ts）也用这个描边框
+export function outline(c: CanvasRenderingContext2D, k: TableColors, inset: number, r: number): void {
+  const f = shapeOf(k);
   c.beginPath();
   if (f === 'disc') {
     c.arc(M, M, M - inset, 0, Math.PI * 2);
@@ -303,8 +308,8 @@ const LED_GHOST = '#170d09';
 const LED_WIN = '#0a0605';
 const LED_LABEL = '#d6cabc';
 
-function ledWindow(c: CanvasRenderingContext2D, k: TableColors, x: number, y: number, w: number, h: number, lit = false): void {
-  rr(c, x, y, w, h, 8);
+function ledWindow(c: CanvasRenderingContext2D, k: TableColors, x: number, y: number, w: number, h: number, lit = false, r = 8): void {
+  rr(c, x, y, w, h, r);
   c.fillStyle = LED_WIN;
   c.fill();
   c.strokeStyle = lit ? LED_ON : k.console.line;
@@ -327,9 +332,10 @@ const led: Look = {
     c.fillRect(0, 0, S, S);
     c.strokeStyle = '#2c2d30';
     c.lineWidth = 2;
-    rr(c, 9, 9, S - 18, S - 18, 14);
+    outline(c, k, 9, 14);
     c.stroke();
-    ledWindow(c, k, M - 124, M - 124, 248, 248);
+    // 中间方屏：圆盘上圆角大一点
+    ledWindow(c, k, M - 124, M - 124, 248, 248, false, isDisc(k) ? 30 : 8);
   },
   center(c, k, info, tile) {
     // 局数：“东”和“局”是印在面板上、背后打着灯的字，中间的局数是数码管
@@ -354,26 +360,30 @@ const led: Look = {
     sticksRow(c, info, M + 100, LED_ON, `700 30px ${NUM}`);
   },
   seat(c, k, s) {
+    const disc = isDisc(k);
     // 风位：一个方键，边上是角色的颜色；轮到这家时方键亮起来
-    rr(c, -138, 166, 44, 44, 6);
+    const [kx, ky, kw, kf] = disc ? [-128, 152, 46, 34] : [-152, 162, 52, 40];
+    rr(c, kx, ky, kw, kw, 6);
     c.fillStyle = s.active ? LED_ON : '#1d1e21';
     c.fill();
     c.strokeStyle = s.color;
     c.lineWidth = 3;
     c.stroke();
-    c.font = `900 30px ${SANS}`;
+    c.font = `900 ${kf}px ${SANS}`;
     c.fillStyle = s.active ? '#1a1006' : LED_LABEL;
-    c.fillText(s.wind, -116, 189);
-    // 点数窗：六位数码管，靠右；数字高 46，和原来仪表盘上点数的字差不多大
-    ledWindow(c, k, -86, 156, 222, 62, s.active);
+    c.fillText(s.wind, kx + kw / 2, ky + kw / 2 + 1);
+    // 点数窗：六位数码管，靠右；数字高 46，和原来仪表盘上点数的字差不多大（圆盘上窗窄一点，数字高 40）
+    const [wx, wy, ww, wh] = disc ? [-74, 148, 194, 54] : [-88, 156, 224, 62];
+    ledWindow(c, k, wx, wy, ww, wh, s.active);
     const [text, ink] = scoreFace(s, LED_ON, LED_BLUE, LED_RED, false);
-    const w = text.length > 6 ? 23 : 28;
-    segNumber(c, text, 127, 164, w, 46, 6, 6, 6, ink, LED_GHOST, ink);
+    if (disc) segNumber(c, text, wx + ww - 9, wy + 7, text.length > 6 ? 20 : 24, 40, 5, 5, 6, ink, LED_GHOST, ink);
+    else segNumber(c, text, wx + ww - 9, wy + 8, text.length > 6 ? 23 : 28, 46, 6, 6, 6, ink, LED_GHOST, ink);
     if (s.active) {
       c.fillStyle = LED_ON;
       c.shadowColor = LED_ON;
       c.shadowBlur = 8;
-      rr(c, -86, 224, 222, 4, 2);
+      if (disc) rr(c, wx, wy + wh + 4, ww - 20, 4, 2);
+      else rr(c, wx, 224, ww, 4, 2);
       c.fill();
       c.shadowBlur = 0;
     }
@@ -385,6 +395,13 @@ const led: Look = {
 const VERMILION = '#9b2c17';
 // 点差多了用的蓝：浅木牌上 5.5:1
 const INDIGO = '#1a4a94';
+
+// 木牌、皮面这两套的一排：左边圆圈里写风位，右边点数。圆盘上整排往中间收、窄一点
+function circleSeat(k: TableColors) {
+  return isDisc(k)
+    ? { cx: -104, cy: 176, r: 26, wf: 34, sx: -64, sy: 178, sw: 182, sf: 56, by: 206, bw: 168 }
+    : { cx: -121, cy: 188, r: 31, wf: 40, sx: -74, sy: 191, sw: 210, sf: 62, by: 223, bw: 208 };
+}
 
 const plaque: Look = {
   base(c, k) {
@@ -413,15 +430,15 @@ const plaque: Look = {
     // 刻出来的边：一道深线，里面一道亮线
     c.strokeStyle = k.console.line;
     c.lineWidth = 2.5;
-    rr(c, 12, 12, S - 24, S - 24, 10);
+    outline(c, k, 12, 10);
     c.stroke();
     c.strokeStyle = 'rgba(255,255,255,0.4)';
     c.lineWidth = 1;
-    rr(c, 15.5, 15.5, S - 31, S - 31, 8);
+    outline(c, k, 15.5, 8);
     c.stroke();
-    // 中间方屏：一个刻线方框
+    // 中间方屏：一个刻线方框（圆盘上圆角大一点）
     c.fillStyle = 'rgba(255,255,255,0.22)';
-    rr(c, M - 120, M - 120, 240, 240, 8);
+    rr(c, M - 120, M - 120, 240, 240, isDisc(k) ? 30 : 8);
     c.fill();
     c.strokeStyle = k.console.line;
     c.lineWidth = 2;
@@ -437,13 +454,14 @@ const plaque: Look = {
   },
   seat(c, k, s) {
     // 风位：墨线圆圈，外面一圈角色色；轮到这家时盖成朱红印
+    const p = circleSeat(k);
     c.beginPath();
-    c.arc(-116, 188, 33, 0, Math.PI * 2);
+    c.arc(p.cx, p.cy, p.r + 6, 0, Math.PI * 2);
     c.strokeStyle = s.color;
     c.lineWidth = 3;
     c.stroke();
     c.beginPath();
-    c.arc(-116, 188, 27, 0, Math.PI * 2);
+    c.arc(p.cx, p.cy, p.r, 0, Math.PI * 2);
     c.fillStyle = s.active ? VERMILION : 'rgba(255,255,255,0.3)';
     c.fill();
     if (!s.active) {
@@ -451,19 +469,19 @@ const plaque: Look = {
       c.lineWidth = 2.5;
       c.stroke();
     }
-    c.font = `900 32px ${SERIF}`;
+    c.font = `900 ${p.wf + 2}px ${SERIF}`;
     c.fillStyle = s.active ? '#fff4e6' : k.console.ink;
-    c.fillText(s.wind, -116, 190);
+    c.fillText(s.wind, p.cx, p.cy + 2);
     // 点数：太长（六位数、负数、点差）就横着压一压，不出这条边
     const [text, ink] = scoreFace(s, k.console.ink, INDIGO, VERMILION);
-    c.font = `900 62px ${SERIF}`;
+    c.font = `900 ${p.sf}px ${SERIF}`;
     c.fillStyle = ink;
     c.textAlign = 'left';
-    c.fillText(text, -74, 191, 210);
+    c.fillText(text, p.sx, p.sy, p.sw);
     c.textAlign = 'center';
     if (s.active) {
       c.fillStyle = VERMILION;
-      rr(c, -74, 223, 208, 5, 2.5);
+      rr(c, p.sx, p.by, p.bw, 5, 2.5);
       c.fill();
     }
   },
@@ -484,7 +502,7 @@ const flat: Look = {
     c.stroke();
     // 中间方屏：圆盘上圆角大一点
     c.fillStyle = '#23272d';
-    rr(c, M - 120, M - 120, 240, 240, k.form?.console === 'disc' ? 36 : 16);
+    rr(c, M - 120, M - 120, 240, 240, isDisc(k) ? 36 : 16);
     c.fill();
   },
   center(c, k, info, tile) {
@@ -497,8 +515,8 @@ const flat: Look = {
   },
   seat(c, k, s) {
     // 圆盘：边上越往外越窄，这一排往中间收一点、整排窄一点，点数的字还是和原来一样大（66px）
-    const disc = k.form?.console === 'disc';
-    const [bx, by, bw] = disc ? [-120, 156, 40] : [-138, 166, 44];
+    const disc = isDisc(k);
+    const [bx, by, bw] = disc ? [-126, 148, 46] : [-152, 162, 52];
     rr(c, bx, by, bw, bw, 8);
     c.fillStyle = s.active ? k.console.accent : '#2a2f37';
     c.fill();
@@ -506,11 +524,11 @@ const flat: Look = {
     c.fillStyle = s.color;
     rr(c, bx, by + bw + 3, bw, 4, 2);
     c.fill();
-    c.font = `900 ${disc ? 26 : 28}px ${SANS}`;
+    c.font = `900 ${disc ? 32 : 38}px ${SANS}`;
     c.fillStyle = s.active ? '#10201e' : k.console.ink;
     c.fillText(s.wind, bx + bw / 2, by + bw / 2 + 1);
     const [text, ink] = scoreFace(s, k.console.ink, '#6cb6ff', '#ff8a7a');
-    const [sx, sy, sw] = disc ? [-70, 178, 186] : [-80, 191, 214];
+    const [sx, sy, sw] = disc ? [-70, 176, 186] : [-80, 191, 214];
     c.font = `700 ${disc ? 66 : 68}px ${NUM}`;
     c.fillStyle = ink;
     c.textAlign = 'left';
@@ -518,7 +536,7 @@ const flat: Look = {
     c.textAlign = 'center';
     if (s.active) {
       c.fillStyle = k.console.accent;
-      rr(c, sx, disc ? 207 : 223, disc ? 176 : 214, disc ? 4 : 5, 2.5);
+      rr(c, sx, disc ? 205 : 223, disc ? 176 : 214, disc ? 4 : 5, 2.5);
       c.fill();
     }
   },
@@ -597,7 +615,7 @@ const flap: Look = {
     outline(c, k, 13, 10);
     c.stroke();
     // 切角的铝盒：四个切口里各一颗螺丝
-    if (k.form?.console === 'chamfer') {
+    if (shapeOf(k) === 'chamfer') {
       const d = M - (TOP_CUT * PX) / 2 - 14;
       for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) screw(c, M + sx * d, M + sy * d, 6);
     }
@@ -622,18 +640,21 @@ const flap: Look = {
     sticksRow(c, info, M + 102, k.console.dim, `700 30px ${NUM}`);
   },
   seat(c, k, s) {
-    // 风位一块翻牌，轮到这家时翻成橙色；下面一小条角色色
-    flapTile(c, -142, 156, 46, 64, s.wind, `900 34px ${SANS}`, s.active ? '#1a1006' : k.console.ink, s.active ? FLAP_ON : FLAP);
+    // 风位一块翻牌，轮到这家时翻成橙色；下面一小条角色色。圆盘上整排往中间收、块矮一点
+    const disc = isDisc(k);
+    const [tx, ty, tw, th, tf] = disc ? [-124, 148, 44, 50, 36] : [-152, 156, 52, 64, 44];
+    flapTile(c, tx, ty, tw, th, s.wind, `900 ${tf}px ${SANS}`, s.active ? '#1a1006' : k.console.ink, s.active ? FLAP_ON : FLAP);
     c.fillStyle = s.color;
-    rr(c, -142, 223, 46, 4, 2);
+    rr(c, tx, ty + th + 3, tw, 4, 2);
     c.fill();
-    // 点数一位一块：块高 64、数字 56px，和原来仪表盘上点数的字差不多大；位数多了块窄一点
+    // 点数一位一块：块高 64、数字 56px，和原来仪表盘上点数的字差不多大；位数多了块窄一点（圆盘上块高 50、数字 44px）
     const [text, ink] = scoreFace(s, k.console.ink, '#6cbcff', '#ff8a7a', false);
-    const w = text.length > 6 ? 26 : text.length > 5 ? 31 : 34;
-    flapRow(c, text, 134, 156, w, 64, 4, `700 56px ${NUM}`, ink);
+    if (disc) flapRow(c, text, 118, ty, text.length > 6 ? 22 : text.length > 5 ? 25 : 28, th, 3, `700 44px ${NUM}`, ink);
+    else flapRow(c, text, 134, ty, text.length > 6 ? 26 : text.length > 5 ? 31 : 34, th, 4, `700 56px ${NUM}`, ink);
     if (s.active) {
       c.fillStyle = FLAP_ON;
-      rr(c, -84, 223, 218, 5, 2.5);
+      if (disc) rr(c, -70, ty + th + 4, 174, 4, 2);
+      else rr(c, -84, 223, 218, 5, 2.5);
       c.fill();
     }
   },
@@ -668,10 +689,10 @@ const foil: Look = {
     outline(c, k, 18, 7);
     c.stroke();
     c.lineWidth = 1.5;
-    rr(c, M - 120, M - 120, 240, 240, 8);
+    rr(c, M - 120, M - 120, 240, 240, isDisc(k) ? 30 : 8);
     c.stroke();
     c.lineWidth = 0.8;
-    rr(c, M - 114, M - 114, 228, 228, 6);
+    rr(c, M - 114, M - 114, 228, 228, isDisc(k) ? 25 : 6);
     c.stroke();
   },
   center(c, k, info, tile) {
@@ -683,13 +704,14 @@ const foil: Look = {
     sticksRow(c, info, M + 98, k.console.ink, `700 28px ${SERIF}`);
   },
   seat(c, k, s) {
+    const p = circleSeat(k);
     c.beginPath();
-    c.arc(-116, 188, 33, 0, Math.PI * 2);
+    c.arc(p.cx, p.cy, p.r + 6, 0, Math.PI * 2);
     c.strokeStyle = s.color;
     c.lineWidth = 2;
     c.stroke();
     c.beginPath();
-    c.arc(-116, 188, 27, 0, Math.PI * 2);
+    c.arc(p.cx, p.cy, p.r, 0, Math.PI * 2);
     if (s.active) {
       c.fillStyle = k.console.accent;
       c.fill();
@@ -698,18 +720,18 @@ const foil: Look = {
       c.lineWidth = 2.5;
       c.stroke();
     }
-    c.font = `900 30px ${SERIF}`;
+    c.font = `900 ${p.wf}px ${SERIF}`;
     c.fillStyle = s.active ? '#1a1210' : k.console.accent;
-    c.fillText(s.wind, -116, 190);
+    c.fillText(s.wind, p.cx, p.cy + 2);
     const [text, ink] = scoreFace(s, k.console.ink, '#8fc2ff', '#ff7f6e');
-    c.font = `900 62px ${SERIF}`;
+    c.font = `900 ${p.sf}px ${SERIF}`;
     c.fillStyle = ink;
     c.textAlign = 'left';
-    c.fillText(text, -74, 191, 210);
+    c.fillText(text, p.sx, p.sy, p.sw);
     c.textAlign = 'center';
     if (s.active) {
       c.fillStyle = k.console.accent;
-      rr(c, -74, 223, 208, 4, 2);
+      rr(c, p.sx, p.by, p.bw, 4, 2);
       c.fill();
     }
   },

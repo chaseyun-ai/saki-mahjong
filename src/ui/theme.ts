@@ -41,6 +41,8 @@ export interface TableColors {
   consoleGlow?: number;
   // 款式（形状）：桌框、包边、仪表盘做成什么样子
   form?: TableForm;
+  // 实际用的仪表盘形状（tableColors() 照视觉设置里的「仪表盘形状」填：跟牌桌走时是牌桌风格自己的，跟皮肤走是方盒）
+  shape?: ConsoleForm;
 }
 
 export type FeltPattern = 'cloth' | 'baize' | 'wood' | 'matte' | 'linen' | 'leather';
@@ -58,9 +60,8 @@ export interface TableForm {
   trim: 'strip' | 'inlay' | 'none' | 'step' | 'piping';
   // 桌框面上一排小件：铆钉、软包的扣子
   studs?: 'rivet' | 'button';
+  // 这套牌桌自己的仪表盘形状（视觉设置里「仪表盘形状」选「跟牌桌走」时用这个）
   console: ConsoleForm;
-  // 仪表盘的高度是原来的几倍
-  consoleScale: number;
   // 桌布上那圈线：一道（原来的）、两道、缝线（虚线）、只在四个角上画一截、不画
   line: 'single' | 'double' | 'stitch' | 'corners' | 'none';
 }
@@ -166,7 +167,7 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     consoleBody: '#0d0e10',
     consoleGlow: 0.55,
     // 雀庄的全自动麻将桌：就是原来的样子，圆角桌框、金属包边、圆角方盒
-    form: { corner: 'round', bevel: 0.14, trim: 'strip', console: 'box', consoleScale: 1, line: 'single' },
+    form: { corner: 'round', bevel: 0.14, trim: 'strip', console: 'box', line: 'single' },
   },
   // 原木：深色胡桃木桌面、铜色包边，仪表盘是一块浅色木牌，墨色字，轮到谁盖一个朱红印
   wood: {
@@ -184,7 +185,7 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     consoleBody: '#3a2717',
     consoleGlow: 0.12,
     // 木桌：直角桌框、圆边，四块木板拼起来，框面上嵌一道铜线；仪表盘是一块矮矮的木牌；桌布上两道线
-    form: { corner: 'square', bevel: 0.22, trim: 'inlay', console: 'plate', consoleScale: 0.55, line: 'double' },
+    form: { corner: 'square', bevel: 0.22, trim: 'inlay', console: 'plate', line: 'double' },
   },
   // 深夜：炭灰哑光桌布，仪表盘只有灰白两色加一点青，不发光、没花纹，适合长时间打
   night: {
@@ -202,7 +203,7 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     consoleBody: '#121417',
     consoleGlow: 0.3,
     // 什么都收着：大圆角的薄桌框、没有包边，仪表盘是一块薄圆盘，桌布上不画线
-    form: { corner: 'pill', bevel: 0.06, trim: 'none', console: 'disc', consoleScale: 0.8, line: 'none' },
+    form: { corner: 'pill', bevel: 0.06, trim: 'none', console: 'disc', line: 'none' },
   },
   // 翻牌屏：藏青亚麻桌布、铝框，点数像车站的翻牌显示屏，一位数一块牌
   flap: {
@@ -220,7 +221,7 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     consoleBody: '#8b939b',
     consoleGlow: 0.18,
     // 车站的铝件：切角桌框、平顶一排铆钉，内侧低一级的亮铝台阶；仪表盘是高一点的切角铝盒；桌布上只在四个角画一截
-    form: { corner: 'chamfer', bevel: 0.04, trim: 'step', studs: 'rivet', console: 'chamfer', consoleScale: 1.35, line: 'corners' },
+    form: { corner: 'chamfer', bevel: 0.04, trim: 'step', studs: 'rivet', console: 'chamfer', line: 'corners' },
   },
   // 酒红皮革：酒红皮面、黑胡桃桌框、金色包边，仪表盘是黑皮面烫金字
   club: {
@@ -238,7 +239,7 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     consoleBody: '#19120f',
     consoleGlow: 0.2,
     // 软包：桌框是鼓起来的一圈皮，钉一排金扣子，内侧一圈金色滚边；仪表盘是软包的大圆角盒子，顶上一圈金边；桌布上一圈缝线
-    form: { corner: 'round', bevel: 0.32, trim: 'piping', studs: 'button', console: 'cushion', consoleScale: 1.1, line: 'stitch' },
+    form: { corner: 'round', bevel: 0.32, trim: 'piping', studs: 'button', console: 'cushion', line: 'stitch' },
   },
 };
 
@@ -280,6 +281,56 @@ export function setTableStyle(id: TableStyleId): void {
   applyTheme();
 }
 
+// 仪表盘形状：可以跟着牌桌风格走，也可以单独选，哪套牌桌、哪个皮肤都能配哪种形状
+export type ConsoleShapeId = 'auto' | ConsoleForm;
+
+export const CONSOLE_SHAPES: { id: ConsoleShapeId; name: string; note: string }[] = [
+  { id: 'auto', name: '跟牌桌走', note: '用牌桌风格自己的形状（自动麻将机方盒、原木矮牌、深夜圆盘、翻牌屏切角、酒红皮革软包），跟皮肤走时是方盒' },
+  { id: 'box', name: '方盒', note: '圆角方盒，原来的样子' },
+  { id: 'plate', name: '矮牌', note: '矮矮的一块方牌，直角' },
+  { id: 'disc', name: '圆盘', note: '一块薄圆盘，四家的点数往中间收一点' },
+  { id: 'chamfer', name: '切角', note: '四个角切掉的方盒，高一点' },
+  { id: 'cushion', name: '软包', note: '大圆角，边上鼓起来，顶上一圈包边' },
+];
+
+// 每种形状的仪表盘有多高（原来方盒的几倍）
+export const CONSOLE_SCALE: Record<ConsoleForm, number> = { box: 1, plate: 0.55, disc: 0.8, chamfer: 1.35, cushion: 1.1 };
+
+const SHAPE_KEY = 'saki-console-shape';
+
+function isConsoleShape(v: unknown): v is ConsoleShapeId {
+  return CONSOLE_SHAPES.some((t) => t.id === v);
+}
+
+let currentShape: ConsoleShapeId = (() => {
+  try {
+    const v = localStorage.getItem(SHAPE_KEY);
+    return isConsoleShape(v) ? v : 'auto';
+  } catch {
+    return 'auto';
+  }
+})();
+
+export function currentConsoleShape(): ConsoleShapeId {
+  return currentShape;
+}
+
+export function setConsoleShape(id: ConsoleShapeId): void {
+  currentShape = id;
+  try {
+    localStorage.setItem(SHAPE_KEY, id);
+  } catch {
+    // 存不下来就只管这一次
+  }
+  applyTheme();
+}
+
+// 实际用哪种形状：跟牌桌走时用牌桌风格自己的，跟皮肤走是原来的方盒
+export function consoleShapeOf(style: TableStyleId = currentStyle, shape: ConsoleShapeId = currentShape): ConsoleForm {
+  if (shape !== 'auto') return shape;
+  return style === 'skin' ? 'box' : (STYLE_TABLES[style].form?.console ?? 'box');
+}
+
 const KEY = 'saki-theme';
 const DEFAULT: ThemeId = 'broadcast';
 
@@ -317,6 +368,9 @@ export function applyTheme(): void {
   // 2D 牌桌的桌布和中间那块按这个换；跟皮肤走时不挂
   if (currentStyle === 'skin') delete root.dataset.table;
   else root.dataset.table = currentStyle;
+  // 2D 中间那块的形状：单独选了才挂（跟牌桌走时照牌桌风格、皮肤自己的）
+  if (currentShape === 'auto') delete root.dataset.console;
+  else root.dataset.console = currentShape;
 }
 
 // 皮肤自带的牌桌（视觉设置里皮肤按钮上的小色样用这个）
@@ -325,6 +379,6 @@ export function skinTableColors(id: ThemeId = current): TableColors {
 }
 
 // 对局里实际用的牌桌：选了牌桌风格就用那套，跟皮肤走就用皮肤自带的
-export function tableColors(id: ThemeId = current, style: TableStyleId = currentStyle): TableColors {
-  return style === 'skin' ? TABLES[id] : STYLE_TABLES[style];
+export function tableColors(id: ThemeId = current, style: TableStyleId = currentStyle, shape: ConsoleShapeId = currentShape): TableColors {
+  return { ...(style === 'skin' ? TABLES[id] : STYLE_TABLES[style]), shape: consoleShapeOf(style, shape) };
 }

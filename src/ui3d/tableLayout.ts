@@ -16,7 +16,7 @@ export const POND_ROWS = 3;
 export const WALL_Z = 9.45;
 // 人物大小 100% 时的放大倍数：模型的 1 米 = 23 个世界单位
 export const BASE_AVATAR_SCALE = 23;
-// 中央控制台的半宽；立直棒放在牌河前面 0.5，不能压到控制台
+// 中央控制台的半宽；怜竖着立的立直棒在牌河前面 0.5，不能压到控制台（其他人的立直棒放在控制台顶上）
 export const CONSOLE_HALF = 2.9;
 
 export interface TableLayout {

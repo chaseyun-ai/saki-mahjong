@@ -68,7 +68,7 @@ import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { preloadVoices, sayVoice, stopVoices } from './voice';
 import { VoiceCue, cueKeys } from './voiceLines';
 import { TeamFlow } from './teamFlow';
-import { TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentTableStyle, currentTheme, setTableStyle, setTheme } from './theme';
+import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentConsoleShape, currentTableStyle, currentTheme, setConsoleShape, setTableStyle, setTheme } from './theme';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
@@ -456,7 +456,7 @@ export class App {
       this.panel === 'match'
         ? matchPanelHtml(this.settings)
         : this.panel === 'visual'
-          ? visualPanelHtml(this.settings, currentTheme(), this.mode, this.canSkins, currentTableStyle())
+          ? visualPanelHtml(this.settings, currentTheme(), this.mode, this.canSkins, currentTableStyle(), currentConsoleShape())
           : this.panel === 'rii'
             ? riiSetPanelHtml()
             : this.panel === 'riiTest'
@@ -1960,6 +1960,12 @@ export class App {
     // 牌桌风格：下一局建牌桌时用（2D 牌桌马上换）
     if (el.dataset.ui === 'vis-table' && TABLE_STYLES.some((t) => t.id === el.dataset.v)) {
       setTableStyle(el.dataset.v as TableStyleId);
+      this.renderPanel();
+      return;
+    }
+    // 仪表盘形状：下一局建牌桌时用（2D 牌桌中间那块马上换）
+    if (el.dataset.ui === 'vis-shape' && CONSOLE_SHAPES.some((t) => t.id === el.dataset.v)) {
+      setConsoleShape(el.dataset.v as ConsoleShapeId);
       this.renderPanel();
       return;
     }

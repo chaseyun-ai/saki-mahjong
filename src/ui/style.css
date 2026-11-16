@@ -868,10 +868,14 @@ button {
   font-size: 14px;
 }
 
+/* 风位：比点数大一号（17px），一眼认得出哪家是东南西北。字色是提亮的角色色：原来直接用角色色再调亮一点，
+   碰到深色的角色只有 2.3:1，现在和后来那四套皮肤一样，角色色掺一半多白（白瓷、漫画这种浅色底在各自那段里压暗） */
 .score .wind {
+  font-size: 17px;
   font-weight: 700;
-  color: var(--c);
-  filter: brightness(1.4);
+  /* 字大了，行高不跟着长：那一行还是原来那么高，不碰局数、咲的杠材 */
+  line-height: 1;
+  color: color-mix(in srgb, var(--c) 45%, #fff);
 }
 
 .score.active .pts {
@@ -904,6 +908,11 @@ button {
 :root:is([data-theme='neon'], [data-theme='arcade']) .table.sketch .center {
   --diff-plus: #5ab4ff;
   --diff-minus: #ff6b6b;
+}
+
+/* 手绘板的白纸上，风位用压暗的角色色（赛博霓虹、复古街机的中间那块在手绘板上还是深色底，照常提亮） */
+:root:not([data-theme='neon'], [data-theme='arcade']) .table.sketch .center .score .wind {
+  color: color-mix(in srgb, var(--c) 45%, #1a1a1a);
 }
 
 .score .pts .d {
@@ -963,6 +972,21 @@ button {
   transform: rotate(-90deg);
 }
 
+/* 立直以后那一行多一根立直棒（26px 加 6px 的空）。上下两家那一行本来就居中；左右两家的是贴着边转过来的，
+   行一长，转过来的中心就往里挪 16px，压到宝牌、局数。往回挪，而且只往上长：左边这家把立直棒排到风位前面，
+   两家的立直棒都在上头，风位、点数一点不动，下面留给咲的岭上、杠材（网麻的点数牌是定宽的，放得下立直棒，不用挪） */
+.stage:not(.net) .score.left:has(.stick) {
+  transform: translate(-16px, -16px) rotate(90deg);
+}
+
+.stage:not(.net) .score.right:has(.stick) {
+  transform: translate(16px, -16px) rotate(-90deg);
+}
+
+.stage:not(.net) .score.left .stick {
+  order: -1;
+}
+
 .stick {
   display: inline-block;
   width: 26px;
@@ -982,6 +1006,13 @@ button {
   height: 4px;
   border-radius: 50%;
   background: var(--man);
+}
+
+/* 浅色的中间那块（白瓷、漫画，手绘板的白纸）上，白色立直棒只剩一个红点：描一圈深色边
+   （原木、翻牌屏的浅色面板在 tableStyles.css 里另描） */
+:root:not([data-table]):is([data-theme='porcelain'], [data-theme='manga']) .stage:not(.net) .center .stick,
+:root:not([data-theme='neon'], [data-theme='arcade']) .stage:not(.net) .table.sketch .center .stick {
+  box-shadow: 0 0 0 1px #2b2b33;
 }
 
 /* ---------- 牌河 ---------- */
@@ -7128,6 +7159,8 @@ html:root .tm-draft .tmd-go {
   color: #3a2a00;
   filter: none;
   font-family: 'Noto Sans SC', sans-serif;
+  /* 风位字大了一号，点数牌还是原来那么厚 */
+  line-height: 21px;
 }
 
 .stage.net .score.active {

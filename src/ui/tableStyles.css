@@ -8,6 +8,7 @@
    中间那块的底色、字色每套都写死，不跟皮肤的 --ink、--gold 走（浅色皮肤会把它们改成深色）。
    字和底色都量过对比度：正文 4.5:1 以上。
    能力换出来的牌桌照旧，不套牌桌风格：爱丽丝的手绘板（.table.sketch）、原村和的网麻牌桌（.stage.net）
+   仪表盘的形状也可以单独选（视觉设置里「仪表盘形状」，<html> 上挂 data-console），见文件最后一段
    ====================================================================== */
 
 /* 视觉设置里的小色样：桌布色上一块仪表盘色的小方块，方块底下一道字的颜色 */
@@ -28,6 +29,35 @@
   border-radius: 1.5px;
   background: var(--c);
   box-shadow: inset 0 -2.5px 0 var(--k);
+}
+
+/* 视觉设置里「仪表盘形状」按钮前的小图形：方盒、矮牌、圆盘、切角、软包 */
+.set-shape i {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  background: none;
+}
+
+.set-shape i.sh-plate {
+  height: 9px;
+  border-radius: 1px;
+}
+
+.set-shape i.sh-disc {
+  border-radius: 50%;
+}
+
+/* 切角：不认 corner-shape 的浏览器上就是个圆角方块 */
+.set-shape i.sh-chamfer {
+  border-radius: 5px;
+  corner-shape: bevel;
+}
+
+.set-shape i.sh-cushion {
+  border-width: 2.5px;
+  border-radius: 6px;
 }
 
 /* ---------- 共用：中间那块的字 ---------- */
@@ -93,12 +123,13 @@
   row-gap: 0;
 }
 
+/* 风位：比第一版大一号（13px 换 16px，方块 22 换 26），一眼认得出哪家是东南西北 */
 :root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
   display: inline-grid;
   place-items: center;
-  min-width: 22px;
-  height: 22px;
-  font-size: 13px;
+  min-width: 26px;
+  height: 26px;
+  font-size: 16px;
   font-weight: 900;
   line-height: 1;
   filter: none;
@@ -107,6 +138,11 @@
 :root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .pts {
   font-size: 15px;
   font-weight: 700;
+}
+
+/* 风位方块大了一号，左右两家那一行长了 4px：整行往上挪 3px，下面给咲的杠材（两项时折两行）留出空 */
+:root[data-table][data-theme] .stage:not(.net) .table:not(.sketch) .center :is(.score.left, .score.right) {
+  translate: 0 -3px;
 }
 
 /* 2D 手牌上面那行提示（点击一张牌打出）直接写在桌布上：皮肤的浅灰字是照皮肤自己的桌布挑的，换了桌布（比如绿呢）就不够亮，
@@ -135,6 +171,7 @@
 }
 
 :root[data-table='auto'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --stitch: #8a9096;
   --diff-plus: #4fb3ff;
   --diff-minus: #ff4636;
   --ink: #ffb02e;
@@ -209,6 +246,7 @@
 
 /* 木牌：直角，四个角各钉一颗铜钉 */
 :root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --stitch: #7d5d3a;
   --diff-plus: #1a4a94;
   --diff-minus: #9b2c17;
   --ink: #2b1b0e;
@@ -242,8 +280,8 @@
 
 /* 圆圈比方块大一点：字和圈之间留出空 */
 :root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
-  min-width: 24px;
-  height: 24px;
+  min-width: 28px;
+  height: 28px;
   border: 2px solid #2b1b0e;
   border-radius: 50%;
   box-shadow: 0 0 0 2px var(--c);
@@ -275,6 +313,11 @@
   color: #9b2c17;
 }
 
+/* 浅色木牌上白色立直棒描一圈木框的深棕边 */
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .stick {
+  box-shadow: 0 0 0 1px #7d5d3a;
+}
+
 /* ---------- 深夜：炭灰哑光、灰白字加一点青 ---------- */
 
 :root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) {
@@ -288,6 +331,7 @@
 
 /* 圆润的一块：圆角很大（3D 里是圆盘）。四边的点数、中间的字都在圆角里面 */
 :root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --stitch: #59616c;
   --diff-plus: #6cb6ff;
   --diff-minus: #ff8a7a;
   --ink: #eef1f5;
@@ -357,6 +401,7 @@
 }
 
 :root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  --stitch: #6c747c;
   --diff-plus: #6cbcff;
   --diff-minus: #ff8a7a;
   --ink: #1f262d;
@@ -379,9 +424,15 @@
   color: #f5f5f2;
 }
 
+/* 浅色铝板上白色立直棒描一圈深灰边，不然看不出来 */
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .stick {
+  box-shadow: 0 0 0 1px #5d646b;
+}
+
+/* 局数那块翻牌窄一点（字距 3 换 1）：风位方块大了以后，左右两家那一行离它太近 */
 :root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {
-  padding: 2px 10px;
-  letter-spacing: 3px;
+  padding: 2px 8px;
+  letter-spacing: 1px;
 }
 
 :root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .center .remain,
@@ -461,8 +512,8 @@
 }
 
 :root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
-  min-width: 24px;
-  height: 24px;
+  min-width: 28px;
+  height: 28px;
   border: 2px solid #e2c27f;
   border-radius: 50%;
   box-shadow: 0 0 0 2px var(--c);
@@ -491,4 +542,56 @@
 
 :root[data-table='club'][data-theme] .stage:not(.net) .table:not(.sketch) .center .kan-peek {
   color: #e2c27f;
+}
+
+/* ---------- 仪表盘形状（视觉设置里单独选的；2D 是中间那块的形状） ----------
+   选「跟牌桌走」时 <html> 上没有 data-console，这一段不生效，牌桌风格、皮肤各用自己的形状。
+   单独选了形状：只换中间那块的轮廓（圆角大小、切角、软包的缝线），底色、字色还是牌桌风格（或皮肤）的。
+   本来就是这个形状的那套牌桌不动：自动麻将机的方盒、原木的矮牌、深夜的圆盘、翻牌屏的切角、酒红皮革的软包。
+   切角用 corner-shape（不认的浏览器上是圆角）；不用 clip-path，免得把伸出去的左右两家点数切掉 */
+
+:root[data-console='box']:not([data-table='auto'])[data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  border-radius: 14px;
+}
+
+:root[data-console='plate']:not([data-table='wood'])[data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  border-radius: 3px;
+}
+
+:root[data-console='disc']:not([data-table='night'])[data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  border-radius: 64px;
+}
+
+:root[data-console='chamfer']:not([data-table='flap'])[data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  border-radius: 22px;
+  corner-shape: bevel;
+}
+
+/* 软包：大圆角，里面一圈缝线（缝线的颜色每套牌桌配一个，皮肤用字色淡一点） */
+:root[data-console='cushion']:not([data-table='club'])[data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  border-radius: 28px;
+  outline: 1.5px dashed var(--stitch, color-mix(in srgb, currentColor 45%, transparent));
+  outline-offset: -7px;
+}
+
+/* 换了形状，各套自己那个形状上的小件不要了：原木四角的铜钉只配矮牌，翻牌屏的切角铝板底图只配切角，酒红皮革的缝线只配软包 */
+:root[data-table='wood'][data-console]:not([data-console='plate'])[data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  background:
+    repeating-linear-gradient(178deg, rgba(150, 108, 58, 0.12) 0 1px, transparent 1px 7px),
+    radial-gradient(#efdfbd, #e4cc9f);
+}
+
+:root[data-table='flap'][data-console]:not([data-console='chamfer'])[data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  border: 2px solid #6c747c;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.1) 0 1px, transparent 1px 2px),
+    linear-gradient(#d3d8dd, #b9c0c7);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.5),
+    0 8px 22px rgba(0, 0, 0, 0.45);
+  filter: none;
+}
+
+:root[data-table='club'][data-console]:not([data-console='cushion'])[data-theme] .stage:not(.net) .table:not(.sketch) .center {
+  outline: none;
 }

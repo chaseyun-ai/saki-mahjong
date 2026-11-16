@@ -24,8 +24,8 @@ import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
-import { type FeltPattern, TableColors, tableColors } from '../ui/theme';
-import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, skinSignColors } from './consoleLooks';
+import { CONSOLE_SCALE, type FeltPattern, TableColors, tableColors } from '../ui/theme';
+import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, outline, skinSignColors } from './consoleLooks';
 import { hash01, pondJitter, varyDiscard, vary } from '../ui/vary';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
@@ -106,11 +106,9 @@ const SIDE_HAND_PUSH_25D = 0.7;
 // 整排手牌就露出来了。牌山收进去以后右上角的缝变窄，右边（下家）的牌山整排往下挪一点，上下两个转角的缝一样宽
 const TOP_WALL_IN_25D = 0.8;
 const TOP_HAND_PUSH_25D = 0.8;
-// 中央控制台的高度。2.5D 镜头从自己这边斜着看过去，控制台太高会把对家的立直棒挡住一半，所以 2.5D 矮一点
+// 中央控制台的高度。2.5D 镜头从自己这边斜着看过去，矮一点不挡对家那边（立直棒原来放在控制台外面，太高会挡住对家的一半）
 const CONSOLE_H = 0.5;
 const CONSOLE_H_25D = 0.3;
-// 2.5D 对家的立直棒再往牌河那边挪一点，离控制台远些（离牌河第一行还留着空）
-const TOP_STICK_OUT_25D = 0.07;
 const RIGHT_WALL_DOWN_25D = 0.2;
 // 改良布局：牌河第三排别贴着牌山。上家、下家的牌山（连同手牌）往桌边挪 V2_SIDE_OUT；
 // 对家的牌山只往中间收 V2_TOP_WALL_IN（原版收 0.8，第三排会压到牌山），手牌往后推 V2_TOP_HAND_PUSH，从牌山后面露出来
@@ -125,6 +123,12 @@ const DRAWER_X = 5;
 const DRAWER_Y = -0.85;
 const DRAWER_OPEN = 2.4;
 const STICK_LEN = 3.6;
+// 立直棒的半高（立直棒 0.16 高、0.36 宽）
+const STICK_HALF_H = 0.08;
+// 圆盘仪表盘上的立直棒：缩到 0.6（长 2.16），放在离中心 2.45 的那一圈。两头刚好不出圆盘顶面，
+// 里沿（加上斜着看过去棒子的高度）也压不到这一家那一排点数（贴图上离中心 212 以内）
+const DISC_STICK = 0.6;
+const DISC_STICK_Z = 2.45;
 
 // 角色：VRoid 的 CC0 示例模型改色（见 looks.ts）。人物大小 100% 时放大 23 倍
 export const AVATAR_SCALE = BASE_AVATAR_SCALE;
@@ -731,10 +735,10 @@ export class Table3D {
     this.buildConsole(consoleMats[0], consoleMats[1], trimMat);
   }
 
-  // 中央控制台的机身照牌桌风格的款式：圆角方盒（原来的）、矮木牌、圆盘、切角方盒、软包。
+  // 中央控制台的机身照视觉设置里的「仪表盘形状」（跟牌桌走时是牌桌风格自己的）：圆角方盒（原来的）、矮牌、圆盘、切角方盒、软包。
   // 顶面贴图都照 CONSOLE_TOP 的方块铺，圆盘、切角、软包只露出形状里面那块（贴图上的字都排在形状里面，见 consoleLooks.ts）
   private buildConsole(bodyMat: THREE.Material, topMat: THREE.Material, trimMat: THREE.Material): void {
-    const form = this.colors.form?.console ?? 'box';
+    const form = this.colors.shape ?? 'box';
     const h = this.consoleH;
     const H = CONSOLE_HALF;
     const T = CONSOLE_TOP;
@@ -1204,17 +1208,21 @@ export class Table3D {
     }
   }
 
-  // 立直棒放在牌河和控制台之间。怜的立直棒是竖着立在桌上的
+  // 立直棒放在中央控制台顶上、靠这一家的那条边（雀魂那样），2.5D、3D、原版和改良布局都一样。原来放在牌河和控制台之间：
+  // 自己的立直棒会被自己牌河第一排挡住，3D 镜头低，对家的还会被控制台挡住。
+  // 圆盘边上放不下一整根，换一根小一号的放在圆盘边上那一圈（DISC_STICK）。怜的立直棒是竖着立在桌上的
   private stickPlacement(seat: number): Placement {
     const me = this.lastSync?.view.me ?? 0;
     if (this.lastSync?.view.ids[seat] === 'toki') {
       return this.toWorld(seat, me, 0, STICK_LEN / 2, this.dim.pondZ - 0.5, new THREE.Euler(0, 0, Math.PI / 2));
     }
-    // 改良布局：放在中央控制台顶上靠这一家的边上（雀魂那样）。放在牌河和控制台之间的话，自己的立直棒会被自己牌河第一排挡住
-    // 圆盘仪表盘边上放不下一整根，还是放在牌河前面（仪表盘上另外画一根小的）
-    if (this.v2 && !this.discConsole) return this.toWorld(seat, me, 0, this.consoleH + 0.085, CONSOLE_HALF - 0.24, STANDING);
-    const out = this.style === '25d' && (seat - me + 4) % 4 === 2 ? TOP_STICK_OUT_25D : 0;
-    return this.toWorld(seat, me, 0, 0.09, this.dim.pondZ - 0.35 + out, STANDING);
+    const k = this.stickScale(seat);
+    return this.toWorld(seat, me, 0, this.consoleH + STICK_HALF_H * k + 0.005, this.discConsole ? DISC_STICK_Z : CONSOLE_HALF - 0.24, STANDING);
+  }
+
+  // 立直棒放多大：圆盘仪表盘上的小一号（怜立在桌上的那根照常）
+  private stickScale(seat: number): number {
+    return this.discConsole && this.lastSync?.view.ids[seat] !== 'toki' ? DISC_STICK : 1;
   }
 
   // 2.5D 改良布局（试做）
@@ -1245,11 +1253,11 @@ export class Table3D {
 
   // 仪表盘的高度：牌桌风格的款式里有高矮（木牌矮、翻牌屏的铝盒高）
   private get consoleH(): number {
-    return (this.style === '25d' ? CONSOLE_H_25D : CONSOLE_H) * (this.colors.form?.consoleScale ?? 1);
+    return (this.style === '25d' ? CONSOLE_H_25D : CONSOLE_H) * CONSOLE_SCALE[this.colors.shape ?? 'box'];
   }
 
   private get discConsole(): boolean {
-    return this.colors.form?.console === 'disc';
+    return this.colors.shape === 'disc';
   }
 
   // 抽屉里那根立直棒的位置（抽屉拉开时）
@@ -1280,6 +1288,7 @@ export class Table3D {
     const from = drop ? { pos: dest.pos.clone().setY(dest.pos.y + STICK_DROP_HEIGHT), quat: dest.quat } : this.drawerStick(seat);
     this.stickState[seat] = 'anim';
     this.riichiSticks[seat].visible = false;
+    this.riichiSticks[seat].scale.setScalar(this.stickScale(seat));
     this.handAnims.push({
       seat,
       kind: 'stick',
@@ -1299,6 +1308,7 @@ export class Table3D {
     const p = this.stickPlacement(seat);
     stick.position.copy(p.pos);
     stick.quaternion.copy(p.quat);
+    stick.scale.setScalar(this.stickScale(seat));
     stick.visible = true;
     this.stickState[seat] = 'placed';
   }
@@ -3423,13 +3433,11 @@ export class Table3D {
           rel: (s - view.me + 4) % 4,
           wind: WIND_CN[g.seatWind(s) - 27],
           score: g.shownScore(s, view.me),
-          riichi: g.seesRiichi(s, view.me),
           active: g.phase === 'turn' && g.turn === s,
           color: view.colors[s],
           diff: diffOf(s),
         })),
         (cx, face, x, y, w, h) => this.atlas.drawFace(cx, face, x, y, w, h),
-        !this.v2 || this.discConsole,
       );
       this.consoleTex.needsUpdate = true;
       return;
@@ -3442,8 +3450,12 @@ export class Table3D {
     c.strokeStyle = k.line;
     c.globalAlpha = 0.5;
     c.lineWidth = 2;
-    c.strokeRect(10, 10, S - 20, S - 20);
+    // 外圈细框照仪表盘的形状（方的还是原来的直角框）
+    outline(c, this.colors, 10, 2);
+    c.stroke();
     c.globalAlpha = 1;
+    // 圆盘：四家那一排往中间收、窄一点，中间方屏圆角大一点
+    const disc = this.discConsole;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
 
@@ -3451,7 +3463,7 @@ export class Table3D {
     const P = 124;
     c.fillStyle = 'rgba(0,0,0,0.35)';
     c.beginPath();
-    c.roundRect(M - P, M - P, P * 2, P * 2, 18);
+    c.roundRect(M - P, M - P, P * 2, P * 2, disc ? 36 : 18);
     c.fill();
     c.strokeStyle = k.line;
     c.lineWidth = 2.5;
@@ -3485,32 +3497,34 @@ export class Table3D {
         c.shadowColor = k.accent;
         c.shadowBlur = 16;
         c.beginPath();
-        c.roundRect(-140, 229, 280, 7, 3.5);
+        if (disc) c.roundRect(-66, 206, 166, 6, 3);
+        else c.roundRect(-140, 229, 280, 7, 3.5);
         c.fill();
         c.shadowBlur = 0;
       }
-      // 风位：圆圈用角色的颜色，轮到他时填满
+      // 风位：圆圈用角色的颜色，轮到他时填满（比原来大一圈：字 42px，圆盘上 34px）
+      const [wx, wy, wr, wf] = disc ? [-104, 176, 25, 34] : [-118, 190, 31, 42];
       c.beginPath();
-      c.arc(-116, 190, 28, 0, Math.PI * 2);
+      c.arc(wx, wy, wr, 0, Math.PI * 2);
       c.fillStyle = active ? k.accent : 'rgba(0,0,0,0.4)';
       c.fill();
       c.strokeStyle = view.colors[s];
       c.lineWidth = 4;
       c.stroke();
       c.fillStyle = active ? k.bg[1] : k.ink;
-      c.font = "900 34px 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif";
-      c.fillText(WIND_CN[g.seatWind(s) - 27], -116, 192);
+      c.font = `900 ${wf}px 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif`;
+      c.fillText(WIND_CN[g.seatWind(s) - 27], wx, wy + 2);
       // 点数（指着仪表盘时其他三家写点差：多了蓝、少了红）；负分、点差的红蓝看底色深浅挑，浅色皮肤上用深一档的
-      c.font = num(66);
+      c.font = num(disc ? 60 : 66);
       const score = g.shownScore(s, view.me);
       const diff = diffOf(s);
       const [plus, minus] = skinSignColors(k.bg[1]);
       const ink = active ? k.accent : k.ink;
       c.fillStyle = diff === null ? (score < 0 ? minus : ink) : diff > 0 ? plus : diff < 0 ? minus : ink;
       c.textAlign = 'left';
-      c.fillText(diff === null ? score.toLocaleString('en-US') : diffText(diff), -78, 192, 218);
+      if (disc) c.fillText(diff === null ? score.toLocaleString('en-US') : diffText(diff), -70, 178, 186);
+      else c.fillText(diff === null ? score.toLocaleString('en-US') : diffText(diff), -76, 192, 216);
       c.textAlign = 'center';
-      if (g.seesRiichi(s, view.me) && !this.v2) drawStick(c, 0, 143, 160, 11);
       c.restore();
     }
     this.consoleTex.needsUpdate = true;
@@ -4549,7 +4563,7 @@ function stickMesh(): THREE.Mesh {
     tex.colorSpace = THREE.SRGBColorSpace;
     stickMat = wet(new THREE.MeshStandardMaterial({ map: tex, roughness: 0.4 }));
   }
-  const m = new THREE.Mesh(new RoundedBoxGeometry(STICK_LEN, 0.16, 0.36, 2, 0.07), stickMat);
+  const m = new THREE.Mesh(new RoundedBoxGeometry(STICK_LEN, STICK_HALF_H * 2, 0.36, 2, 0.07), stickMat);
   m.castShadow = true;
   return m;
 }
@@ -4819,7 +4833,7 @@ function feltTexture(colors: TableColors, zones = 0): THREE.CanvasTexture {
   } else if (zones) {
     // 改良布局：从仪表盘四个角斜着画到桌角。仪表盘不是方的时，从它斜对角那一点往外画
     const px = 512 / zones;
-    const form = colors.form?.console ?? 'box';
+    const form = colors.shape ?? 'box';
     const corner =
       form === 'disc' ? CONSOLE_HALF / Math.SQRT2 : form === 'chamfer' ? CONSOLE_HALF - CONSOLE_CUT / 2 : form === 'cushion' ? CONSOLE_HALF - CONSOLE_CUSHION_R * (1 - Math.SQRT1_2) : CONSOLE_HALF;
     const a = (corner + 0.25) * px;
