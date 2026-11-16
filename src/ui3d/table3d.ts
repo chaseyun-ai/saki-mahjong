@@ -1455,6 +1455,9 @@ export class Table3D {
     if (tw) {
       const self = this.fallsBack(tw.seat);
       const start = self && standAt !== null ? standAt : this.now + V2_STAND;
+      // 别家：自摸的那张还没落进她手里（摸得太快：还在牌山上等着飞、正在飞）就直接放进她手里那一格
+      // （宣言时 2.5D 有「自摸」的切入盖着画面），不然拍牌的手要伸过牌山去牌山上、半路上拿
+      if (!self) this.seatDrawn(g, tw.seat, tw.tile);
       const lily = this.lilyBase(g, tw);
       const sea = tw.tile === this.seaSlamTile;
       const twist = lily === null && !sea ? this.twistSize(g, tw) : null;
@@ -3094,6 +3097,36 @@ export class Table3D {
     const n = g.players[s].hand.filter((t) => t !== win).length;
     const row = this.tableRow(s, n + 1);
     return this.toWorld(s, this.lastSync.view.me, row.x0 + n * row.step + 0.5, TILE_H / 2, row.z, STANDING);
+  }
+
+  // 别家摸到的那张平常在她手里的哪一格（手牌右边隔开半张；对家公开手牌转过来朝我时在最左边），照 sync 摆手牌的样子算
+  private drawnSlot(g: Game, s: number, win: TileId): Placement | null {
+    const view = this.lastSync?.view;
+    const row = this.handRows[s];
+    if (!view || !row) return null;
+    const me = view.me;
+    const n = g.players[s].hand.filter((t) => t !== win).length;
+    const open = !!view.openHands;
+    const facing = open && (s - me + 4) % 4 === 2;
+    const lie = facing && this.style === '25d';
+    const rot = lie ? FACE_UP : facing ? OPEN_HAND : open ? FACE_UP : STANDING;
+    const y = (open && !facing) || lie ? (TILE_T / 2) * row.hs : (TILE_H / 2) * row.hs;
+    const x = facing ? row.x0 : row.x0 + n * row.step + 0.5;
+    return this.toWorld(s, me, x, y, row.z, rot, facing ? Math.PI : 0, row.hs);
+  }
+
+  // 别家自摸的那张还没落进她手里（还在牌山上等着飞、正在飞）：不飞了，直接放进她手里那一格
+  private seatDrawn(g: Game, s: number, win: TileId): void {
+    const at = this.drawnSlot(g, s, win);
+    const t = this.tiles[win];
+    if (!at || t.group.position.distanceTo(at.pos) < 0.35) return;
+    if (this.heldDraw?.tile === win) this.heldDraw = null;
+    this.flights = this.flights.filter((f) => f.tile !== win);
+    this.setTileOpacity(t, 1);
+    t.group.visible = true;
+    t.group.position.copy(at.pos);
+    t.group.quaternion.copy(at.quat);
+    t.group.scale.setScalar(at.scale);
   }
 
   // 改良布局的自己：倒牌前先在桌上立着摆一排；自摸那张先悬在右边上方，到 placeAt 落下立好（初美要砸的那张不动）
