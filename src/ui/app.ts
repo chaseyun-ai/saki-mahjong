@@ -1683,7 +1683,7 @@ export class App {
     if (tile && dock) {
       const pr = dock.getBoundingClientRect();
       const ps = dock.offsetWidth > 0 ? pr.width / dock.offsetWidth : 1;
-      at = { x: pr.left + (dock.clientLeft + tile.offsetLeft + tile.offsetWidth / 2) * ps, y: pr.top + (dock.clientTop + tile.offsetTop + tile.offsetHeight) * ps };
+      at = { x: pr.left + (dock.clientLeft + tile.offsetLeft + tile.offsetWidth / 2) * ps, y: pr.top + (dock.clientTop + tile.offsetTop + tile.offsetHeight / 2) * ps };
     }
     playSlam();
     tornado2d(at, size, { onErupt: () => playWhirl(size), onBolt: () => playCrackle(0.7) });

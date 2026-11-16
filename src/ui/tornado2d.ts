@@ -2,7 +2,7 @@ import './teruFx.css';
 import { TWISTER } from '../ui3d/twister';
 
 // 2D 牌桌上宫永照的旋风自摸，和 3D 的（ui3d/twister.ts）同一个节奏、同一个样子，画成斜着看的一个立体漏斗：
-// 从 at（结算里那张和了牌底下）拔地而起，下细上粗，一圈圈白色的风带绕着转（前半圈白、后半圈透出淡紫），
+// 从 at（结算里那张和了牌的正中）拔地而起，下细上粗，一圈圈白色的风带绕着转（前半圈白、后半圈透出淡紫），
 // 外面缠着细风丝，里面一柱紫光，风脚卷起一圈灰；风里卷着一点沙土和几块碎石，紫白色的电弧在风上爬、往天上劈；
 // 卷完散成一片紫光，碎石被甩出去，残电再闪几下。牌在结算里牌面朝上平着转（style.css 的 .win.slam.twist），这里只画风。
 // 叫的时候是牌刚砸下去那一下：照 TWISTER.erupt 等一下再起风。画在盖住整个页面的一层 canvas 上，放完自己收掉。
@@ -107,7 +107,8 @@ export function tornado2d(at: { x: number; y: number }, size: number, opts: Torn
   const T = TWISTER;
   const side = at.y > (230 + 110 * z) * k * 0.9 + 20;
   const H = side ? (230 + 110 * z) * k : (55 + 25 * z) * k;
-  const R0 = (side ? 9 : 12) * k;
+  // 风脚比牌宽一点：转着的牌整个裹在风里
+  const R0 = (side ? 20 : 24) * k;
   const R1 = (side ? 72 + 40 * z : 92 + 46 * z) * k;
   const SQ = side ? 0.3 : 0.74; // 斜着看横着的圈压扁成椭圆；从上往下看差不多是圆
   const wob = (side ? 14 + 8 * z : 6 + 4 * z) * k;

@@ -36,13 +36,14 @@ export interface TwisterOpts {
   size: number; // 0–1：连和越多风越大
   lean: THREE.Vector3; // 风顶往哪边歪（水平的单位向量，一般朝桌子中间）
   area: number; // 牌桌半宽：碎石落在桌上，出了桌子就掉下去
-  height?: number; // 风多高（世界单位），不给就按 size、scale 算（twisterShape）
+  height?: number; // 风多高（世界单位），不给就按 size、scale 算（twisterShape；风脚、风顶的半径总是照它）
   leanAmt?: number; // 风顶往 lean 那边歪多少（世界单位）
 }
 
-// 风本来多高、风顶本来往桌子中间歪多少（牌桌照镜头再压矮、多歪一点，风顶才留在画面里）
-export function twisterShape(size: number, scale: number): { height: number; leanAmt: number } {
-  return { height: (11 + 4.5 * size) * scale, leanAmt: (1.0 + 0.6 * size) * scale };
+// 风本来多高、风顶本来往桌子中间歪多少（牌桌照镜头再压矮、多歪一点，风顶才留在画面里），风脚、风顶的半径。
+// 风脚比牌转起来扫过的圆（半对角线约 0.84 牌宽）还宽一点：转着的牌整个裹在风里
+export function twisterShape(size: number, scale: number): { height: number; leanAmt: number; r0: number; r1: number } {
+  return { height: (11 + 4.5 * size) * scale, leanAmt: (1.0 + 0.6 * size) * scale, r0: (0.98 + 0.1 * size) * scale, r1: (2.9 + 1.1 * size) * scale };
 }
 
 // 电弧：crawl 在风上爬，sky 从风顶往天上劈，ground 从风上劈到桌上，residual 风散以后牌四周的残电
@@ -559,8 +560,8 @@ export class Twister {
     this.flash = 0;
     const shape = twisterShape(z, s);
     this.H = o.height ?? shape.height;
-    this.R0 = (0.32 + 0.08 * z) * s;
-    this.R1 = (2.4 + 1.1 * z) * s;
+    this.R0 = shape.r0;
+    this.R1 = shape.r1;
     this.wob = (0.35 + 0.2 * z) * s;
     this.lean.copy(o.lean).setY(0).normalize().multiplyScalar(o.leanAmt ?? shape.leanAmt);
     const u = this.u;
@@ -592,11 +593,19 @@ export class Twister {
 
   // 风带：从下往上一条条排（画的时候按这个顺序）
   private buildBands(z: number, s: number): void {
-    const n = Math.min(MAX_BANDS, Math.round(24 + 10 * z));
+    const foot = 6;
+    const n = Math.min(MAX_BANDS, Math.round(24 + 10 * z) + foot);
     const a: number[] = [];
     const b: number[] = [];
-    for (let i = 0; i < n; i++) {
-      const h0 = 0.03 + ((i + 0.5 + rand(-0.3, 0.3)) / n) * 0.95;
+    // 风脚：牌浮起来转的那一截（离桌面一牌多高）多绕几圈宽一点的风带，把牌整个包在里面
+    const footTop = (1.5 * s) / this.H;
+    for (let i = 0; i < foot; i++) {
+      const h0 = ((i + 0.3 + rand(0, 0.4)) / foot) * footTop;
+      a.push(h0, rand(1.6, 1.95) * Math.PI, Math.random() * Math.PI * 2, rand(10, 13));
+      b.push(rand(0.42, 0.55) * s, rand(0.005, 0.02), Math.random(), rand(0.9, 1));
+    }
+    for (let i = foot; i < n; i++) {
+      const h0 = 0.03 + ((i - foot + 0.5 + rand(-0.3, 0.3)) / (n - foot)) * 0.95;
       a.push(h0, rand(1.35, 1.9) * Math.PI, Math.random() * Math.PI * 2, rand(9, 12.5) * (1.3 - 0.6 * h0));
       b.push((0.38 + 0.6 * h0) * s * rand(0.8, 1.2) * (0.85 + 0.3 * z), rand(0.015, 0.05), Math.random(), rand(0.85, 1));
     }
@@ -718,7 +727,7 @@ export class Twister {
     const linger = 1 - smooth(0, 1, (tt - T.hold) / (T.fade + 0.4));
     this.coreMat.uniforms.uA.value = Math.min(1, tt / 0.12) * (0.35 * linger + 0.65 * (1 - fade)) * (0.85 + 0.15 * Math.sin(tt * 23));
     // 地上的灰：起风时一下子铺开，转着，风散时淡掉
-    const dr = (this.R0 * 5 + 1.6 * s) * (0.6 + 0.4 * Math.min(1, tt / 0.25)) * (1 + 0.5 * fade);
+    const dr = (this.R0 * 2.4 + 1.6 * s) * (0.6 + 0.4 * Math.min(1, tt / 0.25)) * (1 + 0.5 * fade);
     this.dust.scale.set(dr * 2, dr * 2, 1);
     this.dust.rotation.z = -tt * 7;
     this.dustMat.opacity = Math.min(1, tt / 0.1) * (1 - fade) * 0.85;

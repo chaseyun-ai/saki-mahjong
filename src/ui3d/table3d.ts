@@ -492,8 +492,8 @@ export class Table3D {
   private lily = new LilyFx();
   // 宫永照的旋风自摸：龙卷风（twister.ts），和那张立在桌上转的和了牌（拍下去那一刻起，躺回去为止）
   private twister = new Twister();
-  // spot：风从桌面上哪起（牌就在这里转）。自己的就在牌躺的地方；别家的牌在画面上沿、两边，风会冒出画面，挪到她跟前一点（牌被风卷过去）
-  private twist: { id: TileId; seat: number; t0: number; to: Placement; spot: THREE.Vector3; size: number; phi: number; settle: { phi0: number; phi1: number; from: THREE.Vector3 } | null } | null = null;
+  // phi：转了多少（弧度）；stop：风散以后慢下来的那一段（从 phi0 转到 phi1 正好停下，phi1 是整圈：停回原来的方向）
+  private twist: { id: TileId; seat: number; t0: number; to: Placement; size: number; phi: number; stop: { phi0: number; phi1: number } | null } | null = null;
   // 咲这一杠摸的岭上牌正好和（能力喊了“岭上开花”）：下一张她摸的岭上牌上先亮一团光，一路拖着星光飞进手里
   private lilyDraw: number | null = null;
   // 砸牌、岭上开花的特效放到什么时候：这之前先别弹结算
@@ -2377,63 +2377,54 @@ export class Table3D {
     const lean = new THREE.Vector3(-floor.x, 0, -floor.z);
     if (lean.lengthSq() < 1e-4) lean.set(0, 0, -1);
     lean.normalize();
-    const fit = this.fitTwister(floor, lean, twisterShape(size, to.scale), to.scale, size);
-    this.twist = { id, seat, t0: this.now, to: { pos: to.pos.clone(), quat: to.quat.clone(), scale: to.scale }, spot: fit.spot, size, phi: 0, settle: null };
-    this.twister.play({ floor: fit.spot, scale: to.scale, size, lean, area: this.dim.tableHalf, height: fit.height, leanAmt: fit.leanAmt });
+    const fit = this.fitTwister(floor, lean, twisterShape(size, to.scale));
+    this.twist = { id, seat, t0: this.now, to: { pos: to.pos.clone(), quat: to.quat.clone(), scale: to.scale }, size, phi: 0, stop: null };
+    this.twister.play({ floor, scale: to.scale, size, lean, area: this.dim.tableHalf, height: fit.height, leanAmt: fit.leanAmt });
     // 结算等风卷完、牌转完躺好再弹
     this.fxHold = Math.max(this.fxHold, this.now + TWISTER_TIME + 0.2);
   }
 
-  // 风多高、风顶往桌子中间歪多少：照镜头算，风顶和半腰要留在画面里。对家、上下家的牌在画面上沿、两边，
-  // 风直直往上就冒出画面了：先试着往桌子中间多歪一点，还不行再压矮一点（自己的风多半原样）
-  private fitTwister(floor: THREE.Vector3, lean: THREE.Vector3, shape: { height: number; leanAmt: number }, scale: number, size: number): { spot: THREE.Vector3; height: number; leanAmt: number } {
+  // 风多高、风顶往桌子中间歪多少：照镜头算。风总是从牌躺的地方卷起来（牌不挪）；
+  // 几种高矮、歪法里挑画面里露得最多的（风身上一串点有几个在画面里，连半径算），差不多时挑高的、直的。
+  // 自己的风多半原样；对家、上下家的牌在画面上沿、两边，风顶冒出画面一截也没关系（雀魂别家的龙卷风也冒出画面）
+  private fitTwister(floor: THREE.Vector3, lean: THREE.Vector3, shape: { height: number; leanAmt: number; r0: number; r1: number }): { height: number; leanAmt: number } {
     const cam = this.camera.clone();
     cam.position.copy(this.camera.position);
     cam.quaternion.copy(this.camera.quaternion);
     cam.updateMatrixWorld();
-    const R1 = (2.4 + 1.1 * size) * scale;
-    const p = new THREE.Vector3();
-    let base = floor;
-    // 风的半腰（连那一圈的半径）要在画面里；风顶只要不出左右两边（冒出上沿一截没关系，雀魂别家的龙卷风也冒出画面）
-    // 左右也连半径算（画面横向）
     const side = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion);
-    const inside = (h: number, H: number, L: number) => {
-      p.copy(base).addScaledVector(lean, L * h * h).setY(base.y + H * h);
-      // 风顶的大圈、风丝比风带还往外一些
-      const r = (0.35 * scale + (R1 - 0.35 * scale) * h ** 1.5) * 1.3;
+    const p = new THREE.Vector3();
+    const SAMPLES = [0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1];
+    // 风顶的大圈、风丝比风带还往外一些
+    const seen = (h: number, H: number, L: number) => {
+      p.copy(floor).addScaledVector(lean, L * h * h).setY(floor.y + H * h);
+      const r = (shape.r0 + (shape.r1 - shape.r0) * h ** 1.5) * 1.3;
       const up = p.clone().setY(p.y + r).project(cam);
       const l = p.clone().addScaledVector(side, -r).project(cam);
       const rr = p.clone().addScaledVector(side, r).project(cam);
       const c = p.project(cam);
-      return (h >= 1 || up.y < 0.95) && l.x > -0.98 && rr.x < 0.98 && c.z < 1;
+      return up.y < 0.97 && l.x > -0.98 && rr.x < 0.98 && c.z < 1;
     };
-    // 先在牌躺的地方试（风原样、往桌子中间多歪一点、压矮一点）；对家、上下家的牌就在画面上沿、两边，
-    // 怎么都冒出画面的话，风挪到她跟前一点（往桌子中间，最多挪到牌河外沿），牌被风卷过去
-    const most = Math.max(0, floor.length() - this.dim.pondZ - 3 * TILE_H);
-    for (let shift = 0; shift <= most + 1e-3; shift += Math.max(0.5, most / 8)) {
-      base = floor.clone().addScaledVector(lean, shift);
-      for (const hk of [1, 0.88, 0.76, 0.64]) {
-        for (const lk of [0, 0.25, 0.45, 0.65]) {
-          const H = shape.height * hk;
-          const L = Math.max(shape.leanAmt, H * lk);
-          if (inside(0.5, H, L) && inside(0.75, H, L) && inside(1, H, L)) return { spot: base.clone(), height: H, leanAmt: L };
+    let best = { height: shape.height, leanAmt: shape.leanAmt };
+    let bestScore = -Infinity;
+    for (const hk of [1, 0.88, 0.76, 0.64]) {
+      for (const lk of [0, 0.25, 0.45, 0.65, 0.85, 1.1, 1.4]) {
+        const H = shape.height * hk;
+        const L = Math.max(shape.leanAmt, H * lk);
+        const vis = SAMPLES.filter((h) => seen(h, H, L)).length / SAMPLES.length;
+        // 露得一样多时：高的、直的好（风歪得厉害、压得矮都难看）
+        const score = vis - 0.06 * (1 - hk) - 0.08 * lk;
+        if (score > bestScore + 1e-6) {
+          bestScore = score;
+          best = { height: H, leanAmt: L };
         }
       }
     }
-    // 还是不行：挪到最近，压矮、往中间歪
-    base = floor.clone().addScaledVector(lean, most);
-    for (const hk of [0.64, 0.54, 0.45]) {
-      for (const lk of [0.65, 0.85, 1.1]) {
-        const H = shape.height * hk;
-        const L = Math.max(shape.leanAmt, H * lk);
-        if (inside(0.5, H, L) && inside(1, H, L)) return { spot: base.clone(), height: H, leanAmt: L };
-      }
-    }
-    return { spot: base.clone(), height: shape.height * 0.45, leanAmt: shape.height * 0.5 };
+    return best;
   }
 
-  // 转牌：牌面朝上平躺着，在原地绕竖轴打转（平着转，不立起来）。拍下去以后越转越快，起风以后被风带着转得最快、
-  // 微微离地、轻轻晃；风散了还转（after），慢慢慢下来；最后再转一小段，停回原来的方向、落回桌上（settle）
+  // 转牌：牌面朝上平躺着，在原地绕竖轴打转（平着转，不立起来，也不挪地方）。拍下去以后越转越快，
+  // 起风以后被风带着转得飞快（每秒约 5.5 圈）、微微离地、轻轻晃；风散了还转，越转越慢，到 TWISTER_TIME 正好停在原来的方向、落回桌上
   private updateTwist(dt: number): void {
     const tw = this.twist;
     if (!tw) return;
@@ -2442,8 +2433,7 @@ export class Table3D {
     const k = this.now - tw.t0;
     const s = tw.to.scale;
     const windOn = T.erupt + T.hold + T.fade;
-    const lieAt = windOn + T.after;
-    if (k >= lieAt + T.settle) {
+    if (k >= TWISTER_TIME) {
       g.position.copy(tw.to.pos);
       g.quaternion.copy(tw.to.quat);
       g.scale.setScalar(s);
@@ -2455,45 +2445,36 @@ export class Table3D {
       const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
       return t * t * (3 - 2 * t);
     };
-    const UPV = new THREE.Vector3(0, 1, 0);
     // 平躺着转 phi：躺着的样子绕竖轴转
-    const flat = (phi: number) => new THREE.Quaternion().setFromAxisAngle(UPV, phi).multiply(tw.to.quat);
-    // 转速（弧度/秒）：拍下去以后越转越快，起风后最快，风散以后慢慢慢下来
-    const slow = 2 * Math.PI * 1.3;
-    const fast = 2 * Math.PI * 2.6;
-    const w = k < T.erupt ? slow * smooth(0, T.erupt, k) : k < windOn ? fast : fast * Math.exp(-(k - windOn) / 0.32) + 2.2;
+    const flat = (phi: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), phi).multiply(tw.to.quat);
+    // 转速（弧度/秒）：拍下去以后越转越快，起风以后被风带着转得飞快
+    const slow = 2 * Math.PI * 2.6;
+    const fast = 2 * Math.PI * 5.5;
+    if (k < windOn) {
+      const w = k < T.erupt ? slow * smooth(0, T.erupt * 0.8, k) : slow + (fast - slow) * smooth(T.erupt, T.erupt + 0.2, k);
+      tw.phi += w * dt;
+    } else {
+      // 风散了：转速照 (1 - t/D)² 往下掉，转过的角度挑离自然停下最近的整圈，到 TWISTER_TIME 正好停在原来的方向
+      const D = TWISTER_TIME - windOn;
+      if (!tw.stop) {
+        const full = Math.PI * 2;
+        const coast = (fast * D) / 3;
+        const phi1 = Math.max(Math.ceil((tw.phi + coast * 0.6) / full), Math.round((tw.phi + coast) / full)) * full;
+        tw.stop = { phi0: tw.phi, phi1 };
+      }
+      const t = Math.min(1, (k - windOn) / D);
+      tw.phi = tw.stop.phi0 + (tw.stop.phi1 - tw.stop.phi0) * (1 - (1 - t) ** 3);
+    }
     // 离地多高：起风以后被风托起来一点、一上一下地浮，风散以后落回桌上
     const bob = k >= T.erupt && k < windOn + 0.3 ? 0.05 * s * Math.sin(k * 11) * smooth(T.erupt, T.erupt + 0.2, k) : 0;
     const lift = 0.3 * s * smooth(T.erupt, T.erupt + 0.35, k) * (1 - smooth(windOn - 0.1, windOn + 0.3, k)) + bob;
     // 风里转的时候微微歪着，歪的方向跟着转（像桌上转着的盘子那样晃）
     const wobble = 0.14 * smooth(T.erupt, T.erupt + 0.2, k) * (1 - smooth(windOn, windOn + 0.4, k));
-    const lieY = tw.to.pos.y;
-    // 风不在牌躺的地方（别家）：开始转以后被风卷过去（弧线飞过去，一直牌面朝上），风散以后再飞回来
-    const hop = (f: number, from: THREE.Vector3, to: THREE.Vector3) => from.clone().lerp(to, f).setY(lieY + Math.sin(Math.PI * f) * 1.6 * s);
-    const away = tw.spot.distanceTo(tw.to.pos.clone().setY(tw.spot.y)) > 0.2;
-    const home = tw.to.pos.clone();
-    const there = tw.spot.clone().setY(lieY);
-    const back = lieAt - 0.32;
-    const at = !away ? home : k < T.stand ? home : k < T.erupt ? hop(smooth(T.stand, T.erupt, k), home, there) : k < back ? there : hop(smooth(back, lieAt, k), there, home);
-    at.y += lift;
-    if (k < lieAt) {
-      tw.phi += w * dt;
-      let q = flat(tw.phi);
-      if (wobble > 0) q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.cos(k * 7), 0, Math.sin(k * 7)), wobble).multiply(q);
-      g.quaternion.copy(q);
-      g.position.copy(at);
-      g.scale.setScalar(s);
-      return;
-    }
-    // 停下来：再转一小段（至少小半圈），停回原来的方向，落回桌上
-    if (!tw.settle) {
-      const full = Math.PI * 2;
-      tw.settle = { phi0: tw.phi, phi1: Math.ceil((tw.phi + 1.2) / full) * full, from: g.position.clone() };
-    }
-    const f = (k - lieAt) / T.settle;
-    const turn = 1 - (1 - Math.min(1, f)) ** 2;
-    g.quaternion.copy(flat(tw.settle.phi0 + (tw.settle.phi1 - tw.settle.phi0) * turn));
-    g.position.copy(tw.settle.from).lerp(tw.to.pos, smooth(0, 1, f));
+    let q = flat(tw.phi);
+    if (wobble > 0) q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.cos(k * 7), 0, Math.sin(k * 7)), wobble).multiply(q);
+    g.quaternion.copy(q);
+    g.position.copy(tw.to.pos);
+    g.position.y += lift;
     g.scale.setScalar(s);
   }
 
