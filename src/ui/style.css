@@ -1671,7 +1671,7 @@ button {
     opacity: 1;
   }
 }
-/* 2D：照的旋风自摸。砸下去以后牌立刻转起来，起风以后被风带着转得最快、微微离地，风散了还转、慢慢停下
+/* 2D：照的旋风自摸。砸下去以后牌牌面朝上、平着转起来，起风以后被风带着转得最快、微微浮起来，风散了还转、慢慢停下
    （和 ui3d/twister.ts 的 TWISTER 对得上：砸下去 0.3 秒起风，风 1.12 秒，散 0.26 秒，再转 0.62 秒，最后 0.24 秒停住） */
 .win.slam.twist .win-hand > .win-tile {
   animation:
@@ -1681,23 +1681,23 @@ button {
 }
 @keyframes teru-spin {
   0% {
-    transform: perspective(320px) rotateY(0deg);
+    transform: rotate(0deg);
     animation-timing-function: cubic-bezier(0.5, 0, 1, 1);
   }
   12% {
-    transform: perspective(320px) translateY(-2px) rotateY(200deg);
+    transform: translateY(-1px) rotate(200deg) scale(1.04);
     animation-timing-function: linear;
   }
   66% {
-    transform: perspective(320px) translateY(-9px) rotateY(2000deg);
+    transform: translateY(-4px) rotate(2000deg) scale(1.12);
     animation-timing-function: cubic-bezier(0.25, 0.7, 0.45, 1);
   }
   90% {
-    transform: perspective(320px) translateY(-2px) rotateY(2700deg);
+    transform: translateY(-1px) rotate(2700deg) scale(1.03);
     animation-timing-function: cubic-bezier(0.3, 0.6, 0.5, 1);
   }
   100% {
-    transform: perspective(320px) rotateY(2880deg);
+    transform: rotate(2880deg);
   }
 }
 @keyframes slam-shake {

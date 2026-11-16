@@ -176,7 +176,7 @@ const EDGE_NDC = -0.995;
 // 边缘切：自己的那张最后比平常多往桌子中间躺多少（牌宽；手牌就贴着画面底边，不挪的话磕完没地方弹回来）
 const EDGE_REST_IN = 0.6;
 const V2_LILY_HOLD = 1.05;
-// 宫永照的旋风自摸：牌立起来转、起风、风散、牌再转一会儿躺回去，都放完再倒牌（twister.ts 的 TWISTER）
+// 宫永照的旋风自摸：牌面朝上在桌上打转、起风、风散、牌再转一会儿停下，都放完再倒牌（twister.ts 的 TWISTER）
 const V2_TWIST_HOLD = TWISTER_TIME + 0.1;
 // 天江衣的海底捞月砸下去：等水花落下、海水退干净再倒牌
 const V2_SEA_HOLD = 0.95;
@@ -284,7 +284,7 @@ interface RevealState {
   syncs: number[];
   // 要砸的和了牌：不跟着手牌倒，at 时举起来往下砸（自摸是手里那张，荣和是从牌河拿过来）
   // lily：咲的岭上开花（原版 2.5D、3D 牌桌没有那只手，和了牌自己举起来砸下去），砸到时卷起旋风（这一手的基本点）
-  // twist：宫永照连和中自摸（风多大，0–1）：砸到桌上以后牌立起来转、卷起龙卷风（twister.ts）
+  // twist：宫永照连和中自摸（风多大，0–1）：砸到桌上以后牌面朝上在桌上打转、卷起龙卷风（twister.ts）
   slams: Map<TileId, { seat: number; at: number; from: Placement | null; hit: boolean; lily?: number; twist?: number }>;
   // 砸下去那一下：桌上的牌从这里往外震一下
   hops: { at: number; x: THREE.Vector3 }[];
@@ -292,7 +292,7 @@ interface RevealState {
   // 改良布局的自摸砸牌：start 时手伸进来，hitAt 拍到桌上；lily 是咲的岭上开花（这一手的基本点），没有是 null
   // sea：天江衣从海里捞上来的海底牌，砸下去把海水打散。style：这个人砸牌用哪一套动作（looks.ts），
   // hisa（竹井久）握着拳把那张托在大拇指指甲盖上伸进来，最后牌面朝上躺在倒牌后和了牌的位置，砸下去以后就一直躺在那里；拳头停稳亮牌那一下（revealAt）手牌一起倒
-  // twist：宫永照连和中自摸（风多大，0–1），拍下去以后牌立起来转、卷起龙卷风；不是 null
+  // twist：宫永照连和中自摸（风多大，0–1），拍下去以后牌面朝上在桌上打转、卷起龙卷风；不是 null
   tsumoSlam: { seat: number; tile: TileId; start: number; hitAt: number; revealAt?: number; started: boolean; lily: number | null; sea: boolean; twist: number | null; style: SlamStyle } | null;
 }
 
@@ -1458,7 +1458,7 @@ export class Table3D {
       const lily = this.lilyBase(g, tw);
       const sea = tw.tile === this.seaSlamTile;
       const twist = lily === null && !sea ? this.twistSize(g, tw) : null;
-      // 咲的岭上开花、衣的海底牌、照的旋风自摸是照着拍牌做的特效（旋风从拍下去的牌底下卷出去、海水从落点打散、牌立起来转），不换成边缘切
+      // 咲的岭上开花、衣的海底牌、照的旋风自摸是照着拍牌做的特效（旋风从拍下去的牌底下卷出去、海水从落点打散、牌在落点打转），不换成边缘切
       const style = this.slamStyle(tw.seat, lily === null && !sea && twist === null);
       if (style === 'edge' && self) this.edgeRest = tw.tile;
       tsumoSlam = { seat: tw.seat, tile: tw.tile, start, hitAt: start, started: false, lily, sea, twist, style };
@@ -1485,7 +1485,7 @@ export class Table3D {
       const sea = w.from === null && w.tile === this.seaSlamTile && tsumoSlam?.tile !== w.tile;
       // 咲的岭上开花：原版 2.5D、3D 牌桌没有拍牌的手，和了牌也举起来砸下去，砸到时卷起旋风
       const lily = w.from === null && !tsumoSlam && !sea && !this.galeWin(w.seat) ? this.lilyBase(g, w) : null;
-      // 照连和中自摸：和了牌也举起来砸下去，砸到以后立起来转、卷起龙卷风
+      // 照连和中自摸：和了牌也举起来砸下去，砸到以后牌面朝上在桌上打转、卷起龙卷风
       const twist = w.from === null && !tsumoSlam && !sea && !this.galeWin(w.seat) && lily === null ? this.twistSize(g, w) : null;
       if (!this.galeWin(w.seat) && !sea && lily === null && twist === null) continue;
       const n = g.players[w.seat].hand.filter((t) => t !== w.tile).length;
@@ -2370,7 +2370,7 @@ export class Table3D {
     return n >= 2 ? twisterSize(n) : null;
   }
 
-  // 照的和了牌拍到桌上那一下：牌立起来在原地转，过一会儿牌底卷起龙卷风（twister.ts），风散了牌还转一会儿，最后躺回 to（updateTwist）
+  // 照的和了牌拍到桌上那一下：牌面朝上在原地打转，过一会儿牌底卷起龙卷风（twister.ts），风散了牌还转一会儿，最后停回 to（updateTwist）
   private twistStart(seat: number, id: TileId, to: Placement, size: number): void {
     const floor = to.pos.clone().setY(0.02);
     // 风顶往桌子中间歪
@@ -2432,14 +2432,13 @@ export class Table3D {
     return { spot: base.clone(), height: shape.height * 0.45, leanAmt: shape.height * 0.5 };
   }
 
-  // 转牌：立起来（stand）以后越转越快，起风以后被风带着转得最快、微微离地、一边转一边晃；
-  // 风散了还转（after），慢慢慢下来；最后再转半圈多一点停在牌面朝自己的地方，往后一倒，躺回和了牌的位置（settle）
+  // 转牌：牌面朝上平躺着，在原地绕竖轴打转（平着转，不立起来）。拍下去以后越转越快，起风以后被风带着转得最快、
+  // 微微离地、轻轻晃；风散了还转（after），慢慢慢下来；最后再转一小段，停回原来的方向、落回桌上（settle）
   private updateTwist(dt: number): void {
     const tw = this.twist;
     if (!tw) return;
     const T = TWISTER;
-    const tile = this.tiles[tw.id];
-    const g = tile.group;
+    const g = this.tiles[tw.id].group;
     const k = this.now - tw.t0;
     const s = tw.to.scale;
     const windOn = T.erupt + T.hold + T.fade;
@@ -2457,54 +2456,44 @@ export class Table3D {
       return t * t * (3 - 2 * t);
     };
     const UPV = new THREE.Vector3(0, 1, 0);
-    // 立着的样子：躺着的样子往回立起来（牌面朝自己），再绕竖轴转 phi
-    const upright = tw.to.quat.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2));
-    const stand = (phi: number) => new THREE.Quaternion().setFromAxisAngle(UPV, phi).multiply(upright);
+    // 平躺着转 phi：躺着的样子绕竖轴转
+    const flat = (phi: number) => new THREE.Quaternion().setFromAxisAngle(UPV, phi).multiply(tw.to.quat);
     // 转速（弧度/秒）：拍下去以后越转越快，起风后最快，风散以后慢慢慢下来
     const slow = 2 * Math.PI * 1.3;
     const fast = 2 * Math.PI * 2.6;
     const w = k < T.erupt ? slow * smooth(0, T.erupt, k) : k < windOn ? fast : fast * Math.exp(-(k - windOn) / 0.32) + 2.2;
-    // 离地多高：起风以后被风托起来一点、一上一下地晃，风散以后落回去
-    const lift = (k < T.erupt ? 0.04 : 0.04 + 0.2 * smooth(T.erupt, T.erupt + 0.35, k) * (1 - smooth(windOn - 0.1, windOn + 0.3, k))) * s + (k >= T.erupt && k < windOn + 0.3 ? 0.04 * s * Math.sin(k * 11) : 0);
-    // 风里转的时候微微歪着、歪的方向跟着转（像陀螺那样晃）
-    const wobble = 0.12 * smooth(T.erupt, T.erupt + 0.2, k) * (1 - smooth(windOn, windOn + 0.4, k));
-    const standY = (TILE_H / 2) * s + lift;
-    // 风不在牌躺的地方（别家）：立起来以后被风卷过去（hop 段弧线飞过去），风散以后再飞回来
-    const hop = (f: number, from: THREE.Vector3, to: THREE.Vector3) => from.clone().lerp(to, f).setY(standY + Math.sin(Math.PI * f) * 1.6 * s);
+    // 离地多高：起风以后被风托起来一点、一上一下地浮，风散以后落回桌上
+    const bob = k >= T.erupt && k < windOn + 0.3 ? 0.05 * s * Math.sin(k * 11) * smooth(T.erupt, T.erupt + 0.2, k) : 0;
+    const lift = 0.3 * s * smooth(T.erupt, T.erupt + 0.35, k) * (1 - smooth(windOn - 0.1, windOn + 0.3, k)) + bob;
+    // 风里转的时候微微歪着，歪的方向跟着转（像桌上转着的盘子那样晃）
+    const wobble = 0.14 * smooth(T.erupt, T.erupt + 0.2, k) * (1 - smooth(windOn, windOn + 0.4, k));
+    const lieY = tw.to.pos.y;
+    // 风不在牌躺的地方（别家）：开始转以后被风卷过去（弧线飞过去，一直牌面朝上），风散以后再飞回来
+    const hop = (f: number, from: THREE.Vector3, to: THREE.Vector3) => from.clone().lerp(to, f).setY(lieY + Math.sin(Math.PI * f) * 1.6 * s);
     const away = tw.spot.distanceTo(tw.to.pos.clone().setY(tw.spot.y)) > 0.2;
-    const home = tw.to.pos.clone().setY(standY);
-    const there = tw.spot.clone().setY(standY);
+    const home = tw.to.pos.clone();
+    const there = tw.spot.clone().setY(lieY);
     const back = lieAt - 0.32;
     const at = !away ? home : k < T.stand ? home : k < T.erupt ? hop(smooth(T.stand, T.erupt, k), home, there) : k < back ? there : hop(smooth(back, lieAt, k), there, home);
+    at.y += lift;
     if (k < lieAt) {
       tw.phi += w * dt;
-      let q = stand(tw.phi);
+      let q = flat(tw.phi);
       if (wobble > 0) q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.cos(k * 7), 0, Math.sin(k * 7)), wobble).multiply(q);
-      const pos = at;
-      if (k < T.stand) {
-        // 从躺着翻起来立住
-        const f = 1 - (1 - k / T.stand) ** 3;
-        g.quaternion.copy(tw.to.quat).slerp(q, f);
-        g.position.copy(tw.to.pos).lerp(pos, f);
-      } else {
-        g.quaternion.copy(q);
-        g.position.copy(pos);
-      }
+      g.quaternion.copy(q);
+      g.position.copy(at);
       g.scale.setScalar(s);
       return;
     }
-    // 停下来、躺回去：再转到下一个牌面朝自己的地方（至少再转小半圈），往后一倒
+    // 停下来：再转一小段（至少小半圈），停回原来的方向，落回桌上
     if (!tw.settle) {
       const full = Math.PI * 2;
-      const phi1 = Math.ceil((tw.phi + 1.2) / full) * full;
-      tw.settle = { phi0: tw.phi, phi1, from: g.position.clone() };
+      tw.settle = { phi0: tw.phi, phi1: Math.ceil((tw.phi + 1.2) / full) * full, from: g.position.clone() };
     }
     const f = (k - lieAt) / T.settle;
-    const turn = 1 - (1 - Math.min(1, f / 0.7)) ** 2;
-    const phi = tw.settle.phi0 + (tw.settle.phi1 - tw.settle.phi0) * turn;
-    const fall = smooth(0.35, 1, f) ** 1.6;
-    g.quaternion.copy(stand(phi)).slerp(tw.to.quat, fall);
-    g.position.copy(tw.settle.from).lerp(tw.to.pos, fall);
+    const turn = 1 - (1 - Math.min(1, f)) ** 2;
+    g.quaternion.copy(flat(tw.settle.phi0 + (tw.settle.phi1 - tw.settle.phi0) * turn));
+    g.position.copy(tw.settle.from).lerp(tw.to.pos, smooth(0, 1, f));
     g.scale.setScalar(s);
   }
 
