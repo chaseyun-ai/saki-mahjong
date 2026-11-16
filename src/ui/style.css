@@ -8829,99 +8829,159 @@ canvas.rii-sky {
 }
 /* ---------- 辻垣内智叶：居合 ---------- */
 
-/* 手牌上方的刀：出鞘几分跟着间合走（位置和爱丽丝的手绘板、郝慧宇的番种栏一样） */
-.iai-bar {
+/* 头像旁竖着的刀，刀柄朝上：从鞘里推出来几分跟着间合走，鞘往下淡掉 */
+.iai-blade {
   position: absolute;
-  left: 220px;
-  bottom: 104px;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 14px 4px 10px;
-  border-radius: 8px;
-  background: linear-gradient(160deg, rgba(40, 44, 62, 0.92), rgba(20, 22, 34, 0.92));
-  border: 1px solid rgba(160, 170, 200, 0.35);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  color: #dfe3ee;
+  z-index: 3;
+  left: calc(100% - 20px);
+  bottom: -2px;
+  width: 57px;
+  height: 247px;
   pointer-events: auto;
 }
-.iai-bar ~ [data-r='waits'] .waits {
-  bottom: 158px;
-}
-.hud .iai-bar {
-  bottom: 21%;
-}
-.hud .iai-bar ~ [data-r='waits'] .waits {
-  bottom: calc(21% + 54px);
-}
-.table .iai-bar ~ .hint {
-  display: none;
+/* 3D：自己只有一块名牌，刀立在名牌右边 */
+.nameplate.mine .iai-blade {
+  left: calc(100% + 6px);
+  bottom: -6px;
 }
 .iai-sword {
-  width: 330px;
-  height: 30px;
+  display: block;
+  width: 100%;
+  height: 100%;
   overflow: visible;
+  transform: rotate(3deg);
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
 }
-.iai-saya {
-  transition: transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1);
+/* 刀身、刀镡、刀柄一起往上走；鞘不动 */
+.iai-move {
+  transform: translateY(var(--to, 0px));
 }
-/* 立直了：鞘放在一边，刀身全露出来 */
-.iai-saya-bare {
+.iai-move.go {
+  animation: iai-push 1100ms cubic-bezier(0.25, 0.1, 0.2, 1) var(--skip, 0ms) both;
+}
+@keyframes iai-push {
+  from {
+    transform: translateY(var(--from, 0px));
+  }
+  to {
+    transform: translateY(var(--to, 0px));
+  }
+}
+/* 推开鞘口那一下，鞘口闪一点寒光 */
+.iai-glint {
   opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
 }
-.iai-bar.s3 .iai-saya {
-  opacity: 0;
+.iai-move.go.out .iai-glint {
+  animation: iai-glint 900ms ease-out var(--skip, 0ms) both;
 }
-.iai-bar.s3 .iai-saya-bare {
-  opacity: 0.85;
+@keyframes iai-glint {
+  0% {
+    opacity: 0;
+    transform: scale(0.2) rotate(0deg);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1.15) rotate(20deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.3) rotate(45deg);
+  }
 }
 .iai-shine {
-  opacity: 0.35;
+  opacity: 0.4;
 }
-.iai-bar.s2 .iai-shine,
-.iai-bar.s3 .iai-shine {
+.iai-blade.s2 .iai-shine,
+.iai-blade.s3 .iai-shine {
   opacity: 0.95;
-  stroke-dasharray: 40 400;
-  animation: iai-shine 2.2s linear infinite;
+  stroke-dasharray: 14 90;
+  animation: iai-shine 2.4s linear infinite;
 }
 @keyframes iai-shine {
   from {
-    stroke-dashoffset: 60;
+    stroke-dashoffset: 20;
   }
   to {
-    stroke-dashoffset: -260;
+    stroke-dashoffset: -84;
   }
 }
-.iai-tsuba {
+.iai-tsuba,
+.iai-habaki {
   transition: fill 0.3s;
 }
 /* 鞘里听着牌：刀镡亮起来 */
-.iai-bar.ready .iai-tsuba {
+.iai-blade.ready .iai-tsuba {
   fill: #ffd76a;
   filter: drop-shadow(0 0 4px rgba(255, 215, 106, 0.95));
 }
-.iai-bar.strike {
-  border-color: rgba(255, 215, 106, 0.75);
-  box-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.35),
-    0 0 12px rgba(255, 215, 106, 0.35);
-}
-.iai-bar.strike .iai-tsuba {
-  animation: iai-ready 1s ease-in-out infinite;
+.iai-blade.strike .iai-tsuba {
+  animation: iai-ready 1.2s ease-in-out infinite;
 }
 @keyframes iai-ready {
   50% {
     filter: drop-shadow(0 0 9px rgba(255, 215, 106, 1));
   }
 }
-.iai-bar.off {
+/* 立直了：鞘往下退掉，露出整段刀身（刀身和鞘一样往下淡掉） */
+.iai-bare {
+  opacity: 0;
+}
+.iai-blade.s3 .iai-bare {
+  opacity: 1;
+}
+.iai-blade.s3 .iai-saya {
+  opacity: 0;
+}
+.iai-blade.s3.moving .iai-bare {
+  animation: iai-bare 1100ms ease-out var(--skip, 0ms) both;
+}
+.iai-blade.s3.moving .iai-saya {
+  animation: iai-saya-off 1100ms cubic-bezier(0.4, 0, 0.6, 1) var(--skip, 0ms) both;
+}
+@keyframes iai-bare {
+  0%,
+  25% {
+    opacity: 0;
+  }
+  70%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes iai-saya-off {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(46px);
+  }
+}
+.iai-blade.off {
   filter: grayscale(0.9);
   opacity: 0.7;
 }
+/* 待和提示框往右让一让，别盖住刀旁的小字 */
+.me.iai .waits {
+  left: 340px;
+}
+/* 刀柄旁的两行小字：现在几分、有什么用 */
 .iai-text {
+  position: absolute;
+  left: calc(100% - 2px);
+  top: 98px;
   display: flex;
   flex-direction: column;
-  line-height: 1.25;
+  padding: 3px 9px 4px;
+  border-left: 2px solid rgba(214, 200, 240, 0.7);
+  border-radius: 0 6px 6px 0;
+  background: linear-gradient(90deg, rgba(20, 22, 34, 0.88), rgba(20, 22, 34, 0.55));
+  color: #dfe3ee;
+  line-height: 1.3;
   font-size: 12px;
   white-space: nowrap;
 }
@@ -8930,7 +8990,10 @@ canvas.rii-sky {
   letter-spacing: 2px;
   color: #f1f3f8;
 }
-.iai-bar.ready .iai-text b {
+.iai-blade.ready .iai-text {
+  border-left-color: #ffd76a;
+}
+.iai-blade.ready .iai-text b {
   color: #ffd76a;
 }
 .iai-text span {
@@ -8973,7 +9036,7 @@ canvas.rii-sky {
   color: #1a1b22;
 }
 
-/* 和牌的刀光：一道白光切过画面，画面沿刀口晃一下 */
+/* 和牌的刀光：先暗一下，一道白光切过画面，刀口留一会儿才淡掉；刀划完画面沿刀口晃一下 */
 .iai-fx {
   position: absolute;
   inset: 0;
@@ -8981,16 +9044,37 @@ canvas.rii-sky {
   overflow: hidden;
   pointer-events: none;
 }
+.iai-dim {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(4, 6, 14, 0.4), rgba(4, 6, 14, 0.78));
+  opacity: 0;
+  animation: iai-dim 1.7s linear forwards;
+}
+@keyframes iai-dim {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
 .iai-flash {
   position: absolute;
   inset: 0;
   background: #fff;
   opacity: 0;
-  animation: iai-flash 0.3s ease-out;
+  animation: iai-flash 0.5s ease-out 0.32s;
 }
 @keyframes iai-flash {
   0% {
-    opacity: 0.5;
+    opacity: 0.42;
   }
   100% {
     opacity: 0;
@@ -9013,35 +9097,36 @@ canvas.rii-sky {
   box-shadow:
     0 0 14px 3px rgba(255, 255, 255, 0.9),
     0 0 44px 10px rgba(170, 200, 255, 0.55);
-  animation: iai-slash 0.8s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+  animation: iai-slash 1.36s linear 0.32s forwards;
 }
 @keyframes iai-slash {
   0% {
     transform: scaleX(0);
     opacity: 1;
+    animation-timing-function: cubic-bezier(0.3, 0.7, 0.3, 1);
   }
-  14% {
+  18% {
     transform: scaleX(1);
     opacity: 1;
   }
-  45% {
-    transform: scaleX(1) scaleY(0.5);
-    opacity: 0.9;
+  58% {
+    transform: scaleX(1) scaleY(0.42);
+    opacity: 0.95;
   }
   100% {
-    transform: scaleX(1) scaleY(0.08);
+    transform: scaleX(1) scaleY(0.06);
     opacity: 0;
   }
 }
 .iai-jolt > *:not(.iai-fx) {
-  animation: iai-jolt 0.16s steps(2, end);
+  animation: iai-jolt 0.32s steps(4, end);
 }
 @keyframes iai-jolt {
   0% {
-    translate: calc(cos(var(--iai-deg, 0deg)) * 7px) calc(sin(var(--iai-deg, 0deg)) * 7px);
+    translate: calc(cos(var(--iai-deg, 0deg)) * 8px) calc(sin(var(--iai-deg, 0deg)) * 8px);
   }
   50% {
-    translate: calc(cos(var(--iai-deg, 0deg)) * -4px) calc(sin(var(--iai-deg, 0deg)) * -4px);
+    translate: calc(cos(var(--iai-deg, 0deg)) * -5px) calc(sin(var(--iai-deg, 0deg)) * -5px);
   }
   100% {
     translate: 0 0;
@@ -9063,7 +9148,7 @@ canvas.rii-sky {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  animation: iai-zan 1.9s ease-out forwards;
+  animation: iai-zan 2.7s ease-out forwards;
 }
 .iai-zan svg {
   width: min(34vmin, 300px);
@@ -9095,21 +9180,21 @@ canvas.rii-sky {
   box-shadow: 0 0 10px 2px rgba(255, 255, 255, 0.8);
   transform: rotate(-24deg) scaleX(0);
   transform-origin: 0 50%;
-  animation: iai-zan-cut 0.5s 0.32s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+  animation: iai-zan-cut 0.9s 0.75s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
 }
 @keyframes iai-zan {
   0% {
     transform: scale(2.4);
     opacity: 0;
   }
-  9% {
+  13% {
     transform: scale(0.94);
     opacity: 1;
   }
-  14% {
+  19% {
     transform: scale(1);
   }
-  78% {
+  82% {
     transform: scale(1);
     opacity: 1;
   }
@@ -9132,13 +9217,14 @@ canvas.rii-sky {
     opacity: 0;
   }
 }
-@media (max-width: 600px) {
-  .iai-bar {
-    left: 8px;
+@media (max-width: 600px), (max-height: 500px) {
+  .iai-blade {
+    width: 36px;
+    height: 156px;
   }
-  .iai-sword {
-    width: 176px;
-    height: 16px;
+  .iai-text {
+    top: 60px;
+    font-size: 11px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -9146,6 +9232,11 @@ canvas.rii-sky {
     animation: none;
   }
   .iai-flash {
+    animation: none;
+  }
+  .iai-move.go,
+  .iai-blade.s3.moving .iai-bare,
+  .iai-blade.s3.moving .iai-saya {
     animation: none;
   }
 }

@@ -1,6 +1,6 @@
 import type { SatohaBlade } from '../abilities/satoha';
 
-// 辻垣内智叶「居合」的画面：手牌上方的刀（出鞘几分跟着间合走）、和牌的刀光、断连庄的「斬」。
+// 辻垣内智叶「居合」的画面：头像旁竖着的刀（从鞘里推出来几分跟着间合走）、和牌的刀光、断连庄的「斬」。
 // 都是 DOM + SVG，三种视角共用
 
 // 「斬」的字形：霞鹜文楷 TC（LXGW WenKai TC）Bold，SIL Open Font License 1.1（和牌面的字同一套字体，见 glyphs.ts）
@@ -10,43 +10,64 @@ const ZAN = {
 };
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
-const STAGE_NAMES = ['收在鞘里', '出鞘三分', '出鞘七分', '刀已出鞘'];
-// 鞘往外退多少（viewBox 里的长度）：收着、三分、七分
-const DRAWN = [0, 62, 146];
+const STAGE_NAMES = ['收在鞘里', '推镡一寸', '出鞘三分', '刀已出鞘'];
+// 刀从鞘里推出来多少（viewBox 里的长度）：收着、拇指把刀镡推开一寸、三分；立直以后鞘退掉，刀再提起一点
+export const IAI_DRAWN = [0, 10, 30, 40];
+// 推出来、收回去那一下走多久（毫秒）
+export const IAI_PUSH_MS = 1100;
 
-// 手牌上方的刀。只给操作她的玩家看：别人离听牌越近，出鞘越多；鞘里听着牌、拔得了刀时刀镡亮起来；立直以后刀完全出鞘
-export function bladeHtml(b: SatohaBlade, tenpai: boolean, renchan: boolean): string {
+// 头像旁竖着的刀，刀柄朝上。只给操作她的玩家看：别人离听牌越近，刀从鞘里推出来越多；鞘里听着牌、拔得了刀时刀镡亮起来；
+// 立直以后刀出鞘：鞘往下退掉，露出刀身。不画整把刀：鞘（出鞘后是刀身）往下淡掉。
+// move：刚换了档位——从哪儿推到现在的位置、已经走了多久。画面每次重画都是新的节点，动画靠这个接着放
+export function bladeHtml(b: SatohaBlade, tenpai: boolean, renchan: boolean, move?: { from: number; elapsed: number }): string {
   const bare = b.stage === 3;
-  const shift = bare ? 0 : DRAWN[b.stage];
-  const label = bare
-    ? '立直了：没有加成'
-    : b.off
-      ? '被封住了：进张、拔刀不起作用'
-      : tenpai
-        ? b.ready
-          ? `听牌没立直 · 摸到和了牌 ${pct(b.chance)}`
-          : '听牌没立直 · 没有役，拔不了刀'
-        : `进张 +${pct(b.chance)}`;
+  const to = IAI_DRAWN[b.stage];
+  const label = bare ? '立直了，没有加成' : b.off ? '被封住了' : tenpai ? (b.ready ? `摸到和了牌 ${pct(b.chance)}` : '没有役，拔不了刀') : `进张 +${pct(b.chance)}`;
   const near = b.gap <= 0 ? '有人听牌' : b.gap === 1 ? '有人一向听' : '还没人逼近';
-  const title = bare ? '立直了：刀已出鞘，藏不住，也没有进张、拔刀的加成' : `间合：${near}${renchan ? '（庄家在连庄，少算一步）' : ''}。${label}`;
-  const cls = `iai-bar s${b.stage}${b.ready && !b.off ? ' ready' : ''}${b.off ? ' off' : ''}${b.ready && b.stage === 2 && !b.off ? ' strike' : ''}`;
-  return `<div class="${cls}" title="${title}">
-    <svg class="iai-sword" viewBox="0 0 440 40" aria-hidden="true">
+  const what = b.off ? '被封住了：进张、拔刀不起作用' : tenpai ? (b.ready ? `听牌没立直：每次摸牌有 ${pct(b.chance)} 的概率摸到和了牌` : '听牌没立直，但没有役，拔不了刀') : `没听牌：进张 +${pct(b.chance)}`;
+  const title = bare ? '立直了：刀已出鞘，藏不住，也没有进张、拔刀的加成' : `间合：${near}${renchan ? '（庄家在连庄，少算一步）' : ''}。${what}`;
+  const cls = `iai-blade s${b.stage}${move ? ' moving' : ''}${b.ready && !b.off ? ' ready' : ''}${b.off ? ' off' : ''}${b.ready && b.stage === 2 && !b.off ? ' strike' : ''}`;
+  const go = move ? ` go${to > move.from ? ' out' : ''}` : '';
+  const vars = `--to:${-to}px${move ? `;--from:${-move.from}px;--skip:${-Math.round(move.elapsed)}ms` : ''}`;
+  // 刀柄的柄卷：一格一格的菱形
+  let ito = '';
+  for (let y = 76; y < 124; y += 8) ito += `M23 ${y} L37 ${y + 8} M37 ${y} L23 ${y + 8} `;
+  return `<div class="${cls}" style="${vars}" title="${title}">
+    <svg class="iai-sword" viewBox="0 0 60 260" aria-hidden="true">
       <defs>
-        <linearGradient id="iai-steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f7fb"/><stop offset="0.45" stop-color="#c3cbd6"/><stop offset="0.5" stop-color="#8d97a5"/><stop offset="1" stop-color="#dfe5ec"/></linearGradient>
-        <linearGradient id="iai-saya" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a8323c"/><stop offset="0.3" stop-color="#5a1219"/><stop offset="1" stop-color="#2a060b"/></linearGradient>
+        <linearGradient id="iai-steel" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7f8a99"/><stop offset="0.3" stop-color="#f6f9fc"/><stop offset="0.56" stop-color="#c5cdd8"/><stop offset="0.6" stop-color="#8a94a3"/><stop offset="1" stop-color="#e9eef4"/></linearGradient>
+        <linearGradient id="iai-lac" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3a0a10"/><stop offset="0.28" stop-color="#b53a45"/><stop offset="0.55" stop-color="#6a151d"/><stop offset="1" stop-color="#2a060b"/></linearGradient>
+        <linearGradient id="iai-fade-g" gradientUnits="userSpaceOnUse" x1="0" y1="188" x2="0" y2="257"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>
+        <linearGradient id="iai-hide-g" gradientUnits="userSpaceOnUse" x1="0" y1="176" x2="0" y2="190"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>
+        <mask id="iai-fade" maskUnits="userSpaceOnUse" x="0" y="0" width="60" height="260"><rect width="60" height="260" fill="url(#iai-fade-g)"/></mask>
+        <mask id="iai-hide" maskUnits="userSpaceOnUse" x="0" y="0" width="60" height="260"><rect width="60" height="260" fill="url(#iai-hide-g)"/></mask>
       </defs>
-      <g class="iai-saya-bare"><path d="M70 28 L290 26.5 Q298 31 290 35.5 L70 34 Z" fill="url(#iai-saya)" stroke="rgba(255,255,255,0.3)" stroke-width="0.8"/></g>
-      <path class="iai-blade" d="M64 13 L274 11.5 Q287 13.5 294 21 L64 23 Z" fill="url(#iai-steel)"/>
-      <path class="iai-shine" d="M70 14.6 L272 13.2" stroke="#fff" stroke-width="1" stroke-linecap="round" fill="none"/>
-      <g class="iai-saya" style="transform:translateX(${shift}px)">
-        <path d="M66 11 L290 9.5 Q300 18 290 26.5 L66 25 Z" fill="url(#iai-saya)" stroke="rgba(255,255,255,0.32)" stroke-width="0.8"/>
-        <path d="M72 13.4 L286 12" stroke="rgba(255,255,255,0.45)" stroke-width="1.2" stroke-linecap="round" fill="none"/>
-        <rect x="98" y="9.6" width="8" height="16.6" rx="1.5" fill="#d9c27e"/>
+      <g mask="url(#iai-hide)"><g class="iai-move${go}">
+        <path class="iai-steel" d="M25 141 L35 141 L35 207 L25 207 Z" fill="url(#iai-steel)"/>
+        <path class="iai-hamon" d="M34 141 q-1.8 4 0 8 q-1.8 4 0 8 q-1.8 4 0 8 q-1.8 4 0 8 q-1.8 4 0 8 q-1.8 4 0 8 q-1.8 4 0 8 q-1.8 4 0 8" stroke="rgba(255,255,255,0.75)" stroke-width="0.7" fill="none"/>
+        <path class="iai-shine" d="M27.4 143 L27.4 205" stroke="#fff" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+      </g></g>
+      <g class="iai-saya" mask="url(#iai-fade)">
+        <path d="M21 137 L39 137 L39 196 Q39 232 35 260 L19.5 260 Q23 232 21 196 Z" fill="url(#iai-lac)" stroke="rgba(255,255,255,0.28)" stroke-width="0.7"/>
+        <path d="M25.4 144 L25.4 198 Q26 228 24.4 252" stroke="rgba(255,255,255,0.42)" stroke-width="1.1" stroke-linecap="round" fill="none"/>
+        <rect x="20.3" y="136.4" width="19.4" height="6" rx="1.3" fill="#1c1a22" stroke="rgba(255,255,255,0.35)" stroke-width="0.6"/>
+        <rect x="38.4" y="158" width="4.6" height="9.5" rx="1.6" fill="#1c1a22" stroke="rgba(255,255,255,0.3)" stroke-width="0.5"/>
+        <path d="M41 160.5 q7 3 3.4 10 q-2.6 5 -8 4.4 M41 164.5 q6 6 1 12" stroke="#7a68b8" stroke-width="1.6" stroke-linecap="round" fill="none"/>
       </g>
-      <rect class="iai-tsuka" x="4" y="12" width="54" height="12" rx="3" fill="#3a3352" stroke="rgba(255,255,255,0.35)" stroke-width="0.8"/>
-      <path class="iai-ito" d="M8 12 l7 12 M15 12 l7 12 M22 12 l7 12 M29 12 l7 12 M36 12 l7 12 M43 12 l7 12 M15 12 l-7 12 M22 12 l-7 12 M29 12 l-7 12 M36 12 l-7 12 M43 12 l-7 12 M50 12 l-7 12" stroke="#d6c8f0" stroke-width="1.2" fill="none"/>
-      <ellipse class="iai-tsuba" cx="61" cy="18" rx="4" ry="12" fill="#b9a26a" stroke="rgba(0,0,0,0.4)" stroke-width="0.6"/>
+      <g class="iai-bare" mask="url(#iai-fade)"><g class="iai-move${go}">
+        <path d="M25 141 L35 141 L35 236 Q35 272 31.5 300 L22.5 300 Q25.5 272 25 236 Z" fill="url(#iai-steel)"/>
+        <path d="M34 141 L34 236 Q34 272 30.8 300" stroke="rgba(255,255,255,0.7)" stroke-width="0.7" fill="none"/>
+        <path class="iai-shine" d="M27.4 143 L27.4 236 Q27.6 262 26 284" stroke="#fff" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+      </g></g>
+      <g class="iai-move${go}">
+        <rect class="iai-habaki" x="24" y="134.6" width="12" height="7" rx="0.8" fill="#dcbb62" stroke="rgba(0,0,0,0.35)" stroke-width="0.4"/>
+        <rect class="iai-tsuka" x="23" y="74" width="14" height="54" rx="2.4" fill="#2f2a45" stroke="rgba(255,255,255,0.4)" stroke-width="0.7"/>
+        <path class="iai-ito" d="${ito}" stroke="#d6c8f0" stroke-width="1.1" fill="none"/>
+        <rect x="22.4" y="68.6" width="15.2" height="7.4" rx="2.8" fill="#b9a26a" stroke="rgba(0,0,0,0.4)" stroke-width="0.5"/>
+        <rect x="22.4" y="125.2" width="15.2" height="5.2" rx="1" fill="#b9a26a" stroke="rgba(0,0,0,0.4)" stroke-width="0.5"/>
+        <ellipse class="iai-tsuba" cx="30" cy="132.6" rx="18" ry="4.6" fill="#b9a26a" stroke="rgba(0,0,0,0.45)" stroke-width="0.6"/>
+        <path class="iai-glint" d="M30 127 L31.4 136.6 L41 138 L31.4 139.4 L30 149 L28.6 139.4 L19 138 L28.6 136.6 Z" fill="#fff"/>
+      </g>
     </svg>
     <span class="iai-text"><b>${STAGE_NAMES[b.stage]}</b><span>${label}</span></span>
   </div>`;
@@ -55,8 +76,13 @@ export function bladeHtml(b: SatohaBlade, tenpai: boolean, renchan: boolean): st
 // 四家在画面上的大概位置（百分比）：自己在下，下家在右
 const SPOT: Record<string, [number, number]> = { bottom: [50, 82], right: [86, 50], top: [50, 16], left: [14, 50] };
 
-// 和牌的刀光：一道白光斜着切过画面。荣和时从她切向放铳的人（to 是放铳的人的位置），自摸时横切另外三家（to 是 null）。
-// 画面沿刀口晃一下，约 0.15 秒后合上。host 是不跟着牌局重画的那一层
+// 和牌的刀光。先暗一下（IAI_WINDUP_MS），再一道白光切过画面，刀口留一会儿才淡掉。
+// 荣和时从她切向放铳的人（to 是放铳的人的位置），自摸时横切另外三家（to 是 null）。
+// 刀划完那一下画面沿刀口晃一晃。host 是不跟着牌局重画的那一层
+export const IAI_WINDUP_MS = 320;
+const IAI_STROKE_MS = 240;
+// 整段刀光放完要多久
+export const IAI_SLASH_ALL_MS = 1700;
 export function iaiSlash(host: HTMLElement, from: string, to: string | null): void {
   const a = SPOT[from] ?? SPOT.bottom;
   let cx = 50;
@@ -76,15 +102,16 @@ export function iaiSlash(host: HTMLElement, from: string, to: string | null): vo
   }
   const el = document.createElement('div');
   el.className = 'iai-fx';
-  el.innerHTML = `<i class="iai-flash"></i><i class="iai-slash" style="left:${cx}%;top:${cy}%;transform:rotate(${deg}deg)"><b></b></i>`;
+  el.innerHTML = `<i class="iai-dim"></i><i class="iai-flash"></i><i class="iai-slash" style="left:${cx}%;top:${cy}%;transform:rotate(${deg}deg)"><b></b></i>`;
   host.appendChild(el);
-  host.classList.add('iai-jolt');
   host.style.setProperty('--iai-deg', `${deg}deg`);
-  window.setTimeout(() => host.classList.remove('iai-jolt'), 170);
-  window.setTimeout(() => el.remove(), 900);
+  window.setTimeout(() => host.classList.add('iai-jolt'), IAI_WINDUP_MS + IAI_STROKE_MS);
+  window.setTimeout(() => host.classList.remove('iai-jolt'), IAI_WINDUP_MS + IAI_STROKE_MS + 340);
+  window.setTimeout(() => el.remove(), IAI_SLASH_ALL_MS + 60);
 }
 
-// 她和牌结束了别人的连庄：牌桌中央一个毛笔字「斬」，下面一行小字写断的是谁的连庄
+// 她和牌结束了别人的连庄：牌桌中央一个毛笔字「斬」，一道刀口切过字，下面一行小字写断的是谁的连庄
+export const IAI_ZAN_ALL_MS = 2700;
 export function zanFx(host: HTMLElement, dealerName: string): void {
   const [x1, y1, x2, y2] = ZAN.box;
   const pad = 8;
@@ -92,5 +119,5 @@ export function zanFx(host: HTMLElement, dealerName: string): void {
   el.className = 'iai-zan';
   el.innerHTML = `<div class="iai-zan-in"><svg viewBox="${x1 - pad} ${y1 - pad} ${x2 - x1 + pad * 2} ${y2 - y1 + pad * 2}" aria-label="斬"><path d="${ZAN.d}"/></svg><i class="iai-zan-cut"></i><span>${dealerName} 的连庄到此为止</span></div>`;
   host.appendChild(el);
-  window.setTimeout(() => el.remove(), 2000);
+  window.setTimeout(() => el.remove(), IAI_ZAN_ALL_MS + 60);
 }

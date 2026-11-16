@@ -18,7 +18,7 @@ import { Gale2D } from './gale2d';
 import { Lily2D } from './lily2d';
 import { AISLINN_DROP, aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
 import { satohaBlade, satohaCut, satohaDistance, satohaRenchanDealer, satohaScouts, satohaSheathed } from '../abilities/satoha';
-import { bladeHtml, iaiSlash, zanFx } from './iai';
+import { bladeHtml, iaiSlash, zanFx, IAI_DRAWN, IAI_PUSH_MS, IAI_SLASH_ALL_MS, IAI_WINDUP_MS, IAI_ZAN_ALL_MS } from './iai';
 import { type HuiyuCard, huiyuBar, huiyuCards, huiyuMissedRon, huiyuReady, huiyuWinGb } from '../abilities/huiyu';
 import { playGlitch, playRebuild, playShatter } from './sketchFx';
 import { playNetWipe } from './netFx';
@@ -50,7 +50,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playIaiDraw, playIaiSheath, playLily, playRiichi, playCrackle, playSlam, playSplash, playWhirl, playWin } from './sound';
+import { playCall, playChime, playClick, playCrackle, playIaiDraw, playIaiPush, playIaiSheath, playLily, playRiichi, playSlam, playSplash, playWhirl, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -117,9 +117,9 @@ const AUTO_NEXT = 2600;
 // 郝慧宇：国标这么多番以上，「食糊」和结算面板换金色
 const GB_GOLD_FAN = 24;
 const GB_GOLD = '#e6b422';
-// 智叶的刀光过后多久出「自摸」「荣和」；和牌的字出来以后多久出「斬」（毫秒）
-const IAI_SLASH_MS = 260;
-const IAI_ZAN_MS = 900;
+// 智叶的刀光开始后多久出「自摸」「荣和」；和牌的字出来以后多久出「斬」（毫秒）
+const IAI_SLASH_MS = 900;
+const IAI_ZAN_MS = 1100;
 
 interface Toast {
   id: number;
@@ -165,6 +165,8 @@ export class App {
   private chains2d: Chains2D | null = null;
   private skyKey: SkyKey | null = null;
   private riiHold = 0;
+  // 智叶的刀：这一局现在推出来多少、上一次换档是从哪儿推过来的、什么时候换的（画面重画时动画接着放）
+  private blade: { game: Game | null; round: number; from: number; to: number; at: number } = { game: null, round: -1, from: 0, to: 0, at: 0 };
   // 番缚锁死的动画：什么时候按下的（Date.now），缚几番；结算时每个哩头像上的锁怎么样（开锁 / 碎掉 / 淡掉）、从什么时候开始
   private riiLockAt = 0;
   private riiLockN = 0;
@@ -1557,7 +1559,7 @@ export class App {
       <div class="net-card ${POS[s]}${active}${mine ? ' mine' : ''}" data-seat="${s}">
         <div class="net-name">${mine ? 'のどっち' : c.name}</div>
         <div class="portrait">${face}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'net')}</div>
-        ${this.towerHtml(s)}
+        ${this.towerHtml(s)}${mine ? this.bladeBarHtml() : ''}
       </div>`;
   }
 
@@ -1710,12 +1712,14 @@ export class App {
     };
     let wait = 0;
     if (dama && host) {
-      playIaiDraw();
       iaiSlash(host, POS[w.seat], w.from === null ? null : POS[w.from]);
+      window.setTimeout(() => this.game === g && playIaiDraw(), IAI_WINDUP_MS);
       wait = IAI_SLASH_MS;
       window.setTimeout(show, wait);
-      window.setTimeout(() => this.game === g && playIaiSheath(), wait + 650);
+      window.setTimeout(() => this.game === g && playIaiSheath(), IAI_SLASH_ALL_MS - 100);
     } else show();
+    // 结算等刀光、「斬」放完再出来
+    this.riiHold = Math.max(this.riiHold, Date.now() + (cut !== null ? wait + IAI_ZAN_MS + IAI_ZAN_ALL_MS : IAI_SLASH_ALL_MS + 100));
     if (cut !== null) {
       window.setTimeout(() => {
         if (this.game !== g) return;
@@ -1729,11 +1733,26 @@ export class App {
     return true;
   }
 
-  // 手牌上方的刀：出鞘几分跟着间合走（只有操作她的玩家看得见）
+  // 头像旁竖着的刀：从鞘里推出来几分跟着间合走（只有操作她的玩家看得见）。
+  // 档位变了，刀慢慢推出来（收回去）；头一下推开鞘口有一声轻响
   private bladeBarHtml(): string {
     const g = this.game!;
     if (this.chars[this.me]?.id !== 'satoha' || (g.phase !== 'turn' && g.phase !== 'calls') || this.vision) return '';
-    return bladeHtml(satohaBlade(g, this.me), satohaSheathed(g, this.me), satohaRenchanDealer(g, this.me) !== null);
+    const b = satohaBlade(g, this.me);
+    const k = this.blade;
+    const now = performance.now();
+    // 新的一局：刀收在鞘里
+    if (k.game !== g || k.round !== g.round) this.blade = { game: g, round: g.round, from: 0, to: 0, at: -IAI_PUSH_MS };
+    const st = this.blade;
+    const to = IAI_DRAWN[b.stage];
+    if (to !== st.to) {
+      if (st.to === 0 && !b.off) playIaiPush();
+      st.from = st.to;
+      st.to = to;
+      st.at = now;
+    }
+    const elapsed = now - st.at;
+    return bladeHtml(b, satohaSheathed(g, this.me), satohaRenchanDealer(g, this.me) !== null, elapsed < IAI_PUSH_MS ? { from: st.from, elapsed } : undefined);
   }
 
   // ---------- 郝慧宇的国标 ----------
@@ -2355,7 +2374,7 @@ export class App {
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
         <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'seat')}</div>
         ${this.towerHtml(s)}
-        <div class="seat-info">${c.name}</div>
+        <div class="seat-info">${c.name}</div>${s === this.me ? this.bladeBarHtml() : ''}
       </div>`;
   }
 
@@ -3006,10 +3025,10 @@ export class App {
         : '';
     const c = this.chars[this.me];
     return `
-      <div class="me" style="--c:${c.color}">
+      <div class="me${c.id === 'satoha' ? ' iai' : ''}" style="--c:${c.color}">
         <div class="actions">${buttons.join('')}</div>
         ${this.autoBtnHtml()}${this.assistHtml()}
-        ${this.sketchPlanHtml()}${this.gbBarHtml()}${this.bladeBarHtml()}${waitHtml}${hint}${this.riiPickerHtml()}
+        ${this.sketchPlanHtml()}${this.gbBarHtml()}${waitHtml}${hint}${this.riiPickerHtml()}
         ${
           withHand
             ? `<div class="hand-row">
@@ -3018,7 +3037,7 @@ export class App {
         </div>`
             : ''
         }
-        ${withPlate && !this.netView ? `<div class="nameplate mine" data-seat="${this.me}"><div class="avatar">${c.name.slice(-1)}${this.riiLockHtml(this.me, 'plate')}</div><div class="pname">${this.seatLabel(this.me)}</div></div>` : ''}
+        ${withPlate && !this.netView ? `<div class="nameplate mine" data-seat="${this.me}"><div class="avatar">${c.name.slice(-1)}${this.riiLockHtml(this.me, 'plate')}</div><div class="pname">${this.seatLabel(this.me)}</div>${this.bladeBarHtml()}</div>` : ''}
       </div>`;
   }
 
