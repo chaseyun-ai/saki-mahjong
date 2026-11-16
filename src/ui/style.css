@@ -664,8 +664,15 @@ button {
   animation: eye-in 0.8s ease-out both;
 }
 
-/* 淡的巨引力源（2D 牌桌）：牌桌中间一个慢慢转的黑色引力圆 */
-.awai-source .center::before {
+/* 淡的巨引力源（2D）：引力圆像一块透镜压在桌子中间。隔着它看，圆里的东西发暗、偏紫；几道旋臂慢慢转，
+   一圈圈波纹往圆心收，边上一圈亮线带着光晕。3D、2.5D 是真的把画面扭了（warpFx.ts）。
+   画在 ::after 上：::before 是稳乃的雾在用（#table[data-mist] .center::before） */
+@property --awai-r {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 70%;
+}
+.awai-source .center::after {
   content: '';
   position: absolute;
   left: 50%;
@@ -675,14 +682,41 @@ button {
   transform: translate(-50%, -50%);
   border-radius: 50%;
   pointer-events: none;
-  background: radial-gradient(circle, rgba(6, 3, 16, 0.15) 0%, rgba(4, 2, 12, 0.55) 70%, rgba(130, 90, 255, 0.5) 95%, transparent 100%);
-  animation: awai-spin 8s linear infinite;
+  background:
+    radial-gradient(circle closest-side, rgba(200, 180, 255, 0) calc(var(--awai-r) - 2.5%), rgba(200, 180, 255, 0.5) var(--awai-r), rgba(200, 180, 255, 0) calc(var(--awai-r) + 1%)),
+    radial-gradient(circle closest-side, rgba(10, 5, 28, 0.08) 0%, rgba(8, 4, 26, 0.34) 55%, rgba(4, 2, 14, 0.6) 87%, rgba(140, 100, 255, 0.7) 94.5%, rgba(225, 210, 255, 0.95) 97%, rgba(120, 80, 255, 0.3) 99%, rgba(120, 80, 255, 0) 100%),
+    conic-gradient(from 0deg, rgba(150, 110, 255, 0) 0deg, rgba(150, 110, 255, 0.22) 55deg, rgba(150, 110, 255, 0) 120deg, rgba(150, 110, 255, 0.22) 175deg, rgba(150, 110, 255, 0) 240deg, rgba(150, 110, 255, 0.22) 295deg, rgba(150, 110, 255, 0) 360deg);
+  -webkit-backdrop-filter: hue-rotate(-16deg) saturate(1.25) brightness(0.86);
+  backdrop-filter: hue-rotate(-16deg) saturate(1.25) brightness(0.86);
+  box-shadow: 0 0 26px 5px rgba(130, 90, 255, 0.5), inset 0 0 40px 12px rgba(50, 24, 130, 0.5);
+  animation: awai-spin 9s linear infinite, awai-well 2.2s ease-in infinite;
 }
 
 @keyframes awai-spin {
   to {
     transform: translate(-50%, -50%) rotate(360deg);
   }
+}
+@keyframes awai-well {
+  from {
+    --awai-r: 92%;
+  }
+  to {
+    --awai-r: 3%;
+  }
+}
+
+/* 巨引力源刚放出来（2D）：整张桌子往中间一缩、拧一把，再弹回来。
+   用 scale、rotate 这两个单独的属性：桌子本身按窗口大小缩放用的是 transform，动画里再写 transform 会把它顶掉 */
+.awai-kick .stage .table {
+  animation: awai-kick 1.25s cubic-bezier(0.3, 0.6, 0.3, 1);
+}
+@keyframes awai-kick {
+  0% { scale: 1; rotate: 0deg; filter: none; }
+  16% { scale: 0.94; rotate: 3deg; filter: blur(1.6px) saturate(1.5) hue-rotate(-24deg) brightness(0.85); }
+  40% { scale: 1.014; rotate: -1deg; filter: blur(0.4px) saturate(1.2); }
+  66% { scale: 0.996; rotate: 0.35deg; filter: none; }
+  100% { scale: 1; rotate: 0deg; filter: none; }
 }
 
 @keyframes eye-in {
@@ -9500,22 +9534,39 @@ canvas.rii-sky {
   100% { opacity: 0.3; }
 }
 /* 平行宇宙：换牌桌的那一下，画面错开、反色一闪（2D、3D、2.5D 都用） */
-.awai-parallel .three,
 .awai-parallel .stage .table {
-  animation: awai-parallel 0.9s linear;
+  animation: awai-parallel 2.8s linear;
 }
+/* 平行宇宙（2D）：先是越晃越厉害、颜色错乱（0–44%），白光一闪（46%）翻到左右颠倒、发冷的“另一边”，晃一会儿，
+   再一闪（84%）翻回来。translate、scale 是单独的属性，不动桌子自己的 transform（见 awai-kick）。
+   3D、2.5D 是牌桌自己把整幅画面扭过去（warpFx.ts 的 shift），时间一样长 */
 @keyframes awai-parallel {
-  0% { filter: none; transform: none; }
-  8% { filter: invert(1) hue-rotate(180deg) saturate(1.4); transform: translateX(-1.2%) skewX(-1.5deg); }
-  16% { filter: hue-rotate(90deg) saturate(1.8) brightness(1.3); transform: translateX(1%) skewX(1.2deg); }
-  26% { filter: invert(1) hue-rotate(200deg); transform: translateX(-0.5%) scaleX(1.01); }
-  36% { filter: hue-rotate(-60deg) brightness(1.5) saturate(1.5); transform: translateX(0.4%); }
-  55% { filter: brightness(1.25) saturate(1.3) hue-rotate(20deg); transform: none; }
-  100% { filter: none; transform: none; }
+  0% { filter: none; translate: 0 0; scale: 1 1; }
+  6% { filter: hue-rotate(40deg) saturate(1.5); translate: -0.6% 0; }
+  12% { filter: hue-rotate(-50deg) saturate(1.6) brightness(1.15); translate: 0.8% 0; }
+  18% { filter: invert(1) hue-rotate(180deg) saturate(1.4); translate: -1.2% 0.3%; }
+  23% { filter: hue-rotate(90deg) saturate(1.8) brightness(1.3); translate: 1.1% -0.3%; }
+  29% { filter: invert(1) hue-rotate(200deg); translate: -1.6% 0; scale: 1.01 1; }
+  35% { filter: hue-rotate(-60deg) brightness(1.5) saturate(1.5); translate: 1.5% 0.4%; scale: 1 1; }
+  41% { filter: invert(1) hue-rotate(160deg) brightness(1.3); translate: -1.8% 0; scale: 0.99 1; }
+  45% { filter: brightness(3.2) saturate(0.3); translate: 0 0; scale: 0.2 0.97; }
+  47% { filter: brightness(2.6) saturate(0.6) hue-rotate(50deg); translate: 0 0; scale: -0.6 0.98; }
+  51% { filter: hue-rotate(50deg) saturate(1.3) brightness(1.1); translate: 0.6% 0; scale: -1 1; }
+  58% { filter: hue-rotate(55deg) saturate(1.25) brightness(0.92); translate: -0.5% 0.2%; scale: -1 1; }
+  66% { filter: hue-rotate(62deg) saturate(1.3) brightness(0.95); translate: 0.5% -0.2%; scale: -1.006 1; }
+  74% { filter: hue-rotate(55deg) saturate(1.25) brightness(0.92); translate: -0.4% 0; scale: -1 1; }
+  80% { filter: hue-rotate(50deg) saturate(1.2) brightness(1.2); translate: 0.4% 0; scale: -1 1; }
+  83% { filter: brightness(3) saturate(0.4); translate: 0 0; scale: -0.2 0.97; }
+  86% { filter: brightness(2) saturate(1.3) hue-rotate(20deg); translate: 0 0; scale: 0.7 0.99; }
+  92% { filter: brightness(1.2) saturate(1.2); translate: 0.3% 0; scale: 1 1; }
+  100% { filter: none; translate: 0 0; scale: 1 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .awai-parallel .three,
-  .awai-parallel .stage .table {
+  .awai-parallel .stage .table,
+  .awai-kick .stage .table {
+    animation: none;
+  }
+  .awai-source .center::after {
     animation: none;
   }
   .stars2d-sky i,

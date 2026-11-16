@@ -40,6 +40,7 @@ import { TWISTER, TWISTER_TIME, Twister, twisterShape, type ArcKind } from './tw
 import { teruTwister } from '../abilities/teru';
 import type { WinResult } from '../engine/score';
 import { StarSky } from './starFx';
+import { SpaceWarp } from './warpFx';
 import { type AwaiStarView, awaiCornerKan, awaiKanUra } from '../abilities/awai';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
@@ -262,6 +263,8 @@ const GALE_VOID = new THREE.Color('#07040e');
 const FX_RED = '#ff5a4f';
 // 淡的杠里：和牌特效放完以后，四颗流星飞完、亮一会儿要多久（秒）
 const STAR_URA_TIME = 2.1;
+// 平行宇宙：整幅画面换到“另一边”再换回来要多久
+const PARALLEL_TIME = 2.8;
 interface Character {
   seat: number;
   seatRoot: THREE.Group;
@@ -439,7 +442,12 @@ export class Table3D {
   private projFaceMat: THREE.MeshBasicMaterial | null = null;
   private projBackMat: THREE.MeshBasicMaterial | null = null;
   // 淡的巨引力源：桌面上的黑色引力圆（用到时才建）
-  private gravityDisc: THREE.Mesh | null = null;
+  // 巨引力源、平行宇宙：整幅画面扭一下（warpFx）
+  private warp: SpaceWarp | null = null;
+  private gravityOn = false;
+  private gravityA = 0;
+  private gravityKick = 0;
+  private shiftAt = -1;
   // 淡双立直的星空（用到时才建）；宣言的光圈扫出来之前先不铺（starHold 之前）
   private stars: StarSky | null = null;
   private starHold = 0;
@@ -687,6 +695,7 @@ export class Table3D {
     this.resizer.disconnect();
     this.water?.dispose();
     this.machine?.dispose();
+    this.warp?.dispose();
     this.moonLift?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -2421,6 +2430,8 @@ export class Table3D {
         this.effects.ring(home, '#ffe9a8', 6, 0.8, 0.8);
         this.effects.pulse(home.clone().setY(2.5), '#ffd98a', 14, 0.3);
       });
+      // 七颗星各落一颗流星进她的手牌（七种字牌各来一张）
+      pts.forEach((p, i) => this.effects.later(7 * 0.16 + 0.15 + i * 0.07, () => sky.comet(p, this.seatPoint(seat, (i - 3) * 1.3, 0.9, d.handZ), 0.45, 1.2, 1.5)));
     } else if (text === '高维领域') {
       sky.flare(home.clone().setY(1.5), 9, 1, '#8a5cff', 0.8, 0.8);
       this.effects.ring(home, '#6a3cff', half * 2.4, 1.3, 0.9);
@@ -2446,14 +2457,32 @@ export class Table3D {
       for (let i = 0; i < 3; i++) this.effects.later(i * 0.28, () => this.effects.ring(home, i === 1 ? '#d9b8ff' : '#9b6bff', half * (1.5 + i * 0.45), 1.5, 0.75 - i * 0.12));
       sky.flare(home.clone().setY(1.4), 6, 0.9, '#b58cff', 0.8, 0.6);
     } else if (text === '平行宇宙') {
+      // 整幅画面裂开、换到另一边再合回来（warpFx 的 shift），这段时间牌局等着
+      this.shiftAt = this.now;
+      this.fxHold = Math.max(this.fxHold, this.now + PARALLEL_TIME - 0.3);
       const mid = new THREE.Vector3(0, 0.1, 0);
-      sky.flare(mid.clone().setY(2), 16, 1.1, '#ffffff', 0.9, 1);
-      sky.flare(mid.clone().setY(2), 9, 1.5, '#9fb6ff', 0.9, 0.6);
-      this.effects.ring(mid, '#ffffff', half * 1.9, 0.9, 1);
-      this.effects.later(0.12, () => this.effects.ring(mid, '#8f7bff', half * 1.9, 1.2, 0.9));
-      this.effects.sparkles(mid.clone().setY(0.6), '#cfd8ff', 90, half * 0.9, 2.2);
-      this.effects.pulse(mid.clone().setY(3), '#c9d4ff', 30, 0.3);
-      this.shake = Math.max(this.shake, 0.8);
+      const flashAt = PARALLEL_TIME * 0.46;
+      // 先是桌心一颗星越来越亮，光圈一圈圈往里收
+      sky.flare(mid.clone().setY(2), 7, flashAt + 0.2, '#9fb6ff', 0.7, 1.2);
+      for (let i = 0; i < 3; i++) this.effects.later(i * 0.32, () => this.effects.ring(mid, i === 1 ? '#d9b8ff' : '#8f7bff', half * (1.2 - i * 0.25), 0.7, 0.7));
+      this.shake = Math.max(this.shake, 0.3);
+      // 白光那一下：换到另一边
+      this.effects.later(flashAt, () => {
+        sky.pulse(1);
+        sky.flare(mid.clone().setY(2), 16, 1.1, '#ffffff', 0.9, 1);
+        sky.flare(mid.clone().setY(2), 9, 1.5, '#9fb6ff', 0.9, 0.6);
+        this.effects.ring(mid, '#ffffff', half * 1.9, 0.9, 1);
+        this.effects.later(0.12, () => this.effects.ring(mid, '#8f7bff', half * 1.9, 1.2, 0.9));
+        this.effects.sparkles(mid.clone().setY(0.6), '#cfd8ff', 90, half * 0.9, 2.2);
+        this.effects.pulse(mid.clone().setY(3), '#c9d4ff', 26, 0.3);
+        this.shake = Math.max(this.shake, 0.8);
+      });
+      // 合回来那一下
+      this.effects.later(PARALLEL_TIME * 0.84, () => {
+        this.effects.ring(mid, '#cfd8ff', half * 1.6, 0.8, 0.8);
+        this.effects.sparkles(mid.clone().setY(0.6), '#e6ecff', 40, half * 0.8, 1.6);
+        this.shake = Math.max(this.shake, 0.4);
+      });
     } else if (text === '加速驱动') {
       const from = home.clone().setY(1.2);
       sky.flare(from, 6, 0.6, '#ff8ad8', 0.8, 0.5);
@@ -2475,6 +2504,8 @@ export class Table3D {
         this.effects.later(i * 0.05, () => sky.comet(from, new THREE.Vector3(0, 0.3, 0), 0.7, 0.5, 1.2, undefined, '#e6d4ff', '#8a5cff'));
       }
       this.effects.later(0.75, () => this.effects.ring(new THREE.Vector3(0, 0.1, 0), '#7a4dff', half * 0.8, 0.8, 0.8));
+      this.gravityKick = 1;
+      this.shake = Math.max(this.shake, 0.5);
     }
   }
 
@@ -3234,32 +3265,19 @@ export class Table3D {
     this.mist.setStacks(this.mistTops.map((row, w) => row.map((pos, i) => ({ pos, filled: filled[w][i] }))));
   }
 
-  // 巨引力源：黑色的引力圆，和四边牌山的外沿相切，罩住每边中间的几墩（墩的中心在圆里的：引擎里是 awai.ts 的 sourceCovers，离正中 3 墩以内）。
-  // 贴在桌面上，牌压在它上面
+  // 巨引力源：引力圆和四边牌山的外沿相切，罩住每边中间的几墩（墩的中心在圆里的：引擎里是 awai.ts 的 sourceCovers，离正中 3 墩以内）。
+  // 圆里的空间是弯的：画完桌子以后把这一块扭着再画一遍（warpFx 的 lens）。刚开的那一下往中间猛缩一下
   private showGravity(on: boolean): void {
-    if (!on) {
-      if (this.gravityDisc) this.gravityDisc.visible = false;
-      return;
-    }
-    if (!this.gravityDisc) {
-      // 牌山的牌是平躺的，外沿离中心 WALL_Z + 牌高的一半
-      const r = WALL_Z + TILE_H / 2;
-      const mat = new THREE.MeshBasicMaterial({ map: gravityTexture(), transparent: true, depthWrite: false });
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 96), mat);
-      disc.rotation.x = -Math.PI / 2;
-      disc.position.y = 0.012;
-      // 改良布局的牌山不是正方形（左右往外挪、对家往后推）：圆拉成椭圆、挪一挪，照样和四边牌山的外沿相切
-      if (this.v2) {
-        const rx = this.wallZ(1) + TILE_H / 2;
-        const rz = (this.wallZ(0) + this.wallZ(2)) / 2 + TILE_H / 2;
-        disc.scale.set(rx / r, rz / r, 1);
-        disc.position.z = (this.wallZ(0) - this.wallZ(2)) / 2;
-      }
-      disc.renderOrder = 1;
-      this.scene.add(disc);
-      this.gravityDisc = disc;
-    }
-    this.gravityDisc.visible = true;
+    if (on && !this.gravityOn) this.gravityKick = 1;
+    this.gravityOn = on;
+  }
+
+  // 引力圆的圆心和横竖半径。牌山的牌是平躺的，外沿离中心是牌山的中线再加半张牌高。
+  // 2.5D 的牌山不是正方形（对家的往里收，改良布局左右的往外挪）：圆拉成椭圆、挪一挪，照样和四边牌山的外沿相切
+  private gravityShape(): { center: THREE.Vector3; rx: number; rz: number } {
+    const rx = this.wallZ(1) + TILE_H / 2;
+    const rz = (this.wallZ(0) + this.wallZ(2)) / 2 + TILE_H / 2;
+    return { center: new THREE.Vector3(0, TILE_T / 2, (this.wallZ(0) - this.wallZ(2)) / 2), rx, rz };
   }
 
   // 改良布局：自己手牌里的一张牌绕画面的竖直方向转过来正对镜头，返回转好的朝向和放大倍数。
@@ -4497,12 +4515,59 @@ export class Table3D {
 
   // 画一帧。改良布局（ortho）时自己的手牌另外用没有透视的镜头画在最上面一层
   private draw(): void {
+    this.drawScene();
+    // 平行宇宙：全部画完以后整幅画面一起扭
+    if (this.shiftAt >= 0) {
+      const k = (this.now - this.shiftAt) / PARALLEL_TIME;
+      if (k >= 1) this.shiftAt = -1;
+      else (this.warp ??= new SpaceWarp()).shift(this.renderer, k, this.now);
+    }
+  }
+
+  // 用主镜头画桌子。巨引力源开着时接着把引力圆那一块扭一遍。
+  // 自己立着的手牌在画面上压着引力圆靠自己这边的边，但它们其实在圆外面，不该跟着扭：
+  // 先不画它们，扭完再用同一个镜头补画上去（深度留着，前后遮挡照旧）。改良布局单独一层的手牌本来就在这之后画
+  private renderMain(): void {
+    const r = this.renderer;
+    if (this.gravityA <= 0) {
+      r.render(this.scene, this.camera);
+      return;
+    }
+    const sync = this.lastSync;
+    const front = sync ? sync.g.players[sync.view.me].hand.map((id) => this.tiles[id].group).filter((g) => g.visible && g.layers.test(this.camera.layers)) : [];
+    for (const g of front) g.traverse((o) => o.layers.set(3));
+    if (front.length) {
+      this.scene.traverse((o) => {
+        if ((o as THREE.Light).isLight) o.layers.enable(3);
+      });
+    }
+    r.render(this.scene, this.camera);
+    const { center, rx, rz } = this.gravityShape();
+    (this.warp ??= new SpaceWarp()).lens(r, this.camera, center, rx, rz, this.now, this.gravityA, this.gravityKick);
+    if (!front.length) return;
+    const auto = r.autoClear;
+    const shadows = r.shadowMap.autoUpdate;
+    const bg = this.scene.background;
+    const mask = this.camera.layers.mask;
+    r.autoClear = false;
+    r.shadowMap.autoUpdate = false;
+    this.scene.background = null;
+    this.camera.layers.set(3);
+    r.render(this.scene, this.camera);
+    this.camera.layers.mask = mask;
+    this.scene.background = bg;
+    r.autoClear = auto;
+    r.shadowMap.autoUpdate = shadows;
+    for (const g of front) g.traverse((o) => o.layers.set(0));
+  }
+
+  private drawScene(): void {
     // 平静的水面照出牌：先从水面下对称的地方画一张倒影
     this.water?.renderMirror(this.scene, this.camera);
     const moving = this.orthoMoving();
     const ids = this.orthoHand().filter((id) => !moving.includes(id));
     if (!ids.length && !moving.length) {
-      this.renderer.render(this.scene, this.camera);
+      this.renderMain();
       return;
     }
     const me = this.lastSync?.view.me ?? 0;
@@ -4521,7 +4586,7 @@ export class Table3D {
       o.layers.enable(1);
       o.layers.enable(2);
     });
-    this.renderer.render(this.scene, this.camera);
+    this.renderMain();
     this.syncOrtho();
     const r = this.renderer;
     const auto = r.autoClear;
@@ -4743,11 +4808,11 @@ export class Table3D {
     this.updateChains(dt);
     this.updateGhosts();
     this.updateGlows();
-    // 引力圆慢慢转、一胀一缩
-    if (this.gravityDisc?.visible) {
-      this.gravityDisc.rotation.z += dt * 0.25;
-      this.gravityDisc.scale.setScalar(1 + 0.012 * Math.sin(this.now * 2.2));
-    }
+    // 引力圆慢慢显出来、收回去；刚开那一下的猛缩一秒多弹回来
+    this.gravityA += ((this.gravityOn ? 1 : 0) - this.gravityA) * Math.min(1, dt * (this.gravityOn ? 5 : 2.5));
+    if (!this.gravityOn && this.gravityA < 0.004) this.gravityA = 0;
+    this.gravityKick *= Math.exp(-dt * 2.4);
+    if (this.gravityKick < 0.003) this.gravityKick = 0;
     this.updateCamera(dt);
     // 全自动麻将机：升降板、仪表盘抬起落下、收牌的替身牌；机器动着的时候牌山上的牌跟着升降板走（新牌山还没放上去就先藏着）
     const mach = this.machine;
@@ -4943,43 +5008,6 @@ function placeholder(color: string): THREE.Group {
   body.castShadow = head.castShadow = true;
   g.add(body, head);
   return g;
-}
-
-// 巨引力源的贴图：中间透一点能看清桌子，越往外越黑，边上一圈紫色的光；几道旋臂让它转起来看得出来
-function gravityTexture(): THREE.CanvasTexture {
-  const n = 512;
-  const c = document.createElement('canvas');
-  c.width = c.height = n;
-  const ctx = c.getContext('2d')!;
-  const h = n / 2;
-  const grad = ctx.createRadialGradient(h, h, 0, h, h, h);
-  grad.addColorStop(0, 'rgba(8, 4, 20, 0.18)');
-  grad.addColorStop(0.55, 'rgba(6, 3, 16, 0.42)');
-  grad.addColorStop(0.86, 'rgba(2, 1, 8, 0.72)');
-  grad.addColorStop(0.95, 'rgba(120, 80, 255, 0.55)');
-  grad.addColorStop(0.985, 'rgba(40, 20, 90, 0.35)');
-  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, n, n);
-  // 旋臂
-  ctx.globalCompositeOperation = 'source-atop';
-  ctx.strokeStyle = 'rgba(150, 120, 255, 0.16)';
-  ctx.lineWidth = 6;
-  for (let arm = 0; arm < 4; arm++) {
-    ctx.beginPath();
-    for (let t = 0; t <= 1; t += 0.01) {
-      const a = arm * (Math.PI / 2) + t * Math.PI * 1.6;
-      const r = h * (0.12 + 0.82 * t);
-      const x = h + Math.cos(a) * r;
-      const y = h + Math.sin(a) * r;
-      if (t === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
 }
 
 // 手绘板的桌布：白纸上淡淡的方格，一圈铅笔框，角上几笔涂鸦

@@ -151,6 +151,9 @@ function bulbSvg(lv: number): string {
   return `<svg viewBox="0 0 40 40" style="filter:drop-shadow(0 0 ${3 + lv * 3}px ${fill})">${rays}<path d="M20 4a11 11 0 0 0-6.5 19.8c1.3 1 2 2.3 2 3.7V30h9v-2.5c0-1.4.7-2.7 2-3.7A11 11 0 0 0 20 4z" fill="${fill}" stroke="#555" stroke-width="1.5"/><rect x="15" y="31" width="10" height="3" rx="1" fill="#9aa"/><rect x="16" y="35" width="8" height="2.6" rx="1.2" fill="#9aa"/></svg>`;
 }
 
+// 2D：平行宇宙的动画多长（毫秒；和 style.css 的 awai-parallel 一样长）
+const PARALLEL_MS = 2800;
+
 export class App {
   private root: HTMLElement;
   private game: Game | null = null;
@@ -226,6 +229,7 @@ export class App {
   private gale2dFx: Gale2D | null = null; // 2D 牌桌上初美的紫色旋风
   private stars2dFx: Stars2D | null = null; // 2D 牌桌上大星淡的星空
   private starHold2d = 0; // 双立直宣言的光圈放出来之前，夜空先不铺
+  private fxHold2d = 0; // 2D：平行宇宙的动画放完之前牌局先等着（performance.now 的时刻）
   private starUraShown = false; // 这一局杠里的流星放过了
   // 2D：初美聚着风和牌，结算里手牌先倒、和了牌往下砸（哪一家、什么时候开始；结算重画时动画接着放）
   private galeSlam: { seat: number; t0: number } | null = null;
@@ -2239,7 +2243,7 @@ export class App {
   private himeko2dRound = '';
 
   private busyMs(): number {
-    return this.table3d?.busyMs() ?? this.himeko2d.busyMs();
+    return this.table3d?.busyMs() ?? Math.max(this.himeko2d.busyMs(), this.fxHold2d - performance.now(), 0);
   }
 
   // 2D：姬子拿到钥匙的那一局，配牌时她的牌错落着竖着砸下来、理完牌火从右烧到左（3D、2.5D 在 table3d 里放）
@@ -3014,19 +3018,20 @@ export class App {
     });
   }
 
-  // 大星淡的技能发动那一下。平行宇宙：三种视角的画面都错开、反色一闪；其余的只管 2D 牌桌（3D、2.5D 在牌桌里放，见 Table3D.awaiSkillFx）：
+  // 大星淡的技能发动那一下，只管 2D 牌桌（3D、2.5D 在牌桌里放，见 Table3D.awaiSkillFx）：
+  // 平行宇宙——整张桌子晃着错开、白光一闪翻到左右颠倒的另一边，再翻回来（style.css 的 awai-parallel），这段时间牌局等着；
   // 时间迟滞——另外三家头像上落一圈冷蓝的光；星符汇聚——桌子上方北斗七星一颗颗亮起来，挂到这一局结束；
   // 高维领域——暗紫的波从她那边推过整张桌子；退相干——三团错开的光合成一颗；引力波——一圈圈涟漪从她那边荡开；
-  // 加速驱动——三颗流星扎到另外三家；巨引力源——一圈光往桌心收
+  // 加速驱动——三颗流星扎到另外三家；巨引力源——整张桌子往中间拧一下（awai-kick），一圈圈光往桌心收
   private awaiSkillFx2d(seat: number, text: string): void {
-    if (text === '平行宇宙') {
-      this.root.classList.remove('awai-parallel');
-      void this.root.offsetWidth;
-      this.root.classList.add('awai-parallel');
-      window.setTimeout(() => this.root.classList.remove('awai-parallel'), 950);
-    }
     const fx = this.stars2dLayer();
     if (!fx) return;
+    const shake = (cls: string, ms: number) => {
+      this.root.classList.remove(cls);
+      void this.root.offsetWidth;
+      this.root.classList.add(cls);
+      window.setTimeout(() => this.root.classList.remove(cls), ms);
+    };
     const span = Math.min(fx.fx.offsetWidth, fx.fx.offsetHeight);
     const far = Math.hypot(fx.fx.offsetWidth, fx.fx.offsetHeight);
     const home = this.starSeat2d(fx, seat);
@@ -3042,6 +3047,10 @@ export class App {
       const shape: [number, number][] = [[-0.55, -0.1], [-0.5, 0.18], [-0.13, 0.23], [-0.1, -0.02], [0.17, -0.1], [0.4, -0.18], [0.7, -0.02]];
       fx.figure(shape.map(([x, y]) => ({ x: mid.x + x * span * 0.5, y: mid.y - span * 0.23 + y * span * 0.5 })), [[0, 1], [1, 2], [2, 3], [3, 0], [3, 4], [4, 5], [5, 6]]);
       fx.ring(home, span * 0.16, 0.8, '#ffe9a8', 7 * 0.16);
+      // 七颗星各落一颗流星进她的手牌
+      shape.forEach(([x, y], i) => {
+        fx.comet({ x: mid.x + x * span * 0.5, y: mid.y - span * 0.23 + y * span * 0.5 }, { x: home.x + (i - 3) * span * 0.03, y: home.y }, { delay: 7 * 0.16 + 0.15 + i * 0.07, dur: 0.45, lift: 20, size: 30 });
+      });
     } else if (text === '高维领域') {
       fx.flare(home, span * 0.3, 1, '#8a5cff', 0.8, 0.8);
       fx.ring(home, far, 1.3, '#6a3cff');
@@ -3065,10 +3074,19 @@ export class App {
       for (let i = 0; i < 3; i++) fx.ring(home, far * (0.6 + i * 0.2), 1.5, i === 1 ? '#d9b8ff' : '#9b6bff', i * 0.28);
       fx.flare(home, span * 0.2, 0.9, '#b58cff', 0.8, 0.6);
     } else if (text === '平行宇宙') {
-      fx.flare(mid, span * 0.7, 1.1, '#ffffff', 0.9, 1);
-      fx.flare(mid, span * 0.4, 1.5, '#9fb6ff', 0.9, 0.6);
-      fx.ring(mid, far * 0.6, 0.9, '#ffffff');
-      fx.ring(mid, far * 0.6, 1.2, '#8f7bff', 0.12);
+      shake('awai-parallel', PARALLEL_MS + 100);
+      this.fxHold2d = performance.now() + PARALLEL_MS - 300;
+      const flash = PARALLEL_MS * 0.46;
+      // 先是桌心一颗星越来越亮、光圈往里收；白光那一下炸开；翻回来时再荡一圈
+      fx.flare(mid, span * 0.3, flash / 1000 + 0.2, '#9fb6ff', 0.7, 1.2);
+      for (let i = 0; i < 3; i++) fx.ring(mid, far * (0.5 - i * 0.1), 0.7, i === 1 ? '#d9b8ff' : '#8f7bff', i * 0.32, true);
+      window.setTimeout(() => {
+        fx.flare(mid, span * 0.7, 1.1, '#ffffff', 0.9, 1);
+        fx.flare(mid, span * 0.4, 1.5, '#9fb6ff', 0.9, 0.6);
+      }, flash);
+      fx.ring(mid, far * 0.6, 0.9, '#ffffff', flash / 1000);
+      fx.ring(mid, far * 0.6, 1.2, '#8f7bff', flash / 1000 + 0.12);
+      fx.ring(mid, far * 0.5, 0.8, '#cfd8ff', (PARALLEL_MS * 0.84) / 1000);
     } else if (text === '加速驱动') {
       fx.flare(home, span * 0.2, 0.6, '#ff8ad8', 0.8, 0.5);
       others.forEach((s, i) => {
@@ -3087,8 +3105,10 @@ export class App {
         });
       });
     } else if (text === '巨引力源') {
+      shake('awai-kick', 1300);
       fx.ring(mid, span * 0.42, 0.9, '#7a4dff', 0, true);
       fx.ring(mid, span * 0.42, 0.9, '#c9b0ff', 0.25, true);
+      fx.ring(mid, span * 0.3, 0.9, '#7a4dff', 0.5, true);
     }
   }
 

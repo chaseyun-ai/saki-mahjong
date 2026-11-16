@@ -6,7 +6,8 @@ import * as THREE from 'three';
 // - 转角暗杠：转角那颗星化成流星落到她的杠子上
 // - 杠里：和牌时四颗流星从王牌里那张里宝牌指示牌飞到杠的四张牌上
 // - 技能发动时的流星、闪光也借这里的四芒星画；星符汇聚的北斗七星（figure）挂到这一局结束
-// 夜空全在片元着色器里算（值噪声叠成的星云 + 三层格子星点），不用贴图
+// 星云是开局前在 JS 里算好的一张贴图（四个通道四层云），星是一颗一个点。
+// 不在着色器里现算噪声：那种散列函数在不同显卡上算出来的数对不上，相邻两格接不起来，夜空会裂成一块一块的
 
 const SKY_VERT = /* glsl */ `
 varying vec2 vP;
@@ -18,6 +19,7 @@ void main() {
 `;
 
 const SKY_FRAG = /* glsl */ `
+uniform sampler2D uNeb;
 uniform float uTime;
 uniform float uA;
 uniform float uWave;
@@ -25,53 +27,21 @@ uniform float uBoost;
 uniform float uHalf;
 uniform vec2 uOrigin;
 varying vec2 vP;
-float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float noise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x), mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
-}
-float fbm(vec2 p) {
-  float a = 0.5, s = 0.0;
-  for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; }
-  return s;
-}
-// 一层星点：每格最多一颗，大的少、小的多；大的带十字星芒
-vec3 stars(vec2 p, float density, float t, float big) {
-  vec2 g = p * density;
-  vec2 id = floor(g);
-  vec2 f = fract(g) - 0.5;
-  float h = hash21(id);
-  vec2 o = (vec2(hash21(id + 3.1), hash21(id + 7.7)) - 0.5) * 0.7;
-  vec2 d = f - o;
-  float r = length(d);
-  float m = pow(hash21(id + 11.3), 5.0);
-  float size = mix(0.035, 0.11, m) * big;
-  float tw = 0.55 + 0.45 * sin(t * (0.8 + h * 2.6) + h * 40.0);
-  float core = smoothstep(size, 0.0, r);
-  float spike = (exp(-abs(d.x) * 60.0) * exp(-abs(d.y) * 7.0) + exp(-abs(d.y) * 60.0) * exp(-abs(d.x) * 7.0)) * m * 1.6;
-  float v = (core * core * 1.4 + spike) * step(0.5, h) * tw;
-  // 星的颜色：多数偏白蓝，少数金色
-  vec3 c = mix(vec3(0.82, 0.9, 1.0), vec3(1.0, 0.82, 0.45), step(0.82, hash21(id + 5.5)));
-  return c * v;
-}
 void main() {
   vec2 p = vP;
   float ang = uTime * 0.012;
-  mat2 R = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
-  vec2 q = R * p;
-  float n = fbm(q * 0.085 + vec2(0.0, uTime * 0.008));
-  float n2 = fbm(q * 0.16 - vec2(uTime * 0.011, 3.0));
+  float cs = cos(ang), sn = sin(ang);
+  vec2 q = vec2(cs * p.x + sn * p.y, cs * p.y - sn * p.x);
+  // 星云：四层云都从一张烤好的贴图里取（四个通道各是一层），用不同的大小、慢慢错开着飘
+  float n = texture2D(uNeb, q * 0.02125 + vec2(0.0, uTime * 0.002)).r;
+  float n2 = texture2D(uNeb, q * 0.04 - vec2(uTime * 0.00275, 0.37)).g;
   vec3 col = vec3(0.010, 0.014, 0.045);
   col += vec3(0.17, 0.07, 0.40) * smoothstep(0.46, 0.86, n) * 0.8;
   col += vec3(0.04, 0.15, 0.50) * smoothstep(0.5, 0.88, n2) * 0.7;
   // 斜着横过桌面的一条银河
   float across = (q.x * 0.62 + q.y * 0.78) / (uHalf * 0.3);
   float band = exp(-across * across);
-  // 银河外面不用算这两层噪声（手机上省一点）
-  if (band > 0.01) col += (vec3(0.30, 0.26, 0.5) * fbm(q * 0.33) + vec3(1.0, 0.78, 0.36) * 0.16 * fbm(q * 0.7 + 5.0)) * band * 0.7;
-  vec3 st = stars(q, 0.9, uTime, 1.0) + stars(q + 7.3, 1.9, uTime * 1.3, 0.9) * 0.7 + stars(q - 13.1, 4.2, uTime * 1.7, 0.8) * (0.3 + 0.5 * band);
-  col += st * (1.0 + uBoost * 1.5);
+  col += (vec3(0.30, 0.26, 0.5) * texture2D(uNeb, q * 0.0825 + 0.21).b + vec3(1.0, 0.78, 0.36) * 0.16 * texture2D(uNeb, q * 0.175 + 0.63).a) * band * 0.7;
   col *= 1.0 + uBoost * 0.8;
   // 从她那边扫过来的金色光圈：扫过的地方才是夜空
   float d = distance(p, uOrigin);
@@ -82,6 +52,61 @@ void main() {
   float edge = smoothstep(1.0, 0.94, e);
   float a = clamp(inside * 0.93 + front * 0.7, 0.0, 1.0) * uA * edge;
   gl_FragColor = vec4(col, a);
+  #include <colorspace_fragment>
+}
+`;
+
+// 夜空里的星：一颗星一个点，跟着夜空慢慢转；大的带十字星芒。光圈没扫到的地方、桌子外面的不画
+const STAR_VERT = /* glsl */ `
+attribute vec4 aStar; // 半径、星芒、闪烁的种子、亮度
+attribute float aGold;
+uniform float uTime;
+uniform float uA;
+uniform float uWave;
+uniform float uBoost;
+uniform float uHalf;
+uniform float uPx;
+uniform float uMin;
+uniform vec2 uOrigin;
+varying float vA;
+varying float vK;
+varying float vM;
+varying float vGold;
+void main() {
+  float ang = uTime * 0.012;
+  float cs = cos(ang), sn = sin(ang);
+  vec2 q = position.xz;
+  vec2 p = vec2(cs * q.x - sn * q.y, sn * q.x + cs * q.y);
+  vec4 mv = modelViewMatrix * vec4(p.x, position.y, p.y, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float e = max(abs(p.x), abs(p.y)) / uHalf;
+  float edge = smoothstep(1.0, 0.94, e);
+  float inside = smoothstep(uWave, uWave - 2.2, distance(p, uOrigin));
+  float h = aStar.z;
+  float tw = 0.55 + 0.45 * sin(uTime * (0.8 + h * 2.6) + h * 40.0);
+  vK = 1.0 + 4.0 * aStar.y;
+  float px = uPx * aStar.x * vK / max(-mv.z, 0.1);
+  float size = max(px, uMin);
+  // 小到不足一个像素的星：点不再缩小，改成变暗
+  vA = aStar.w * tw * inside * edge * uA * (1.0 + uBoost * 1.5) * (1.0 + uBoost * 0.8) * (px / size);
+  vM = aStar.y;
+  vGold = aGold;
+  gl_PointSize = size;
+}
+`;
+
+const STAR_FRAG = /* glsl */ `
+varying float vA;
+varying float vK;
+varying float vM;
+varying float vGold;
+void main() {
+  vec2 u = gl_PointCoord * 2.0 - 1.0;
+  vec2 d = abs(u) * vK;
+  float core = smoothstep(1.0, 0.0, length(d));
+  float spike = (exp(-d.x * 6.6 - d.y * 0.77) + exp(-d.y * 6.6 - d.x * 0.77)) * vM * 1.6 * smoothstep(1.0, 0.6, length(u));
+  vec3 c = mix(vec3(0.82, 0.9, 1.0), vec3(1.0, 0.82, 0.45), vGold);
+  gl_FragColor = vec4(c * (core * core * 1.4 + spike) * vA, 1.0);
   #include <colorspace_fragment>
 }
 `;
@@ -182,6 +207,101 @@ void main() {
 }
 `;
 
+// 固定种子的随机数：每台机器、每次开局算出来的夜空都一样
+function mulberry(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// 星云贴图：四个通道各是一层叠了 5 遍的值噪声，上下左右接得上（可以平铺）
+let nebula: THREE.DataTexture | null = null;
+function nebulaTexture(): THREE.DataTexture {
+  if (nebula) return nebula;
+  const N = 256;
+  const data = new Uint8Array(N * N * 4);
+  const acc = new Float32Array(N * N);
+  for (let ch = 0; ch < 4; ch++) {
+    const rnd = mulberry(977 + ch * 131);
+    acc.fill(0);
+    let amp = 0.5;
+    for (let o = 0; o < 5; o++) {
+      const n = 4 << o;
+      const lat = new Float32Array(n * n);
+      for (let i = 0; i < lat.length; i++) lat[i] = rnd();
+      for (let y = 0; y < N; y++) {
+        const gy = (y * n) / N;
+        const y0 = Math.floor(gy);
+        const y1 = (y0 + 1) % n;
+        let fy = gy - y0;
+        fy = fy * fy * (3 - 2 * fy);
+        for (let x = 0; x < N; x++) {
+          const gx = (x * n) / N;
+          const x0 = Math.floor(gx);
+          const x1 = (x0 + 1) % n;
+          let fx = gx - x0;
+          fx = fx * fx * (3 - 2 * fx);
+          const top = lat[y0 * n + x0] + (lat[y0 * n + x1] - lat[y0 * n + x0]) * fx;
+          const bot = lat[y1 * n + x0] + (lat[y1 * n + x1] - lat[y1 * n + x0]) * fx;
+          acc[y * N + x] += amp * (top + (bot - top) * fy);
+        }
+      }
+      amp *= 0.5;
+    }
+    for (let i = 0; i < acc.length; i++) data[i * 4 + ch] = Math.round(Math.min(1, acc[i]) * 255);
+  }
+  const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  nebula = tex;
+  return tex;
+}
+
+// 夜空里的星：撒在一个罩得住整张桌子的圆里（夜空在转，圆转到哪都盖得住四个角）。
+// 三层：少而大的、多而小的、银河里密密的碎星；每颗记下半径、星芒、闪烁的种子、亮度、是不是金色
+function starField(half: number): THREE.BufferGeometry {
+  const rnd = mulberry(20260);
+  const R = half * 1.42;
+  const area = Math.PI * R * R;
+  const pos: number[] = [];
+  const star: number[] = [];
+  const gold: number[] = [];
+  const layer = (count: number, lo: number, hi: number, bright: number, band: number) => {
+    for (let i = 0; i < count; i++) {
+      const r = R * Math.sqrt(rnd());
+      const a = rnd() * Math.PI * 2;
+      const x = r * Math.cos(a);
+      const z = r * Math.sin(a);
+      const m = Math.pow(rnd(), 5);
+      const seed = rnd();
+      const g = rnd() < 0.18 ? 1 : 0;
+      const across = (x * 0.62 + z * 0.78) / (half * 0.3);
+      const inBand = Math.exp(-across * across);
+      // 碎星：银河外面稀、也暗
+      if (band > 0 && rnd() > 1 - band + band * inBand) continue;
+      pos.push(x, 0, z);
+      star.push(lo + (hi - lo) * m, m, seed, bright * (band > 0 ? 0.4 + 0.6 * inBand : 1));
+      gold.push(g);
+    }
+  };
+  layer(Math.round(area * 0.4), 0.039, 0.122, 1, 0);
+  layer(Math.round(area * 1.8), 0.017, 0.052, 0.7, 0);
+  layer(Math.round(area * 5), 0.009, 0.022, 0.8, 0.6);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('aStar', new THREE.Float32BufferAttribute(star, 4));
+  geo.setAttribute('aGold', new THREE.Float32BufferAttribute(gold, 1));
+  return geo;
+}
+
 const GOLD = new THREE.Color('#ffd36b');
 const PALE = new THREE.Color('#8fa2c8');
 
@@ -225,7 +345,8 @@ const FLARES = 72;
 export class StarSky {
   readonly group = new THREE.Group();
   private sky: THREE.Mesh;
-  private skyU = { uTime: { value: 0 }, uA: { value: 0 }, uWave: { value: 0 }, uBoost: { value: 0 }, uHalf: { value: 10 }, uOrigin: { value: new THREE.Vector2() } };
+  private skyU = { uNeb: { value: null as THREE.Texture | null }, uTime: { value: 0 }, uA: { value: 0 }, uWave: { value: 0 }, uBoost: { value: 0 }, uHalf: { value: 10 }, uOrigin: { value: new THREE.Vector2() }, uPx: { value: 800 }, uMin: { value: 2 } };
+  private dots: THREE.Points;
   private moteU = { uTime: { value: 0 }, uA: { value: 0 }, uPx: { value: 800 } };
   private beacon: THREE.Mesh;
   private beaconU = { uA: { value: 0 }, uSpin: { value: 0 }, uColor: { value: GOLD.clone() } };
@@ -255,11 +376,23 @@ export class StarSky {
 
   constructor(private half: number, scale = 1) {
     this.skyU.uHalf.value = half;
-    this.sky = new THREE.Mesh(new THREE.PlaneGeometry(half * 2, half * 2), new THREE.ShaderMaterial({ uniforms: this.skyU, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, transparent: true, depthWrite: false, toneMapped: false }));
+    this.skyU.uNeb.value = nebulaTexture();
+    // 贴着桌布的一层：抬高一点、再让深度往前偏一点，深度精度低的手机上也不会和桌布抢着画
+    this.sky = new THREE.Mesh(
+      new THREE.PlaneGeometry(half * 2, half * 2),
+      new THREE.ShaderMaterial({ uniforms: this.skyU, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -6 }),
+    );
     this.sky.rotation.x = -Math.PI / 2;
-    this.sky.position.y = 0.009;
+    this.sky.position.y = 0.02;
     this.sky.renderOrder = 1;
     this.sky.frustumCulled = false;
+    this.dots = new THREE.Points(
+      starField(half),
+      new THREE.ShaderMaterial({ uniforms: this.skyU, vertexShader: STAR_VERT, fragmentShader: STAR_FRAG, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+    );
+    this.dots.position.y = 0.03;
+    this.dots.renderOrder = 2;
+    this.dots.frustumCulled = false;
 
     const n = 150;
     const pos: number[] = [];
@@ -292,7 +425,7 @@ export class StarSky {
       this.flares.push({ mesh, u, t: 0, dur: 0, size: 1, peak: 1, grow: 0, spin: 0 });
       this.group.add(mesh);
     }
-    this.group.add(this.sky, motes, this.pillar, this.beacon);
+    this.group.add(this.sky, this.dots, motes, this.pillar, this.beacon);
     this.group.visible = false;
   }
 
@@ -430,6 +563,7 @@ export class StarSky {
     const busy = this.shown > 0 || this.comets.length > 0 || this.figT >= 0 || this.flares.some((f) => f.mesh.visible);
     this.group.visible = busy;
     this.sky.visible = this.shown > 0;
+    this.dots.visible = this.shown > 0;
     if (!busy) return;
 
     // 星座
@@ -464,6 +598,8 @@ export class StarSky {
     this.moteU.uA.value = this.shown * Math.min(1, this.wave / (this.half * 2));
     const proj = (camera as THREE.PerspectiveCamera).projectionMatrix.elements[5];
     this.moteU.uPx.value = resY * proj;
+    this.skyU.uPx.value = resY * proj;
+    this.skyU.uMin.value = Math.max(1.5, resY / 500);
 
     // 转角的星
     const wantA = this.beaconAt && this.on ? 1 : 0;
