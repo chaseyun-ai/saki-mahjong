@@ -5,7 +5,7 @@ import { TWISTER } from '../ui3d/twister';
 // 从 at（结算里那张和了牌的正中）拔地而起，下细上粗，一圈圈白色的风带绕着转（前半圈白、后半圈透出淡紫），
 // 外面缠着细风丝，里面一柱紫光，风脚卷起一圈灰；风里卷着一点沙土和几块碎石，紫白色的电弧在风上爬、往天上劈；
 // 卷完散成一片紫光，碎石被甩出去，残电再闪几下。牌在结算里牌面朝上平着转（style.css 的 .win.slam.twist），这里只画风。
-// 叫的时候是牌刚砸下去那一下：照 TWISTER.erupt 等一下再起风。画在盖住整个页面的一层 canvas 上，放完自己收掉。
+// 叫的时候是牌刚砸下去那一下：砸下去那一下就起风（TWISTER.erupt），风从牌底下长上去，长到顶（TWISTER.climax）电劈下来。画在盖住整个页面的一层 canvas 上，放完自己收掉。
 // 和了牌上面地方够（at 离画面上沿远）就斜着看（漏斗竖着）；不够（2D 的结算里那排牌就在画面上方）就从上往下看进漏斗里：
 // 一圈圈风带差不多是圆的，越往上（离看的人越近）圈越大，风顶只往上偏一点
 
@@ -145,6 +145,7 @@ export function tornado2d(at: { x: number; y: number }, size: number, opts: Torn
   let nextArc = 0;
   let erupted = false;
   let broke = false;
+  let climaxed = false;
   let flash = 0;
   const t0 = performance.now();
   let last = t0;
@@ -202,8 +203,17 @@ export function tornado2d(at: { x: number; y: number }, size: number, opts: Torn
     }
     if (!erupted) {
       erupted = true;
-      flash = 1;
+      flash = 0.35;
       opts.onErupt?.();
+    }
+    // 风长到顶那一下：一道电从风顶劈到牌上，一闪
+    if (!climaxed && tt >= T.climax) {
+      climaxed = true;
+      flash = 1;
+      const [bx, by] = axis(0, tt);
+      const [tx, ty] = axis(1, tt);
+      addArc([tx, ty], [bx, by], tAll, 1.7, 0.32, 3);
+      opts.onBolt?.();
     }
     if (!broke && tt >= T.hold) {
       broke = true;
@@ -211,7 +221,9 @@ export function tornado2d(at: { x: number; y: number }, size: number, opts: Torn
       opts.onBolt?.();
     }
     flash *= Math.exp(-dt * 9);
-    const grow = tt < T.grow ? 1 - Math.pow(1 - tt / T.grow, 3) : 1;
+    // 从牌底下一圈圈往上长，先慢后快，长到顶
+    const g = Math.min(1, tt / T.grow);
+    const grow = 0.06 + 0.94 * g * g * (3 - 2 * g);
     const fade = smooth(0, 1, (tt - T.hold) / T.fade);
     const alive = 1 - fade;
     ctx.lineCap = 'round';
@@ -412,8 +424,8 @@ export function tornado2d(at: { x: number; y: number }, size: number, opts: Torn
       }
     }
     // 电弧：风还在时多是在风上爬、往天上劈，偶尔劈到桌上；风散以后是牌四周的残电
-    if (tt < end + T.after * 0.75) {
-      nextArc -= dt;
+    if (tt > 0.2 && tt < end + T.after * 0.75) {
+      nextArc -= dt * (tt < T.climax ? 0.4 : 1);
       while (nextArc <= 0) {
         nextArc += (tt < end ? 0.07 + 0.07 * (1 - z) : 0.14) * rnd(0.7, 1.4);
         if (tt >= end) {

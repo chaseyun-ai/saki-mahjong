@@ -10,18 +10,20 @@ import * as THREE from 'three';
 // 连和越多（size 0–1）风越高越粗、碎石和电弧越多。
 // 风带、风丝、沙土的位置全在顶点着色器里按时间算（每条只存几个随机数）；风丝朝着镜头展开、细到不足 1.5 个像素时变暗不变细，
 // 照 Humpalumps/ultra-elements（MIT）的 Ribbons.js（和初美的旋风 gale.ts 一样）；碎石甩出去以后按初速度、重力解析地算。
-// 电弧、起风那一闪由牌桌放（onErupt、onArc、onBreak 回调：Effects 的 bolt、arc、flash、ring），这里只定时间和位置。
+// 电弧、起风、劈下来那一闪由牌桌放（onErupt、onClimax、onArc、onBreak 回调：Effects 的 arc、flash、ring），这里只定时间和位置。
 // CPU 上的漏斗（axisAt、radiusAt）和着色器里的（FUNNEL）是同一套式子，电弧、碎石才贴得在风上。
 
 // 时间（秒，从牌拍到桌上那一下算）
+// 拍下去那一下就起风（erupt 0）：牌被拍得转起来，地上的灰卷开，风带从牌底下一圈圈往上长（grow），
+// 长到顶那一刻（climax）一道电从风顶劈到牌上——拍牌和龙卷风接成一口气，中间不空一拍
 export const TWISTER = {
-  stand: 0.12, // 牌开始打转（别家的牌这以后被风卷过去）
-  erupt: 0.3, // 牌立着转了这么久，风拔地而起
-  grow: 0.22, // 风从地上长到顶
-  hold: 1.12, // 风从起来到开始散
+  erupt: 0, // 拍下去以后多久起风
+  grow: 0.5, // 风从牌底下长到顶
+  climax: 0.46, // 风快长到顶：电劈下来、一闪、画面一震
+  hold: 1.3, // 风从起来到开始散
   fade: 0.26, // 散掉
   after: 0.62, // 风没了，牌还在转
-  settle: 0.24, // 牌停下来、躺回去
+  settle: 0.24, // 牌停下来
 };
 export const TWISTER_TIME = TWISTER.erupt + TWISTER.hold + TWISTER.fade + TWISTER.after + TWISTER.settle;
 
@@ -430,8 +432,10 @@ interface Rock {
 
 export class Twister {
   readonly group = new THREE.Group();
-  // 起风那一下（牌底一闪）：base 是桌面上风的起点，top 是风顶
+  // 起风那一下（牌拍到桌上、灰卷开）：base 是桌面上风的起点，top 是风顶
   onErupt: ((base: THREE.Vector3, top: THREE.Vector3, size: number) => void) | null = null;
+  // 风长到顶那一下：电从风顶劈到牌上
+  onClimax: ((base: THREE.Vector3, top: THREE.Vector3, size: number) => void) | null = null;
   // 放一道电弧（牌桌接到 Effects.arc 上）
   onArc: ((a: THREE.Vector3, b: THREE.Vector3, kind: ArcKind) => void) | null = null;
   // 风散开那一下：mid 是风的半腰
@@ -466,6 +470,7 @@ export class Twister {
   private o: TwisterOpts | null = null;
   private t = -1; // 从牌拍下去那一下算
   private erupted = false;
+  private climaxed = false;
   private broke = false;
   private nextArc = 0;
   private flash = 0;
@@ -556,6 +561,7 @@ export class Twister {
     const z = o.size;
     this.t = 0;
     this.erupted = false;
+    this.climaxed = false;
     this.broke = false;
     this.flash = 0;
     const shape = twisterShape(z, s);
@@ -705,8 +711,13 @@ export class Twister {
     if (!this.erupted) {
       this.erupted = true;
       this.group.visible = true;
-      this.flash = 1;
+      this.flash = 0.35;
       this.onErupt?.(o.floor.clone(), this.axisAt(1, 0), o.size);
+    }
+    if (!this.climaxed && tt >= T.climax) {
+      this.climaxed = true;
+      this.flash = 1;
+      this.onClimax?.(o.floor.clone(), this.axisAt(1, tt), o.size);
     }
     const end = T.hold + T.fade;
     if (!this.broke && tt >= T.hold) {
@@ -714,9 +725,9 @@ export class Twister {
       this.flash = Math.max(this.flash, 0.8);
       this.onBreak?.(this.axisAt(0.5, tt), o.size);
     }
-    // 长高：一下子冲上去，冲过头一点再回来
+    // 长高：从牌底下一圈圈往上长，先慢后快（像风越卷越猛），长到顶
     const g = Math.min(1, tt / T.grow);
-    const grow = tt < T.grow ? 1 - Math.pow(1 - g, 3) : 1;
+    const grow = 0.06 + 0.94 * g * g * (3 - 2 * g);
     const fade = smooth(0, 1, (tt - T.hold) / T.fade);
     const u = this.u;
     u.uTime.value = tt;
@@ -725,7 +736,7 @@ export class Twister {
     this.flash *= Math.exp(-dt * 9);
     u.uFlash.value = this.flash;
     const linger = 1 - smooth(0, 1, (tt - T.hold) / (T.fade + 0.4));
-    this.coreMat.uniforms.uA.value = Math.min(1, tt / 0.12) * (0.35 * linger + 0.65 * (1 - fade)) * (0.85 + 0.15 * Math.sin(tt * 23));
+    this.coreMat.uniforms.uA.value = smooth(0.05, T.grow, tt) * (0.35 * linger + 0.65 * (1 - fade)) * (0.85 + 0.15 * Math.sin(tt * 23));
     // 地上的灰：起风时一下子铺开，转着，风散时淡掉
     const dr = (this.R0 * 2.4 + 1.6 * s) * (0.6 + 0.4 * Math.min(1, tt / 0.25)) * (1 + 0.5 * fade);
     this.dust.scale.set(dr * 2, dr * 2, 1);
@@ -737,8 +748,8 @@ export class Twister {
     this.glow.scale.setScalar((2.2 + 1.2 * this.flash) * s);
     this.updateRocks(tt, s);
     // 电弧
-    if (tt < end + T.after * 0.75) {
-      this.nextArc -= dt;
+    if (tt > 0.2 && tt < end + T.after * 0.75) {
+      this.nextArc -= dt * (tt < T.climax ? 0.4 : 1);
       while (this.nextArc <= 0) {
         this.arc(tt);
         const dense = tt < end ? 0.05 + 0.05 * (1 - o.size) : 0.12;

@@ -3,7 +3,7 @@ import { EdgeMotion } from './slamEdge';
 import { FlickMotion } from './slamFlick';
 import { ArmLook, OPEN, buildArm, disposeArm, poseArm } from './slamHand';
 import { HAND_SCALE, SlamMotion, SlamStyle } from './slamMath';
-import { SlapMotion, SlapOrder } from './slamSlap';
+import { SlapMotion, SlapOrder, SlapTiming } from './slamSlap';
 
 export type { SlamStyle } from './slamMath';
 export { DEFAULT_ARM, buildArm } from './slamHand';
@@ -40,6 +40,7 @@ export interface SlamSpec {
   to: SlamPose; // 最后牌面朝上躺在桌上的样子
   from?: SlamPose; // 牌现在在哪：手先伸过去拿起来（hisa：伸进来的路上飘到指甲盖上）。不给就是牌一开始就在手里，跟着手从画面外伸上来（自己拍牌时）
   order?: SlapOrder; // press：手牌什么时候倒（先倒、举牌时倒、拍下去时倒），不给是先倒
+  timing?: Partial<SlapTiming>; // press：各段的时间另给（照的旋风自摸：手按一下就撤）
   side: THREE.Vector3; // 砸牌那一家的右手方向（世界坐标，水平）
   out: THREE.Vector3; // 那一家往外（朝她自己身体）的方向（世界坐标，水平）
   rim?: number; // edge：落点（牌中心）到磕的那条边有多远（顺着 out；桌框内沿，自己的桌框在画面外时是画面底边）
@@ -93,7 +94,7 @@ export class TileSlam {
         ? new FlickMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, cam: spec.cam, over: spec.over, near: !!spec.view, hand })
         : spec.style === 'edge'
           ? new EdgeMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, rim: spec.rim ?? 0, ahead: spec.ahead, hand })
-          : new SlapMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, cam: spec.cam, near: !!spec.view, hand, order: spec.order });
+          : new SlapMotion({ to: spec.to, from: spec.from, side: spec.side, out: spec.out, cam: spec.cam, near: !!spec.view, hand, order: spec.order, timing: spec.timing });
     const m: MotionActive = { kind: 'motion', spec, t0: at, arm: this.newArm(spec, motion.handScale), motion, pressed: false, charged: false, hit: false, rested: false, shadows: this.shadowsOff(spec.tile) };
     this.list.push(m);
     this.poseMotion(m, now);

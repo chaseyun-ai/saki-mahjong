@@ -832,12 +832,12 @@ export class App {
       };
       // 衣的海底牌砸进海里：水声
       this.table3d.onSeaSlam = () => playSplash();
-      // 照的旋风自摸：风拔地而起时一记闷响加一阵风声，电劈到桌上“噼啪”一声，风散开时再噼啪一下
+      // 照的旋风自摸：牌拍下去、风卷起来时一记闷响加一阵风声，电劈下来、劈到桌上“噼啪”一声，风散开时再噼啪一下
       this.table3d.onTwister = (_seat, size, phase) => {
         if (phase === 'erupt') {
           playSlam();
           playWhirl(size);
-        } else playCrackle(phase === 'bolt' ? 0.8 : 0.55);
+        } else playCrackle(phase === 'bolt' ? 0.85 : 0.55);
       };
       // 第一局在牌桌建好之前就开始了，补一次开局动画
       if (!resume) {

@@ -31,7 +31,7 @@ import { himekoKeySeat } from '../abilities/himeko';
 import { BeatHit, beatFinal, beatHit, beatLength, beatSeed } from '../ui/himekoBeat';
 import { SlamRun, SlamStyle, TileSlam } from './tileSlam';
 import { AHEAD_MAX } from './slamEdge';
-import type { SlapOrder } from './slamSlap';
+import type { SlapOrder, SlapTiming } from './slamSlap';
 import { SlamFx } from './slamFx';
 import { LilyFx, lilyGrand } from './lilyFx';
 import { TWISTER, TWISTER_TIME, Twister, twisterShape, twisterSize, type ArcKind } from './twister';
@@ -619,6 +619,7 @@ export class Table3D {
     this.effects = new Effects(this.scene);
     this.scene.add(this.slam.group, this.slamFx.group, this.lily.group, this.twister.group);
     this.twister.onErupt = (base, top, size) => this.twisterErupt(base, top, size);
+    this.twister.onClimax = (base, top, size) => this.twisterClimax(base, top, size);
     this.twister.onArc = (a, b, kind) => this.twisterArc(a, b, kind);
     this.twister.onBreak = (mid, size) => this.twisterBreak(mid, size);
     this.scene.add(this.himeko.group);
@@ -2178,6 +2179,7 @@ export class Table3D {
       hand,
       style: ts.style,
       order: this.lastSync.view.slamOrder,
+      ...(ts.twist !== null ? { timing: { hold: 0.05, leave: 0.24 } } : {}),
       ...(ts.style === 'edge' ? this.edgeRoom(g, ts.seat, ts.tile, to) : {}),
       at: Math.max(this.now, ts.start),
       onPress: (at) => (ts.sea ? this.seaPress(ts.seat, at, to.scale) : this.slamPress(ts.seat, at, to.scale)),
@@ -2271,6 +2273,7 @@ export class Table3D {
       ahead?: number;
       at?: number;
       order?: SlapOrder;
+      timing?: Partial<SlapTiming>;
       onPress?: (at: THREE.Vector3) => void;
       onCharge?: (at: THREE.Vector3, dur: number) => void;
       onHit?: (at: THREE.Vector3) => void;
@@ -2297,6 +2300,7 @@ export class Table3D {
         ahead: o.ahead,
         arm: o.hand === false ? null : undefined,
         order: o.order,
+        timing: o.timing,
         onPress: o.onPress,
         onCharge: o.onCharge,
         onHit: o.onHit,
@@ -2450,11 +2454,11 @@ export class Table3D {
     };
     // 平躺着转 phi：躺着的样子绕竖轴转
     const flat = (phi: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), phi).multiply(tw.to.quat);
-    // 转速（弧度/秒）：拍下去以后越转越快，起风以后被风带着转得飞快
-    const slow = 2 * Math.PI * 2.6;
+    // 转速（弧度/秒）：拍下去那一下就被拍得转起来，跟着风越卷越猛越转越快，风长到顶时最快
+    const slow = 2 * Math.PI * 1.8;
     const fast = 2 * Math.PI * 5.5;
     if (k < windOn) {
-      const w = k < T.erupt ? slow * smooth(0, T.erupt * 0.8, k) : slow + (fast - slow) * smooth(T.erupt, T.erupt + 0.2, k);
+      const w = slow * smooth(0, 0.06, k) + (fast - slow) * smooth(0.05, T.grow, k);
       tw.phi += w * dt;
     } else {
       // 风散了：转速照 (1 - t/D)² 往下掉，转过的角度挑离自然停下最近的整圈，到 TWISTER_TIME 正好停在原来的方向
@@ -2468,11 +2472,11 @@ export class Table3D {
       const t = Math.min(1, (k - windOn) / D);
       tw.phi = tw.stop.phi0 + (tw.stop.phi1 - tw.stop.phi0) * (1 - (1 - t) ** 3);
     }
-    // 离地多高：起风以后被风托起来一点、一上一下地浮，风散以后落回桌上
-    const bob = k >= T.erupt && k < windOn + 0.3 ? 0.05 * s * Math.sin(k * 11) * smooth(T.erupt, T.erupt + 0.2, k) : 0;
-    const lift = 0.3 * s * smooth(T.erupt, T.erupt + 0.35, k) * (1 - smooth(windOn - 0.1, windOn + 0.3, k)) + bob;
+    // 离地多高：风长起来以后被托起来一点、一上一下地浮，风散以后落回桌上
+    const bob = k < windOn + 0.3 ? 0.05 * s * Math.sin(k * 11) * smooth(0.2, T.grow, k) : 0;
+    const lift = 0.3 * s * smooth(0.12, T.grow + 0.1, k) * (1 - smooth(windOn - 0.1, windOn + 0.3, k)) + bob;
     // 风里转的时候微微歪着，歪的方向跟着转（像桌上转着的盘子那样晃）
-    const wobble = 0.14 * smooth(T.erupt, T.erupt + 0.2, k) * (1 - smooth(windOn, windOn + 0.4, k));
+    const wobble = 0.14 * smooth(0.15, T.grow, k) * (1 - smooth(windOn, windOn + 0.4, k));
     let q = flat(tw.phi);
     if (wobble > 0) q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.cos(k * 7), 0, Math.sin(k * 7)), wobble).multiply(q);
     g.quaternion.copy(q);
@@ -2481,17 +2485,14 @@ export class Table3D {
     g.scale.setScalar(s);
   }
 
-  // 起风那一下：牌底一闪（白光、紫光、贴着桌面推开两圈），一把火星、一把沙土崩出去，一道电从风顶劈到牌上，四周亮一下、画面一震，桌上的牌跟着跳
-  private twisterErupt(base: THREE.Vector3, top: THREE.Vector3, size: number): void {
+  // 起风那一下（就是牌拍到桌上那一下）：拍下去的劲把桌上的灰卷开（贴着桌面推开一圈），一把沙土崩出去，
+  // 牌下面亮一下，桌上的牌跟着跳；闷响、风声从这一下开始
+  private twisterErupt(base: THREE.Vector3, _top: THREE.Vector3, size: number): void {
     const tw = this.twist;
     const s = tw?.to.scale ?? 1;
-    this.shake = Math.max(this.shake, 0.55 + 0.25 * size);
-    const up = base.clone().setY(base.y + 0.9 * s);
-    this.effects.flash(up, '#ffffff', 5 * s, 0.35);
-    this.effects.flash(up, '#b98cff', 9 * s, 0.6, true);
-    this.effects.ring(base, '#e6dcff', (5 + 2 * size) * s, 0.6);
-    this.effects.ring(base, '#ffffff', 3 * s, 0.4, 0.8);
-    this.effects.burst(base, '#d8c8ff', 36, 10 * s, 0.7);
+    this.shake = Math.max(this.shake, 0.3);
+    this.effects.flash(base.clone().setY(base.y + 0.5 * s), '#f1eaff', 3 * s, 0.3);
+    this.effects.ring(base, '#e9e1d4', (3.5 + size) * s, 0.5, 0.7);
     this.effects.sparks(base, '#cdb79e', {
       count: Math.round(24 + 16 * size),
       life: [0.35, 0.7],
@@ -2507,10 +2508,24 @@ export class Table3D {
       jitter: 0.4 * s,
       hot: '#efe3d0',
     });
-    this.effects.arc(top, base.clone().setY(base.y + 0.3 * s), '#b48cff', this.camera.position, 0.32, 1.7, 3);
-    this.effects.pulse(base.clone().setY(base.y + 3 * s), '#c9a8ff', 90, 0.2);
+    this.effects.pulse(base.clone().setY(base.y + 2 * s), '#d9c8ff', 35, 0.15);
     this.reveal?.hops.push({ at: this.now, x: base.clone() });
     this.onTwister?.(tw?.seat ?? 0, size, 'erupt');
+  }
+
+  // 风长到顶那一下：一道电从风顶顺着风劈到牌上，牌底炸开白光、紫光，贴着桌面推开两圈，火星迸开，四周亮一下、画面一震
+  private twisterClimax(base: THREE.Vector3, top: THREE.Vector3, size: number): void {
+    const tw = this.twist;
+    const s = tw?.to.scale ?? 1;
+    this.shake = Math.max(this.shake, 0.5 + 0.25 * size);
+    const up = base.clone().setY(base.y + 0.9 * s);
+    this.effects.arc(top, base.clone().setY(base.y + 0.3 * s), '#b48cff', this.camera.position, 0.32, 1.7 * s, 3);
+    this.effects.flash(up, '#ffffff', 5 * s, 0.35);
+    this.effects.flash(up, '#b98cff', 9 * s, 0.6, true);
+    this.effects.ring(base, '#e6dcff', (5 + 2 * size) * s, 0.6);
+    this.effects.burst(base, '#d8c8ff', 36, 10 * s, 0.7);
+    this.effects.pulse(base.clone().setY(base.y + 3 * s), '#c9a8ff', 90, 0.2);
+    this.onTwister?.(tw?.seat ?? 0, size, 'bolt');
   }
 
   // 龙卷风上的一道电弧：在风上爬的、往天上劈的细一些；劈到桌上的粗，落点闪一下、推开一圈、迸几颗火星，画面轻轻一震
