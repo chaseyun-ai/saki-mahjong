@@ -39,6 +39,8 @@ import { LilyFx, lilyGrand } from './lilyFx';
 import { TWISTER, TWISTER_TIME, Twister, twisterShape, type ArcKind } from './twister';
 import { teruTwister } from '../abilities/teru';
 import type { WinResult } from '../engine/score';
+import { StarSky } from './starFx';
+import { type AwaiStarView, awaiCornerKan, awaiKanUra } from '../abilities/awai';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -258,6 +260,8 @@ const FX_GOLD = '#ffd36b';
 // 初美的风聚起来时四周压成的颜色：带一点紫的夜空
 const GALE_VOID = new THREE.Color('#07040e');
 const FX_RED = '#ff5a4f';
+// 淡的杠里：和牌特效放完以后，四颗流星飞完、亮一会儿要多久（秒）
+const STAR_URA_TIME = 2.1;
 interface Character {
   seat: number;
   seatRoot: THREE.Group;
@@ -393,6 +397,7 @@ export interface SyncView {
   kanSeen?: Set<TileId>; // 宫永咲的王牌感知：牌山里她杠材的第四张，一直是透明的，牌山前面投影出牌面
   rinshanSeen?: Set<TileId>; // 鼠标移到岭上牌上时，岭上牌也这样
   gravity?: boolean; // 淡的巨引力源：黑色的引力圆罩住整个牌山
+  stars?: AwaiStarView | null; // 淡双立直的星空：桌布变成夜空，转角上悬着一颗星（starFx.ts）
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
@@ -435,6 +440,10 @@ export class Table3D {
   private projBackMat: THREE.MeshBasicMaterial | null = null;
   // 淡的巨引力源：桌面上的黑色引力圆（用到时才建）
   private gravityDisc: THREE.Mesh | null = null;
+  // 淡双立直的星空（用到时才建）；宣言的光圈扫出来之前先不铺（starHold 之前）
+  private stars: StarSky | null = null;
+  private starHold = 0;
+  private starUraWin = false; // 这一局是她带着杠里和的：结算等四颗流星落完再弹
   private bodyMat: THREE.Material | null = null;
   private deadlyMat: THREE.Material | null = null;
   private faceGeoms: THREE.PlaneGeometry[] = [];
@@ -1107,7 +1116,7 @@ export class Table3D {
     if (this.heldDraw) until = Math.max(until, this.heldDraw.at);
     // 衣的海底捞月：牌还没捞上来、飞进手里
     if (this.scoop) until = Math.max(until, this.now + SCOOP_TIME - this.scoop.t);
-    if (this.reveal) until = Math.max(until, this.reveal.fxAt);
+    if (this.reveal) until = Math.max(until, this.reveal.fxAt + (this.starUraWin ? STAR_URA_TIME : 0));
     until = Math.max(until, this.fxHold);
     // 白水哩的锁链在变金、崩断
     for (const c of this.chains) if (c && !c.locking) until = Math.max(until, this.now + c.remaining());
@@ -1142,6 +1151,9 @@ export class Table3D {
       this.moonLift?.hide();
       this.seaSlamTile = null;
       this.seaDrained = false;
+      this.stars?.clear();
+      this.starHold = 0;
+      this.starUraWin = false;
       // 牌河里每张牌歪多少换一套：同一张牌这一局一直歪成一样，下一局换个样子
       this.pondSalt = Math.floor(vary.next() * 2 ** 31);
     }
@@ -1179,6 +1191,10 @@ export class Table3D {
       }
       this.playDiscard(e.seat, e.tile, motion, !!e.riichi);
       if (e.riichi) this.startStickAnim(e.seat, -(motion.reach + motion.carry + (flat ? STICK_DROP_DELAY : motion.settle)));
+      // 淡的双立直：立直棒落桌那一下星空铺开
+      if (e.riichi && g.players[e.seat].doubleRiichi && g.abilities[e.seat]?.id === 'awai' && g.active(e.seat)) {
+        this.starDeclare(e.seat, motion.reach + motion.carry + (flat ? STICK_DROP_DELAY + STICK_DROP.carry : motion.settle + STICK_TIMING.reach + STICK_TIMING.carry));
+      }
       for (const ch of all) {
         // 别人出牌时看一眼，反应有先后
         if (ch.seat !== e.seat) ch.avatar?.lookAtPoint(pond, 0.9 + Math.random() * 0.8);
@@ -1189,6 +1205,7 @@ export class Table3D {
       if (g.stealthed(e.seat, this.lastSync?.view.me ?? 0)) return;
       const who = this.seatPoint(e.seat, 0, 8, this.dim.seatZ);
       this.callFx(e.seat, e.call.includes('杠') ? 'kan' : 'call');
+      if (e.call === '暗杠' && awaiCornerKan(g, e.seat)) this.starKan(g, e.seat);
       for (const ch of all) {
         if (ch.seat === e.seat) ch.avatar?.setMood('happy', 1.2);
         else {
@@ -1201,6 +1218,7 @@ export class Table3D {
       if (e.ability === 'koromo' && e.text === '海底自摸') this.startScoop(g, e.seat);
       // 咲开杠、岭上那张正好和：记下来，等她摸这张岭上牌时牌上先亮一下
       if (e.ability === 'saki' && e.text === '岭上开花') this.lilyDraw = e.seat;
+      if (e.ability === 'awai') this.awaiSkillFx(g, e.seat, e.text);
       for (const ch of all) {
         if (ch.seat === e.seat) ch.avatar?.setMood('relaxed', 2);
         else ch.avatar?.setMood('surprised', 1.2);
@@ -1208,6 +1226,7 @@ export class Table3D {
     } else if (e.type === 'roundEnd') {
       const r = e.result;
       this.startReveal(g);
+      this.starUraWin = r.wins.some((w) => g.abilities[w.seat]?.id === 'awai' && awaiKanUra(g, w.seat) !== undefined && g.players[w.seat].melds.some((m) => m.type === 'ankan'));
       if (r.wins.length) {
         const who = this.seatPoint(r.wins[0].seat, 0, 8, this.dim.seatZ);
         for (const ch of all) if (!r.wins.some((w) => w.seat === ch.seat)) ch.avatar?.lookAtPoint(who, 3);
@@ -1831,6 +1850,7 @@ export class Table3D {
     this.drawConsole(g, view);
     this.syncMist(g, view);
     this.syncGale(view);
+    this.syncStars(view);
     this.syncWater(view);
   }
 
@@ -2268,6 +2288,194 @@ export class Table3D {
     this.effects.flash(at.clone().setY(0.8), '#e6f3ff', 7, 0.45);
     this.effects.pulse(at.clone().setY(2.5), MOON_GLOW, 70, 0.35);
     this.shake = Math.max(this.shake, 1);
+  }
+
+  // ---------- 大星淡的星空 ----------
+
+  private starSky(): StarSky {
+    if (!this.stars) {
+      this.stars = new StarSky(this.dim.tableHalf, this.style === '25d' ? 1 : 0.8);
+      this.scene.add(this.stars.group);
+    }
+    return this.stars;
+  }
+
+  // 双立直的夜空铺着没有、转角那颗星挂在哪
+  private syncStars(view: SyncView): void {
+    const v = view.stars;
+    if (!v) {
+      this.stars?.setOn(false);
+      this.stars?.setBeacon(null);
+      return;
+    }
+    if (this.now < this.starHold) return;
+    const sky = this.starSky();
+    sky.setOn(true);
+    const t = v.corner !== null ? this.tiles[v.corner] : null;
+    sky.setBeacon(t && t.shown ? t.group.position : null, v.lost);
+  }
+
+  // 双立直宣言：立直棒落桌（delay 秒后）那一下，金色的光圈从立直棒扫过整张桌子，扫过的地方变成夜空
+  private starDeclare(seat: number, delay: number): void {
+    this.starHold = this.now + delay - 0.02;
+    this.effects.later(delay, () => {
+      const at = this.stickPlacement(seat).pos.clone();
+      const sky = this.starSky();
+      sky.declare(at);
+      sky.flare(at.clone().setY(at.y + 1.2), 11, 1.3, '#ffd36b', 1, 0.9);
+      sky.flare(at.clone().setY(at.y + 1.2), 5, 0.6, '#ffffff', 0.7, 0.3);
+      this.effects.ring(at, '#ffe9a8', 7, 0.6, 0.9);
+      this.effects.sparkles(at.clone().setY(0.6), '#ffe2a0', 70, 7, 2.2);
+      this.effects.pulse(at.clone().setY(2.5), '#ffd98a', 26, 0.4);
+      this.shake = Math.max(this.shake, 0.5);
+      if (this.lastSync) this.syncStars(this.lastSync.view);
+    });
+  }
+
+  // 转角暗杠：转角那颗星化成流星，落到她刚亮出来的杠子上
+  private starKan(g: Game, seat: number): void {
+    const sky = this.starSky();
+    const kan = g.players[seat].melds.at(-1);
+    if (!kan) return;
+    const from = sky.beaconPos ?? this.seatPoint(seat, 0, 6, 0);
+    const mid = () => {
+      const p = new THREE.Vector3();
+      for (const id of kan.tiles) p.add(this.tiles[id].group.position);
+      return p.multiplyScalar(1 / kan.tiles.length).setY(0.5);
+    };
+    sky.flare(from, 7, 0.5, '#ffffff', 0.9, 0.5);
+    sky.comet(from, mid, 0.6, 4, 2.6, () => {
+      const at = mid();
+      sky.pulse(1);
+      sky.flare(at.clone().setY(1.2), 8, 1.1, '#ffd36b', 0.9, 0.8);
+      this.effects.ring(at.clone().setY(0.05), '#ffe9a8', 9, 0.8, 1);
+      this.effects.ring(at.clone().setY(0.05), '#ffffff', 4, 0.4, 0.8);
+      this.effects.sparkles(at.clone().setY(0.6), '#ffe2a0', 60, 5, 1.8);
+      this.effects.pulse(at.clone().setY(2.5), '#ffd98a', 26, 0.35);
+      this.shake = Math.max(this.shake, 0.6);
+      kan.tiles.forEach((id, i) => this.effects.later(0.08 + i * 0.07, () => sky.flare(this.tiles[id].group.position.clone().setY(0.9), 2.8, 0.7, '#fff1c4', 0.7, 0.4)));
+    });
+  }
+
+  // 杠里：和牌特效放完，四颗流星从王牌里那张里宝牌指示牌（杠宝牌指示牌底下）飞到杠的四张牌上
+  private starUra(seat: number): void {
+    const g = this.lastSync?.g;
+    if (!g || g.abilities[seat]?.id !== 'awai') return;
+    const k = awaiKanUra(g, seat);
+    const kan = g.players[seat].melds.find((m) => m.type === 'ankan');
+    if (k === undefined || !kan) return;
+    const sky = this.starSky();
+    const top = g.wall.doraIndicators[k];
+    const from = (top !== undefined && this.tiles[top]?.shown ? this.tiles[top].group.position.clone() : new THREE.Vector3()).setY(0.6);
+    sky.flare(from.clone().setY(1.4), 7, 1.4, '#ffffff', 0.9, 0.6);
+    this.effects.ring(from.clone().setY(0.05), '#ffe9a8', 5, 0.6, 0.9);
+    kan.tiles.forEach((id, i) => {
+      this.effects.later(0.25 + i * 0.16, () => {
+        const to = () => this.tiles[id].group.position.clone().setY(this.tiles[id].group.position.y + 0.4);
+        sky.comet(from, to, 0.55, 3.5 + i * 0.4, 2, () => {
+          const at = to();
+          sky.flare(at.clone().setY(at.y + 0.6), 4.2, 1.5, '#ffd36b', 0.85, 0.5);
+          this.effects.ring(at.clone().setY(0.05), '#ffe9a8', 3.5, 0.5, 0.9);
+          this.effects.sparkles(at, '#ffe2a0', 18, 2, 1.4);
+          this.effects.pulse(at.clone().setY(2), '#ffd98a', 14, 0.25);
+          if (i === kan.tiles.length - 1) {
+            sky.pulse(1.2);
+            this.shake = Math.max(this.shake, 0.5);
+          }
+        });
+      });
+    });
+  }
+
+  // 大星淡的技能发动那一下（谁都看得见）：
+  // 时间迟滞——另外三家的手牌上（2.5D 是牌河前面）落一圈冷蓝的光，星屑慢慢往下沉；星符汇聚——她面前的天上北斗七星一颗颗亮起来，挂到这一局结束；
+  // 高维领域——暗紫的波从她那边推过整张桌子；退相干——三团错开的光在她摸牌的地方合成一颗；引力波——一圈圈涟漪从她那边荡开；
+  // 平行宇宙——桌心炸开白光，一圈波扫到桌边（画面的错位在 app 里用 CSS 做）；加速驱动——三颗紫色的流星扎到另外三家手上；
+  // 巨引力源——星屑往桌心的引力圆里落
+  private awaiSkillFx(g: Game, seat: number, text: string): void {
+    const d = this.dim;
+    const sky = this.starSky();
+    const half = d.tableHalf;
+    const home = this.seatPoint(seat, 0, 0.1, d.handZ - 1.5);
+    const others = [0, 1, 2, 3].filter((s) => s !== seat);
+    if (text === '时间迟滞') {
+      // 发牌动画放完再落
+      const wait = Math.max(0, this.busyMs() / 1000 - 0.5);
+      others.forEach((s, i) => {
+        this.effects.later(wait + i * 0.18, () => {
+          // 2.5D 看不到别家的手牌：落在他们的牌河前面
+          const at = this.seatPoint(s, 0, 0.1, this.style === '25d' ? d.pondZ + 1.5 : d.handZ);
+          this.effects.ring(at, '#7fb4ff', 5.5, 1.5, 0.7);
+          sky.flare(at.clone().setY(1.6), 5, 1.4, '#8fc0ff', 0.6, 0.3);
+          this.effects.sparks(at.clone().setY(3.2), '#a8ccff', { count: 26, life: [1.2, 2], vel: (v) => v.set((Math.random() - 0.5) * 5, -0.6 - Math.random() * 0.5, (Math.random() - 0.5) * 1.6), gravity: 0.2, drag: 0.6, size: [0.04, 0.09], stretch: 0.02, jitter: 0.3, hot: '#ffffff' });
+        });
+      });
+    } else if (text === '星符汇聚') {
+      // 北斗七星：勺口朝她的右手边，挂在她面前牌河上方
+      const shape: [number, number][] = [[-0.55, -0.1], [-0.5, 0.18], [-0.13, 0.23], [-0.1, -0.02], [0.17, -0.1], [0.4, -0.18], [0.7, -0.02]];
+      const span = half * 0.62;
+      const pts = shape.map(([x, z], i) => this.seatPoint(seat, x * span, 3.2 + (i % 2) * 0.25, d.pondZ - 1 + z * span));
+      sky.figure(pts, [[0, 1], [1, 2], [2, 3], [3, 0], [3, 4], [4, 5], [5, 6]], 1.9 * (this.style === '25d' ? 1 : 0.8));
+      pts.forEach((p, i) => this.effects.later(i * 0.16, () => this.effects.sparkles(p, '#ffe2a0', 6, 0.8, 1)));
+      this.effects.later(7 * 0.16, () => {
+        this.effects.ring(home, '#ffe9a8', 6, 0.8, 0.8);
+        this.effects.pulse(home.clone().setY(2.5), '#ffd98a', 14, 0.3);
+      });
+    } else if (text === '高维领域') {
+      sky.flare(home.clone().setY(1.5), 9, 1, '#8a5cff', 0.8, 0.8);
+      this.effects.ring(home, '#6a3cff', half * 2.4, 1.3, 0.9);
+      this.effects.later(0.2, () => this.effects.ring(home, '#2a1466', half * 2.4, 1.5, 0.8));
+      this.shake = Math.max(this.shake, 0.4);
+    } else if (text === '退相干' || text === '退相干·自摸') {
+      const tsumo = text !== '退相干';
+      const drawn = g.players[seat].drawn;
+      const tile = drawn !== null ? this.tiles[drawn] : null;
+      const to = () => (tile && tile.shown ? tile.group.position.clone().setY(tile.group.position.y + 0.5) : home.clone().setY(1));
+      // 三团错开的光（叠着的几种可能）往一处合，合上那一下只剩一颗
+      const side = this.seatPoint(seat, 1, 0, 0);
+      ['#7fe6ff', '#b58cff', '#ffffff'].forEach((c, i) => {
+        const from = to().add(side.clone().multiplyScalar((i - 1) * 2.4)).setY(2.6 + i * 0.5);
+        sky.comet(from, to, 0.34, 0.6, 1.5, i === 2 ? () => {
+          const at = to();
+          sky.flare(at, tsumo ? 6 : 4.2, 0.7, '#9fe8ff', 0.9, 0.5);
+          this.effects.ring(at.clone().setY(0.05), '#9fe8ff', tsumo ? 5 : 3.2, 0.5, 0.8);
+          this.effects.sparkles(at, '#c9f1ff', tsumo ? 26 : 12, 2, 1.2);
+        } : undefined, c, c);
+      });
+    } else if (text === '引力波') {
+      for (let i = 0; i < 3; i++) this.effects.later(i * 0.28, () => this.effects.ring(home, i === 1 ? '#d9b8ff' : '#9b6bff', half * (1.5 + i * 0.45), 1.5, 0.75 - i * 0.12));
+      sky.flare(home.clone().setY(1.4), 6, 0.9, '#b58cff', 0.8, 0.6);
+    } else if (text === '平行宇宙') {
+      const mid = new THREE.Vector3(0, 0.1, 0);
+      sky.flare(mid.clone().setY(2), 16, 1.1, '#ffffff', 0.9, 1);
+      sky.flare(mid.clone().setY(2), 9, 1.5, '#9fb6ff', 0.9, 0.6);
+      this.effects.ring(mid, '#ffffff', half * 1.9, 0.9, 1);
+      this.effects.later(0.12, () => this.effects.ring(mid, '#8f7bff', half * 1.9, 1.2, 0.9));
+      this.effects.sparkles(mid.clone().setY(0.6), '#cfd8ff', 90, half * 0.9, 2.2);
+      this.effects.pulse(mid.clone().setY(3), '#c9d4ff', 30, 0.3);
+      this.shake = Math.max(this.shake, 0.8);
+    } else if (text === '加速驱动') {
+      const from = home.clone().setY(1.2);
+      sky.flare(from, 6, 0.6, '#ff8ad8', 0.8, 0.5);
+      others.forEach((s, i) => {
+        this.effects.later(0.1 + i * 0.12, () => {
+          const to = this.seatPoint(s, 0, 0.8, d.handZ);
+          sky.comet(from, to, 0.5, 3.5, 2, () => {
+            sky.flare(to.clone().setY(1.2), 4.5, 0.8, '#ff7ad0', 0.8, 0.5);
+            this.effects.ring(to.clone().setY(0.05), '#ff7ad0', 3.6, 0.5, 0.8);
+            this.effects.sparkles(to, '#ffb0e4', 14, 2, 1.2);
+          }, '#ffd6f2', '#c58cff');
+        });
+      });
+    } else if (text === '巨引力源') {
+      // 星屑从四周往桌心落
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 + Math.random() * 0.4;
+        const from = new THREE.Vector3(Math.cos(a) * half * 0.95, 2.5 + Math.random() * 2, Math.sin(a) * half * 0.95);
+        this.effects.later(i * 0.05, () => sky.comet(from, new THREE.Vector3(0, 0.3, 0), 0.7, 0.5, 1.2, undefined, '#e6d4ff', '#8a5cff'));
+      }
+      this.effects.later(0.75, () => this.effects.ring(new THREE.Vector3(0, 0.1, 0), '#7a4dff', half * 0.8, 0.8, 0.8));
+    }
   }
 
   // 初美的里鬼门：风的浓淡，和东北中间那张牌的紫光
@@ -4244,6 +4452,7 @@ export class Table3D {
         const slam = rv.slams.has(w.tile) ? this.tiles[w.tile].group.position.clone() : null;
         const own = rv.slams.get(w.tile);
         this.winFx(w.seat, w.tsumo, slam ? (w.tile === this.seaSlamTile ? MOON_GLOW : '#c870ff') : FX_GOLD, slam, own?.lily !== undefined || own?.twist !== undefined);
+        this.starUra(w.seat);
       }
     }
     this.animateSlams(rv);
@@ -4504,11 +4713,19 @@ export class Table3D {
     this.effects.update(dt);
     this.updateSpots(dt);
     this.mist.update(dt);
+    this.stars?.update(dt, this.camera, this.renderer.domElement.height);
+    // 淡的星空铺开时四周也暗下来
+    const starDark = this.stars?.dark ?? 0;
+    if (!this.gale && Math.abs(starDark - this.roomDark) > 0.002) {
+      this.roomDark = starDark;
+      this.applyRoom();
+    }
     if (this.gale) {
       this.gale.update(dt, this.camera, this.renderer);
       // 风浓的时候四周暗下来（动画里牌桌四周是一片星空）
-      if (Math.abs(this.gale.dark - this.roomDark) > 0.002) {
-        this.roomDark = this.gale.dark;
+      const dark = Math.max(this.gale.dark, starDark);
+      if (Math.abs(dark - this.roomDark) > 0.002) {
+        this.roomDark = dark;
         this.applyRoom();
       }
       const veil = this.gale.veil.toFixed(3);

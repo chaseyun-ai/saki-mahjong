@@ -1,0 +1,537 @@
+import * as THREE from 'three';
+
+// 大星淡的星空（2.5D、3D）。
+// - 双立直：立直棒落桌那一下，一圈金色的光从她那边扫过桌面，扫过的地方桌布变成夜空（星云、银河、一闪一闪的星），
+//   桌面上方飘着细小的星尘；她等的那个转角上悬着一颗四芒星（被鸣牌错开时暗下去）
+// - 转角暗杠：转角那颗星化成流星落到她的杠子上
+// - 杠里：和牌时四颗流星从王牌里那张里宝牌指示牌飞到杠的四张牌上
+// - 技能发动时的流星、闪光也借这里的四芒星画；星符汇聚的北斗七星（figure）挂到这一局结束
+// 夜空全在片元着色器里算（值噪声叠成的星云 + 三层格子星点），不用贴图
+
+const SKY_VERT = /* glsl */ `
+varying vec2 vP;
+void main() {
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vP = w.xz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}
+`;
+
+const SKY_FRAG = /* glsl */ `
+uniform float uTime;
+uniform float uA;
+uniform float uWave;
+uniform float uBoost;
+uniform float uHalf;
+uniform vec2 uOrigin;
+varying vec2 vP;
+float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x), mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; }
+  return s;
+}
+// 一层星点：每格最多一颗，大的少、小的多；大的带十字星芒
+vec3 stars(vec2 p, float density, float t, float big) {
+  vec2 g = p * density;
+  vec2 id = floor(g);
+  vec2 f = fract(g) - 0.5;
+  float h = hash21(id);
+  vec2 o = (vec2(hash21(id + 3.1), hash21(id + 7.7)) - 0.5) * 0.7;
+  vec2 d = f - o;
+  float r = length(d);
+  float m = pow(hash21(id + 11.3), 5.0);
+  float size = mix(0.035, 0.11, m) * big;
+  float tw = 0.55 + 0.45 * sin(t * (0.8 + h * 2.6) + h * 40.0);
+  float core = smoothstep(size, 0.0, r);
+  float spike = (exp(-abs(d.x) * 60.0) * exp(-abs(d.y) * 7.0) + exp(-abs(d.y) * 60.0) * exp(-abs(d.x) * 7.0)) * m * 1.6;
+  float v = (core * core * 1.4 + spike) * step(0.5, h) * tw;
+  // 星的颜色：多数偏白蓝，少数金色
+  vec3 c = mix(vec3(0.82, 0.9, 1.0), vec3(1.0, 0.82, 0.45), step(0.82, hash21(id + 5.5)));
+  return c * v;
+}
+void main() {
+  vec2 p = vP;
+  float ang = uTime * 0.012;
+  mat2 R = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
+  vec2 q = R * p;
+  float n = fbm(q * 0.085 + vec2(0.0, uTime * 0.008));
+  float n2 = fbm(q * 0.16 - vec2(uTime * 0.011, 3.0));
+  vec3 col = vec3(0.010, 0.014, 0.045);
+  col += vec3(0.17, 0.07, 0.40) * smoothstep(0.46, 0.86, n) * 0.8;
+  col += vec3(0.04, 0.15, 0.50) * smoothstep(0.5, 0.88, n2) * 0.7;
+  // 斜着横过桌面的一条银河
+  float across = (q.x * 0.62 + q.y * 0.78) / (uHalf * 0.3);
+  float band = exp(-across * across);
+  // 银河外面不用算这两层噪声（手机上省一点）
+  if (band > 0.01) col += (vec3(0.30, 0.26, 0.5) * fbm(q * 0.33) + vec3(1.0, 0.78, 0.36) * 0.16 * fbm(q * 0.7 + 5.0)) * band * 0.7;
+  vec3 st = stars(q, 0.9, uTime, 1.0) + stars(q + 7.3, 1.9, uTime * 1.3, 0.9) * 0.7 + stars(q - 13.1, 4.2, uTime * 1.7, 0.8) * (0.3 + 0.5 * band);
+  col += st * (1.0 + uBoost * 1.5);
+  col *= 1.0 + uBoost * 0.8;
+  // 从她那边扫过来的金色光圈：扫过的地方才是夜空
+  float d = distance(p, uOrigin);
+  float inside = smoothstep(uWave, uWave - 2.2, d);
+  float front = exp(-pow((d - uWave) / 0.55, 2.0)) * smoothstep(uHalf * 3.0, uHalf * 2.2, uWave);
+  col += vec3(1.0, 0.8, 0.4) * front * 1.8;
+  float e = max(abs(p.x), abs(p.y)) / uHalf;
+  float edge = smoothstep(1.0, 0.94, e);
+  float a = clamp(inside * 0.93 + front * 0.7, 0.0, 1.0) * uA * edge;
+  gl_FragColor = vec4(col, a);
+  #include <colorspace_fragment>
+}
+`;
+
+const MOTE_VERT = /* glsl */ `
+attribute vec4 aSeed;
+uniform float uTime;
+uniform float uA;
+uniform float uPx;
+varying float vA;
+varying float vGold;
+void main() {
+  vec3 p = position;
+  float life = fract(aSeed.x + uTime * (0.02 + aSeed.y * 0.03));
+  p.y = mix(0.3, 7.5, life);
+  p.x += sin(uTime * 0.4 + aSeed.z * 30.0) * 0.5;
+  p.z += cos(uTime * 0.33 + aSeed.w * 30.0) * 0.5;
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float tw = 0.5 + 0.5 * sin(uTime * (2.0 + aSeed.z * 3.0) + aSeed.w * 50.0);
+  vA = uA * smoothstep(0.0, 0.12, life) * smoothstep(1.0, 0.7, life) * (0.35 + 0.65 * tw);
+  vGold = step(0.6, aSeed.w);
+  gl_PointSize = uPx * (0.05 + aSeed.y * 0.09) / max(-mv.z, 0.1);
+}
+`;
+
+const MOTE_FRAG = /* glsl */ `
+varying float vA;
+varying float vGold;
+void main() {
+  vec2 u = gl_PointCoord * 2.0 - 1.0;
+  float r = length(u);
+  float v = exp(-r * r * 5.0) + (exp(-abs(u.x) * 14.0) + exp(-abs(u.y) * 14.0)) * exp(-r * 3.0) * 0.6;
+  vec3 c = mix(vec3(0.85, 0.92, 1.0), vec3(1.0, 0.84, 0.5), vGold);
+  gl_FragColor = vec4(c * v * vA, 1.0);
+  #include <colorspace_fragment>
+}
+`;
+
+const FLARE_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+// 四芒星：中间一团白，横竖两道长芒，斜着两道短芒，外面一圈晕
+const FLARE_FRAG = /* glsl */ `
+uniform float uA;
+uniform float uSpin;
+uniform vec3 uColor;
+varying vec2 vUv;
+void main() {
+  vec2 u = vUv * 2.0 - 1.0;
+  float cs = cos(uSpin), sn = sin(uSpin);
+  u = vec2(u.x * cs - u.y * sn, u.x * sn + u.y * cs);
+  float r = length(u);
+  float core = exp(-r * r * 110.0);
+  float rays = exp(-abs(u.x) * 34.0) * exp(-abs(u.y) * 2.6) + exp(-abs(u.y) * 34.0) * exp(-abs(u.x) * 2.6);
+  float diag = (exp(-abs(u.x - u.y) * 30.0) + exp(-abs(u.x + u.y) * 30.0)) * exp(-r * 6.0) * 0.5;
+  float halo = exp(-r * r * 7.0) * 0.16;
+  float fade = smoothstep(1.0, 0.75, r);
+  vec3 c = uColor * (rays + diag + halo) + vec3(1.0) * core * 0.9;
+  gl_FragColor = vec4(c * uA * fade, 1.0);
+  #include <colorspace_fragment>
+}
+`;
+
+const PILLAR_FRAG = /* glsl */ `
+uniform float uA;
+uniform vec3 uColor;
+varying vec2 vUv;
+void main() {
+  float x = abs(vUv.x - 0.5) * 2.0;
+  float v = exp(-x * x * 9.0) * pow(1.0 - vUv.y, 1.6) * smoothstep(0.0, 0.05, vUv.y);
+  gl_FragColor = vec4(uColor * v * uA, 1.0);
+  #include <colorspace_fragment>
+}
+`;
+
+// 星座的连线：两头的星亮了才画出来，淡淡的一道
+const LINE_VERT = /* glsl */ `
+attribute float aWhen;
+uniform float uT;
+varying float vOn;
+void main() {
+  vOn = smoothstep(0.0, 0.25, uT - aWhen);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+const LINE_FRAG = /* glsl */ `
+uniform float uA;
+varying float vOn;
+void main() {
+  gl_FragColor = vec4(vec3(0.75, 0.82, 1.0) * vOn * uA * 0.55, 1.0);
+  #include <colorspace_fragment>
+}
+`;
+
+const GOLD = new THREE.Color('#ffd36b');
+const PALE = new THREE.Color('#8fa2c8');
+
+const add = (uniforms: Record<string, THREE.IUniform>, vert: string, frag: string) =>
+  new THREE.ShaderMaterial({ uniforms, vertexShader: vert, fragmentShader: frag, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, toneMapped: false, side: THREE.DoubleSide });
+
+interface Flare {
+  mesh: THREE.Mesh;
+  u: { uA: THREE.IUniform<number>; uSpin: THREE.IUniform<number>; uColor: THREE.IUniform<THREE.Color> };
+  t: number;
+  dur: number;
+  size: number;
+  peak: number;
+  grow: number;
+  spin: number;
+}
+
+interface Comet {
+  from: THREE.Vector3;
+  to: () => THREE.Vector3;
+  t: number;
+  dur: number;
+  lift: number;
+  size: number;
+  trail: number;
+  onHit?: () => void;
+  head: THREE.ColorRepresentation;
+  tail: THREE.ColorRepresentation;
+}
+
+// 星座里的一颗星：轮到它时闪一下亮起来，之后一直微微闪着
+interface Fixed {
+  mesh: THREE.Mesh;
+  u: { uA: THREE.IUniform<number>; uSpin: THREE.IUniform<number>; uColor: THREE.IUniform<THREE.Color> };
+  at: number; // 第几秒亮
+  seed: number;
+}
+
+const FLARES = 72;
+
+export class StarSky {
+  readonly group = new THREE.Group();
+  private sky: THREE.Mesh;
+  private skyU = { uTime: { value: 0 }, uA: { value: 0 }, uWave: { value: 0 }, uBoost: { value: 0 }, uHalf: { value: 10 }, uOrigin: { value: new THREE.Vector2() } };
+  private moteU = { uTime: { value: 0 }, uA: { value: 0 }, uPx: { value: 800 } };
+  private beacon: THREE.Mesh;
+  private beaconU = { uA: { value: 0 }, uSpin: { value: 0 }, uColor: { value: GOLD.clone() } };
+  private pillar: THREE.Mesh;
+  private pillarU = { uA: { value: 0 }, uColor: { value: GOLD.clone() } };
+  private flares: Flare[] = [];
+  private comets: Comet[] = [];
+  private flareGeo = new THREE.PlaneGeometry(1, 1);
+  private lineU = { uT: { value: 0 }, uA: { value: 0 } };
+  private on = false;
+  private shown = 0;
+  private wave = 1e3;
+  private boost = 0;
+  private t = 0;
+  private beaconAt: THREE.Vector3 | null = null;
+  private beaconLast: THREE.Vector3 | null = null; // 这一局星最后挂在哪（她摸走转角那张以后星收起来了，暗杠的流星还从这里出发）
+  private beaconLost = false;
+  private beaconA = 0;
+  private beaconDim = 0; // 0 金色，1 暗下去
+  private beaconScale = 1;
+  // 星座（星符汇聚的北斗七星）：星一颗颗亮起来，连线跟着画出来
+  private fixed: Fixed[] = [];
+  private lines: THREE.LineSegments | null = null;
+  private figT = -1;
+  private figA = 0;
+  private figOn = false;
+
+  constructor(private half: number, scale = 1) {
+    this.skyU.uHalf.value = half;
+    this.sky = new THREE.Mesh(new THREE.PlaneGeometry(half * 2, half * 2), new THREE.ShaderMaterial({ uniforms: this.skyU, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, transparent: true, depthWrite: false, toneMapped: false }));
+    this.sky.rotation.x = -Math.PI / 2;
+    this.sky.position.y = 0.009;
+    this.sky.renderOrder = 1;
+    this.sky.frustumCulled = false;
+
+    const n = 150;
+    const pos: number[] = [];
+    const seed: number[] = [];
+    for (let i = 0; i < n; i++) {
+      pos.push((Math.random() * 2 - 1) * half * 0.95, 0, (Math.random() * 2 - 1) * half * 0.95);
+      seed.push(Math.random(), Math.random(), Math.random(), Math.random());
+    }
+    const mg = new THREE.BufferGeometry();
+    mg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    mg.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 4));
+    const motes = new THREE.Points(mg, add(this.moteU, MOTE_VERT, MOTE_FRAG));
+    motes.frustumCulled = false;
+    motes.renderOrder = 7;
+
+    this.beacon = new THREE.Mesh(this.flareGeo, add(this.beaconU, FLARE_VERT, FLARE_FRAG));
+    this.beacon.renderOrder = 9;
+    this.beacon.frustumCulled = false;
+    this.pillar = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0), add(this.pillarU, FLARE_VERT, PILLAR_FRAG));
+    this.pillar.renderOrder = 8;
+    this.pillar.frustumCulled = false;
+    this.beaconScale = scale;
+
+    for (let i = 0; i < FLARES; i++) {
+      const u = { uA: { value: 0 }, uSpin: { value: 0 }, uColor: { value: GOLD.clone() } };
+      const mesh = new THREE.Mesh(this.flareGeo, add(u, FLARE_VERT, FLARE_FRAG));
+      mesh.visible = false;
+      mesh.renderOrder = 10;
+      mesh.frustumCulled = false;
+      this.flares.push({ mesh, u, t: 0, dur: 0, size: 1, peak: 1, grow: 0, spin: 0 });
+      this.group.add(mesh);
+    }
+    this.group.add(this.sky, motes, this.pillar, this.beacon);
+    this.group.visible = false;
+  }
+
+  // 四周压暗多少（0–1），牌桌拿去调房间的颜色
+  get dark(): number {
+    return this.shown * 0.7;
+  }
+
+  get active(): boolean {
+    return this.on;
+  }
+
+  // 夜空开着没有。关掉时慢慢淡出
+  setOn(on: boolean): void {
+    if (on && !this.on && this.shown < 0.01) this.wave = 1e3;
+    this.on = on;
+  }
+
+  // 双立直宣言：金色的光圈从 origin（她的立直棒）扫过整张桌子
+  declare(origin: THREE.Vector3): void {
+    this.on = true;
+    this.skyU.uOrigin.value.set(origin.x, origin.z);
+    this.wave = 0;
+    this.shown = Math.max(this.shown, 0.001);
+    this.boost = 1;
+  }
+
+  // 整片星空亮一下
+  pulse(amount = 1): void {
+    this.boost = Math.max(this.boost, amount);
+  }
+
+  // 转角上那颗星：at 是转角那张牌的位置（没有就收起来），lost 被错开了
+  setBeacon(at: THREE.Vector3 | null, lost = false): void {
+    this.beaconAt = at ? at.clone() : null;
+    if (at) this.beaconLast = at.clone();
+    this.beaconLost = lost;
+  }
+
+  // 星挂在哪（收起来以后是这一局它最后挂的地方；这一局没挂过是 null）
+  get beaconPos(): THREE.Vector3 | null {
+    const at = this.beaconAt ?? this.beaconLast;
+    return at ? at.clone().setY(at.y + 1.5 * this.beaconScale) : null;
+  }
+
+  // 一颗四芒星闪一下：一下子亮起来，慢慢暗下去；grow 越大越往外胀
+  flare(at: THREE.Vector3, size = 3, dur = 0.7, color: THREE.ColorRepresentation = GOLD, peak = 1, grow = 0.6): void {
+    const f = this.flares.find((x) => !x.mesh.visible) ?? this.flares[0];
+    f.mesh.visible = true;
+    f.mesh.position.copy(at);
+    f.u.uColor.value.set(color);
+    f.t = 0;
+    f.dur = dur;
+    f.size = size;
+    f.peak = peak;
+    f.grow = grow;
+    f.spin = Math.random() * 0.6 - 0.3;
+  }
+
+  // 一颗流星从 from 划一道弧飞到 to，一路撒下星屑；到了回调（放落点的特效）。head、tail：彗头和星屑的颜色
+  comet(from: THREE.Vector3, to: THREE.Vector3 | (() => THREE.Vector3), dur = 0.55, lift = 3, size = 2.4, onHit?: () => void, head: THREE.ColorRepresentation = '#fff3cf', tail: THREE.ColorRepresentation = GOLD): void {
+    const end = to instanceof THREE.Vector3 ? to.clone() : null;
+    this.comets.push({ from: from.clone(), to: end ? () => end : (to as () => THREE.Vector3), t: 0, dur, lift, size, trail: 0, onHit, head, tail });
+  }
+
+  // 一个星座：points 上的星隔 gap 秒一颗颗亮起来，links（第几颗连第几颗）的线跟着画出来；一直挂到 clear 或 dropFigure
+  figure(points: THREE.Vector3[], links: [number, number][], size = 1.6, gap = 0.16): void {
+    this.dropFigure(true);
+    points.forEach((p, i) => {
+      const u = { uA: { value: 0 }, uSpin: { value: 0 }, uColor: { value: new THREE.Color(i % 3 === 1 ? '#cfe0ff' : '#ffe6a6') } };
+      const mesh = new THREE.Mesh(this.flareGeo, add(u, FLARE_VERT, FLARE_FRAG));
+      mesh.position.copy(p);
+      mesh.scale.setScalar(size * (0.85 + 0.3 * ((i * 0.618) % 1)));
+      mesh.renderOrder = 9;
+      mesh.frustumCulled = false;
+      this.fixed.push({ mesh, u, at: i * gap, seed: Math.random() * 10 });
+      this.group.add(mesh);
+    });
+    const pos: number[] = [];
+    const when: number[] = [];
+    for (const [a, b] of links) {
+      pos.push(points[a].x, points[a].y, points[a].z, points[b].x, points[b].y, points[b].z);
+      when.push(a * gap, b * gap);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('aWhen', new THREE.Float32BufferAttribute(when, 1));
+    this.lineU.uT.value = 0;
+    this.lines = new THREE.LineSegments(geo, add(this.lineU, LINE_VERT, LINE_FRAG));
+    this.lines.renderOrder = 8;
+    this.lines.frustumCulled = false;
+    this.group.add(this.lines);
+    this.figT = 0;
+    this.figOn = true;
+  }
+
+  // 星座收起来（now：马上拿掉，不淡出）
+  dropFigure(now = false): void {
+    this.figOn = false;
+    if (!now) return;
+    for (const f of this.fixed) {
+      this.group.remove(f.mesh);
+      (f.mesh.material as THREE.Material).dispose();
+    }
+    this.fixed.length = 0;
+    if (this.lines) {
+      this.group.remove(this.lines);
+      this.lines.geometry.dispose();
+      (this.lines.material as THREE.Material).dispose();
+      this.lines = null;
+    }
+    this.figT = -1;
+    this.figA = 0;
+  }
+
+  clear(): void {
+    this.on = false;
+    this.shown = 0;
+    this.boost = 0;
+    this.wave = 1e3;
+    this.beaconAt = null;
+    this.beaconLast = null;
+    this.beaconA = 0;
+    this.comets.length = 0;
+    for (const f of this.flares) f.mesh.visible = false;
+    this.dropFigure(true);
+    this.group.visible = false;
+  }
+
+  update(dt: number, camera: THREE.Camera, resY: number): void {
+    this.t += dt;
+    const target = this.on ? 1 : 0;
+    this.shown += (target - this.shown) * Math.min(1, dt * (this.on ? 3 : 1.6));
+    if (!this.on && this.shown < 0.005) this.shown = 0;
+    const busy = this.shown > 0 || this.comets.length > 0 || this.figT >= 0 || this.flares.some((f) => f.mesh.visible);
+    this.group.visible = busy;
+    this.sky.visible = this.shown > 0;
+    if (!busy) return;
+
+    // 星座
+    if (this.figT >= 0) {
+      this.figT += dt;
+      this.figA += ((this.figOn ? 1 : 0) - this.figA) * Math.min(1, dt * (this.figOn ? 6 : 2.5));
+      if (!this.figOn && this.figA < 0.01) this.dropFigure(true);
+      else {
+        this.lineU.uT.value = this.figT;
+        this.lineU.uA.value = this.figA;
+        for (const f of this.fixed) {
+          const k = this.figT - f.at;
+          // 亮起来那一下冲得高，之后落回来微微闪
+          const pop = k < 0 ? 0 : 1 + 1.6 * Math.exp(-k * 5);
+          const tw = 0.82 + 0.18 * Math.sin(this.t * (2 + f.seed * 0.3) + f.seed);
+          f.u.uA.value = this.figA * Math.min(1, Math.max(0, k) / 0.06) * pop * tw * 0.75;
+          f.u.uSpin.value = Math.sin(this.t * 0.5 + f.seed) * 0.1;
+          f.mesh.quaternion.copy(camera.quaternion);
+        }
+      }
+    }
+    if (this.wave < 1e3) {
+      this.wave += dt * this.half * 1.9;
+      if (this.wave > this.half * 3.4) this.wave = 1e3;
+    }
+    this.boost *= Math.exp(-dt * 2.2);
+    this.skyU.uTime.value = this.t;
+    this.skyU.uA.value = this.shown;
+    this.skyU.uWave.value = this.wave;
+    this.skyU.uBoost.value = this.boost;
+    this.moteU.uTime.value = this.t;
+    this.moteU.uA.value = this.shown * Math.min(1, this.wave / (this.half * 2));
+    const proj = (camera as THREE.PerspectiveCamera).projectionMatrix.elements[5];
+    this.moteU.uPx.value = resY * proj;
+
+    // 转角的星
+    const wantA = this.beaconAt && this.on ? 1 : 0;
+    this.beaconA += (wantA - this.beaconA) * Math.min(1, dt * 4);
+    this.beaconDim += ((this.beaconLost ? 1 : 0) - this.beaconDim) * Math.min(1, dt * 5);
+    const showBeacon = this.beaconA > 0.01 && !!this.beaconAt;
+    this.beacon.visible = showBeacon;
+    this.pillar.visible = showBeacon;
+    if (showBeacon && this.beaconAt) {
+      const s = this.beaconScale;
+      const breathe = 1 + 0.12 * Math.sin(this.t * 2.6);
+      const a = this.beaconA * (1 - this.beaconDim * 0.78) * (this.beaconLost ? 0.75 + 0.25 * Math.sin(this.t * 17) : 1);
+      const c = GOLD.clone().lerp(PALE, this.beaconDim);
+      this.beacon.position.copy(this.beaconAt).setY(this.beaconAt.y + 1.5 * s);
+      this.beacon.quaternion.copy(camera.quaternion);
+      this.beacon.scale.setScalar(3.6 * s * breathe);
+      this.beaconU.uA.value = a;
+      this.beaconU.uSpin.value = Math.sin(this.t * 0.7) * 0.12;
+      this.beaconU.uColor.value.copy(c);
+      this.pillar.position.copy(this.beaconAt).setY(this.beaconAt.y);
+      // 光柱只绕竖轴转向镜头
+      this.pillar.rotation.set(0, Math.atan2(camera.position.x - this.beaconAt.x, camera.position.z - this.beaconAt.z), 0);
+      this.pillar.scale.set(0.9 * s, 5.5 * s, 1);
+      this.pillarU.uA.value = a * 0.55;
+      this.pillarU.uColor.value.copy(c);
+    }
+
+    for (const f of this.flares) {
+      if (!f.mesh.visible) continue;
+      f.t += dt;
+      const k = f.t / f.dur;
+      if (k >= 1) {
+        f.mesh.visible = false;
+        continue;
+      }
+      f.mesh.quaternion.copy(camera.quaternion);
+      f.mesh.scale.setScalar(f.size * (1 + f.grow * Math.pow(k, 0.5)));
+      f.u.uA.value = f.peak * Math.min(1, k / 0.08) * Math.pow(1 - k, 1.8);
+      f.u.uSpin.value = f.spin + k * 0.5;
+    }
+
+    for (let i = this.comets.length - 1; i >= 0; i--) {
+      const c = this.comets[i];
+      c.t += dt;
+      const k = Math.min(1, c.t / c.dur);
+      const e = k * k * (3 - 2 * k);
+      const p = c.from.clone().lerp(c.to(), e);
+      p.y += Math.sin(Math.PI * e) * c.lift;
+      // 彗头：每帧放一颗很短命的大星；尾巴：隔一小段撒一颗小的
+      this.flare(p, c.size, 0.12, c.head, 1, 0);
+      c.trail += dt;
+      while (c.trail > 0.018) {
+        c.trail -= 0.018;
+        const j = new THREE.Vector3((Math.random() - 0.5) * 0.35, (Math.random() - 0.5) * 0.35, (Math.random() - 0.5) * 0.35);
+        this.flare(p.clone().add(j), c.size * (0.25 + Math.random() * 0.3), 0.35 + Math.random() * 0.3, Math.random() < 0.3 ? '#bcd4ff' : c.tail, 0.6, 0.2);
+      }
+      if (k >= 1) {
+        this.comets.splice(i, 1);
+        c.onHit?.();
+      }
+    }
+  }
+
+  dispose(): void {
+    this.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      m.geometry?.dispose();
+      (m.material as THREE.Material | undefined)?.dispose?.();
+    });
+  }
+}

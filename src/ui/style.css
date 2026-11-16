@@ -9384,3 +9384,142 @@ canvas.rii-sky {
     animation: none;
   }
 }
+
+/* ---------- 大星淡的星空（2D 牌桌，stars2d.ts；3D、2.5D 画在牌桌里） ---------- */
+/* 夜空：铺在牌底下。双立直的立直棒一落，从她那边（--x、--y）一圈圈铺开 */
+.stars2d-sky {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse 60% 45% at 28% 30%, rgba(96, 52, 190, 0.55), rgba(96, 52, 190, 0) 70%),
+    radial-gradient(ellipse 55% 50% at 74% 68%, rgba(30, 84, 200, 0.5), rgba(30, 84, 200, 0) 70%),
+    radial-gradient(ellipse 40% 30% at 62% 26%, rgba(150, 70, 190, 0.3), rgba(150, 70, 190, 0) 70%),
+    linear-gradient(160deg, #070a1e, #0a0f2c 45%, #060818);
+  clip-path: circle(0% at var(--x, 50%) var(--y, 50%));
+  transition: opacity 1.4s ease;
+}
+.stars2d-sky.open {
+  opacity: 0.94;
+  clip-path: circle(150% at var(--x, 50%) var(--y, 50%));
+  transition: clip-path 1.5s cubic-bezier(0.2, 0.7, 0.3, 1), opacity 0.4s ease;
+}
+.stars2d-sky.open.instant {
+  transition: opacity 0.8s ease;
+}
+/* 斜着的一道银河 */
+.stars2d-band {
+  position: absolute;
+  inset: -30%;
+  background: linear-gradient(118deg, rgba(160, 170, 255, 0) 38%, rgba(170, 180, 255, 0.16) 47%, rgba(230, 220, 255, 0.24) 50%, rgba(170, 180, 255, 0.16) 53%, rgba(160, 170, 255, 0) 62%);
+}
+.stars2d-sky i {
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: #eef2ff;
+  box-shadow: 0 0 4px #9fb6ff;
+  animation: stars2d-twinkle 3s ease-in-out infinite;
+}
+.stars2d-sky i.gold {
+  background: #fff1c9;
+  box-shadow: 0 0 5px #ffd36b;
+}
+.stars2d-sky i.big {
+  box-shadow: 0 0 8px 1px #cfd9ff;
+}
+@keyframes stars2d-twinkle {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+/* 盖在牌桌上面的一层：流星、闪光、光圈（canvas）和转角的星 */
+.stars2d-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 60;
+}
+.stars2d-fx canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* 转角的星：挂在她头像角上，数字是她再摸几张到转角 */
+.stars2d-beacon {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.stars2d-beacon .star {
+  position: absolute;
+  left: -19px;
+  top: -19px;
+  width: 38px;
+  height: 38px;
+  background: radial-gradient(circle, #fff 0%, #ffe9a8 22%, #ffd36b 60%);
+  clip-path: polygon(50% 0%, 57% 43%, 100% 50%, 57% 57%, 50% 100%, 43% 57%, 0% 50%, 43% 43%);
+  filter: drop-shadow(0 0 6px #ffd36b);
+  animation: stars2d-breathe 2.4s ease-in-out infinite;
+}
+.stars2d-beacon b {
+  position: absolute;
+  left: 9px;
+  top: 6px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  color: #2a1c00;
+  background: #ffd36b;
+  box-shadow: 0 0 6px rgba(255, 211, 107, 0.8);
+}
+.stars2d-beacon b:empty {
+  display: none;
+}
+.stars2d-beacon.lost .star {
+  background: radial-gradient(circle, #cfd6e6 0%, #8fa2c8 60%);
+  filter: drop-shadow(0 0 3px #8fa2c8);
+  opacity: 0.55;
+  animation: stars2d-flicker 0.9s steps(2) infinite;
+}
+@keyframes stars2d-breathe {
+  0%, 100% { transform: scale(0.9) rotate(-4deg); }
+  50% { transform: scale(1.12) rotate(4deg); }
+}
+@keyframes stars2d-flicker {
+  0% { opacity: 0.55; }
+  100% { opacity: 0.3; }
+}
+/* 平行宇宙：换牌桌的那一下，画面错开、反色一闪（2D、3D、2.5D 都用） */
+.awai-parallel .three,
+.awai-parallel .stage .table {
+  animation: awai-parallel 0.9s linear;
+}
+@keyframes awai-parallel {
+  0% { filter: none; transform: none; }
+  8% { filter: invert(1) hue-rotate(180deg) saturate(1.4); transform: translateX(-1.2%) skewX(-1.5deg); }
+  16% { filter: hue-rotate(90deg) saturate(1.8) brightness(1.3); transform: translateX(1%) skewX(1.2deg); }
+  26% { filter: invert(1) hue-rotate(200deg); transform: translateX(-0.5%) scaleX(1.01); }
+  36% { filter: hue-rotate(-60deg) brightness(1.5) saturate(1.5); transform: translateX(0.4%); }
+  55% { filter: brightness(1.25) saturate(1.3) hue-rotate(20deg); transform: none; }
+  100% { filter: none; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .awai-parallel .three,
+  .awai-parallel .stage .table {
+    animation: none;
+  }
+  .stars2d-sky i,
+  .stars2d-beacon .star {
+    animation: none;
+  }
+}

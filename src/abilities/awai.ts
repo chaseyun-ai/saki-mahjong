@@ -74,6 +74,7 @@ interface AwaiState {
   kanKind?: Kind; // 暗刻是哪种牌（转角暗杠还有戏时才有）
   corner?: TileId; // 放在转角的第四张
   kanned?: boolean; // 已经暗杠了
+  dbl?: boolean; // 这一局双立直了（画面上铺星空）
   kanUra?: number; // 杠里那张里宝指示牌是第几张（稳乃的雾会把它改走，见 doraControl.mistUra）
   riichiChecked?: boolean; // 第一张打出去了：看过是不是双立直
   used?: AwaiSkillId[]; // 这一局按过的技能
@@ -168,6 +169,37 @@ export function awaiStarsExtra(g: Game, seat: number): TileId[] {
 }
 
 // ---------- 画面用 ----------
+
+// 双立直的星空（所有人都看得到）：谁双立直了；转角那张第四张还在牌山里时是哪一张，
+// lost：被鸣牌错开了、现在轮不到她摸；kanned：已经在转角暗杠了
+export interface AwaiStarView {
+  seat: number;
+  corner: TileId | null;
+  draws: number; // 她再摸几张到转角那一张（算上它；没有转角、被错开了是 0）
+  lost: boolean;
+  kanned: boolean;
+}
+export function awaiStars(g: Game): AwaiStarView | null {
+  for (let s = 0; s < 4; s++) {
+    if (g.abilities[s]?.id !== 'awai' || !g.active(s)) continue;
+    const st = stateOf(g, s);
+    if (!st.dbl) continue;
+    const k = st.corner !== undefined && !st.kanned ? g.wall.live.indexOf(st.corner) : -1;
+    const hers = k >= 0 && g.drawerOf(k) === s;
+    let draws = 0;
+    if (hers) for (let j = 0; j <= k; j++) if (g.drawerOf(j) === s) draws++;
+    return { seat: s, corner: k >= 0 ? st.corner! : null, draws, lost: !st.kanned && !hers, kanned: !!st.kanned };
+  }
+  return null;
+}
+
+// 她刚开的这一杠是不是转角暗杠（暗杠的宣言一出来就问：岭上牌还没摸）
+export function awaiCornerKan(g: Game, seat: number): boolean {
+  if (g.abilities[seat]?.id !== 'awai' || !g.active(seat)) return false;
+  const st = stateOf(g, seat);
+  const m = g.players[seat].melds.at(-1);
+  return !!st.dbl && !st.kanned && st.kanKind !== undefined && m?.type === 'ankan' && kindOf(m.tiles[0]) === st.kanKind;
+}
 
 // 桌上有没有淡开着高维领域（所有人都看得到黑暗）
 export function awaiDomainOn(g: Game): boolean {
@@ -686,6 +718,7 @@ export const awaiAbility: Ability = {
     if (s.riichiChecked) return;
     s.riichiChecked = true;
     const p = g.players[seat];
-    if (!(p.riichiPending && p.doubleRiichi)) dropCorner(g, seat);
+    if (p.riichiPending && p.doubleRiichi) s.dbl = true;
+    else dropCorner(g, seat);
   },
 };

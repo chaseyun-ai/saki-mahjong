@@ -7,13 +7,14 @@ import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruN
 import { teruMirrors } from './teruFx';
 import { tornado2d } from './tornado2d';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
-import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
+import { awaiCornerKan, awaiDomainOn, awaiKanUra, awaiSourceOn, awaiStars, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
 import { Gale2D } from './gale2d';
+import { Stars2D } from './stars2d';
 import { Lily2D } from './lily2d';
 import { AISLINN_DROP, aislinnDrawsLeft, aislinnPlan, aislinnSketch } from '../abilities/aislinn';
 import { satohaBlade, satohaCut, satohaDistance, satohaRenchanDealer, satohaScouts, satohaSheathed } from '../abilities/satoha';
@@ -223,6 +224,9 @@ export class App {
   private netView = false;
   private netFrom: '25d' | '3d' | '2d' | null = null;
   private gale2dFx: Gale2D | null = null; // 2D 牌桌上初美的紫色旋风
+  private stars2dFx: Stars2D | null = null; // 2D 牌桌上大星淡的星空
+  private starHold2d = 0; // 双立直宣言的光圈放出来之前，夜空先不铺
+  private starUraShown = false; // 这一局杠里的流星放过了
   // 2D：初美聚着风和牌，结算里手牌先倒、和了牌往下砸（哪一家、什么时候开始；结算重画时动画接着放）
   private galeSlam: { seat: number; t0: number } | null = null;
   // 2D：照的旋风自摸是哪个座位（结算里砸下去以后那张牌转起来，见 style.css 的 .win.slam.twist）
@@ -391,6 +395,8 @@ export class App {
     this.root
       .querySelector('.sel-more-menu')
       ?.insertAdjacentHTML('beforeend', '<button data-ui="water-test" data-v="koromo">衣 · 海底捞月测试</button><button data-ui="water-test" data-v="toka">透华 · 治水测试</button>');
+    // 大星淡的星空：对手没有能力、谁都不鸣牌，每一局都双立直、转角暗杠、杠里自摸
+    this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="awai-test">大星淡 · 转角暗杠测试</button>');
     // 换了皮肤的选人页：介绍不再是浮窗，固定在左边当大立绘面板，先放这一页的第一位
     if (hero) this.pickCard(this.root.querySelector<HTMLElement>('.char-card'));
     // 能换素材的人（页面主人）在视觉设置里多一行“角色素材”
@@ -670,6 +676,10 @@ export class App {
 
   private pendingRiiTest = false;
 
+  // 「大星淡 · 转角暗杠测试」：别家不吃不碰不杠（能荣和照样荣和），摸牌顺序不错开，转角那张一定轮到她
+  private quietTable = false;
+  private pendingQuiet = false;
+
   // 「宫永咲 · 岭上开花测试」：自己打咲、开局坐庄，每局配牌都是暗杠、岭上自摸的那一档（cycle 一局一档轮着来）。
   // 对手照对局设置坐，但不用能力（会抢庄、挡自摸、封听牌的能力都会把这一下挡掉）；不击飞，一直连庄
   private startRinshanTest(tier: RinshanTier | 'cycle'): void {
@@ -752,6 +762,8 @@ export class App {
   private beginGame(chars: Character[], game: Game): void {
     this.riiTest = this.pendingRiiTest;
     this.pendingRiiTest = false;
+    this.quietTable = this.pendingQuiet;
+    this.pendingQuiet = false;
     useRiiLook(this.riiTest ? 'test' : 'main');
     this.chars = chars;
     this.game = game;
@@ -935,7 +947,10 @@ export class App {
       // 荣和在牌落下的那一刻就喊出来，吃碰杠稍微想一下
       const ron = ai.some((s) => g.legalActions(s).some((a) => a.type === 'ron'));
       this.timer = window.setTimeout(() => {
-        for (const s of ai) g.act(s, chooseAction(g, s, this.chars[s].ai));
+        for (const s of ai) {
+          const quiet = this.quietTable && s !== this.me ? (g.legalActions(s).find((a) => a.type === 'ron') ?? g.legalActions(s).find((a) => a.type === 'pass')) : undefined;
+          g.act(s, quiet ?? chooseAction(g, s, this.chars[s].ai));
+        }
         this.step();
       }, (ron ? 0 : vary.jitter(AI_CALL_DELAY, 0.15)) + this.busyMs());
       return;
@@ -1122,6 +1137,9 @@ export class App {
       this.blocked = this.penaltyNext;
       this.penaltyNext = false;
       this.clearRoundFx();
+      this.stars2dFx?.clear();
+      this.starHold2d = 0;
+      this.starUraShown = false;
       // 桌上有哩：先把番缚的音效解码好
       if (this.chars.some((c) => c?.id === 'rii')) preloadRiiSound();
       // 桌上四个人的语音（素材页里放了的）先解码好
@@ -1145,10 +1163,27 @@ export class App {
         playRiichi(this.speak(e.seat, { kind: 'riichi' }) ? VOICED_CUE : 1);
         // 第二形态（透华的治水）在素材页换了立直动画：放这一段
         if (!this.formCutin(e.seat, 'riichi', '立直')) this.bigFx(e.seat, '立直', 'riichi');
+        // 2D：大星淡的双立直，金色的光圈从她那边扫开，桌面变成夜空（3D、2.5D 画在牌桌里）
+        const g = this.game!;
+        if (!this.table3d && g.players[e.seat].doubleRiichi && this.chars[e.seat]?.id === 'awai' && g.active(e.seat)) {
+          this.starHold2d = performance.now() + 420;
+          window.setTimeout(() => {
+            const fx = this.game === g ? this.stars2dLayer() : null;
+            if (!fx) return;
+            fx.declare(fx.center(document.querySelector(`.center .score.${POS[e.seat]}`)) ?? fx.middle);
+            this.stars2d();
+          }, 400);
+        }
       }
     } else if (e.type === 'call') {
       // 隐身的桃子鸣牌：看不见也听不见
       if (this.game!.stealthed(e.seat, this.me)) return;
+      // 2D：大星淡的转角暗杠，头像角上那颗星化成流星落到杠子上（等这一下重画完再找杠子）
+      if (!this.table3d && e.call === '暗杠' && awaiCornerKan(this.game!, e.seat)) {
+        const from = this.stars2dFx?.beaconAt;
+        const seat = e.seat;
+        window.setTimeout(() => this.starKan2d(seat, from ?? null), 60);
+      }
       playCall(this.speak(e.seat, { kind: 'call', call: e.call }) ? VOICED_CUE : 1);
       this.bigFx(e.seat, e.call, e.call.includes('杠') ? 'kan' : 'call');
     } else if (e.type === 'ability') {
@@ -1177,6 +1212,8 @@ export class App {
         return;
       }
       playChime(this.sayAbility(e.seat, e.text) ? VOICED_CUE : 1);
+      // 大星淡的技能：平行宇宙换牌桌时画面错开一下（三种视角都有）；2D 牌桌上的光圈、流星、北斗七星（3D、2.5D 画在牌桌里）
+      if (e.ability === 'awai') this.awaiSkillFx2d(e.seat, e.text);
       // 照魔镜：另外三家的头像上各罩一面镜子（等这一下重画完再找头像）
       if (e.ability === 'teru' && e.text === '照魔镜') requestAnimationFrame(() => this.teruMirrorFx(e.seat));
       // 臼泽塞的镜片：狙击镜落到被盯上的人的头像上（等这一下重画完再找头像）
@@ -2010,6 +2047,16 @@ export class App {
       previewRiiSound(el.dataset.v as 'lock' | 'key' | 'broken');
       return;
     }
+    if (el.dataset.ui === 'awai-test') {
+      this.root.querySelector('details.sel-more[open]')?.removeAttribute('open');
+      // 对手固定成没有能力的三位，挂机看（点「挂机中」可以接管）
+      this.pendingQuiet = true;
+      this.startGame('awai', undefined, undefined, { opponents: SEA_TEST_OPPONENTS });
+      this.auto = true;
+      if (this.game) this.game.manual[this.me] = false;
+      this.render();
+      return;
+    }
     if (el.dataset.ui === 'saki-test') {
       this.openPanel('sakiTest');
       return;
@@ -2265,6 +2312,7 @@ export class App {
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     table.dataset.mist = String(this.mistLevel());
     this.gale2d(this.galeView()?.level ?? 0);
+    this.stars2d();
     this.water2d(this.waterOn());
     this.syncChains2d();
     setSketchTiles(false);
@@ -2311,6 +2359,7 @@ export class App {
       rinshanSeen: this.sakiSees() && new Set(sakiRinshan(this.game!, this.me)),
       waveBacks: this.vision || (g.phase !== 'turn' && g.phase !== 'calls') ? undefined : awaiWaveTiles(g, this.me),
       gravity: (g.phase === 'turn' || g.phase === 'calls') && awaiSourceOn(g),
+      stars: g.phase === 'turn' || g.phase === 'calls' || g.phase === 'roundEnd' ? awaiStars(g) : null,
       handOrder: this.myHand(),
       openHands: this.openHands(),
       drawPath: this.settings.drawPath,
@@ -2871,6 +2920,176 @@ export class App {
       host.prepend(el);
     }
     this.gale2dFx?.setLevel(level);
+  }
+
+  // ---------- 大星淡的星空（2D 牌桌；3D、2.5D 画在牌桌里，见 ui3d/starFx.ts） ----------
+
+  // 夜空铺在牌底下、流星和闪光盖在最上面（都不跟着牌桌重画）
+  private stars2dLayer(): Stars2D | null {
+    if (this.table3d) return null;
+    const host = document.querySelector('.stage .table');
+    if (!host) return null;
+    if (!this.stars2dFx || !this.stars2dFx.fx.isConnected) {
+      this.stars2dFx = new Stars2D();
+      host.prepend(this.stars2dFx.sky);
+      host.append(this.stars2dFx.fx);
+    }
+    return this.stars2dFx;
+  }
+
+  // 一家头像的正中（在星空那一层里的坐标）
+  private starSeat2d(fx: Stars2D, s: number) {
+    return fx.center(document.querySelector(`.seat-frame[data-seat="${s}"] .portrait`)) ?? fx.middle;
+  }
+
+  // 每次重画：双立直的夜空铺着没有，头像角上那颗星写着再摸几张到转角；结算弹出来时放杠里的流星
+  private stars2d(): void {
+    const g = this.game;
+    if (!g || this.table3d) return;
+    const v = g.phase === 'turn' || g.phase === 'calls' || g.phase === 'roundEnd' ? awaiStars(g) : null;
+    if (!v) {
+      this.stars2dFx?.setOn(false);
+      return;
+    }
+    if (performance.now() < this.starHold2d) return;
+    const fx = this.stars2dLayer();
+    if (!fx) return;
+    fx.setOn(true);
+    const r = document.querySelector(`.seat-frame[data-seat="${v.seat}"] .portrait`)?.getBoundingClientRect();
+    fx.setBeacon(v.corner !== null && r && g.phase !== 'roundEnd' ? fx.local(r.right - 6, r.top + 6) : null, v.draws, v.lost);
+    if (g.phase === 'roundEnd' && this.showResult && !this.starUraShown) {
+      this.starUraShown = true;
+      const i = g.roundResult?.wins.findIndex((w) => w.seat === v.seat && w.melds.some((m) => m.type === 'ankan')) ?? -1;
+      const k = awaiKanUra(g, v.seat);
+      if (i >= 0 && k !== undefined) window.setTimeout(() => this.game === g && this.starUra2d(i, k), 650);
+    }
+  }
+
+  // 转角暗杠：星（from，没有就从她头像）化成流星，落到她刚亮出来的杠子上
+  private starKan2d(seat: number, from: { x: number; y: number } | null): void {
+    const fx = this.stars2dLayer();
+    if (!fx) return;
+    const melds = document.querySelectorAll(seat === this.me ? '.me .melds .meld' : `.opponent.${POS[seat]} .melds .meld`);
+    const meld = melds[melds.length - 1];
+    const to = fx.center(meld) ?? this.starSeat2d(fx, seat);
+    const start = from ?? this.starSeat2d(fx, seat);
+    fx.flare(start, 90, 0.5, '#ffffff', 0.9, 0.5);
+    fx.comet(start, to, {
+      dur: 0.6,
+      lift: 90,
+      size: 56,
+      onHit: () => {
+        fx.flare(to, 150, 1.1, '#ffd36b', 0.9, 0.8);
+        fx.ring(to, 150, 0.8, '#ffe9a8');
+        fx.ring(to, 70, 0.4, '#ffffff');
+        [...(meld?.children ?? [])].forEach((t, i) => window.setTimeout(() => t.isConnected && fx.flare(fx.center(t) ?? to, 50, 0.7, '#fff1c4', 0.7, 0.4), 80 + i * 70));
+      },
+    });
+  }
+
+  // 杠里：结算里第 k 张里宝牌指示牌上亮一下，四颗流星飞到杠的四张牌上（win：结算里的第几位和牌的人）
+  private starUra2d(win: number, k: number): void {
+    const fx = this.stars2dLayer();
+    const box = document.querySelectorAll('.result .win')[win];
+    if (!fx || !box) return;
+    const w = this.game?.roundResult?.wins[win];
+    const from = fx.center(box.querySelectorAll('.ura .tile')[k]);
+    const meld = box.querySelectorAll('.win-hand .meld')[w?.melds.findIndex((m) => m.type === 'ankan') ?? -1];
+    if (!from || !meld) return;
+    fx.flare(from, 110, 1.4, '#ffffff', 0.9, 0.6);
+    fx.ring(from, 80, 0.6, '#ffe9a8');
+    [...meld.children].forEach((t, i) => {
+      const to = fx.center(t);
+      if (!to) return;
+      fx.comet(from, to, {
+        delay: 0.25 + i * 0.16,
+        dur: 0.55,
+        lift: 60 + i * 10,
+        size: 40,
+        onHit: () => {
+          fx.flare(to, 70, 1.5, '#ffd36b', 0.85, 0.5);
+          fx.ring(to, 46, 0.5, '#ffe9a8');
+        },
+      });
+    });
+  }
+
+  // 大星淡的技能发动那一下。平行宇宙：三种视角的画面都错开、反色一闪；其余的只管 2D 牌桌（3D、2.5D 在牌桌里放，见 Table3D.awaiSkillFx）：
+  // 时间迟滞——另外三家头像上落一圈冷蓝的光；星符汇聚——桌子上方北斗七星一颗颗亮起来，挂到这一局结束；
+  // 高维领域——暗紫的波从她那边推过整张桌子；退相干——三团错开的光合成一颗；引力波——一圈圈涟漪从她那边荡开；
+  // 加速驱动——三颗流星扎到另外三家；巨引力源——一圈光往桌心收
+  private awaiSkillFx2d(seat: number, text: string): void {
+    if (text === '平行宇宙') {
+      this.root.classList.remove('awai-parallel');
+      void this.root.offsetWidth;
+      this.root.classList.add('awai-parallel');
+      window.setTimeout(() => this.root.classList.remove('awai-parallel'), 950);
+    }
+    const fx = this.stars2dLayer();
+    if (!fx) return;
+    const span = Math.min(fx.fx.offsetWidth, fx.fx.offsetHeight);
+    const far = Math.hypot(fx.fx.offsetWidth, fx.fx.offsetHeight);
+    const home = this.starSeat2d(fx, seat);
+    const mid = fx.middle;
+    const others = [0, 1, 2, 3].filter((s) => s !== seat);
+    if (text === '时间迟滞') {
+      others.forEach((s, i) => {
+        const at = this.starSeat2d(fx, s);
+        fx.ring(at, span * 0.14, 1.5, '#7fb4ff', 0.5 + i * 0.18);
+        window.setTimeout(() => fx.flare(at, span * 0.16, 1.4, '#8fc0ff', 0.55, 0.3), (0.5 + i * 0.18) * 1000);
+      });
+    } else if (text === '星符汇聚') {
+      const shape: [number, number][] = [[-0.55, -0.1], [-0.5, 0.18], [-0.13, 0.23], [-0.1, -0.02], [0.17, -0.1], [0.4, -0.18], [0.7, -0.02]];
+      fx.figure(shape.map(([x, y]) => ({ x: mid.x + x * span * 0.5, y: mid.y - span * 0.23 + y * span * 0.5 })), [[0, 1], [1, 2], [2, 3], [3, 0], [3, 4], [4, 5], [5, 6]]);
+      fx.ring(home, span * 0.16, 0.8, '#ffe9a8', 7 * 0.16);
+    } else if (text === '高维领域') {
+      fx.flare(home, span * 0.3, 1, '#8a5cff', 0.8, 0.8);
+      fx.ring(home, far, 1.3, '#6a3cff');
+      fx.ring(home, far, 1.5, '#3a1e8a', 0.2);
+    } else if (text === '退相干' || text === '退相干·自摸') {
+      const tsumo = text !== '退相干';
+      ['#7fe6ff', '#b58cff', '#ffffff'].forEach((c, i) => {
+        fx.comet({ x: home.x + (i - 1) * span * 0.12, y: home.y - span * 0.12 - i * 12 }, home, {
+          dur: 0.34,
+          lift: 14,
+          size: 34,
+          head: c,
+          tail: c,
+          onHit: i === 2 ? () => {
+            fx.flare(home, span * (tsumo ? 0.24 : 0.16), 0.7, '#9fe8ff', 0.9, 0.5);
+            fx.ring(home, span * (tsumo ? 0.18 : 0.12), 0.5, '#9fe8ff');
+          } : undefined,
+        });
+      });
+    } else if (text === '引力波') {
+      for (let i = 0; i < 3; i++) fx.ring(home, far * (0.6 + i * 0.2), 1.5, i === 1 ? '#d9b8ff' : '#9b6bff', i * 0.28);
+      fx.flare(home, span * 0.2, 0.9, '#b58cff', 0.8, 0.6);
+    } else if (text === '平行宇宙') {
+      fx.flare(mid, span * 0.7, 1.1, '#ffffff', 0.9, 1);
+      fx.flare(mid, span * 0.4, 1.5, '#9fb6ff', 0.9, 0.6);
+      fx.ring(mid, far * 0.6, 0.9, '#ffffff');
+      fx.ring(mid, far * 0.6, 1.2, '#8f7bff', 0.12);
+    } else if (text === '加速驱动') {
+      fx.flare(home, span * 0.2, 0.6, '#ff8ad8', 0.8, 0.5);
+      others.forEach((s, i) => {
+        const to = this.starSeat2d(fx, s);
+        fx.comet(home, to, {
+          delay: 0.1 + i * 0.12,
+          dur: 0.5,
+          lift: 60,
+          size: 44,
+          head: '#ffd6f2',
+          tail: '#c58cff',
+          onHit: () => {
+            fx.flare(to, span * 0.15, 0.8, '#ff7ad0', 0.8, 0.5);
+            fx.ring(to, span * 0.1, 0.5, '#ff7ad0');
+          },
+        });
+      });
+    } else if (text === '巨引力源') {
+      fx.ring(mid, span * 0.42, 0.9, '#7a4dff', 0, true);
+      fx.ring(mid, span * 0.42, 0.9, '#c9b0ff', 0.25, true);
+    }
   }
 
   // 2D：和了牌砸到结算上那一下，从这张牌炸开，紫色的风往上喷（这时盖在结算上面，放完自己收起来）
