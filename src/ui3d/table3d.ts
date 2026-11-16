@@ -10,6 +10,9 @@ import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
 import { Machine, type MachineCue, type MachineRect } from './machine';
+import type { Changeover } from './changeover';
+import { Gust, type GustCue } from './gust';
+import { Tide, type TideCue } from './tide';
 import { BOLT_LEADER, Effects } from './effects';
 import { type SpotRow, WinSpots } from './winSpots';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
@@ -21,6 +24,7 @@ import { riiLook } from '../ui/riiLook';
 import { ChainEnd, outcomeTime } from '../ui/riiChainPlan';
 import { faceSvg, glowGlyph } from '../ui/tileArt';
 import { TileBeam } from './tileBeam';
+import { tileSurface } from './tileLooks';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
@@ -626,6 +630,14 @@ export class Table3D {
   private ghostBack: THREE.MeshStandardMaterial | null = null;
   // 全自动麻将机该响声音的时候通知外面（放音效用）：open 仪表盘抬起，sweep 牌掉进去，drop 升降板沉下去，close 仪表盘落回，rise 升降板升（dur 秒），lock 升到顶卡住
   onMachine: ((cue: MachineCue, dur: number) => void) | null = null;
+  // 换局的演出（牌桌风格自己的，changeover.ts）：沙滩每局开始一个浪打过来把牌冲散、退潮后沙子聚成新牌山（tide.ts）；
+  // 草甸一阵风把牌吹成花瓣飘走、花瓣再飘回来落成新牌山（gust.ts）。该响声音的时候通知外面
+  private shift: Changeover<TideCue | GustCue> | null = null;
+  onShift: ((cue: TideCue | GustCue, dur: number) => void) | null = null;
+  // 照 wallPose 摆新牌山时用的临时量
+  private shiftPose = new THREE.Vector4();
+  private shiftLift = new THREE.Vector3();
+  private shiftQuat = new THREE.Quaternion();
 
   constructor(
     private container: HTMLElement,
@@ -696,6 +708,7 @@ export class Table3D {
     this.water?.dispose();
     this.machine?.dispose();
     this.warp?.dispose();
+    this.shift?.dispose();
     this.moonLift?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -746,6 +759,11 @@ export class Table3D {
       this.machine = new Machine();
       this.scene.add(this.machine.group);
     }
+    // 沙粒是牌身、牌背两种沙色；花瓣是牌身的花瓣白加淡黄、淡粉，草叶是牌背的叶绿加一种嫩绿
+    const body = this.colors.tile?.body ?? '#f3e9d4';
+    if (this.colors.changeover === 'tide') this.shift = new Tide([body, this.colors.back]);
+    else if (this.colors.changeover === 'gust') this.shift = new Gust([body, '#f6e7a6', '#f4d3da', this.colors.back, '#8db06c'], '#eef3d2');
+    if (this.shift) this.scene.add(this.shift.group);
     this.buildTable();
 
     // 点棒抽屉：按画面上的方位建，座位 rel 对应 drawers[rel]
@@ -868,6 +886,7 @@ export class Table3D {
       this.machine.build(this.wallRects(), this.feltMat!, d.tableHalf, CONSOLE_HALF, this.colors.shape === 'disc');
       feltGeo = this.machine.feltGeometry(d.tableHalf);
     } else feltGeo = new THREE.PlaneGeometry(d.tableHalf * 2, d.tableHalf * 2).rotateX(-Math.PI / 2);
+    this.shift?.build(d.tableHalf, CONSOLE_HALF, this.colors.shape === 'disc');
     const felt = new THREE.Mesh(feltGeo, this.feltMat!);
     felt.receiveShadow = true;
     group.add(felt);
@@ -889,10 +908,16 @@ export class Table3D {
     const backGeom = new RoundedBoxGeometry(TILE_W, TILE_H, TILE_T * 0.42, 3, 0.12);
     // 2.5D 时自己的手牌几乎正对镜头，灯又在镜头这边，亮面会把牌面照白一片，所以磨砂一点
     const matte = this.style === '25d' ? 0.62 : 0;
-    const bodyMat = wet(new THREE.MeshStandardMaterial({ color: '#f6f1e3', roughness: matte || 0.35 }));
+    // 牌桌风格自己的牌（沙滩的沙子牌、草甸的花瓣牌）：牌身颜色、细纹理、粗糙度，牌背正中压的花样（tileLooks.ts）。
+    // 2.5D 照样至少磨砂到 matte
+    const look = this.colors.tile;
+    const rough = (base: number) => (look?.rough !== undefined ? Math.max(look.rough, matte) : matte || base);
+    const bodyMat = wet(new THREE.MeshStandardMaterial({ color: look?.body ?? '#f6f1e3', roughness: rough(0.35) }));
+    if (look) tileSurface(bodyMat, { grain: look.grain, smoothFace: true });
     this.bodyMat = bodyMat;
     this.deadlyMat = wet(new THREE.MeshStandardMaterial({ color: '#f08a80', emissive: '#d23a2e', emissiveIntensity: 0.35, roughness: matte || 0.35 }));
-    const backMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: matte || 0.4 }));
+    const backMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: rough(0.4) }));
+    if (look) tileSurface(backMat, { grain: look.grain, mark: look.mark });
     this.backMat = backMat;
     this.plainBack = backMat;
     // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
@@ -1056,6 +1081,7 @@ export class Table3D {
     this.handAnims = [];
     this.vanish.clear();
     this.machine?.finish();
+    this.shift?.finish();
     for (const f of this.flights) if (f.fade) this.setTileOpacity(this.tiles[f.tile], 1);
     this.flights = [];
     this.heldDraw = null;
@@ -1721,7 +1747,8 @@ export class Table3D {
   // 替身牌用上一副的牌背颜色（新的一局马上换另一副）
   private ghostTiles(): THREE.Object3D[] {
     const out: THREE.Object3D[] = [];
-    const plain = this.plainBack;
+    // 换牌背颜色只有自动麻将机才有（两副牌）；沙滩、草甸的替身牌就用原来的牌背
+    const plain = this.machine ? this.plainBack : null;
     if (plain) {
       this.ghostBack ??= plain.clone();
       this.ghostBack.color.copy(plain.color);
@@ -1764,6 +1791,11 @@ export class Table3D {
       const ready = this.machine.sweep(this.ghostTiles(), this.now);
       this.useBackSet(g);
       lead = this.machine.rise(this.now, ready);
+    } else if (this.shift) {
+      // 沙滩：浪打过来把桌上的牌冲散，退潮退过哪里，哪里的沙子聚拢、牌山拱出来；草甸：风把牌吹散，花瓣飘回来、牌山一墩墩落下来。
+      // 都摆好了才掷骰子
+      this.shift.sweep(this.ghostTiles(), this.now);
+      lead = this.shift.rise(this.now, this.wallRects());
     }
     const start = this.now + lead;
     const order = new Map<TileId, { d: number; time: number }>();
@@ -1809,6 +1841,8 @@ export class Table3D {
       // 牌局打到一半才建的牌桌：照局数用对那副牌
       if (!this.deal) this.useBackSet(g);
     }
+    // 沙滩、草甸：发牌前选技能时桌上的牌已经收走了，照样一个浪冲掉（一阵风吹走），发牌时再起一个浪（一阵轻风）带出新牌山
+    if (this.shift && g.phase === 'predeal' && this.tiles.some((t) => t.group.visible)) this.shift.sweep(this.ghostTiles(), this.now);
     this.setSketch(!!view.sketch);
     this.lastSync = { g, view };
     this.clickable = view.clickable;
@@ -4822,6 +4856,14 @@ export class Table3D {
       for (const p of this.consoleParts) p.position.y = (p.userData.baseY ?? 0) + lift;
     }
     const riding = mach?.busy ? mach : null;
+    // 沙滩的水、沙粒，草甸的风、花瓣；新牌山拱出来（落下来）的时候牌山上的牌照 wallPose 摆（还没出来的先藏着）
+    const shift = this.shift;
+    if (shift) {
+      for (const { cue, dur } of shift.update(this.now)) this.onShift?.(cue, dur);
+      shift.setScale(this.renderer.getDrawingBufferSize(new THREE.Vector2()).y / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2)));
+    }
+    const forming = shift?.busy ? shift : null;
+    const pose = this.shiftPose;
     const slow = 1 - Math.exp(-dt * 16);
     const fast = 1 - Math.exp(-dt * 60);
     const snap = this.now < this.hoverSnap.until ? this.hoverSnap.ids : [];
@@ -4835,6 +4877,20 @@ export class Table3D {
         t.group.scale.setScalar(t.target.scale);
         continue;
       }
+      if (forming?.onWall(t.target.pos.x, t.target.pos.z)) {
+        t.group.visible = forming.wallPose(t.target.pos.x, t.target.pos.z, pose);
+        t.group.quaternion.copy(t.target.quat);
+        t.group.scale.setScalar(t.target.scale);
+        // 歪着落：整墩绕桌面上它脚下那一点转（上下两张一起歪，不会错开）
+        const lift = this.shiftLift.set(0, t.target.pos.y, 0);
+        if (pose.w) {
+          const q = this.shiftQuat.setFromAxisAngle(forming.tiltAxis, pose.w);
+          lift.applyQuaternion(q);
+          t.group.quaternion.premultiply(q);
+        }
+        t.group.position.set(t.target.pos.x + pose.x, pose.y, t.target.pos.z + pose.z).add(lift);
+        continue;
+      }
       const k = snap.includes(id) ? fast : slow;
       t.group.position.lerp(t.target.pos, k);
       t.group.quaternion.slerp(t.target.quat, k);
@@ -4842,7 +4898,7 @@ export class Table3D {
       t.group.scale.setScalar(sc);
     }
     // 王牌感知浮在牌山上、牌山前面的那些牌面：牌山还没升到顶就先不出来
-    if (riding) for (const gr of this.projections.values()) gr.visible = false;
+    if (riding || forming) for (const gr of this.projections.values()) gr.visible = false;
     this.updateMarks();
     this.updateRipple();
     for (const c of this.characters) c.avatar?.update(dt);
@@ -5148,73 +5204,55 @@ function feltPattern(ctx: CanvasRenderingContext2D, pattern: FeltPattern): void 
     }
     feltNoise(ctx, 6);
   } else if (pattern === 'sand') {
-    // 细沙：先是几十道风吹出来的沙纹（暗的一道、紧挨着亮的一道，横着起伏），再撒满细细的沙粒，偶尔一粒深色的
-    for (let y0 = -30; y0 < 1060; y0 += 20 + rnd() * 14) {
-      const amp = 3 + rnd() * 6;
-      const f = 0.006 + rnd() * 0.008;
-      const ph = rnd() * Math.PI * 2;
-      const tilt = (rnd() - 0.5) * 0.08;
-      for (const [dy, color, w] of [[0, `rgba(100,70,32,${0.09 + rnd() * 0.06})`, 2.4], [-2.8, `rgba(255,246,222,${0.08 + rnd() * 0.06})`, 2]] as const) {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = w;
-        ctx.beginPath();
-        for (let x = -8; x <= 1032; x += 8) {
-          const y = y0 + dy + x * tilt + Math.sin(x * f + ph) * amp + Math.sin(x * f * 2.3 + ph * 1.7) * amp * 0.35;
-          if (x < 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      }
-    }
-    for (let i = 0; i < 70000; i++) {
-      const v = rnd();
-      ctx.fillStyle = v < 0.45 ? 'rgba(255,250,236,0.22)' : v < 0.96 ? 'rgba(96,70,36,0.16)' : 'rgba(70,55,40,0.4)';
-      ctx.fillRect(rnd() * 1024, rnd() * 1024, 1 + rnd() * 0.6, 1 + rnd() * 0.6);
-    }
-    feltNoise(ctx, 7);
-  } else if (pattern === 'grass') {
-    // 青草：先铺几大片深一点、浅一点的草（像有云影、有太阳照着），再密密的短草叶（多半竖着，稍微往一边倒），
-    // 最后零星几朵小花（白的、黄的、淡紫的，都很小很淡，不跟牌抢眼）
-    for (let i = 0; i < 46; i++) {
+    // 细沙：先铺几十大片很淡的深浅（沙子有的地方厚、有的地方被踩过），再撒满极细的沙粒，偶尔一粒深色的。不画沙纹
+    for (let i = 0; i < 60; i++) {
       const x = rnd() * 1024;
       const y = rnd() * 1024;
-      const r = 50 + rnd() * 130;
+      const r = 60 + rnd() * 160;
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, rnd() < 0.5 ? 'rgba(214,236,150,0.07)' : 'rgba(16,44,10,0.09)');
+      g.addColorStop(0, rnd() < 0.5 ? 'rgba(255,250,238,0.07)' : 'rgba(120,96,62,0.06)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
-    for (let i = 0; i < 42000; i++) {
+    for (let i = 0; i < 90000; i++) {
+      const v = rnd();
+      ctx.fillStyle = v < 0.5 ? 'rgba(255,252,242,0.22)' : v < 0.97 ? 'rgba(110,88,58,0.15)' : 'rgba(80,66,50,0.34)';
+      const sz = v > 0.985 ? 2 : 1;
+      ctx.fillRect(rnd() * 1024, rnd() * 1024, sz, sz);
+    }
+    feltNoise(ctx, 5);
+  } else if (pattern === 'grass') {
+    // 草地：先铺几十大片很淡的深浅（云影、太阳照着的地方），再密密的极短的细草，顺着风倒，倒的方向一大片一大片慢慢变
+    // （像风刚吹过的草地）。不画花、不画长草叶，压得很淡，不跟牌抢眼
+    for (let i = 0; i < 50; i++) {
       const x = rnd() * 1024;
       const y = rnd() * 1024;
-      const a = -Math.PI / 2 + 0.18 + (rnd() - 0.5) * 0.8;
-      const l = 3 + rnd() * 7;
-      ctx.strokeStyle = rnd() < 0.5 ? `rgba(206,238,140,${0.05 + rnd() * 0.05})` : `rgba(14,42,8,${0.07 + rnd() * 0.06})`;
-      ctx.lineWidth = 0.8 + rnd() * 0.7;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
-      ctx.stroke();
+      const r = 80 + rnd() * 180;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, rnd() < 0.5 ? 'rgba(240,246,186,0.12)' : 'rgba(30,58,28,0.11)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
-    const petals = ['rgba(246,243,232,0.6)', 'rgba(242,211,91,0.6)', 'rgba(205,190,240,0.55)'];
-    for (let i = 0; i < 110; i++) {
+    // 细草分六批画（亮的、暗的各三种深浅），一批一笔画完
+    const tones = ['rgba(236,246,196,0.07)', 'rgba(236,246,196,0.11)', 'rgba(236,246,196,0.16)', 'rgba(28,52,22,0.08)', 'rgba(28,52,22,0.12)', 'rgba(28,52,22,0.17)'];
+    const batches = tones.map(() => new Path2D());
+    for (let i = 0; i < 72000; i++) {
       const x = rnd() * 1024;
       const y = rnd() * 1024;
-      const r = 1.2 + rnd() * 1.1;
-      ctx.fillStyle = petals[Math.floor(rnd() * petals.length)];
-      for (let k = 0; k < 5; k++) {
-        const a = (k / 5) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, r * 0.8, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = 'rgba(232,180,60,0.7)';
-      ctx.beginPath();
-      ctx.arc(x, y, r * 0.55, 0, Math.PI * 2);
-      ctx.fill();
+      const a = -Math.PI / 2 + 0.55 * Math.sin(x * 0.006 + y * 0.004) + 0.35 * Math.sin(y * 0.011 - x * 0.003 + 1.3) + (rnd() - 0.5) * 0.45;
+      const l = 2.5 + rnd() * 4;
+      const b = batches[Math.floor(rnd() * tones.length)];
+      b.moveTo(x, y);
+      b.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
     }
-    feltNoise(ctx, 7);
+    ctx.lineWidth = 1;
+    batches.forEach((b, i) => {
+      ctx.strokeStyle = tones[i];
+      ctx.stroke(b);
+    });
+    feltNoise(ctx, 5);
   } else if (pattern === 'matte') {
     feltNoise(ctx, 5);
   } else {

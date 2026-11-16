@@ -50,7 +50,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playCrackle, playIaiDraw, playIaiPush, playIaiSheath, playLily, playMachine, playRiichi, playSlam, playSplash, playWhirl, playWin } from './sound';
+import { playCall, playChime, playClick, playCrackle, playGust, playIaiDraw, playIaiPush, playIaiSheath, playLily, playMachine, playRiichi, playShift, playSlam, playSplash, playTide, playWhirl, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -231,6 +231,8 @@ export class App {
   private starHold2d = 0; // 双立直宣言的光圈放出来之前，夜空先不铺
   private fxHold2d = 0; // 2D：平行宇宙的动画放完之前牌局先等着（performance.now 的时刻）
   private starUraShown = false; // 这一局杠里的流星放过了
+  // 2D 沙滩、草甸换局：上一次画的是哪一局（换了局就一个浪打过来、一阵风刮过来，见 shift2d）
+  private shiftRound: { g: Game; round: number } | null = null;
   // 2D：初美聚着风和牌，结算里手牌先倒、和了牌往下砸（哪一家、什么时候开始；结算重画时动画接着放）
   private galeSlam: { seat: number; t0: number } | null = null;
   // 2D：照的旋风自摸是哪个座位（结算里砸下去以后那张牌转起来，见 style.css 的 .win.slam.twist）
@@ -852,6 +854,7 @@ export class App {
       this.table3d.onSeaSlam = () => playSplash();
       // 全自动麻将机：仪表盘抬起落下、牌掉进去、升降板沉下去又升上来、到顶卡住
       this.table3d.onMachine = (cue, dur) => playMachine(cue, dur);
+      this.table3d.onShift = (cue, dur) => playShift(cue, dur);
       // 照的旋风自摸：牌拍下去、风卷起来时一记闷响加一阵风声，电劈下来、劈到桌上“噼啪”一声，风散开时再噼啪一下
       this.table3d.onTwister = (_seat, size, phase) => {
         if (phase === 'erupt') {
@@ -1324,6 +1327,179 @@ export class App {
     const g = this.game;
     if (!g || this.netView || g.phase === 'predeal' || g.phase === 'postdeal') return null;
     return koromoSea(g, this.chars.map((c) => c?.id));
+  }
+
+  // 2D 换局（牌桌风格沙滩、草甸）：换了局就把换局前那一刻 #table 里的东西复制一份（结算框不要）盖在新的一局上面，
+  // 沙滩一个浪打过来把它冲掉（wash2d），草甸一阵风把它吹散（gust2d）。3D、2.5D 的在 tide.ts、gust.ts；这里只是一层画面，不挡发牌、出牌
+  private shift2d(g: Game, table: HTMLElement, off: boolean): void {
+    const prev = this.shiftRound;
+    this.shiftRound = { g, round: g.round };
+    const kind = document.documentElement.dataset.table;
+    if (off || !prev || prev.g !== g || prev.round === g.round || (kind !== 'beach' && kind !== 'meadow')) return;
+    // 系统里设了「减少动态效果」：不演
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const host = table.parentElement;
+    if (!host || !table.firstElementChild) return;
+    host.querySelectorAll(':scope > .wash-old, :scope > .wash-water, :scope > .wash-wet, :scope > .gust-old, :scope > .gust-cover, :scope > .gust-air').forEach((e) => e.remove());
+    const old = document.createElement('div');
+    old.innerHTML = table.innerHTML;
+    old.querySelectorAll('.modal, .hiroe-say, canvas').forEach((e) => e.remove());
+    old.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
+    if (kind === 'beach') this.wash2d(host, old);
+    else this.gust2d(host, old);
+  }
+
+  // 沙滩：一个浪从对面（画面上方）涌下来盖住上一局的牌，停一下再退回去，退过的地方露出新的一局，
+  // 沙子湿一会儿才干。上一局的样子浪头扫到哪就切到哪
+  private wash2d(host: HTMLElement, old: HTMLElement): void {
+    old.className = 'wash-old';
+    const water = document.createElement('div');
+    water.className = 'wash-water';
+    const wet = document.createElement('div');
+    wet.className = 'wash-wet';
+    host.append(wet, old, water);
+    // 涌过来 0.75 秒、漫着停 0.15 秒、退回去 0.8 秒；湿沙在水退完以后再过 1.2 秒干掉
+    const [IN, HOLD, OUT, DRY] = [750, 150, 800, 1200];
+    const all = IN + HOLD + OUT;
+    const surge = 'cubic-bezier(.25,.7,.4,1)';
+    const ebb = 'cubic-bezier(.55,0,.8,.45)';
+    water.animate(
+      [
+        { transform: 'translateY(-104%)', easing: surge },
+        { transform: 'translateY(0)', offset: IN / all },
+        { transform: 'translateY(0)', offset: (IN + HOLD) / all, easing: ebb },
+        { transform: 'translateY(-104%)' },
+      ],
+      { duration: all, fill: 'forwards' },
+    );
+    // 上一局的样子：浪头盖到哪就切掉到哪
+    old.animate([{ clipPath: 'inset(0 0 0 0)', easing: surge }, { clipPath: 'inset(100% 0 0 0)' }], { duration: IN, fill: 'forwards' });
+    wet.animate(
+      [
+        { opacity: 0 },
+        { opacity: 0, offset: (IN + HOLD) / (all + DRY) },
+        { opacity: 1, offset: (IN + HOLD + 1) / (all + DRY) },
+        { opacity: 1, offset: all / (all + DRY) },
+        { opacity: 0 },
+      ],
+      { duration: all + DRY, fill: 'forwards' },
+    );
+    playTide('surge', IN / 1000);
+    window.setTimeout(() => playTide('crash', 0.5), IN * 0.3);
+    window.setTimeout(() => playTide('ebb', OUT / 1000), IN + HOLD);
+    window.setTimeout(() => old.remove(), IN + 20);
+    window.setTimeout(() => {
+      water.remove();
+      wet.remove();
+    }, all + DRY + 50);
+  }
+
+  // 草甸：一阵风从画面左边或右边刮过来，上一局的牌从上风那头起一张张被掀起来、翻着跟头往下风飞，散成花瓣、草叶；
+  // 草面上跟着风头一道亮光，空中几道风痕。新的一局先用一层一模一样的草地（.gust-cover）盖着，风过去以后这层草地淡掉，露出新的牌山
+  private gust2d(host: HTMLElement, old: HTMLElement): void {
+    old.className = 'gust-old';
+    const cover = document.createElement('div');
+    cover.className = 'gust-cover';
+    const air = document.createElement('div');
+    air.className = 'gust-air';
+    host.append(cover, old, air);
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const box = host.getBoundingClientRect();
+    const W = Math.max(1, box.width);
+    // 风头扫过整张桌 0.6 秒，一张牌飞 0.65 秒；风过去以后 0.12 秒草地开始淡掉，淡 0.45 秒
+    const [SWEEP, FLY, CALM, FADE] = [600, 650, 120, 450];
+    const gone = SWEEP + FLY;
+    const petals = ['#fbfaf3', '#fbfaf3', '#f6e7a6', '#f4d3da', '#4f7f45', '#8db06c'];
+    // 每张牌外面那几层的旋转（左右两家的牌河是转过 90 度的）：把屏幕上往下风的方向换成这张牌自己那层的方向
+    const frames = new Map<Element, DOMMatrix>();
+    const frameOf = (el: Element | null): DOMMatrix => {
+      if (!el || el === old) return new DOMMatrix();
+      const hit = frames.get(el);
+      if (hit) return hit;
+      const t = getComputedStyle(el).transform;
+      const own = t && t !== 'none' ? new DOMMatrix(t) : new DOMMatrix();
+      const m = frameOf(el.parentElement).multiply(new DOMMatrix([own.a, own.b, own.c, own.d, 0, 0]));
+      frames.set(el, m);
+      return m;
+    };
+    // 中间那块上的宝牌指示牌是仪表盘的一部分，不飞
+    const tiles = [...old.querySelectorAll<HTMLElement>('.tile')].filter((el) => !el.closest('.center'));
+    for (const el of tiles) {
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2 - box.left;
+      const cy = r.top + r.height / 2 - box.top;
+      const k = dir > 0 ? cx / W : 1 - cx / W;
+      const at = Math.max(0, k) * SWEEP + Math.random() * 60;
+      // 屏幕上：往下风飞出去 180 到 320 像素，先往上掀一点
+      const dx = dir * (180 + Math.random() * 140);
+      const dy = -(20 + Math.random() * 50);
+      const inv = frameOf(el.parentElement).inverse();
+      const lp = inv.transformPoint(new DOMPoint(dx, dy, 0, 0));
+      const mid = inv.transformPoint(new DOMPoint(dx * 0.35, dy * 1.2, 0, 0));
+      const spin = dir * (180 + Math.random() * 360);
+      el.animate(
+        [
+          { translate: '0px 0px', rotate: '0deg', scale: '1', opacity: 1, easing: 'cubic-bezier(.4,0,.9,.6)' },
+          { translate: `${mid.x.toFixed(1)}px ${mid.y.toFixed(1)}px`, rotate: `${(spin * 0.3).toFixed(0)}deg`, scale: '0.9', opacity: 1, offset: 0.35 },
+          { translate: `${lp.x.toFixed(1)}px ${lp.y.toFixed(1)}px`, rotate: `${spin.toFixed(0)}deg`, scale: '0.3', opacity: 0 },
+        ],
+        { duration: FLY, delay: at, fill: 'both' },
+      );
+      // 飞到一半散成两三片花瓣、草叶，被风带着往下风飘
+      for (let i = 0, n = 1 + Math.floor(Math.random() * 2); i < n; i++) {
+        const p = document.createElement('i');
+        p.style.left = `${(cx + dx * 0.3).toFixed(0)}px`;
+        p.style.top = `${(cy + dy * 0.8).toFixed(0)}px`;
+        p.style.background = petals[Math.floor(Math.random() * petals.length)];
+        air.append(p);
+        const fx = dir * (140 + Math.random() * 220);
+        const fy = 10 + Math.random() * 70;
+        const turn = dir * (240 + Math.random() * 480);
+        p.animate(
+          [
+            { translate: '0px 0px', rotate: '0deg', opacity: 0 },
+            { opacity: 1, offset: 0.1 },
+            { translate: `${(fx * 0.55).toFixed(0)}px ${(fy * 0.3 - 18).toFixed(0)}px`, rotate: `${(turn * 0.5).toFixed(0)}deg`, opacity: 1, offset: 0.55 },
+            { translate: `${fx.toFixed(0)}px ${fy.toFixed(0)}px`, rotate: `${turn.toFixed(0)}deg`, opacity: 0 },
+          ],
+          { duration: 800 + Math.random() * 400, delay: at + FLY * 0.4, fill: 'both', easing: 'cubic-bezier(.3,.5,.6,1)' },
+        );
+      }
+    }
+    // 风头：一道亮光（风压倒的草）扫过去，前后几道风痕
+    const sheen = document.createElement('b');
+    sheen.className = 'gust-sheen';
+    air.append(sheen);
+    // 亮光那一条宽 34%：从桌子一边外面扫到另一边外面（translate 的百分比按它自己的宽算）
+    const from = dir > 0 ? '-110%' : '300%';
+    const to = dir > 0 ? '300%' : '-110%';
+    sheen.animate([{ translate: `${from} 0`, opacity: 0.9 }, { translate: `${to} 0`, opacity: 0.6 }], { duration: SWEEP + 300, easing: 'cubic-bezier(.3,.1,.6,1)', fill: 'both' });
+    for (let i = 0; i < 6; i++) {
+      const st = document.createElement('u');
+      st.className = 'gust-streak';
+      st.style.top = `${(8 + i * 15 + Math.random() * 8).toFixed(0)}%`;
+      st.style.width = `${(14 + Math.random() * 10).toFixed(0)}%`;
+      if (dir < 0) st.style.transform = 'scaleX(-1)';
+      air.append(st);
+      st.animate([{ left: dir > 0 ? '-25%' : '110%', opacity: 0 }, { opacity: 0.8, offset: 0.3 }, { left: dir > 0 ? '110%' : '-25%', opacity: 0 }], {
+        duration: 420 + Math.random() * 160,
+        delay: (i / 6) * SWEEP + Math.random() * 80,
+        fill: 'both',
+        easing: 'linear',
+      });
+    }
+    // 风过去以后：盖着的那层草地和上一局剩下的东西（中间那块）一起淡掉，新的一局露出来
+    const fadeAt = gone + CALM;
+    for (const el of [cover, old]) el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FADE, delay: fadeAt, fill: 'both', easing: 'ease-in-out' });
+    playGust('gust', (SWEEP + 400) / 1000);
+    window.setTimeout(() => playGust('scatter', 0.6), 180);
+    window.setTimeout(() => playGust('breeze', FADE / 1000), fadeAt - 100);
+    window.setTimeout(() => playGust('land', 0.2), fadeAt + FADE - 80);
+    window.setTimeout(() => {
+      old.remove();
+      cover.remove();
+      air.remove();
+    }, fadeAt + FADE + 400);
   }
 
   // 2D：牌桌上盖一层水面（几圈慢慢荡开的涟漪和水底的光纹）
@@ -2303,6 +2479,8 @@ export class App {
     const net = this.netView;
     // 全自动麻将机两副牌轮流用：第几副（牌桌风格是自动麻将机时 2D 的牌背照这个换颜色，见 tableStyles.css）
     table.parentElement?.setAttribute('data-set', String(Math.max(0, g.round - 1) % 2));
+    // 沙滩、草甸：换了局，先把上一局的样子留一份，一个浪打过来把它冲掉（一阵风把它吹散）
+    this.shift2d(g, table, net || sketch);
     table.innerHTML = `
       ${[1, 2, 3].map((s) => this.opponentHtml(s)).join('')}
       <div class="center${Date.now() < this.diffUntil ? ' diff-on' : ''}">${net ? this.netCenterHtml() : this.centerHtml()}</div>

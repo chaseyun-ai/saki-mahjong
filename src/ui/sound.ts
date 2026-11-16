@@ -453,6 +453,102 @@ function motorHum(a: AudioContext, at: number, dur: number, vol: number, f0: num
   for (let t = at + 0.05; gears && t < at + dur - 0.05; t += 1 / gears) noiseHit(a, t, 0.012, vol * 0.5, 'bandpass', 2600, 2600, 2);
 }
 
+// ---------- 沙滩（牌桌风格「沙滩」，tide.ts）：浪打过来、退潮、沙子聚拢 ----------
+
+// 一段长长的海浪声：白噪声过带通，中心频率从 f0 滑到 f1；音量从很小涨到 vol（peak 秒时最大）再收掉
+function surf(a: AudioContext, at: number, dur: number, vol: number, f0: number, f1: number, peak: number, q = 0.7): void {
+  const len = Math.max(1, Math.floor(a.sampleRate * (dur + 0.05)));
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  // 带一点起伏的噪声：浪里一团团的水声
+  let lfo = 0;
+  for (let i = 0; i < len; i++) {
+    lfo += (Math.random() - 0.5) * 0.02;
+    lfo *= 0.999;
+    data[i] = (Math.random() * 2 - 1) * (0.75 + Math.min(0.25, Math.abs(lfo) * 4));
+  }
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(f0, at);
+  filter.frequency.exponentialRampToValueAtTime(f1, at + Math.max(0.05, peak));
+  filter.Q.value = q;
+  const gain = a.createGain();
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(vol, at + Math.max(0.05, peak));
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  src.connect(filter).connect(gain).connect(bus('sfx', a));
+  src.start(at);
+  src.stop(at + dur + 0.05);
+}
+
+// 沙滩的几声：surge 浪从远处涌过来（越来越响的水声，dur 秒），crash 浪头拍下来（哗的一声），
+// ebb 退潮（沙沙的回水声，里面一串细碎的气泡破裂声，dur 秒），gather 沙子聚拢（轻轻的沙沙声，dur 秒），settle 最后一墩聚好（很轻的一声闷响）
+export function playTide(cue: 'surge' | 'crash' | 'ebb' | 'gather' | 'settle', dur = 0.5): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  if (cue === 'surge') {
+    surf(a, now, dur + 0.5, 0.22, 380, 1300, dur * 0.85);
+    surf(a, now + 0.05, dur + 0.3, 0.1, 120, 260, dur * 0.8, 0.5);
+  } else if (cue === 'crash') {
+    noiseHit(a, now, 0.6, 0.28, 'bandpass', 2600, 900, 0.6);
+    noiseHit(a, now, 0.35, 0.22, 'lowpass', 380, 140, 0.7);
+  } else if (cue === 'ebb') {
+    surf(a, now, dur + 0.4, 0.13, 2600, 4800, 0.12, 0.8);
+    for (let i = 0; i < 26; i++) noiseHit(a, now + Math.random() * dur, 0.012 + Math.random() * 0.01, 0.05 + Math.random() * 0.07, 'bandpass', 3000 + Math.random() * 4000, undefined, 3);
+  } else if (cue === 'gather') {
+    surf(a, now, Math.max(0.3, dur), 0.06, 5200, 6800, Math.max(0.1, dur * 0.5), 1.2);
+    for (let i = 0; i < 18; i++) noiseHit(a, now + Math.random() * dur, 0.02, 0.04 + Math.random() * 0.04, 'bandpass', 4200 + Math.random() * 2500, undefined, 2);
+  } else {
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(110, now);
+    osc.frequency.exponentialRampToValueAtTime(60, now + 0.12);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.14, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    osc.connect(gain).connect(bus('sfx', a));
+    osc.start(now);
+    osc.stop(now + 0.2);
+    noiseHit(a, now, 0.08, 0.08, 'bandpass', 3800, 2200, 1);
+  }
+}
+
+// ---------- 草甸（牌桌风格「草甸」，gust.ts）：一阵风刮过来把牌吹成花瓣，轻风再把花瓣送回来 ----------
+
+// 草甸的几声：gust 一阵风刮过来（呼的一声，越来越响再过去，里面一丝细细的风哨，dur 秒），scatter 牌被吹散（花瓣、草叶沙沙一阵），
+// breeze 轻风把花瓣送回来（很轻的风声加几下沙沙，dur 秒），land 最后一墩落好（很轻的一声“噗”）
+export function playGust(cue: 'gust' | 'scatter' | 'breeze' | 'land', dur = 0.5): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  if (cue === 'gust') {
+    surf(a, now, dur + 0.35, 0.2, 260, 1250, dur * 0.5, 0.8);
+    surf(a, now + 0.05, dur + 0.2, 0.09, 90, 220, dur * 0.45, 0.6);
+    surf(a, now + dur * 0.15, dur * 0.8, 0.025, 1900, 2700, dur * 0.4, 9);
+  } else if (cue === 'scatter') {
+    for (let i = 0; i < 34; i++) {
+      const t = Math.random() * dur;
+      noiseHit(a, now + t, 0.02 + Math.random() * 0.03, (0.05 + Math.random() * 0.07) * (1 - (t / dur) * 0.6), 'bandpass', 2600 + Math.random() * 4200, undefined, 1.6);
+    }
+  } else if (cue === 'breeze') {
+    surf(a, now, dur + 0.4, 0.07, 420, 900, dur * 0.5, 0.6);
+    for (let i = 0; i < 14; i++) noiseHit(a, now + Math.random() * dur, 0.025, 0.03 + Math.random() * 0.035, 'bandpass', 3200 + Math.random() * 3000, undefined, 1.8);
+  } else {
+    noiseHit(a, now, 0.12, 0.1, 'lowpass', 520, 180, 0.7);
+    noiseHit(a, now, 0.05, 0.04, 'bandpass', 3600, 2400, 1.2);
+  }
+}
+
+// 换局的声音（table3d.ts 的 onShift）：沙滩那几声给 playTide，草甸那几声给 playGust
+export function playShift(cue: 'surge' | 'crash' | 'ebb' | 'gather' | 'settle' | 'gust' | 'scatter' | 'breeze' | 'land', dur = 0.5): void {
+  if (cue === 'gust' || cue === 'scatter' || cue === 'breeze' || cue === 'land') playGust(cue, dur);
+  else playTide(cue, dur);
+}
+
 // 全自动麻将机的几声：open 仪表盘抬起来（伺服电机短短一声加一下卡扣），sweep 牌哗啦啦掉进机器（一串高低不一的“嗒”，底下一阵闷响），
 // drop 升降板往下沉（往下走的嗡嗡声），close 仪表盘落回去（一记闷响），rise 升降板往上升（电机嗡嗡声加齿轮声，dur 秒），lock 升到顶卡住（“咔哒”）
 export function playMachine(cue: 'open' | 'sweep' | 'drop' | 'close' | 'rise' | 'lock', dur = 0.3): void {

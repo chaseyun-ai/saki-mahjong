@@ -46,10 +46,25 @@ export interface TableColors {
   machine?: { backs: [string, string] };
   // 实际用的仪表盘形状（tableColors() 照视觉设置里的「仪表盘形状」填：跟牌桌走时是牌桌风格自己的，跟皮肤走是方盒）
   shape?: ConsoleForm;
+  // 牌本身的样子（只有沙滩、草甸有）：牌身什么颜色、什么质地，牌背上压什么花样。没写就是原来的象牙白牌身
+  tile?: TileLook;
+  // 换局的演法（只有沙滩、草甸有）：tide 一个浪打过来把牌冲散、退潮后沙子聚成新牌山；gust 一阵风把牌吹散、下一局再聚拢
+  changeover?: 'tide' | 'gust';
+}
+
+export interface TileLook {
+  // 牌身（牌面那半）的颜色
+  body: string;
+  // 牌身、牌背上的细纹理：sand 一粒粒的沙（沙滩），fiber 一丝丝花瓣的纹路（草甸）；不写就是光面
+  grain?: 'sand' | 'fiber';
+  // 牌身、牌背的粗糙度（沙子一点都不反光，花瓣有一点点光泽）
+  rough?: number;
+  // 牌背正中压出来的花样：贝壳（沙滩）、叶子（草甸）
+  mark?: 'shell' | 'leaf';
 }
 
 export type FeltPattern = 'cloth' | 'baize' | 'wood' | 'matte' | 'linen' | 'sand' | 'grass';
-export type ConsoleLook = 'skin' | 'led' | 'plaque' | 'flat' | 'flap' | 'tide' | 'sky';
+export type ConsoleLook = 'skin' | 'led' | 'plaque' | 'flat' | 'flap' | 'tide' | 'linen';
 // 仪表盘的形状：圆角方盒（原来的）、矮木牌、圆盘、切角方盒、软包（大圆角、边上鼓起来，顶上一圈包边）
 export type ConsoleForm = 'box' | 'plate' | 'disc' | 'chamfer' | 'cushion';
 
@@ -227,40 +242,47 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     // 车站的铝件：切角桌框、平顶一排铆钉，内侧低一级的亮铝台阶；仪表盘是高一点的切角铝盒；桌布上只在四个角画一截
     form: { corner: 'chamfer', bevel: 0.04, trim: 'step', studs: 'rivet', console: 'chamfer', line: 'corners' },
   },
-  // 沙滩：细沙桌面（细细的沙粒、几道风吹出来的沙纹）、漂流木桌框、一圈麻绳；仪表盘是一汪海水，白字，轮到谁亮一块阳光黄
+  // 沙滩：浅色的细沙桌面（只有细细的沙粒和一点深浅，不画花纹），海水色的桌框绕一圈白色船绳，像沙滩四周是海；
+  // 牌是沙子捏的：牌身是晒干的浅沙，牌背是湿一点的深沙、正中压一个贝壳印。仪表盘是一汪深海水，白字，轮到谁亮一块阳光黄。
+  // 换局时一个浪打过来把牌冲散，退潮后沙子聚成新的牌山（tide.ts）
   beach: {
-    felt: ['#e3c48a', '#d4ad6c', '#bb9257'],
-    feltLine: 'rgba(110,80,40,0.3)',
-    back: '#0f6670',
-    frame: '#8f806c',
-    trim: '#cdb68a',
-    room: '#0b222c',
-    console: { bg: ['#0c5a63', '#083a42'], line: '#7ccfc8', ink: '#f4fbfa', dim: '#c3e6e2', accent: '#ffd166', title: "900 1em 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" },
+    felt: ['#efd9b2', '#e4c9a0', '#d2b387'],
+    feltLine: 'rgba(120,96,60,0.25)',
+    back: '#bc9d72',
+    tile: { body: '#f5e8cd', grain: 'sand', rough: 0.92, mark: 'shell' },
+    changeover: 'tide',
+    frame: '#0b6a72',
+    trim: '#efe9dc',
+    room: '#0a2830',
+    console: { bg: ['#0f6670', '#0a4a52'], line: '#d9f2ee', ink: '#f7fcfb', dim: '#cfe8e4', accent: '#ffd166', title: "900 1em 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" },
     pattern: 'sand',
     look: 'tide',
-    frameFinish: [0.85, 0],
+    frameFinish: [0.3, 0],
     trimFinish: [0.9, 0],
-    consoleBody: '#0a3b42',
-    consoleGlow: 0.3,
-    // 冲上岸的漂流木：大圆角、圆边的桌框，和桌布接缝的地方一圈麻绳；仪表盘是一块圆盘（一汪海水）；桌布上一道线，像用手指在沙上划的
-    form: { corner: 'pill', bevel: 0.26, trim: 'rope', console: 'disc', line: 'single' },
+    consoleBody: '#0b3f46',
+    consoleGlow: 0.25,
+    // 大圆角、圆边的桌框，和桌布接缝的地方一圈白色船绳；仪表盘是一块圆盘（一汪海水）；桌布上不画线
+    form: { corner: 'pill', bevel: 0.26, trim: 'rope', console: 'disc', line: 'none' },
   },
-  // 草甸：青草桌面（一片片深浅不一的草、零星几朵小花）、橡木桌框；仪表盘是一块蓝天白云，深蓝字，轮到谁亮一块草绿
+  // 草甸：灰绿的草地桌面（只有顺着风倒的细草和几片云影，不画花）、浅橡木桌框；仪表盘是一块米白亚麻布，四边一圈缝线，深绿字，轮到谁亮一块叶绿。
+  // 牌是花瓣捏的：牌身花瓣白，牌背是叶子的绿、正中斜躺着一片叶子（叶脉浅色）。换局时一阵风把牌吹成花瓣、草叶飘走，花瓣再飘回来落成新的牌山（gust.ts）
   meadow: {
-    felt: ['#4a7c31', '#41722e', '#30561f'],
-    feltLine: 'rgba(240,250,210,0.2)',
-    back: '#9d88d0',
-    frame: '#6e4f32',
-    trim: '#d8c69c',
-    room: '#0c1a0f',
-    console: { bg: ['#e2f2ff', '#b8dbf3'], line: '#6d9fc4', ink: '#14304c', dim: '#30577a', accent: '#2f7a3a', title: "900 1em 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" },
+    felt: ['#a8bc84', '#9ab077', '#859c63'],
+    feltLine: 'rgba(40,62,30,0.2)',
+    back: '#4f7f45',
+    tile: { body: '#fbfaf3', grain: 'fiber', rough: 0.55, mark: 'leaf' },
+    changeover: 'gust',
+    frame: '#a97c4f',
+    trim: '#e9dfc6',
+    room: '#14231a',
+    console: { bg: ['#f7f2e4', '#ebe2ca'], line: '#93a57d', ink: '#1f3424', dim: '#45573f', accent: '#2f6a2c', title: "900 1em 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" },
     pattern: 'grass',
-    look: 'sky',
-    frameFinish: [0.7, 0],
+    look: 'linen',
+    frameFinish: [0.6, 0],
     trimFinish: [0.6, 0],
-    consoleBody: '#5a3f27',
+    consoleBody: '#8d6a43',
     consoleGlow: 0.12,
-    // 橡木桌：圆角、圆边，没有包边；仪表盘是软包那种大圆角的木盒，顶上一圈浅色木边，里面镶一块蓝天；桌布上不画线
+    // 橡木桌：圆角、圆边，没有包边；仪表盘是软包那种大圆角的木盒，顶上一圈浅色木边，里面镶一块亚麻布；桌布上不画线
     form: { corner: 'round', bevel: 0.3, trim: 'none', console: 'cushion', line: 'none' },
   },
 };
@@ -271,8 +293,8 @@ export const TABLE_STYLES: { id: TableStyleId; name: string; note: string }[] = 
   { id: 'wood', name: '原木', note: '胡桃木桌面、直角木框嵌一道铜线；仪表盘是一块矮矮的浅色木牌，墨色字，轮到谁盖一个朱红印' },
   { id: 'night', name: '深夜', note: '炭灰哑光桌布、大圆角薄框；仪表盘是一块圆盘，只有灰白两色加一点青，不发光、没花纹，适合长时间打' },
   { id: 'flap', name: '翻牌屏', note: '藏青亚麻桌布、切角铝框钉一排铆钉；仪表盘是切角铝盒，点数像车站的翻牌显示屏，一位数一块牌' },
-  { id: 'beach', name: '沙滩', note: '细沙桌面、漂流木桌框绕一圈麻绳；仪表盘是一汪海水色的圆盘，白字，轮到谁亮一块阳光黄；青绿牌背' },
-  { id: 'meadow', name: '草甸', note: '青草桌面、橡木桌框；仪表盘是一块蓝天白云，深蓝字，轮到谁亮一块草绿；淡紫牌背' },
+  { id: 'beach', name: '沙滩', note: '浅色细沙桌面、海水色桌框绕一圈白船绳；牌是沙子捏的，牌背压一个贝壳印；仪表盘是一汪深海水，白字，轮到谁亮一块阳光黄。换局时一个浪打过来把牌冲散，退潮后沙子聚成新牌山' },
+  { id: 'meadow', name: '草甸', note: '灰绿草地桌面、浅橡木桌框；牌是花瓣捏的，叶绿牌背上斜躺着一片叶子；仪表盘是一块米白亚麻布，深绿字，轮到谁亮一块叶绿。换局时一阵风把牌吹成花瓣飘走，花瓣再飘回来落成新牌山' },
 ];
 
 const STYLE_KEY = 'saki-table-style';

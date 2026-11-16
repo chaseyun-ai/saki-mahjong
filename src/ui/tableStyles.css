@@ -3,7 +3,7 @@
    这里是 2D 牌桌的桌布、桌边一圈和中间那块；3D、2.5D 牌桌在 theme.ts（颜色、款式）、table3d.ts（桌面材质、仪表盘的形状）、
    tableModel.ts（桌框的形状）、consoleLooks.ts（仪表盘上的字）里画。
    每套除了颜色，形状也不一样（和 3D 里对应）：自动麻将机是圆角方块，原木是钉了铜钉的直角木牌，深夜是大圆角，
-   翻牌屏是切角铝板，沙滩是一汪海水的圆盘，草甸是镶在浅色木边里的一块蓝天。
+   翻牌屏是切角铝板，沙滩是一汪海水的圆盘，草甸是镶在浅色木边里的一块亚麻布。
    跟皮肤走时 <html> 上没有 data-table，这里一条都不生效。
    中间那块的底色、字色每套都写死，不跟皮肤的 --ink、--gold 走（浅色皮肤会把它们改成深色）。
    字和底色都量过对比度：正文 4.5:1 以上。
@@ -477,29 +477,52 @@
   color: #7a3200;
 }
 
-/* ---------- 沙滩：细沙、漂流木、麻绳，中间一汪海水 ---------- */
+/* ---------- 沙滩：浅色细沙、海水色的桌边绕一圈白色船绳，牌是沙子捏的，中间一汪深海水 ---------- */
 
 :root[data-table='beach'][data-theme] .stage:not(.net) .table:not(.sketch) {
-  --felt: #d4ad6c;
-  --felt-dark: #bb9257;
-  --tile-back: #0f6670;
+  --felt: #e4c9a0;
+  --felt-dark: #d2b387;
+  /* 沙子捏的牌：牌面是晒干的浅沙，牌的厚度那一截和牌背是湿一点的深沙 */
+  --tile-face: #f5e8cd;
+  --tile-edge: #c4a77c;
+  --tile-back: #bc9d72;
   background:
-    /* 细沙粒（分形噪声里挑出来的一粒粒深的、浅的） */
+    /* 细沙粒（分形噪声里挑出来的一粒粒深的、浅的），不画沙纹 */
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E %3Cfilter id='d'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='3' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 .36 0 0 0 0 .26 0 0 0 0 .13 2.4 0 0 0 -1.25'/%3E%3C/filter%3E %3Cfilter id='l'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' seed='9' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .98 0 0 0 0 .92 2.2 0 0 0 -1.2'/%3E%3C/filter%3E %3Crect width='180' height='180' filter='url(%23d)' opacity='.5'/%3E%3Crect width='180' height='180' filter='url(%23l)' opacity='.45'/%3E%3C/svg%3E"),
-    /* 风吹出来的沙纹：起伏的暗线，紧挨着一道亮线 */
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='66'%3E%3Cpath d='M-10,7.2 L0,10.0 L10,12.8 L20,12.8 L30,12.0 L40,12.8 L50,12.8 L60,10.0 L70,7.2 L80,7.2 L90,8.0 L100,7.2 L110,7.2 L120,10.0 L130,12.8 L140,12.8 L150,12.0 L160,12.8 L170,12.8 L180,10.0 L190,7.2 L200,7.2 L210,8.0 L220,7.2 L230,7.2 L240,10.0 L250,12.8' stroke='rgb(100,72,34)' stroke-opacity='.13' stroke-width='2' fill='none'/%3E%3Cpath d='M-10,4.8 L0,7.6 L10,10.4 L20,10.4 L30,9.6 L40,10.4 L50,10.4 L60,7.6 L70,4.8 L80,4.8 L90,5.6 L100,4.8 L110,4.8 L120,7.6 L130,10.4 L140,10.4 L150,9.6 L160,10.4 L170,10.4 L180,7.6 L190,4.8 L200,4.8 L210,5.6 L220,4.8 L230,4.8 L240,7.6 L250,10.4' stroke='rgb(255,246,222)' stroke-opacity='.14' stroke-width='1.6' fill='none'/%3E%3Cpath d='M-10,36.0 L0,36.8 L10,36.8 L20,34.0 L30,31.2 L40,31.2 L50,32.0 L60,31.2 L70,31.2 L80,34.0 L90,36.8 L100,36.8 L110,36.0 L120,36.8 L130,36.8 L140,34.0 L150,31.2 L160,31.2 L170,32.0 L180,31.2 L190,31.2 L200,34.0 L210,36.8 L220,36.8 L230,36.0 L240,36.8 L250,36.8' stroke='rgb(100,72,34)' stroke-opacity='.13' stroke-width='2' fill='none'/%3E%3Cpath d='M-10,33.6 L0,34.4 L10,34.4 L20,31.6 L30,28.8 L40,28.8 L50,29.6 L60,28.8 L70,28.8 L80,31.6 L90,34.4 L100,34.4 L110,33.6 L120,34.4 L130,34.4 L140,31.6 L150,28.8 L160,28.8 L170,29.6 L180,28.8 L190,28.8 L200,31.6 L210,34.4 L220,34.4 L230,33.6 L240,34.4 L250,34.4' stroke='rgb(255,246,222)' stroke-opacity='.14' stroke-width='1.6' fill='none'/%3E%3Cpath d='M-10,53.2 L0,53.2 L10,54.0 L20,53.2 L30,53.2 L40,56.0 L50,58.8 L60,58.8 L70,58.0 L80,58.8 L90,58.8 L100,56.0 L110,53.2 L120,53.2 L130,54.0 L140,53.2 L150,53.2 L160,56.0 L170,58.8 L180,58.8 L190,58.0 L200,58.8 L210,58.8 L220,56.0 L230,53.2 L240,53.2 L250,54.0' stroke='rgb(100,72,34)' stroke-opacity='.13' stroke-width='2' fill='none'/%3E%3Cpath d='M-10,50.8 L0,50.8 L10,51.6 L20,50.8 L30,50.8 L40,53.6 L50,56.4 L60,56.4 L70,55.6 L80,56.4 L90,56.4 L100,53.6 L110,50.8 L120,50.8 L130,51.6 L140,50.8 L150,50.8 L160,53.6 L170,56.4 L180,56.4 L190,55.6 L200,56.4 L210,56.4 L220,53.6 L230,50.8 L240,50.8 L250,51.6' stroke='rgb(255,246,222)' stroke-opacity='.14' stroke-width='1.6' fill='none'/%3E%3C/svg%3E"),
-    radial-gradient(ellipse at 50% 47%, #e3c48a 0%, #d4ad6c 45%, #bb9257 100%);
-  /* 桌边：漂流木一圈，里面一道麻绳 */
+    radial-gradient(ellipse at 50% 47%, #efd9b2 0%, #e4c9a0 45%, #d2b387 100%);
+  /* 桌边：一圈海水，里面一道白色船绳 */
   box-shadow:
-    inset 0 0 0 9px #8f806c,
-    inset 0 0 0 10px #6f6352,
-    inset 0 0 0 14px #cdb68a,
-    inset 0 0 0 15px #8a7350;
+    inset 0 0 0 10px #1f8f94,
+    inset 0 0 0 11px #157a80,
+    inset 0 0 0 15px #efe9dc,
+    inset 0 0 0 16px #b9a98a;
+}
+
+/* 赤牌：浅沙里带一点红 */
+:root[data-table='beach'][data-theme] .stage:not(.net) .table:not(.sketch) .tile.red:not(.back) {
+  background: #f9e2d2;
+}
+
+/* 牌背：湿沙，一粒粒的，正中压一个贝壳印 */
+:root[data-table='beach'][data-theme] .stage:not(.net) .table:not(.sketch) .tile.back:not(.tint, .t-top, .sketch) {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 80 L8.0 61.3 Q3.9 51.9 14.1 51.3 Q12.5 41.2 22.5 43.1 Q23.5 32.9 32.8 37.3 Q36.3 27.8 44.1 34.4 Q50.0 26.0 55.9 34.4 Q63.7 27.8 67.2 37.3 Q76.5 32.9 77.5 43.1 Q87.5 41.2 85.9 51.3 Q96.1 51.9 92.0 61.3 Z' fill='rgb(255,250,236)' fill-opacity='.3' stroke='rgb(70,48,22)' stroke-opacity='.42' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M35 78 L65 78 L60 90 L40 90 Z' fill='rgb(255,250,236)' fill-opacity='.3' stroke='rgb(70,48,22)' stroke-opacity='.42' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M43.0 74.4 L14.9 51.9 M44.6 72.8 L23.1 43.9 M46.6 71.7 L33.1 38.3 M48.9 71.1 L44.3 35.4 M51.1 71.1 L55.7 35.4 M53.4 71.7 L66.9 38.3 M55.4 72.8 L76.9 43.9 M57.0 74.4 L85.1 51.9' stroke='rgb(70,48,22)' stroke-opacity='.42' stroke-width='3' stroke-linecap='round' fill='none'/%3E%3C/svg%3E") center / 64% no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E %3Cfilter id='d'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='3' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 .36 0 0 0 0 .26 0 0 0 0 .13 2.4 0 0 0 -1.25'/%3E%3C/filter%3E %3Cfilter id='l'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' seed='9' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .98 0 0 0 0 .92 2.2 0 0 0 -1.2'/%3E%3C/filter%3E %3Crect width='180' height='180' filter='url(%23d)' opacity='.5'/%3E%3Crect width='180' height='180' filter='url(%23l)' opacity='.45'/%3E%3C/svg%3E") 0 0 / 90px 90px,
+    linear-gradient(160deg, #cdb187, #b39468);
+  box-shadow:
+    0 2px 0 #8f7350,
+    0 2px 3px rgba(0, 0, 0, 0.3);
 }
 
 /* 浅色沙面上提示写深棕色（近白的字看不清） */
 :root[data-table='beach'][data-theme] .stage:not(.net) .table:not(.sketch) .hint {
   color: #33260f;
+}
+
+/* 浅色桌面（沙滩、草甸）：左上角能力说明那块深色底是半透明的，透出来的桌面太亮，字就淡了；把透出来的那点桌面压暗（各皮肤的底色不变） */
+:root:is([data-table='beach'], [data-table='meadow'])[data-theme] .stage:not(.net) .table:not(.sketch) .ability-panel {
+  -webkit-backdrop-filter: brightness(0.35);
+  backdrop-filter: brightness(0.35);
 }
 
 /* 2.5D、3D：手牌那行提示压在沙面、草地上，浅色字看不清，垫一块深色胶囊（白瓷、漫画自带白底胶囊，不动） */
@@ -510,44 +533,42 @@
   color: #e9edf2;
 }
 
-/* 一汪海水：圆润的一块（3D 里是圆盘），外圈一道白色浪花线 */
+/* 一汪深海水：圆润的一块（3D 里是圆盘），里面一道白线（浪花），别的什么都不画 */
 :root[data-table='beach'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
-  --stitch: #7ccfc8;
+  --stitch: #9fd8d2;
   --diff-plus: #b5e3ff;
   --diff-minus: #ffc2b4;
-  --ink: #f4fbfa;
-  --ink-quiet: #c3e6e2;
+  --ink: #f7fcfb;
+  --ink-quiet: #cfe8e4;
   --gold: #ffd166;
-  color: #c3e6e2;
-  border: 2px solid #083a42;
+  color: #cfe8e4;
+  border: 2px solid #0a4a52;
   border-radius: 64px;
-  background:
-    repeating-linear-gradient(168deg, transparent 0 13px, rgba(200, 245, 240, 0.06) 13px 15px, transparent 15px 26px),
-    radial-gradient(#0c5a63, #083a42);
-  outline: 2px solid rgba(240, 252, 250, 0.55);
+  background: radial-gradient(#0f6670, #0a4a52);
+  outline: 2px solid rgba(240, 252, 250, 0.5);
   outline-offset: -7px;
   box-shadow: 0 8px 22px rgba(40, 30, 10, 0.35);
 }
 
 :root[data-table='beach'][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {
-  color: #f4fbfa;
+  color: #f7fcfb;
 }
 
 :root[data-table='beach'][data-theme] .stage:not(.net) .table:not(.sketch) .center .remain,
 :root[data-table='beach'][data-theme] .stage:not(.net) .table:not(.sketch) .center .sticks {
-  color: #c3e6e2;
+  color: #cfe8e4;
 }
 
-/* 风位：一块磨圆的海玻璃（浅色底、深青色字），边上一圈角色色 */
+/* 风位：一块浅一点的水、白字，外面一圈角色色 */
 :root[data-table='beach'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
   border-radius: 9px;
-  background: #d9f1ee;
+  background: rgba(255, 255, 255, 0.14);
   box-shadow: 0 0 0 2px var(--c);
-  color: #0a3940;
+  color: #f7fcfb;
 }
 
 :root[data-table='beach'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .pts {
-  color: #f4fbfa;
+  color: #f7fcfb;
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   font-size: 17px;
 }
@@ -569,98 +590,212 @@
   color: #ffd166;
 }
 
-/* ---------- 草甸：青草、橡木，中间一块蓝天白云 ---------- */
-
-:root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) {
-  --felt: #41722e;
-  --felt-dark: #30561f;
-  --tile-back: #9d88d0;
-  background:
-    /* 零星几朵小花：白的、黄的、淡紫的 */
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Ccircle cx='31.4' cy='46.9' r='1.4' fill='rgb(246,243,232)' fill-opacity='.7'/%3E%3Ccircle cx='29.1' cy='47.3' r='1.4' fill='rgb(246,243,232)' fill-opacity='.7'/%3E%3Ccircle cx='28.4' cy='46.3' r='1.4' fill='rgb(246,243,232)' fill-opacity='.7'/%3E%3Ccircle cx='29.3' cy='44.5' r='1.4' fill='rgb(246,243,232)' fill-opacity='.7'/%3E%3Ccircle cx='31.3' cy='45.0' r='1.4' fill='rgb(246,243,232)' fill-opacity='.7'/%3E%3Ccircle cx='30' cy='46' r='1.0' fill='rgb(232,180,60)' fill-opacity='.8'/%3E%3Ccircle cx='129.3' cy='22.7' r='1.3' fill='rgb(242,211,91)' fill-opacity='.7'/%3E%3Ccircle cx='127.5' cy='23.4' r='1.3' fill='rgb(242,211,91)' fill-opacity='.7'/%3E%3Ccircle cx='126.5' cy='21.8' r='1.3' fill='rgb(242,211,91)' fill-opacity='.7'/%3E%3Ccircle cx='126.9' cy='21.0' r='1.3' fill='rgb(242,211,91)' fill-opacity='.7'/%3E%3Ccircle cx='128.9' cy='20.8' r='1.3' fill='rgb(242,211,91)' fill-opacity='.7'/%3E%3Ccircle cx='128' cy='22' r='0.9' fill='rgb(232,180,60)' fill-opacity='.8'/%3E%3Ccircle cx='177.0' cy='141.0' r='1.2' fill='rgb(205,190,240)' fill-opacity='.7'/%3E%3Ccircle cx='175.5' cy='141.3' r='1.2' fill='rgb(205,190,240)' fill-opacity='.7'/%3E%3Ccircle cx='174.8' cy='140.8' r='1.2' fill='rgb(205,190,240)' fill-opacity='.7'/%3E%3Ccircle cx='176.1' cy='138.6' r='1.2' fill='rgb(205,190,240)' fill-opacity='.7'/%3E%3Ccircle cx='177.4' cy='139.6' r='1.2' fill='rgb(205,190,240)' fill-opacity='.7'/%3E%3Ccircle cx='176' cy='140' r='0.9' fill='rgb(232,180,60)' fill-opacity='.8'/%3E%3Ccircle cx='71.4' cy='171.0' r='1.5' fill='rgb(246,243,232)' fill-opacity='.7'/%3E%3Ccircle cx='70.3' cy='171.7' r='1.5' fill='rgb(246,243,232)' fill-opacity='.7'/%3E%3Ccircle cx='68.6' cy='171.0' r='1.5' fill='rgb(246,243,232)' fill-opacity='.7'/%3E%3Ccircle cx='69.3' cy='168.4' r='1.5' fill='rgb(246,243,232)' fill-opacity='.7'/%3E%3Ccircle cx='70.6' cy='168.4' r='1.5' fill='rgb(246,243,232)' fill-opacity='.7'/%3E%3Ccircle cx='70' cy='170' r='1.0' fill='rgb(232,180,60)' fill-opacity='.8'/%3E%3C/svg%3E"),
-    /* 短短的草叶，多半竖着、稍微往一边倒 */
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Cpath d='M20.7 9.7L21.8 6.5' stroke='rgb(14,42,8)' stroke-opacity='0.18' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M3.7 32.5L2.5 27.5' stroke='rgb(206,238,140)' stroke-opacity='0.11' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M27.2 52.9L26.5 48.9' stroke='rgb(14,42,8)' stroke-opacity='0.23' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M36.9 25.4L38.8 22.7' stroke='rgb(14,42,8)' stroke-opacity='0.17' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M9.2 7.5L9.3 0.5' stroke='rgb(206,238,140)' stroke-opacity='0.15' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M9.2 71.5L9.3 64.5' stroke='rgb(206,238,140)' stroke-opacity='0.15' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M40.9 23.8L41.6 20.6' stroke='rgb(206,238,140)' stroke-opacity='0.12' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M43.5 27.4L43.6 21.4' stroke='rgb(206,238,140)' stroke-opacity='0.12' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M50.8 44.7L50.5 38.9' stroke='rgb(14,42,8)' stroke-opacity='0.23' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M46.7 18.4L48.7 15.5' stroke='rgb(206,238,140)' stroke-opacity='0.16' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M9.7 31.3L8.3 25.1' stroke='rgb(14,42,8)' stroke-opacity='0.20' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M56.0 20.1L58.1 14.5' stroke='rgb(14,42,8)' stroke-opacity='0.19' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M53.8 60.5L54.7 54.2' stroke='rgb(206,238,140)' stroke-opacity='0.16' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M41.4 63.6L43.4 59.6' stroke='rgb(206,238,140)' stroke-opacity='0.15' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M41.4 -0.4L43.4 -4.4' stroke='rgb(206,238,140)' stroke-opacity='0.15' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M1.4 29.5L1.0 26.0' stroke='rgb(206,238,140)' stroke-opacity='0.16' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M8.3 15.8L8.9 8.5' stroke='rgb(206,238,140)' stroke-opacity='0.14' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M35.2 56.5L38.5 50.0' stroke='rgb(206,238,140)' stroke-opacity='0.13' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M23.0 56.6L25.1 53.5' stroke='rgb(206,238,140)' stroke-opacity='0.12' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M14.9 31.0L16.0 26.9' stroke='rgb(206,238,140)' stroke-opacity='0.13' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M23.6 36.2L27.2 30.9' stroke='rgb(14,42,8)' stroke-opacity='0.20' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M43.3 3.5L46.8 -2.5' stroke='rgb(14,42,8)' stroke-opacity='0.22' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M43.3 67.5L46.8 61.5' stroke='rgb(14,42,8)' stroke-opacity='0.22' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M25.1 25.5L24.0 19.5' stroke='rgb(206,238,140)' stroke-opacity='0.11' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M13.4 10.4L13.5 7.1' stroke='rgb(206,238,140)' stroke-opacity='0.11' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M6.5 23.3L4.7 16.1' stroke='rgb(14,42,8)' stroke-opacity='0.15' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M16.1 22.2L16.4 18.6' stroke='rgb(14,42,8)' stroke-opacity='0.24' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M29.8 31.0L29.2 27.5' stroke='rgb(206,238,140)' stroke-opacity='0.12' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M53.0 10.3L51.1 2.8' stroke='rgb(14,42,8)' stroke-opacity='0.15' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M34.8 1.7L36.4 -6.0' stroke='rgb(14,42,8)' stroke-opacity='0.21' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M34.8 65.7L36.4 58.0' stroke='rgb(14,42,8)' stroke-opacity='0.21' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M16.7 23.5L15.9 16.7' stroke='rgb(14,42,8)' stroke-opacity='0.22' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M21.1 14.3L24.6 7.2' stroke='rgb(14,42,8)' stroke-opacity='0.22' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M52.4 47.4L52.0 41.8' stroke='rgb(206,238,140)' stroke-opacity='0.10' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M1.8 17.9L1.6 11.4' stroke='rgb(14,42,8)' stroke-opacity='0.18' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M60.0 63.2L62.7 59.2' stroke='rgb(206,238,140)' stroke-opacity='0.12' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M60.0 -0.8L62.7 -4.8' stroke='rgb(206,238,140)' stroke-opacity='0.12' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M12.6 13.1L14.7 5.9' stroke='rgb(14,42,8)' stroke-opacity='0.19' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M41.8 51.2L40.6 45.0' stroke='rgb(14,42,8)' stroke-opacity='0.22' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M48.0 30.6L47.3 23.7' stroke='rgb(206,238,140)' stroke-opacity='0.16' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M62.2 25.3L62.9 17.6' stroke='rgb(14,42,8)' stroke-opacity='0.16' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M8.1 9.7L11.8 3.7' stroke='rgb(206,238,140)' stroke-opacity='0.17' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M62.7 42.1L63.0 36.3' stroke='rgb(206,238,140)' stroke-opacity='0.10' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M-1.3 42.1L-1.0 36.3' stroke='rgb(206,238,140)' stroke-opacity='0.10' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M62.1 41.6L63.7 34.1' stroke='rgb(206,238,140)' stroke-opacity='0.17' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M-1.9 41.6L-0.3 34.1' stroke='rgb(206,238,140)' stroke-opacity='0.17' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M52.9 13.5L52.7 9.0' stroke='rgb(206,238,140)' stroke-opacity='0.15' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M16.6 26.8L15.5 19.4' stroke='rgb(206,238,140)' stroke-opacity='0.14' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M37.3 57.9L38.2 50.3' stroke='rgb(14,42,8)' stroke-opacity='0.19' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M33.5 1.2L34.0 -2.7' stroke='rgb(206,238,140)' stroke-opacity='0.16' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M33.5 65.2L34.0 61.3' stroke='rgb(206,238,140)' stroke-opacity='0.16' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M11.0 30.3L13.2 24.9' stroke='rgb(206,238,140)' stroke-opacity='0.14' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M35.5 50.2L34.5 44.5' stroke='rgb(206,238,140)' stroke-opacity='0.12' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M49.4 32.5L51.0 25.9' stroke='rgb(14,42,8)' stroke-opacity='0.18' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M39.2 32.4L40.4 26.0' stroke='rgb(206,238,140)' stroke-opacity='0.14' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M30.6 60.3L33.2 53.3' stroke='rgb(14,42,8)' stroke-opacity='0.17' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M35.8 60.4L37.5 57.1' stroke='rgb(206,238,140)' stroke-opacity='0.14' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M4.6 15.4L3.4 9.2' stroke='rgb(14,42,8)' stroke-opacity='0.23' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M9.9 45.8L11.1 42.3' stroke='rgb(14,42,8)' stroke-opacity='0.24' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M14.1 61.0L14.5 55.5' stroke='rgb(14,42,8)' stroke-opacity='0.22' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M10.3 27.6L11.2 23.0' stroke='rgb(206,238,140)' stroke-opacity='0.13' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M46.2 1.2L47.4 -3.8' stroke='rgb(206,238,140)' stroke-opacity='0.13' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M46.2 65.2L47.4 60.2' stroke='rgb(206,238,140)' stroke-opacity='0.13' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M39.9 32.8L38.3 25.0' stroke='rgb(14,42,8)' stroke-opacity='0.24' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M6.7 17.0L5.1 10.3' stroke='rgb(206,238,140)' stroke-opacity='0.11' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M27.0 58.3L29.0 54.5' stroke='rgb(206,238,140)' stroke-opacity='0.17' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M36.5 44.8L35.9 41.6' stroke='rgb(14,42,8)' stroke-opacity='0.18' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M4.6 60.1L6.7 53.4' stroke='rgb(206,238,140)' stroke-opacity='0.17' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M4.3 55.2L4.9 50.6' stroke='rgb(14,42,8)' stroke-opacity='0.23' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M17.1 8.3L18.0 4.2' stroke='rgb(206,238,140)' stroke-opacity='0.11' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M3.2 12.9L3.3 8.4' stroke='rgb(14,42,8)' stroke-opacity='0.17' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M32.0 11.4L32.1 8.3' stroke='rgb(206,238,140)' stroke-opacity='0.10' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M46.9 35.3L46.4 29.9' stroke='rgb(14,42,8)' stroke-opacity='0.15' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M52.4 27.7L53.7 20.6' stroke='rgb(206,238,140)' stroke-opacity='0.14' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M44.0 62.9L44.3 55.7' stroke='rgb(14,42,8)' stroke-opacity='0.20' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M25.9 22.2L25.1 18.7' stroke='rgb(206,238,140)' stroke-opacity='0.16' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M16.4 10.4L15.0 3.4' stroke='rgb(14,42,8)' stroke-opacity='0.21' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M18.0 15.5L18.0 10.2' stroke='rgb(206,238,140)' stroke-opacity='0.14' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M16.8 61.6L20.1 56.8' stroke='rgb(206,238,140)' stroke-opacity='0.18' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E"),
-    /* 一片有太阳照着、一片有云影 */
-    radial-gradient(ellipse at 28% 22%, rgba(214, 236, 150, 0.1), transparent 38%),
-    radial-gradient(ellipse at 75% 80%, rgba(16, 44, 10, 0.14), transparent 40%),
-    radial-gradient(ellipse at 50% 47%, #4a7c31 0%, #41722e 45%, #30561f 100%);
-  /* 桌边：橡木一圈，里面一道深色缝 */
-  box-shadow:
-    inset 0 0 0 10px #6e4f32,
-    inset 0 0 0 11px #4a3420;
+/* 沙滩换局（2D，app.ts 的 wash2d）：上一局的样子（.wash-old）盖在新的一局上面，一层海水（.wash-water，下沿一道白浪花）
+   从上面涌下来，涌到哪、上一局的样子就切到哪；停一下再退回去，露出新的一局。退过的沙子湿一会儿（.wash-wet）才干 */
+.stage .table > .wash-old {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
 }
 
-/* 一块蓝天：大圆角，镶一圈浅色木边，四个角上各一小朵白云（压不到字） */
+.stage .table > .wash-water {
+  position: absolute;
+  inset: 16px 16px 16px;
+  z-index: 41;
+  pointer-events: none;
+  transform: translateY(-104%);
+  background:
+    repeating-linear-gradient(176deg, transparent 0 38px, rgba(243, 251, 250, 0.1) 38px 41px, transparent 41px 90px),
+    linear-gradient(180deg, rgba(23, 128, 136, 0.98), rgba(64, 176, 176, 0.97) 70%, rgba(116, 210, 200, 0.96));
+}
+
+.stage .table > .wash-water::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -16px;
+  height: 30px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='30'%3E%3Cpath d='M0 0 H120 V13 Q105 25 90 15 Q75 5 60 15 Q45 25 30 15 Q15 5 0 13 Z' fill='rgb(243,251,250)' fill-opacity='.92'/%3E%3Ccircle cx='22' cy='22' r='2' fill='rgb(243,251,250)' fill-opacity='.6'/%3E%3Ccircle cx='71' cy='24' r='1.6' fill='rgb(243,251,250)' fill-opacity='.55'/%3E%3Ccircle cx='101' cy='21' r='1.3' fill='rgb(243,251,250)' fill-opacity='.5'/%3E%3C/svg%3E") repeat-x 0 0 / 120px 30px;
+}
+
+.stage .table > .wash-wet {
+  position: absolute;
+  inset: 16px;
+  z-index: 39;
+  pointer-events: none;
+  opacity: 0;
+  background: rgba(96, 66, 34, 0.16);
+}
+
+/* ---------- 草甸：灰绿的草地、浅橡木桌边，牌是花瓣捏的（叶绿牌背压一片叶子），中间一块米白亚麻布 ---------- */
+
+:root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) {
+  --felt: #9ab077;
+  --felt-dark: #859c63;
+  /* 花瓣捏的牌：牌面花瓣白，牌的厚度那一截是牌背的叶绿 */
+  --tile-face: #fbfaf3;
+  --tile-edge: #6b9459;
+  --tile-back: #4f7f45;
+  background:
+    /* 细草：一根根竖着的细纹，亮的、暗的都很淡 */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E %3Cfilter id='d'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85 .09' numOctaves='2' seed='4' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 .11 0 0 0 0 .2 0 0 0 0 .08 2.6 0 0 0 -1.35'/%3E%3C/filter%3E %3Cfilter id='l'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8 .1' numOctaves='2' seed='11' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 .93 0 0 0 0 .96 0 0 0 0 .77 2.4 0 0 0 -1.3'/%3E%3C/filter%3E %3Crect width='160' height='160' filter='url(%23d)' opacity='.42'/%3E%3Crect width='160' height='160' filter='url(%23l)' opacity='.38'/%3E%3C/svg%3E"),
+    /* 一片有太阳照着、一片有云影 */
+    radial-gradient(ellipse at 28% 24%, rgba(240, 246, 186, 0.16), transparent 40%),
+    radial-gradient(ellipse at 74% 78%, rgba(30, 58, 28, 0.12), transparent 42%),
+    radial-gradient(ellipse at 50% 47%, #a8bc84 0%, #9ab077 45%, #859c63 100%);
+  /* 桌边：浅橡木一圈，里面一道深色缝 */
+  box-shadow:
+    inset 0 0 0 10px #a97c4f,
+    inset 0 0 0 11px #7d5a36;
+}
+
+/* 赤牌：花瓣白里带一点粉 */
+:root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .tile.red:not(.back) {
+  background: #fdeee8;
+}
+
+/* 牌背：一片叶子的绿，正中斜躺着一片叶子（叶脉浅色） */
+:root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .tile.back:not(.tint, .t-top, .sketch) {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 136' preserveAspectRatio='none'%3E %3Cdefs%3E%3Cmask id='m'%3E%3Crect width='100' height='136' fill='white'/%3E%3Cg transform='translate(50 68) rotate(-15) scale(1.25) translate(-50 -50)'%3E%3Cpath d='M50 92 C30 74 22 46 50 8 C78 46 70 74 50 92 Z' fill='black'/%3E%3C/g%3E%3C/mask%3E%3C/defs%3E %3Crect width='100' height='136' fill='rgb(10,30,8)' fill-opacity='.22' mask='url(%23m)'/%3E %3Cg transform='translate(50 68) rotate(-15) scale(1.25) translate(-50 -50)' fill='none' stroke-linecap='round'%3E %3Cpath d='M50 92 C30 74 22 46 50 8 C78 46 70 74 50 92 Z' fill='rgb(250,255,235)' fill-opacity='.1' stroke='rgb(16,44,12)' stroke-opacity='.5' stroke-width='1.8'/%3E %3Cpath d='M50 39 Q45.05 34 39 30 M50 39 Q54.95 34 61 30 M50 52 Q42.80 47 34 43 M50 52 Q57.20 47 66 43 M50 65 Q42.35 60 33 56 M50 65 Q57.65 60 67 56 M50 78 Q43.25 73 35 69 M50 78 Q56.75 73 65 69 M50 89 Q45.50 84 40 80 M50 89 Q54.50 84 60 80' stroke='rgb(232,246,206)' stroke-opacity='.75' stroke-width='2.2'/%3E %3Cpath d='M50 97 L50 14' stroke='rgb(232,246,206)' stroke-opacity='.8' stroke-width='3'/%3E %3C/g%3E%3C/svg%3E") center / 100% 100% no-repeat,
+    linear-gradient(160deg, #5f9152, #4a7a40);
+  box-shadow:
+    0 2px 0 #34582d,
+    0 2px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* 草地上提示写深绿色（近白的字看不清） */
+:root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .hint {
+  color: #1d3318;
+}
+
+/* 一块米白亚麻布：大圆角，镶一圈浅橡木边，里面一圈缝线；四个斜角各压一小枝叶子（压不到字） */
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
-  --stitch: #6d9fc4;
+  --stitch: #93a57d;
   --diff-plus: #1a56b0;
   --diff-minus: #a81e27;
-  --ink: #14304c;
-  --ink-quiet: #2b5070;
-  --gold: #23692f;
-  --cloud: rgba(255, 255, 255, 0.92) 0 9px, transparent 10px;
-  color: #2b5070;
-  border: 3px solid #d8c69c;
+  --ink: #1f3424;
+  --ink-quiet: #45573f;
+  --gold: #2f6a2c;
+  color: #45573f;
+  border: 3px solid #b48b5c;
   border-radius: 28px;
   background:
-    radial-gradient(circle at 18px 20px, var(--cloud)),
-    radial-gradient(circle at 30px 15px, var(--cloud)),
-    radial-gradient(circle at calc(100% - 20px) 18px, var(--cloud)),
-    radial-gradient(circle at calc(100% - 32px) 22px, var(--cloud)),
-    radial-gradient(circle at 20px calc(100% - 18px), var(--cloud)),
-    radial-gradient(circle at calc(100% - 22px) calc(100% - 20px), var(--cloud)),
-    radial-gradient(circle at calc(100% - 34px) calc(100% - 15px), var(--cloud)),
-    radial-gradient(#e2f2ff, #b8dbf3);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='-22 -22 44 44'%3E%3Cg transform='rotate(-149) translate(-17 0)'%3E%3Cpath d='M0 0 Q14 -3 30 0' fill='none' stroke='rgb(84,122,66)' stroke-opacity='.72' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath transform='translate(7 -0.5) rotate(43.0)' d='M0 0 Q4.5 -3.42 9 0 Q4.5 3.42 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(13 -0.5) rotate(-43.0)' d='M0 0 Q5.0 -3.80 10 0 Q5.0 3.80 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(19 -0.5) rotate(43.0)' d='M0 0 Q4.5 -3.42 9 0 Q4.5 3.42 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(25 -0.5) rotate(-43.0)' d='M0 0 Q4.0 -3.04 8 0 Q4.0 3.04 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(31 0) rotate(0.0)' d='M0 0 Q4.0 -3.04 8 0 Q4.0 3.04 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3C/g%3E%3C/svg%3E") left 2px top 2px / 34px 34px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='-22 -22 44 44'%3E%3Cg transform='rotate(-31) translate(-17 0)'%3E%3Cpath d='M0 0 Q14 -3 30 0' fill='none' stroke='rgb(84,122,66)' stroke-opacity='.72' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath transform='translate(7 -0.5) rotate(43.0)' d='M0 0 Q4.5 -3.42 9 0 Q4.5 3.42 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(13 -0.5) rotate(-43.0)' d='M0 0 Q5.0 -3.80 10 0 Q5.0 3.80 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(19 -0.5) rotate(43.0)' d='M0 0 Q4.5 -3.42 9 0 Q4.5 3.42 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(25 -0.5) rotate(-43.0)' d='M0 0 Q4.0 -3.04 8 0 Q4.0 3.04 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(31 0) rotate(0.0)' d='M0 0 Q4.0 -3.04 8 0 Q4.0 3.04 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3C/g%3E%3C/svg%3E") right 2px top 2px / 34px 34px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='-22 -22 44 44'%3E%3Cg transform='rotate(31) translate(-17 0)'%3E%3Cpath d='M0 0 Q14 -3 30 0' fill='none' stroke='rgb(84,122,66)' stroke-opacity='.72' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath transform='translate(7 -0.5) rotate(43.0)' d='M0 0 Q4.5 -3.42 9 0 Q4.5 3.42 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(13 -0.5) rotate(-43.0)' d='M0 0 Q5.0 -3.80 10 0 Q5.0 3.80 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(19 -0.5) rotate(43.0)' d='M0 0 Q4.5 -3.42 9 0 Q4.5 3.42 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(25 -0.5) rotate(-43.0)' d='M0 0 Q4.0 -3.04 8 0 Q4.0 3.04 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(31 0) rotate(0.0)' d='M0 0 Q4.0 -3.04 8 0 Q4.0 3.04 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3C/g%3E%3C/svg%3E") right 2px bottom 2px / 34px 34px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44' viewBox='-22 -22 44 44'%3E%3Cg transform='rotate(149) translate(-17 0)'%3E%3Cpath d='M0 0 Q14 -3 30 0' fill='none' stroke='rgb(84,122,66)' stroke-opacity='.72' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath transform='translate(7 -0.5) rotate(43.0)' d='M0 0 Q4.5 -3.42 9 0 Q4.5 3.42 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(13 -0.5) rotate(-43.0)' d='M0 0 Q5.0 -3.80 10 0 Q5.0 3.80 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(19 -0.5) rotate(43.0)' d='M0 0 Q4.5 -3.42 9 0 Q4.5 3.42 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(25 -0.5) rotate(-43.0)' d='M0 0 Q4.0 -3.04 8 0 Q4.0 3.04 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3Cpath transform='translate(31 0) rotate(0.0)' d='M0 0 Q4.0 -3.04 8 0 Q4.0 3.04 0 0 Z' fill='rgb(84,122,66)' fill-opacity='.72'/%3E%3C/g%3E%3C/svg%3E") left 2px bottom 2px / 34px 34px no-repeat,
+    repeating-linear-gradient(0deg, rgba(110, 96, 60, 0.05) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(110, 96, 60, 0.04) 0 1px, transparent 1px 3px),
+    radial-gradient(#f7f2e4, #ebe2ca);
+  outline: 1.5px dashed #93a57d;
+  outline-offset: -8px;
   box-shadow:
-    0 0 0 1px #8a7350,
-    0 8px 22px rgba(0, 0, 0, 0.35);
+    0 0 0 1px #7d5a36,
+    0 8px 22px rgba(30, 40, 20, 0.3);
 }
 
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {
-  color: #14304c;
+  color: #1f3424;
 }
 
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center .remain,
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center .sticks {
-  color: #2b5070;
+  color: #45573f;
 }
 
+/* 风位：白色小方块、深绿字，底下一道角色色 */
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
-  border: 1.5px solid #6d9fc4;
+  border: 1.5px solid #93a57d;
   border-radius: 6px;
   background: #fff;
   box-shadow: inset 0 -3px 0 var(--c);
-  color: #14304c;
+  color: #1f3424;
 }
 
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .pts {
-  color: #14304c;
+  color: #1f3424;
   font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   font-size: 17px;
 }
 
+/* 轮到谁：风位换成深一点的叶绿、白字（底下那道角色色压着字的下沿也要 4.5:1） */
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .wind {
-  border-color: #2f7a3a;
-  background: #2f7a3a;
+  border-color: #2f6a2c;
+  background: #2f6a2c;
   color: #fff;
 }
 
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .pts {
-  color: #14304c;
+  color: #1f3424;
 }
 
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active::after {
-  border-color: #2f7a3a;
+  border-color: #2f6a2c;
 }
 
-/* 杠材那行字：天空下沿最深的那块上也要 4.5:1，比轮到谁那块的草绿再深一点 */
+/* 杠材那行字：亚麻布最深的边上也要 4.5:1，比轮到谁那块的叶绿再深一点 */
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center .kan-peek {
-  color: #23692f;
+  color: #2f6a2c;
 }
 
-/* 浅色天空上白色立直棒描一圈深蓝边 */
+/* 浅色布面上白色立直棒描一圈深绿边 */
 :root[data-table='meadow'][data-theme] .stage:not(.net) .table:not(.sketch) .center .stick {
-  box-shadow: 0 0 0 1px #30577a;
+  box-shadow: 0 0 0 1px #45573f;
+}
+
+/* 草甸换局（2D，app.ts 的 gust2d）：上一局的样子（.gust-old）盖在新的一局上面，底下先垫一层一模一样的草地（.gust-cover）
+   把新的一局遮住；风从一边刮过来，上一局的牌一张张飞走、散成花瓣（.gust-air 里的小圆片），风头一道亮光、几道风痕；
+   风过去以后垫着的草地淡掉，露出新的一局 */
+.stage .table > .gust-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 39;
+  pointer-events: none;
+  border-radius: inherit;
+  background: inherit;
+  box-shadow: inherit;
+}
+
+.stage .table > .gust-old {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.stage .table > .gust-air {
+  position: absolute;
+  inset: 0;
+  z-index: 41;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.stage .table > .gust-air > i {
+  position: absolute;
+  width: 6px;
+  height: 10px;
+  margin: -5px 0 0 -3px;
+  border-radius: 50%;
+  box-shadow: 0 1px 1px rgba(30, 40, 20, 0.25);
+}
+
+.stage .table > .gust-air > .gust-sheen {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(246, 250, 220, 0.2) 45%, rgba(246, 250, 220, 0.26) 55%, transparent);
+}
+
+.stage .table > .gust-air > .gust-streak {
+  position: absolute;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75));
 }
 
 /* ---------- 仪表盘形状（视觉设置里单独选的；2D 是中间那块的形状） ----------

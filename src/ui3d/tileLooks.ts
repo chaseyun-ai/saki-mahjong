@@ -1,0 +1,200 @@
+import * as THREE from 'three';
+import type { TileLook } from '../ui/theme';
+import { TILE_H, TILE_W } from './tableLayout';
+
+// 牌桌风格自己的牌（theme.ts 的 tile）：沙滩的牌是沙子捏的（牌身一粒粒的浅沙、牌背湿一点的深沙，正中压一个贝壳印），
+// 草甸的牌是花瓣捏的（牌身花瓣白、细细的一丝丝纹路，牌背是一片叶子的绿、正中压一道道叶脉）。牌面上的字和图案照旧，只换牌身、牌背。
+// 2D 牌桌的同一套样子在 tableStyles.css 里（贝壳、叶子是同样的路径，写成 SVG）
+
+// ---------- 细纹理：贴在牌身、牌背上，和底色相乘 ----------
+
+const grains = new Map<string, THREE.CanvasTexture>();
+
+// 一张 64 见方的小图，一张牌正好铺一遍（手牌上一个像素大约就是一粒）：底子接近白（乘上去几乎不变色）。
+// sand 撒满亮点、暗点，偶尔一粒深的；fiber 是顺着牌竖向的一丝丝细纹（花瓣上的纹路），有亮有暗、都很淡
+export function grainTexture(kind: NonNullable<TileLook['grain']> = 'sand'): THREE.CanvasTexture {
+  const hit = grains.get(kind);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d')!;
+  // 固定种子：每次建出来一样
+  let a = kind === 'sand' ? 0x2545f491 : 0x7f4a7c15;
+  const rnd = () => ((a = (a * 1664525 + 1013904223) >>> 0) / 4294967296);
+  if (kind === 'sand') {
+    ctx.fillStyle = 'rgb(244,240,234)';
+    ctx.fillRect(0, 0, 64, 64);
+    for (let i = 0; i < 1500; i++) {
+      // 沙粒是暖色的：亮的偏奶白，暗的偏赭石
+      const v = rnd();
+      ctx.fillStyle = v < 0.45 ? 'rgb(255,253,248)' : v < 0.93 ? 'rgb(214,196,170)' : 'rgb(170,146,116)';
+      ctx.fillRect(Math.floor(rnd() * 64), Math.floor(rnd() * 64), 1, 1);
+    }
+  } else {
+    ctx.fillStyle = 'rgb(246,246,242)';
+    ctx.fillRect(0, 0, 64, 64);
+    // 一丝丝的纹：竖着走、稍微弯一点，长短不一；上下接得上（铺满整张牌不会断）
+    for (let i = 0; i < 70; i++) {
+      const x0 = rnd() * 64;
+      const y0 = rnd() * 64;
+      const len = 10 + rnd() * 30;
+      const bend = (rnd() - 0.5) * 3;
+      const v = rnd();
+      ctx.fillStyle = v < 0.5 ? 'rgb(255,255,253)' : 'rgb(226,229,216)';
+      for (let k = 0; k < len; k++) {
+        const x = Math.floor(x0 + bend * Math.sin((k / len) * Math.PI)) & 63;
+        const y = Math.floor(y0 + k) & 63;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.NearestFilter;
+  t.anisotropy = 4;
+  grains.set(kind, t);
+  return t;
+}
+
+// ---------- 牌背上压的花样 ----------
+
+// 贝壳（扇贝）：铰合部在下面，往上张开九道扇形的棱，上沿一个个小圆弧，底下两只小耳朵。坐标在 100×100 里
+export function shellPaths(): { body: string; grooves: string; ears: string } {
+  const cx = 50;
+  const cy = 80;
+  const R = 46;
+  const N = 9;
+  const a0 = -66;
+  const a1 = 66;
+  const pt = (deg: number, r: number) => {
+    const t = (deg * Math.PI) / 180;
+    return `${(cx + Math.sin(t) * r).toFixed(1)} ${(cy - Math.cos(t) * r).toFixed(1)}`;
+  };
+  let body = `M${cx} ${cy} L${pt(a0, R)}`;
+  let grooves = '';
+  for (let i = 0; i < N; i++) {
+    const a = a0 + ((a1 - a0) * i) / N;
+    const b = a0 + ((a1 - a0) * (i + 1)) / N;
+    body += ` Q${pt((a + b) / 2, R + 8)} ${pt(b, R)}`;
+    if (i > 0) grooves += `M${pt(a, 9)} L${pt(a, R - 1)} `;
+  }
+  body += ' Z';
+  const ears = `M${cx - 15} ${cy - 2} L${cx + 15} ${cy - 2} L${cx + 10} ${cy + 10} L${cx - 10} ${cy + 10} Z`;
+  return { body, grooves: grooves.trim(), ears };
+}
+
+// 叶子：一片尖叶，叶柄在下面，中间一道主脉（rib）、两边各几道侧脉（grooves）。坐标在 100×100 里
+export function leafPaths(): { body: string; grooves: string; rib: string; ears: string } {
+  const body = 'M50 92 C30 74 22 46 50 8 C78 46 70 74 50 92 Z';
+  let grooves = '';
+  for (const [y, dx] of [[30, 11], [43, 16], [56, 17], [69, 15], [80, 10]]) grooves += `M50 ${y + 9} Q${50 - dx * 0.45} ${y + 4} ${50 - dx} ${y} M50 ${y + 9} Q${50 + dx * 0.45} ${y + 4} ${50 + dx} ${y} `;
+  return { body, grooves: grooves.trim(), rib: 'M50 97 L50 14', ears: '' };
+}
+
+// 牌背上那片叶子歪多少（弧度，2D 的 SVG 也照这个转）
+export const LEAF_TILT = -0.26;
+
+const marks = new Map<string, THREE.CanvasTexture>();
+
+// 牌背那一面的贴图（宽高比和牌一样）：红色通道是亮还是暗（0 压暗、1 提亮），透明度是压得多深（提亮最多到 1.6 倍，压暗最多到 0.7 倍）。
+// 贝壳：壳面提亮一点（干一点的沙），棱是压下去的暗线。
+// 叶子：一大片叶子斜躺在牌背上（几乎和牌一样长），叶子外面的牌背压深一点，叶面稍亮，叶脉是亮的（真的叶子叶脉颜色浅），叶边一道暗线
+function markTexture(kind: NonNullable<TileLook['mark']>): THREE.CanvasTexture {
+  const hit = marks.get(kind);
+  if (hit) return hit;
+  const W = 200;
+  const H = Math.round((W * TILE_H) / TILE_W);
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d')!;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  if (kind === 'shell') {
+    const p = shellPaths();
+    const size = W * 0.6;
+    ctx.translate(W / 2 - size / 2, H / 2 - size / 2);
+    ctx.scale(size / 100, size / 100);
+    const body = new Path2D(p.body);
+    const ears = new Path2D(p.ears);
+    ctx.fillStyle = 'rgba(255,255,255,0.23)';
+    ctx.fill(body);
+    ctx.fill(ears);
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.lineWidth = 2.6;
+    ctx.stroke(new Path2D(p.grooves));
+    ctx.lineWidth = 2.2;
+    ctx.stroke(body);
+    ctx.stroke(ears);
+  } else {
+    const p = leafPaths();
+    ctx.fillStyle = 'rgba(0,0,0,0.38)';
+    ctx.fillRect(0, 0, W, H);
+    const size = H * 0.92;
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(LEAF_TILT);
+    ctx.translate(-size / 2, -size / 2);
+    ctx.scale(size / 100, size / 100);
+    const body = new Path2D(p.body);
+    // 叶子那块先挖掉外面压深的那层，再稍微提亮
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = '#000';
+    ctx.fill(body);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fill(body);
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 2.4;
+    ctx.stroke(new Path2D(p.grooves));
+    ctx.lineWidth = 3.4;
+    ctx.stroke(new Path2D(p.rib));
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 1.8;
+    ctx.stroke(body);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = 4;
+  marks.set(kind, t);
+  return t;
+}
+
+// 牌身、牌背的材质上加颗粒和花样（在材质第一次编译之前调用；接在原来的 onBeforeCompile，也就是泡水的那个后面）：
+// 纹理照物体坐标贴（一张牌宽正好一遍，侧面按侧面的方向贴，不会拉长）；smoothFace 时牌面那一面（朝 +z）颗粒淡很多，牌上的字干净。
+// mark 只画在牌背朝外那一面（朝 -z），四周的边不画
+export function tileSurface(m: THREE.MeshStandardMaterial, opts: { grain?: TileLook['grain']; smoothFace?: boolean; mark?: TileLook['mark'] }): void {
+  const grain = opts.grain ? grainTexture(opts.grain) : null;
+  const mark = opts.mark ? markTexture(opts.mark) : null;
+  if (!grain && !mark) return;
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    prev.call(m, sh, r);
+    sh.uniforms.uGrain = { value: grain };
+    sh.uniforms.uMark = { value: mark };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vTileP;\nvarying vec3 vTileN;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTileP = position;\nvTileN = normal;');
+    let frag = '';
+    if (grain) {
+      frag += `
+{
+  vec3 an = abs(vTileN);
+  vec2 guv = an.z > 0.7 ? vTileP.xy : an.x > 0.7 ? vTileP.zy : vTileP.xz;
+  vec3 gr = texture2D(uGrain, guv / ${TILE_W.toFixed(3)}).rgb;
+  float gk = ${opts.smoothFace ? '(vTileN.z > 0.7 ? 0.3 : 1.0)' : '1.0'};
+  diffuseColor.rgb *= mix(vec3(1.0), gr, gk);
+}`;
+    }
+    if (mark) {
+      frag += `
+if (vTileN.z < -0.7) {
+  vec4 mk = texture2D(uMark, vec2(vTileP.x / ${TILE_W.toFixed(3)} + 0.5, vTileP.y / ${TILE_H.toFixed(3)} + 0.5));
+  diffuseColor.rgb *= mix(1.0, 0.7 + mk.r * 0.9, mk.a);
+}`;
+    }
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\n${grain ? 'uniform sampler2D uGrain;' : ''}\n${mark ? 'uniform sampler2D uMark;' : ''}\nvarying vec3 vTileP;\nvarying vec3 vTileN;`)
+      .replace('#include <map_fragment>', `#include <map_fragment>\n${frag}`);
+  };
+  m.customProgramCacheKey = () => `tile-surface-${opts.grain ?? ''}-${!!opts.smoothFace}-${opts.mark ?? ''}`;
+}

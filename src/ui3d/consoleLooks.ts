@@ -1,7 +1,7 @@
 import type { TableColors } from '../ui/theme';
 import { CONSOLE_HALF } from './tableLayout';
 
-// 牌桌风格的中央仪表盘（theme.ts 里牌桌风格的 look）：自动麻将机的数码管、原木的木牌、深夜的纯色、翻牌屏、沙滩的海水、草甸的蓝天。
+// 牌桌风格的中央仪表盘（theme.ts 里牌桌风格的 look）：自动麻将机的数码管、原木的木牌、深夜的纯色、翻牌屏、沙滩的海水、草甸的亚麻布。
 // 跟皮肤走时不用这里，还是 table3d.ts 原来那种。
 // 画在 512×512 的坐标里（贴图 2048，调用前已经放大 4 倍）。几样东西各套都放在同一个位置，换风格不挪地方：
 // 中间方屏（半宽 124）从上到下是局数、本场和余牌、宝牌指示牌、供托；四边各家朝着自己，左边风位、右边点数，
@@ -660,11 +660,7 @@ const flap: Look = {
   },
 };
 
-// ---------- 沙滩：一汪海水，白字，轮到谁亮一块阳光黄 ----------
-
-// 风位那块是磨圆的海玻璃：浅色底、深青色字
-const SEA_GLASS = '#d9f1ee';
-const SEA_GLASS_INK = '#0a3940';
+// ---------- 沙滩：一汪深海水，白字，轮到谁亮一块阳光黄 ----------
 
 // 一排四家：左边风位方块，右边点数（深夜、沙滩、草甸三套一样排）。圆盘上整排往中间收、窄一点，点数的字还是 66px
 function boxSeat(k: TableColors) {
@@ -673,67 +669,40 @@ function boxSeat(k: TableColors) {
 
 const tide: Look = {
   base(c, k) {
-    // 海水：中间浅、往外深，水面上几道很淡的波光，外圈两道白色浪花线
+    // 海水：中间浅一点、往外深，边上一道白线（浪花），中间方屏是更深的一块水。别的什么都不画
     const bg = c.createRadialGradient(M, M, 30, M, M, M * 1.4);
     bg.addColorStop(0, k.console.bg[0]);
     bg.addColorStop(1, k.console.bg[1]);
     c.fillStyle = bg;
     c.fillRect(0, 0, S, S);
-    const rnd = seeded(31);
-    c.lineCap = 'round';
-    for (let i = 0; i < 30; i++) {
-      const x0 = rnd() * S - 20;
-      const y0 = rnd() * S;
-      const len = 26 + rnd() * 56;
-      c.strokeStyle = `rgba(200,245,240,${0.05 + rnd() * 0.06})`;
-      c.lineWidth = 1.5 + rnd() * 1.5;
-      c.beginPath();
-      for (let x = 0; x <= len; x += 4) {
-        const y = y0 + Math.sin((x / len) * Math.PI * 2) * 2.5;
-        if (x === 0) c.moveTo(x0 + x, y);
-        else c.lineTo(x0 + x, y);
-      }
-      c.stroke();
-    }
-    c.lineCap = 'butt';
-    c.strokeStyle = 'rgba(240,252,250,0.6)';
-    c.lineWidth = 2.5;
+    c.strokeStyle = 'rgba(240,252,250,0.55)';
+    c.lineWidth = 2;
     outline(c, k, 11, 14);
     c.stroke();
-    c.strokeStyle = 'rgba(240,252,250,0.25)';
-    c.lineWidth = 1.2;
-    outline(c, k, 17, 11);
-    c.stroke();
-    // 中间方屏：深一点的水
-    c.fillStyle = 'rgba(0,24,30,0.35)';
+    c.fillStyle = 'rgba(0,24,30,0.3)';
     rr(c, M - 122, M - 122, 244, 244, isDisc(k) ? 34 : 16);
     c.fill();
-    c.strokeStyle = k.console.line;
-    c.globalAlpha = 0.55;
-    c.lineWidth = 1.5;
-    c.stroke();
-    c.globalAlpha = 1;
   },
   center(c, k, info, tile) {
     c.font = k.console.title.replace('1em', '72px');
     c.fillStyle = k.console.ink;
     c.fillText(`${info.wind}${'一二三四'[info.no - 1] ?? info.no}局`, M, M - 62);
     infoRow(c, info, M - 2, k.console.dim, `700 32px ${NUM}`, k.console.line);
-    // 没翻的宝牌是牌背（和海水一个颜色）：描一圈浅色边才看得出来
+    // 没翻的宝牌是沙子牌的牌背：描一圈浅色边，在深水上也看得出来
     doraRow(c, k, info, M + 24, tile, 'rgba(217,241,238,0.85)');
     sticksRow(c, info, M + 98, k.console.ink, `700 30px ${NUM}`);
   },
   seat(c, k, s) {
-    // 风位：一块海玻璃，边上一圈角色色；轮到这家时换成阳光黄
+    // 风位：一块浅一点的水、白字，下面一小条角色色；轮到这家时换成阳光黄、深色字
     const p = boxSeat(k);
-    rr(c, p.bx, p.by, p.bw, p.bw, 16);
-    c.fillStyle = s.active ? k.console.accent : SEA_GLASS;
+    rr(c, p.bx, p.by, p.bw, p.bw, 12);
+    c.fillStyle = s.active ? k.console.accent : 'rgba(255,255,255,0.14)';
     c.fill();
-    c.strokeStyle = s.color;
-    c.lineWidth = 3;
-    c.stroke();
+    c.fillStyle = s.color;
+    rr(c, p.bx, p.by + p.bw + 3, p.bw, 4, 2);
+    c.fill();
     c.font = `900 ${p.wf}px ${SANS}`;
-    c.fillStyle = s.active ? '#1d2a2c' : SEA_GLASS_INK;
+    c.fillStyle = s.active ? '#1d2a2c' : k.console.ink;
     c.fillText(s.wind, p.bx + p.bw / 2, p.by + p.bw / 2 + 1);
     const [text, ink] = scoreFace(s, k.console.ink, '#b5e3ff', '#ffc2b4');
     c.font = `700 ${p.sf}px ${NUM}`;
@@ -749,49 +718,73 @@ const tide: Look = {
   },
 };
 
-// ---------- 草甸：一块蓝天白云，深蓝字，轮到谁亮一块草绿 ----------
+// ---------- 草甸：一块米白的亚麻布，四边一圈缝线，四个斜角压着一小枝叶子；深绿字，轮到谁亮一块叶绿 ----------
 
-// 一朵小白云：几团圆叠起来，底下一道淡淡的蓝影
-function cloud(c: CanvasRenderingContext2D, x: number, y: number, k: number): void {
-  const puffs: [number, number, number][] = [[-22, 4, 14], [-8, -6, 18], [10, -9, 16], [24, 2, 13], [4, 6, 15]];
-  c.fillStyle = 'rgba(120,165,205,0.22)';
-  for (const [dx, dy, r] of puffs) {
+// 一小枝压平的叶子：一根细茎，两边交错着几片小叶（ang 是这枝朝哪个方向长，k 是大小）
+function sprig(c: CanvasRenderingContext2D, x: number, y: number, ang: number, k: number, color: string): void {
+  c.save();
+  c.translate(x, y);
+  c.rotate(ang);
+  c.scale(k, k);
+  c.strokeStyle = color;
+  c.fillStyle = color;
+  c.lineWidth = 1.6;
+  c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(0, 0);
+  c.quadraticCurveTo(14, -3, 30, 0);
+  c.stroke();
+  for (const [t, side, len] of [[7, -1, 9], [13, 1, 10], [19, -1, 9], [25, 1, 8], [31, 0, 8]] as const) {
+    c.save();
+    c.translate(t, side === 0 ? 0 : -0.5);
+    c.rotate(side === 0 ? 0 : side * -0.75);
     c.beginPath();
-    c.arc(x + dx * k, y + (dy + 4) * k, r * k, 0, Math.PI * 2);
+    c.moveTo(0, 0);
+    c.quadraticCurveTo(len * 0.5, -len * 0.38, len, 0);
+    c.quadraticCurveTo(len * 0.5, len * 0.38, 0, 0);
     c.fill();
+    c.restore();
   }
-  c.fillStyle = 'rgba(255,255,255,0.9)';
-  for (const [dx, dy, r] of puffs) {
-    c.beginPath();
-    c.arc(x + dx * k, y + dy * k, r * k, 0, Math.PI * 2);
-    c.fill();
-  }
+  c.restore();
 }
 
-const sky: Look = {
+const linen: Look = {
   base(c, k) {
     const bg = c.createRadialGradient(M, M, 30, M, M, M * 1.4);
     bg.addColorStop(0, k.console.bg[0]);
     bg.addColorStop(1, k.console.bg[1]);
     c.fillStyle = bg;
     c.fillRect(0, 0, S, S);
-    // 白云：四个斜角上各一小朵，在四家那几排字的外面，不压字（圆盘上往里收一点，才在圆里面）
-    const d = isDisc(k) ? 172 : 194;
-    const sizes = [1, 0.8, 0.75, 0.9];
-    [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy], i) => cloud(c, M + sx * d, M + sy * d, sizes[i]));
+    // 亚麻布纹：横竖很淡的细线
+    const rnd = seeded(23);
+    for (let y = 0; y < S; y += 2) {
+      c.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${0.12 + rnd() * 0.12})` : `rgba(110,96,60,${0.03 + rnd() * 0.04})`;
+      c.fillRect(0, y, S, 0.8);
+    }
+    for (let x = 0; x < S; x += 2) {
+      c.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${0.08 + rnd() * 0.1})` : `rgba(110,96,60,${0.025 + rnd() * 0.035})`;
+      c.fillRect(x, 0, 0.8, S);
+    }
+    // 四边一圈缝线（虚线）
     c.strokeStyle = k.console.line;
     c.lineWidth = 2;
-    outline(c, k, 10, 12);
+    c.setLineDash([9, 6]);
+    outline(c, k, 13, 12);
     c.stroke();
-    // 中间方屏：白一点的一块天
-    c.fillStyle = 'rgba(255,255,255,0.45)';
+    c.setLineDash([]);
+    // 四个斜角各压一小枝叶子，朝着角往外长；在四家那几排字外面，不压字（圆盘上往里收一点，才在圆里面）
+    const d = isDisc(k) ? 150 : 178;
+    [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy], i) => {
+      const ang = Math.atan2(sy, sx) + (i % 2 ? 0.25 : -0.25);
+      sprig(c, M + sx * d, M + sy * d, ang, isDisc(k) ? 1.1 : 1.35, 'rgba(84,122,66,0.72)');
+    });
+    // 中间方屏：白一点的一块，细细一道叶绿边
+    c.fillStyle = 'rgba(255,255,255,0.5)';
     rr(c, M - 122, M - 122, 244, 244, isDisc(k) ? 34 : 16);
     c.fill();
     c.strokeStyle = k.console.line;
-    c.globalAlpha = 0.6;
     c.lineWidth = 1.5;
     c.stroke();
-    c.globalAlpha = 1;
   },
   center(c, k, info, tile) {
     c.font = k.console.title.replace('1em', '72px');
@@ -802,7 +795,7 @@ const sky: Look = {
     sticksRow(c, info, M + 98, k.console.ink, `700 30px ${NUM}`);
   },
   seat(c, k, s) {
-    // 风位：白色小方块、深蓝字，下面一小条角色色；轮到这家时换成草绿、白字
+    // 风位：白色小方块、深绿字，下面一小条角色色；轮到这家时换成叶绿、白字
     const p = boxSeat(k);
     rr(c, p.bx, p.by, p.bw, p.bw, 10);
     c.fillStyle = s.active ? k.console.accent : '#ffffff';
@@ -830,4 +823,4 @@ const sky: Look = {
   },
 };
 
-const LOOKS: Record<string, Look> = { led, plaque, flat, flap, tide, sky };
+const LOOKS: Record<string, Look> = { led, plaque, flat, flap, tide, linen };
