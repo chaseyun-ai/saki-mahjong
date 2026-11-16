@@ -1,48 +1,71 @@
 /* ---------- 新加的四套界面皮肤（src/ui/theme.ts） ----------
    白瓷简约（浅色、细线、留白）、赛博霓虹（黑底青线、HUD 角标）、漫画分镜（白纸黑框、网点和集中线）、复古街机（像素描边、扫描线）。
    排版沿用 themes.css 里非经典皮肤的那一套（左边大立绘、右边角色格子、2.5D 头像框），这里只换颜色、字体、形状和质感。
-   浅色的两套（白瓷、漫画）只在自己改成浅底的面板里把 --ink 换成深色，没改到的对局小面板还是深底浅字，不会看不清 */
+
+   配色的规矩（改这个文件时照着来）：
+   - 每套只有一个底色、一个主色、一个只在“要紧的事”上用的次色，别再往里加颜色。
+   - 正文字和底色的对比度不低于 4.5，大字（24px 以上，或 19px 以上的粗体）不低于 3。
+   - 字上不压扫描线，不加错位的彩色影子；装饰字体只给大标题用，名字和说明一律用正文字体。
+   - 亮色当按钮底时字用深色（白字压在亮粉、亮青上是看不清的）。
+   - 游戏本身的界面都是按“深底浅字”写的。浅色的两套（白瓷、漫画）只把自己从头到尾重画过的面板改成浅底
+     （选人页、设置面板、听牌框、2D 牌桌中间那块），并且只在这些面板里把 --ink、--gold 换成深色；
+     结算、发牌前选技能、团体赛这些没逐条重画的界面一律留深底浅字，这样以后加了新东西也不会看不清。 */
 
 /* ======================================================================
    D 白瓷简约
    ====================================================================== */
 
 :root[data-theme='porcelain'] {
-  --gold: #c8553d;
+  --gold: #f2a98f;
   --ink: #f7f5f0;
-  --ink-quiet: #d9d4c8;
+  --ink-quiet: #cfcabd;
   --felt: #b7d2c3;
   --felt-dark: #93b5a3;
   --tile-back: #3d5a80;
   --t-bg: #efeae0;
   --t-paper: #ffffff;
   --t-dark: #1d232a;
-  --t-mid: #5b636d;
-  --t-soft: #8a9098;
+  --t-dark-2: #2a323c;
+  --t-mid: #4d5560;
+  --t-soft: #5b636d;
   --t-line: #e2dccf;
-  --t-hot: #c8553d;
-  --t-plus: #2f8f62;
+  /* 陶土红有两个：压在白底上的深一点，压在墨色底上的浅一点 */
+  --t-hot: #a83f29;
+  --t-hot-l: #f2a98f;
+  --t-plus: #176b48;
+  --t-plus-l: #8fd6ae;
   --t-num: 'Manrope', 'Noto Sans SC', sans-serif;
   --t-title: 'Noto Serif SC', 'STSong', serif;
   --t-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
-/* 浅底的地方：字换成深色 */
-:root[data-theme='porcelain'] .select-screen,
+/* 浅底的地方：字和强调色换成深的。团体赛那几页（.team-screen）没重画，留深底 */
+:root[data-theme='porcelain'] .select-screen:not(.team-screen),
 :root[data-theme='porcelain'] .setup,
-:root[data-theme='porcelain'] .result,
 :root[data-theme='porcelain'] .waits,
 :root[data-theme='porcelain'] .sel-more-menu {
   color-scheme: light;
   --ink: var(--t-dark);
-  --ink-quiet: var(--t-mid);
+  --ink-quiet: var(--t-soft);
+  --gold: var(--t-hot);
   color: var(--t-dark);
 }
 
-:root[data-theme='porcelain'] .select-screen {
+:root[data-theme='porcelain'] .select-screen:not(.team-screen) {
   background:
-    radial-gradient(ellipse at 100% 0%, rgba(200, 85, 61, 0.06), transparent 50%),
+    radial-gradient(ellipse at 100% 0%, rgba(168, 63, 41, 0.06), transparent 50%),
     var(--t-bg);
+}
+
+/* 团体赛几页：墨色底，桌布换成深一档的青瓷绿，上面的浅字才看得清 */
+:root[data-theme='porcelain'] .select-screen.team-screen {
+  --felt: #2f5a4a;
+  --felt-dark: #1f4033;
+  background: radial-gradient(ellipse at 50% 0%, var(--t-dark-2), var(--t-dark) 70%);
+}
+
+:root[data-theme='porcelain'] .select-screen.team-screen h1 {
+  color: var(--ink);
 }
 
 :root[data-theme='porcelain'] .select-screen h1 {
@@ -115,7 +138,7 @@
 }
 
 :root[data-theme='porcelain'] .sel-modes > .sel-random:hover {
-  background: #333b45;
+  background: var(--t-dark-2);
 }
 
 :root[data-theme='porcelain'] .school-tabs button {
@@ -168,7 +191,7 @@
   padding-bottom: 0;
   border-radius: 15px 15px 0 0;
   background: linear-gradient(170deg, color-mix(in srgb, var(--c) 34%, white), color-mix(in srgb, var(--c) 10%, white));
-  color: color-mix(in srgb, var(--c) 70%, #1d232a);
+  color: color-mix(in srgb, var(--c) 55%, #1d232a);
   font-family: var(--t-title);
   font-weight: 600;
 }
@@ -249,6 +272,7 @@
 
 :root[data-theme='porcelain'] .char-tip .char-school span {
   color: var(--t-soft);
+  opacity: 1;
 }
 
 :root[data-theme='porcelain'] .char-tip .char-ability {
@@ -305,7 +329,8 @@
 }
 
 :root[data-theme='porcelain'] .center .score .wind {
-  filter: brightness(0.85);
+  color: color-mix(in srgb, var(--c) 45%, #1a1a1a);
+  filter: none;
 }
 
 :root[data-theme='porcelain'] .center .kan-peek {
@@ -359,7 +384,7 @@
 :root[data-theme='porcelain'] .act.tsumo {
   background: var(--t-hot);
   color: #fff;
-  box-shadow: 0 6px 16px rgba(200, 85, 61, 0.4), inset 0 -3px 0 #8f3524;
+  box-shadow: 0 6px 16px rgba(168, 63, 41, 0.4), inset 0 -3px 0 #7c2c1b;
 }
 
 :root[data-theme='porcelain'] .act.riichi {
@@ -401,9 +426,15 @@
   color: var(--t-plus);
 }
 
-:root[data-theme='porcelain'] .hud .hint {
-  color: var(--t-mid);
+:root[data-theme='porcelain'] .hud .hint,
+:root[data-theme='porcelain'] .table .hint {
+  padding: 3px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--t-dark);
   font-weight: 700;
+  text-shadow: none;
+  box-shadow: 0 4px 12px rgba(29, 35, 42, 0.16);
 }
 
 :root[data-theme='porcelain'] .auto-btn {
@@ -423,7 +454,7 @@
 :root[data-theme='porcelain'] .ability-panel,
 :root[data-theme='porcelain'] .nameplate {
   border-radius: 14px;
-  background: rgba(29, 35, 42, 0.82);
+  background: rgba(29, 35, 42, 0.92);
   backdrop-filter: blur(6px);
 }
 
@@ -435,46 +466,46 @@
 :root[data-theme='porcelain'] .result {
   border: none;
   border-radius: 20px;
-  background: #fff;
-  box-shadow: 0 24px 60px rgba(29, 35, 42, 0.22);
+  background: var(--t-dark);
+  box-shadow: 0 24px 60px rgba(29, 35, 42, 0.35);
 }
 
 :root[data-theme='porcelain'] .result h2 {
   font-family: var(--t-title);
   font-weight: 600;
   letter-spacing: 4px;
-  color: var(--t-dark);
+  color: var(--ink);
 }
 
 :root[data-theme='porcelain'] .summary {
   font-family: var(--t-num), var(--t-body);
   font-weight: 800;
-  color: var(--t-hot);
+  color: var(--t-hot-l);
 }
 
 :root[data-theme='porcelain'] .yaku,
 :root[data-theme='porcelain'] .trace {
-  border-color: var(--t-line);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
 :root[data-theme='porcelain'] .result .ura,
 :root[data-theme='porcelain'] .result .pd-sub,
 :root[data-theme='porcelain'] .trace-turn {
-  color: var(--t-soft);
+  color: var(--ink-quiet);
 }
 
 :root[data-theme='porcelain'] .delta .plus,
 :root[data-theme='porcelain'] .rank-row .plus {
-  color: var(--t-plus);
+  color: var(--t-plus-l);
 }
 
 :root[data-theme='porcelain'] .delta .minus,
 :root[data-theme='porcelain'] .rank-row .minus {
-  color: var(--t-hot);
+  color: var(--t-hot-l);
 }
 
 :root[data-theme='porcelain'] .rank-row {
-  background: #f6f3ec;
+  background: rgba(255, 255, 255, 0.07);
 }
 
 :root[data-theme='porcelain'] .primary {
@@ -482,6 +513,13 @@
   background: var(--t-dark);
   color: #fff;
   letter-spacing: 2px;
+}
+
+/* 深底上的主按钮反过来：白底墨字 */
+:root[data-theme='porcelain'] .result .primary,
+:root[data-theme='porcelain'] .team-screen .primary {
+  background: var(--ink);
+  color: var(--t-dark);
 }
 
 :root[data-theme='porcelain'] .win-art {
@@ -511,13 +549,12 @@
   border-radius: 20px;
   background: #fff;
   box-shadow: 0 24px 60px rgba(29, 35, 42, 0.22);
-  --gold: var(--t-hot);
   --set-name: var(--t-dark);
   --set-quiet: var(--t-soft);
   --set-line: var(--t-line);
   --set-row: #f0ece4;
   --set-btn: #f7f5f0;
-  --set-btn-line: var(--t-line);
+  --set-btn-line: #cfc8b9;
   --set-field: #fff;
 }
 
@@ -550,19 +587,21 @@
    ====================================================================== */
 
 :root[data-theme='neon'] {
-  --gold: #2ef2ff;
-  --ink: #e6fbff;
-  --ink-quiet: #7fa3b8;
-  --felt: #0a1224;
-  --felt-dark: #050914;
-  --tile-back: #c01a9c;
-  --t-bg: #05070d;
-  --t-panel: rgba(8, 16, 32, 0.88);
-  --t-panel-2: rgba(14, 28, 52, 0.9);
-  --t-line: rgba(46, 242, 255, 0.32);
-  --t-cyan: #2ef2ff;
-  --t-hot: #ff2bd6;
-  --t-plus: #3dff9a;
+  --gold: #3fe0ff;
+  --ink: #eaf4ff;
+  --ink-quiet: #9db1c7;
+  --felt: #0c1424;
+  --felt-dark: #070b14;
+  --tile-back: #1e7fa6;
+  --t-bg: #070b14;
+  --t-panel: rgba(12, 20, 36, 0.94);
+  --t-panel-2: rgba(18, 29, 51, 0.94);
+  --t-line: rgba(63, 224, 255, 0.3);
+  /* 主色是青，品红只留给“要紧的事”：和牌、立直、挂机开着、费用 */
+  --t-cyan: #3fe0ff;
+  --t-hot: #ff5cc8;
+  --t-on-bright: #04121c;
+  --t-plus: #5dffa8;
   --t-num: 'Orbitron', 'Noto Sans SC', sans-serif;
   --t-title: 'Orbitron', 'Noto Sans SC', sans-serif;
   --t-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -581,40 +620,29 @@
 :root[data-theme='neon'] .select-screen {
   position: relative;
   background:
-    linear-gradient(rgba(46, 242, 255, 0.05) 1px, transparent 1px) 0 0 / 40px 40px,
-    linear-gradient(90deg, rgba(46, 242, 255, 0.05) 1px, transparent 1px) 0 0 / 40px 40px,
-    radial-gradient(ellipse at 15% 70%, rgba(255, 43, 214, 0.18), transparent 55%),
-    radial-gradient(ellipse at 90% 10%, rgba(46, 242, 255, 0.12), transparent 50%),
+    linear-gradient(rgba(63, 224, 255, 0.045) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, rgba(63, 224, 255, 0.045) 1px, transparent 1px) 0 0 / 40px 40px,
+    radial-gradient(ellipse at 90% 0%, rgba(63, 224, 255, 0.1), transparent 55%),
     var(--t-bg);
 }
 
-/* 扫描线 */
-:root[data-theme='neon'] .select-screen::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(transparent 0 2px, rgba(0, 0, 0, 0.22) 2px 3px);
-  z-index: 40;
-}
 
 :root[data-theme='neon'] .select-screen h1 {
   font-weight: 900;
   letter-spacing: 8px;
   color: #fff;
-  text-shadow: 0 0 6px var(--t-cyan), 0 0 18px rgba(46, 242, 255, 0.6), 2px 0 0 rgba(255, 43, 214, 0.75), -2px 0 0 rgba(46, 242, 255, 0.75);
+  text-shadow: 0 0 14px rgba(63, 224, 255, 0.55);
 }
 
 :root[data-theme='neon'] .select-screen h1::before {
   content: '//';
   margin-right: 12px;
-  color: var(--t-hot);
-  text-shadow: 0 0 10px var(--t-hot);
+  color: var(--t-cyan);
 }
 
 :root[data-theme='neon'] .subtitle,
 :root[data-theme='neon'] .footnote {
-  color: #5f8296;
+  color: var(--ink-quiet);
 }
 
 :root[data-theme='neon'] .sel-set,
@@ -622,7 +650,7 @@
 :root[data-theme='neon'] .school-pager button {
   border: 1px solid var(--t-line);
   border-radius: 0;
-  background: rgba(8, 16, 32, 0.8);
+  background: rgba(12, 20, 36, 0.85);
   clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
   letter-spacing: 1px;
 }
@@ -631,15 +659,15 @@
 :root[data-theme='neon'] .sel-more summary:hover,
 :root[data-theme='neon'] .school-pager button:hover {
   border-color: var(--t-cyan);
-  background: rgba(46, 242, 255, 0.12);
+  background: rgba(63, 224, 255, 0.12);
   color: #fff;
 }
 
 :root[data-theme='neon'] .sel-more-menu {
   border-color: var(--t-cyan);
   border-radius: 0;
-  background: #070d1c;
-  box-shadow: 0 0 24px rgba(46, 242, 255, 0.25);
+  background: #0c1424;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
 }
 
 :root[data-theme='neon'] .sel-modes {
@@ -649,28 +677,26 @@
 :root[data-theme='neon'] .sel-modes > button.on {
   color: #fff;
   border-bottom-color: var(--t-cyan);
-  text-shadow: 0 0 10px rgba(46, 242, 255, 0.7);
 }
 
 :root[data-theme='neon'] .sel-modes > .sel-random {
-  border: 1px solid var(--t-hot);
+  border: 1px solid var(--t-cyan);
   border-radius: 0;
-  background: rgba(255, 43, 214, 0.12);
-  color: #ffd6f6;
+  background: rgba(63, 224, 255, 0.1);
+  color: var(--t-cyan);
   clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
 }
 
 :root[data-theme='neon'] .school-tabs button {
   border-radius: 0;
-  border-color: rgba(46, 242, 255, 0.22);
-  background: rgba(8, 16, 32, 0.8);
+  border-color: rgba(63, 224, 255, 0.2);
+  background: rgba(12, 20, 36, 0.85);
 }
 
 :root[data-theme='neon'] .school-tabs button.on {
   border-color: var(--t-cyan);
   background: var(--t-cyan);
-  color: #031018;
-  box-shadow: 0 0 14px rgba(46, 242, 255, 0.6);
+  color: var(--t-on-bright);
 }
 
 :root[data-theme='neon'] .school-head {
@@ -679,7 +705,6 @@
 
 :root[data-theme='neon'] .school-head b {
   color: #fff;
-  text-shadow: 0 0 10px var(--s);
 }
 
 :root[data-theme='neon'] .school-head b::before {
@@ -688,9 +713,9 @@
 }
 
 :root[data-theme='neon'] .char-card {
-  border: 1px solid rgba(46, 242, 255, 0.25);
+  border: 1px solid rgba(63, 224, 255, 0.22);
   border-radius: 0;
-  background: linear-gradient(170deg, color-mix(in srgb, var(--c) 45%, #05070d), #05070d 85%);
+  background: linear-gradient(170deg, color-mix(in srgb, var(--c) 38%, #070b14), #070b14 85%);
 }
 
 :root[data-theme='neon'] .char-card::after {
@@ -705,12 +730,11 @@
 }
 
 :root[data-theme='neon'] .char-card .char-portrait {
-  color: color-mix(in srgb, var(--c) 50%, white);
-  text-shadow: 0 0 18px var(--c);
+  color: color-mix(in srgb, var(--c) 45%, white);
 }
 
 :root[data-theme='neon'] .char-card .char-name {
-  background: linear-gradient(transparent, rgba(3, 6, 14, 0.94) 40%);
+  background: linear-gradient(transparent, rgba(7, 11, 20, 0.96) 40%);
   letter-spacing: 1px;
 }
 
@@ -721,18 +745,17 @@
 
 :root[data-theme='neon'] .char-cost {
   border-radius: 0;
-  border: 1px solid var(--t-hot);
-  background: rgba(5, 7, 13, 0.85);
-  color: #fff;
+  border: 1px solid var(--t-line);
+  background: rgba(7, 11, 20, 0.9);
+  color: var(--t-cyan);
   font-family: var(--t-num);
   font-size: 14px;
-  text-shadow: 0 0 6px var(--t-hot);
 }
 
 :root[data-theme='neon'] .char-card:hover,
 :root[data-theme='neon'] .char-card.armed {
   border-color: var(--t-cyan);
-  box-shadow: 0 0 0 1px var(--t-cyan), 0 0 22px rgba(46, 242, 255, 0.45);
+  box-shadow: 0 0 0 1px var(--t-cyan), 0 0 18px rgba(63, 224, 255, 0.3);
 }
 
 :root[data-theme='neon'] .char-card:hover::after,
@@ -743,9 +766,8 @@
 
 :root[data-theme='neon'] .char-tip {
   background:
-    repeating-linear-gradient(0deg, rgba(46, 242, 255, 0.06) 0 1px, transparent 1px 6px),
-    radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--c) 45%, transparent), transparent 62%),
-    linear-gradient(180deg, #070b18, #05070d);
+    radial-gradient(ellipse at 50% 42%, color-mix(in srgb, var(--c) 32%, transparent), transparent 62%),
+    linear-gradient(180deg, #0c1424, #070b14);
   border-right: 1px solid var(--t-line);
 }
 
@@ -758,28 +780,25 @@
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  border: 1px dashed rgba(46, 242, 255, 0.45);
-  box-shadow: 0 0 0 14px rgba(46, 242, 255, 0.04), 0 0 0 15px rgba(46, 242, 255, 0.3);
+  border: 1px dashed rgba(63, 224, 255, 0.4);
+  box-shadow: 0 0 0 14px rgba(63, 224, 255, 0.04), 0 0 0 15px rgba(63, 224, 255, 0.22);
 }
 
 :root[data-theme='neon'] .char-tip .hero-art span {
   color: color-mix(in srgb, var(--c) 40%, white);
-  text-shadow: 0 0 30px var(--c);
 }
 
 :root[data-theme='neon'] .char-tip .hero-art img {
-  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--c) 60%, transparent));
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--c) 45%, transparent));
 }
 
 :root[data-theme='neon'] .hero-plate {
-  background: var(--t-corners), rgba(5, 9, 20, 0.88);
+  background: var(--t-corners), rgba(7, 11, 20, 0.92);
   border: 1px solid var(--t-line);
-  box-shadow: 0 0 30px rgba(46, 242, 255, 0.12);
 }
 
 :root[data-theme='neon'] .char-tip .char-name {
   color: #fff;
-  text-shadow: 0 0 12px rgba(46, 242, 255, 0.55);
 }
 
 :root[data-theme='neon'] .char-tip .char-school {
@@ -790,30 +809,27 @@
 :root[data-theme='neon'] .char-tip .char-ability {
   color: var(--t-hot);
   font-weight: 700;
-  text-shadow: 0 0 10px rgba(255, 43, 214, 0.6);
 }
 
 :root[data-theme='neon'] .char-tip .char-desc {
-  color: #a9c4d4;
+  color: #b6c6d8;
 }
 
 :root[data-theme='neon'] .hero-cost {
   border-radius: 0;
   background: var(--t-hot);
-  color: #fff;
+  color: var(--t-on-bright);
   font-family: var(--t-num);
-  box-shadow: 0 0 14px rgba(255, 43, 214, 0.6);
 }
 
 :root[data-theme='neon'] .hero-go {
   border: none;
   border-radius: 0;
   background: var(--t-cyan);
-  color: #031018;
+  color: var(--t-on-bright);
   font-weight: 900;
   letter-spacing: 6px;
   clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
-  box-shadow: 0 0 22px rgba(46, 242, 255, 0.6);
 }
 
 :root[data-theme='neon'] .hero-go:hover {
@@ -832,9 +848,9 @@
 
 /* 对局：头像是方框加四角角标，名牌下面一道霓虹线 */
 :root[data-theme='neon'] .seat-frame .portrait {
-  border: 1px solid rgba(46, 242, 255, 0.5);
+  border: 1px solid rgba(63, 224, 255, 0.5);
   border-radius: 0;
-  background: linear-gradient(170deg, color-mix(in srgb, var(--c) 70%, #05070d), #05070d);
+  background: linear-gradient(170deg, color-mix(in srgb, var(--c) 60%, #070b14), #070b14);
   box-shadow: 0 0 18px rgba(0, 0, 0, 0.7);
 }
 
@@ -849,76 +865,71 @@
 
 :root[data-theme='neon'] .seat-frame.active .portrait {
   border-color: var(--t-cyan);
-  box-shadow: 0 0 0 1px var(--t-cyan), 0 0 24px rgba(46, 242, 255, 0.7);
+  box-shadow: 0 0 0 1px var(--t-cyan), 0 0 20px rgba(63, 224, 255, 0.55);
 }
 
 :root[data-theme='neon'] .seat-frame .wind {
   border-radius: 0;
-  background: #05070d;
-  border-color: var(--t-hot);
+  background: #070b14;
+  border-color: var(--t-cyan);
   color: #fff;
   font-family: var(--t-body);
-  text-shadow: 0 0 6px var(--t-hot);
 }
 
 :root[data-theme='neon'] .seat-info {
   margin-top: 7px;
   border: none;
   border-radius: 0;
-  background: rgba(5, 9, 20, 0.9);
-  box-shadow: inset 0 -2px 0 var(--c), 0 2px 12px color-mix(in srgb, var(--c) 45%, transparent);
+  background: rgba(7, 11, 20, 0.94);
+  box-shadow: inset 0 -2px 0 var(--c);
   letter-spacing: 1px;
 }
 
 :root[data-theme='neon'] .seat-frame.active .seat-info {
-  color: #031018;
+  color: var(--t-on-bright);
   background: var(--t-cyan);
-  box-shadow: 0 0 16px rgba(46, 242, 255, 0.7);
+  box-shadow: none;
 }
 
 :root[data-theme='neon'] .act {
   border: 1px solid var(--t-cyan);
   border-radius: 0;
-  background: rgba(5, 12, 26, 0.9);
+  background: rgba(7, 14, 28, 0.94);
   color: #fff;
   letter-spacing: 2px;
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
-  box-shadow: inset 0 0 14px rgba(46, 242, 255, 0.3);
-  text-shadow: 0 0 8px rgba(46, 242, 255, 0.8);
+  box-shadow: inset 0 0 12px rgba(63, 224, 255, 0.22);
 }
 
 :root[data-theme='neon'] .act.ron,
 :root[data-theme='neon'] .act.tsumo {
   border-color: var(--t-hot);
   background: var(--t-hot);
-  color: #fff;
-  box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.35);
-  text-shadow: 0 0 6px rgba(80, 0, 60, 0.8);
+  color: var(--t-on-bright);
+  font-weight: 900;
+  box-shadow: none;
 }
 
 :root[data-theme='neon'] .act.riichi {
   border-color: var(--t-hot);
-  box-shadow: inset 0 0 14px rgba(255, 43, 214, 0.4);
-  text-shadow: 0 0 8px rgba(255, 43, 214, 0.9);
+  box-shadow: inset 0 0 12px rgba(255, 92, 200, 0.3);
 }
 
 :root[data-theme='neon'] .act.riichi.on {
   outline: none;
-  background: rgba(255, 43, 214, 0.35);
+  background: rgba(255, 92, 200, 0.28);
 }
 
 :root[data-theme='neon'] .act.pass {
-  border-color: #3b5568;
-  color: #9fb6c4;
+  border-color: #4a6076;
+  color: #b6c6d8;
   box-shadow: none;
-  text-shadow: none;
 }
 
 :root[data-theme='neon'] .waits {
   border: 1px solid var(--t-line);
   border-radius: 0;
-  background: var(--t-corners), rgba(5, 9, 20, 0.9);
-  box-shadow: 0 0 18px rgba(46, 242, 255, 0.18);
+  background: var(--t-corners), rgba(7, 11, 20, 0.94);
 }
 
 :root[data-theme='neon'] .waits-title {
@@ -937,59 +948,58 @@
 }
 
 :root[data-theme='neon'] .hud .hint {
+  padding: 2px 12px;
+  background: rgba(7, 11, 20, 0.82);
   color: var(--t-cyan);
   letter-spacing: 2px;
-  text-shadow: 0 0 8px rgba(46, 242, 255, 0.7);
+  text-shadow: none;
 }
 
 :root[data-theme='neon'] .auto-btn {
   border-color: var(--t-line);
   border-radius: 0;
-  background: rgba(5, 9, 20, 0.85);
+  background: rgba(7, 11, 20, 0.9);
 }
 
 :root[data-theme='neon'] .auto-btn.on {
   border-color: var(--t-hot);
   background: var(--t-hot);
-  box-shadow: 0 0 16px rgba(255, 43, 214, 0.7);
+  color: var(--t-on-bright);
 }
 
 :root[data-theme='neon'] .ability-panel,
 :root[data-theme='neon'] .nameplate {
   border-radius: 0;
-  background: rgba(5, 9, 20, 0.9);
+  background: rgba(7, 11, 20, 0.94);
   border-color: var(--t-line);
 }
 
 :root[data-theme='neon'] .center {
   border: 1px solid var(--t-line);
   border-radius: 0;
-  background: var(--t-corners), rgba(3, 6, 14, 0.85);
-  box-shadow: 0 0 24px rgba(46, 242, 255, 0.15);
+  background: var(--t-corners), rgba(7, 11, 20, 0.9);
 }
 
 :root[data-theme='neon'] .modal {
-  background: rgba(2, 4, 10, 0.78);
+  background: rgba(4, 7, 14, 0.8);
 }
 
 :root[data-theme='neon'] .result {
   border: 1px solid var(--t-line);
   border-radius: 0;
-  background: var(--t-corners), linear-gradient(#0a1428, #05070d);
-  box-shadow: 0 0 40px rgba(46, 242, 255, 0.2);
+  background: var(--t-corners), linear-gradient(#0c1424, #070b14);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 
 :root[data-theme='neon'] .result h2 {
   color: #fff;
   letter-spacing: 4px;
-  text-shadow: 0 0 12px var(--t-cyan);
 }
 
 :root[data-theme='neon'] .summary {
   font-family: var(--t-num), var(--t-body);
   font-weight: 900;
   color: var(--t-hot);
-  text-shadow: 0 0 14px rgba(255, 43, 214, 0.7);
 }
 
 :root[data-theme='neon'] .delta .plus,
@@ -1005,11 +1015,10 @@
 :root[data-theme='neon'] .primary {
   border-radius: 0;
   background: var(--t-cyan);
-  color: #031018;
+  color: var(--t-on-bright);
   font-weight: 900;
   letter-spacing: 4px;
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
-  box-shadow: 0 0 20px rgba(46, 242, 255, 0.5);
 }
 
 :root[data-theme='neon'] .win-art {
@@ -1017,37 +1026,35 @@
 }
 
 :root[data-theme='neon'] .rbn-band {
-  background: linear-gradient(90deg, transparent, rgba(3, 6, 14, 0.9) 18%, rgba(3, 6, 14, 0.9) 82%, transparent);
+  background: linear-gradient(90deg, transparent, rgba(7, 11, 20, 0.92) 18%, rgba(7, 11, 20, 0.92) 82%, transparent);
   border-top: 1px solid var(--t-cyan);
-  border-bottom: 1px solid var(--t-hot);
+  border-bottom: 1px solid var(--t-cyan);
 }
 
 :root[data-theme='neon'] .rbn-main {
   font-family: var(--t-title);
   color: #fff;
-  text-shadow: 0 0 10px var(--t-cyan), 0 0 26px rgba(46, 242, 255, 0.6), 3px 0 0 rgba(255, 43, 214, 0.8), -3px 0 0 rgba(46, 242, 255, 0.8);
+  text-shadow: 0 0 16px rgba(63, 224, 255, 0.55);
 }
 
 :root[data-theme='neon'] .rbn-sub {
   color: var(--t-hot);
-  text-shadow: 0 0 10px rgba(255, 43, 214, 0.7);
 }
 
 :root[data-theme='neon'] .setup {
   border: 1px solid var(--t-line);
   border-radius: 0;
-  background: var(--t-corners), linear-gradient(#0a1428, #05070d);
-  box-shadow: 0 0 40px rgba(46, 242, 255, 0.18);
-  --set-quiet: #7fa3b8;
-  --set-line: rgba(46, 242, 255, 0.3);
-  --set-row: rgba(46, 242, 255, 0.1);
-  --set-btn-line: rgba(46, 242, 255, 0.35);
-  --set-field: #050a16;
+  background: var(--t-corners), linear-gradient(#0c1424, #070b14);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --set-quiet: var(--ink-quiet);
+  --set-line: rgba(63, 224, 255, 0.28);
+  --set-row: rgba(63, 224, 255, 0.1);
+  --set-btn-line: rgba(63, 224, 255, 0.35);
+  --set-field: #070b14;
 }
 
 :root[data-theme='neon'] .setup h2 {
   letter-spacing: 3px;
-  text-shadow: 0 0 10px rgba(46, 242, 255, 0.6);
 }
 
 :root[data-theme='neon'] .set-sec {
@@ -1065,8 +1072,7 @@
 :root[data-theme='neon'] .setup-actions .primary {
   border-color: var(--t-cyan);
   background: var(--t-cyan);
-  color: #031018;
-  box-shadow: 0 0 12px rgba(46, 242, 255, 0.5);
+  color: var(--t-on-bright);
 }
 
 /* ======================================================================
@@ -1074,41 +1080,59 @@
    ====================================================================== */
 
 :root[data-theme='manga'] {
-  --gold: #e0262d;
+  /* 深底上的强调色用荧光笔的黄，白纸上的强调色用红 */
+  --gold: #ffe14d;
   --ink: #f7f6f2;
-  --ink-quiet: #d8d6cf;
+  --ink-quiet: #cfccc4;
   --felt: #e2dfd6;
   --felt-dark: #c9c5ba;
   --tile-back: #1a1a1a;
   --t-bg: #fbfaf5;
   --t-paper: #ffffff;
-  --t-dark: #121212;
-  --t-mid: #3d3d3d;
-  --t-soft: #6a6a6a;
-  --t-hot: #e0262d;
-  --t-plus: #1f7a45;
+  --t-dark: #141414;
+  --t-mid: #3a3a3a;
+  --t-soft: #555555;
+  --t-hot: #c2141f;
+  --t-hot-l: #ff6f76;
+  --t-plus: #166a3a;
+  --t-plus-l: #6fd195;
   --t-yellow: #ffe14d;
+  /* 荧光笔划过字的下半截 */
+  --t-marker: linear-gradient(transparent 58%, var(--t-yellow) 58% 92%, transparent 92%);
   --t-num: 'Bangers', 'ZCOOL KuaiLe', 'Noto Sans SC', sans-serif;
   --t-title: 'ZCOOL KuaiLe', 'Noto Sans SC', sans-serif;
   --t-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   /* 网点 */
-  --t-dots: radial-gradient(rgba(18, 18, 18, 0.22) 1.1px, transparent 1.5px) 0 0 / 6px 6px;
+  --t-dots: radial-gradient(rgba(20, 20, 20, 0.2) 1.1px, transparent 1.5px) 0 0 / 6px 6px;
   --t-pop: 5px 5px 0 var(--t-dark);
 }
 
-:root[data-theme='manga'] .select-screen,
+/* 白纸的地方：字和强调色换成深的。团体赛那几页（.team-screen）没重画，留黑底 */
+:root[data-theme='manga'] .select-screen:not(.team-screen),
 :root[data-theme='manga'] .setup,
-:root[data-theme='manga'] .result,
 :root[data-theme='manga'] .waits,
 :root[data-theme='manga'] .sel-more-menu {
   color-scheme: light;
   --ink: var(--t-dark);
   --ink-quiet: var(--t-soft);
+  --gold: var(--t-hot);
   color: var(--t-dark);
 }
 
-:root[data-theme='manga'] .select-screen {
+:root[data-theme='manga'] .select-screen:not(.team-screen) {
   background: var(--t-bg);
+}
+
+/* 团体赛几页：黑底，桌布换成深灰 */
+:root[data-theme='manga'] .select-screen.team-screen {
+  --felt: #3a3a3a;
+  --felt-dark: #262626;
+  background: #1e1e1e;
+}
+
+:root[data-theme='manga'] .select-screen.team-screen h1 {
+  color: var(--t-yellow);
+  background: none;
 }
 
 :root[data-theme='manga'] .sel-main {
@@ -1116,13 +1140,14 @@
 }
 
 :root[data-theme='manga'] .select-screen h1 {
+  display: inline-block;
   font-weight: 400;
   font-size: 42px;
   letter-spacing: 6px;
   color: var(--t-dark);
   transform: rotate(-2deg);
   transform-origin: left center;
-  text-shadow: 3px 3px 0 var(--t-yellow);
+  background: var(--t-marker);
 }
 
 :root[data-theme='manga'] .select-screen h1::after {
@@ -1130,7 +1155,6 @@
   margin-left: 4px;
   font-family: var(--t-num);
   color: var(--t-hot);
-  text-shadow: none;
 }
 
 @media (max-height: 500px) {
@@ -1223,7 +1247,6 @@
   font-weight: 400;
   font-size: 26px;
   color: var(--t-dark);
-  text-shadow: 2px 2px 0 color-mix(in srgb, var(--s) 70%, white);
 }
 
 /* 角色卡是一格格分镜：黑粗框、硬阴影、错落地歪一点 */
@@ -1326,10 +1349,11 @@
 }
 
 :root[data-theme='manga'] .char-tip .char-name {
+  align-self: flex-start;
   font-family: var(--t-title);
   font-weight: 400;
   letter-spacing: 2px;
-  text-shadow: 3px 3px 0 var(--t-yellow);
+  background: var(--t-marker);
 }
 
 :root[data-theme='manga'] .char-tip .char-school {
@@ -1339,6 +1363,7 @@
 
 :root[data-theme='manga'] .char-tip .char-school span {
   color: var(--t-soft);
+  opacity: 1;
 }
 
 :root[data-theme='manga'] .char-tip .char-ability {
@@ -1378,7 +1403,6 @@
   font-size: 24px;
   letter-spacing: 4px;
   box-shadow: 4px 4px 0 var(--t-dark);
-  text-shadow: 2px 2px 0 var(--t-dark);
 }
 
 :root[data-theme='manga'] .hero-go:hover {
@@ -1410,7 +1434,8 @@
 }
 
 :root[data-theme='manga'] .center .score .wind {
-  filter: brightness(0.8);
+  color: color-mix(in srgb, var(--c) 45%, #1a1a1a);
+  filter: none;
 }
 
 :root[data-theme='manga'] .center .kan-peek {
@@ -1507,15 +1532,14 @@
   font-family: var(--t-title);
   font-weight: 400;
   font-size: 24px;
-  text-shadow: 2px 2px 0 var(--t-dark);
   box-shadow: none;
   clip-path: polygon(50% 0, 60% 18%, 80% 4%, 77% 26%, 100% 22%, 86% 42%, 100% 56%, 82% 64%, 92% 86%, 70% 78%, 62% 100%, 50% 82%, 36% 100%, 30% 78%, 8% 88%, 18% 64%, 0 54%, 16% 42%, 2% 20%, 24% 24%, 22% 2%, 40% 16%);
-  filter: drop-shadow(3px 3px 0 #121212);
+  filter: drop-shadow(3px 3px 0 #141414);
 }
 
 :root[data-theme='manga'] .act.ron:hover,
 :root[data-theme='manga'] .act.tsumo:hover {
-  background: #ff3b3b;
+  background: #d81e2c;
 }
 
 :root[data-theme='manga'] .act.riichi {
@@ -1554,7 +1578,8 @@
   color: var(--t-plus);
 }
 
-:root[data-theme='manga'] .hud .hint {
+:root[data-theme='manga'] .hud .hint,
+:root[data-theme='manga'] .table .hint {
   padding: 1px 10px;
   border: 2px solid var(--t-dark);
   background: #fff;
@@ -1579,61 +1604,60 @@
 
 :root[data-theme='manga'] .ability-panel,
 :root[data-theme='manga'] .nameplate {
-  border: 2px solid var(--t-dark);
+  border: 2px solid #fff;
   border-radius: 2px;
-  background: rgba(18, 18, 18, 0.9);
-  box-shadow: 4px 4px 0 rgba(18, 18, 18, 0.35);
+  background: rgba(20, 20, 20, 0.94);
+  box-shadow: 4px 4px 0 rgba(20, 20, 20, 0.35);
 }
 
 :root[data-theme='manga'] .modal {
-  background: var(--t-dots), rgba(251, 250, 245, 0.55);
+  background: var(--t-dots), rgba(251, 250, 245, 0.6);
 }
 
 :root[data-theme='manga'] .result {
-  border: 4px solid var(--t-dark);
+  border: 4px solid #fff;
   border-radius: 2px;
-  background: #fff;
-  box-shadow: 10px 10px 0 var(--t-dark);
+  background: var(--t-dark);
+  box-shadow: 0 0 0 3px var(--t-dark), 12px 12px 0 var(--t-hot);
 }
 
 :root[data-theme='manga'] .result h2 {
   font-family: var(--t-title);
   font-weight: 400;
   font-size: 34px;
-  color: var(--t-hot);
-  text-shadow: 3px 3px 0 var(--t-dark);
+  color: var(--t-yellow);
 }
 
 :root[data-theme='manga'] .summary {
   font-family: var(--t-num), var(--t-title);
   font-size: 30px;
   letter-spacing: 1px;
-  color: var(--t-dark);
+  color: #fff;
 }
 
 :root[data-theme='manga'] .yaku,
 :root[data-theme='manga'] .trace {
-  border-color: rgba(18, 18, 18, 0.25);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 :root[data-theme='manga'] .result .ura,
 :root[data-theme='manga'] .result .pd-sub,
 :root[data-theme='manga'] .trace-turn {
-  color: var(--t-soft);
+  color: var(--ink-quiet);
 }
 
 :root[data-theme='manga'] .delta .plus,
 :root[data-theme='manga'] .rank-row .plus {
-  color: var(--t-plus);
+  color: var(--t-plus-l);
 }
 
 :root[data-theme='manga'] .delta .minus,
 :root[data-theme='manga'] .rank-row .minus {
-  color: var(--t-hot);
+  color: var(--t-hot-l);
 }
 
 :root[data-theme='manga'] .rank-row {
-  background: var(--t-dots), #fff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 :root[data-theme='manga'] .primary {
@@ -1644,12 +1668,20 @@
   font-family: var(--t-title);
   font-weight: 400;
   font-size: 22px;
-  text-shadow: 2px 2px 0 var(--t-dark);
   box-shadow: 4px 4px 0 var(--t-dark);
 }
 
+/* 黑底上的主按钮：黄底黑字 */
+:root[data-theme='manga'] .result .primary,
+:root[data-theme='manga'] .team-screen .primary {
+  border-color: #fff;
+  background: var(--t-yellow);
+  color: var(--t-dark);
+  box-shadow: 4px 4px 0 var(--t-hot);
+}
+
 :root[data-theme='manga'] .win-art {
-  border: 3px solid var(--t-dark);
+  border: 3px solid #fff;
   border-radius: 2px;
 }
 
@@ -1665,13 +1697,14 @@
 :root[data-theme='manga'] .rbn-main {
   font-family: var(--t-title);
   font-weight: 400;
-  color: var(--t-hot);
-  text-shadow: 3px 3px 0 var(--t-dark);
+  color: var(--t-dark);
+  text-shadow: none;
+  background: var(--t-marker);
 }
 
 :root[data-theme='manga'] .rbn-sub {
   font-weight: 900;
-  color: var(--t-dark);
+  color: var(--t-hot);
 }
 
 :root[data-theme='manga'] .setup {
@@ -1679,11 +1712,10 @@
   border-radius: 2px;
   background: #fff;
   box-shadow: 10px 10px 0 var(--t-dark);
-  --gold: var(--t-hot);
   --set-name: var(--t-dark);
   --set-quiet: var(--t-soft);
   --set-line: var(--t-dark);
-  --set-row: rgba(18, 18, 18, 0.15);
+  --set-row: rgba(20, 20, 20, 0.15);
   --set-btn: #fff;
   --set-btn-line: var(--t-dark);
   --set-field: #fff;
@@ -1720,23 +1752,26 @@
    ====================================================================== */
 
 :root[data-theme='arcade'] {
+  /* 靛蓝底、金黄主色；粉只给“出场”“和牌”这种最要紧的按钮，青只给小字说明 */
   --gold: #ffd23f;
-  --ink: #f4f4f4;
-  --ink-quiet: #9d97d6;
-  --felt: #1f1d5c;
-  --felt-dark: #14123d;
-  --tile-back: #3ce7ff;
-  --t-bg: #0b0920;
-  --t-panel: #1d1a4a;
-  --t-panel-2: #2a2566;
+  --ink: #f6f5ff;
+  --ink-quiet: #b0abe0;
+  --felt: #221e52;
+  --felt-dark: #17143a;
+  --tile-back: #e0a82e;
+  --t-bg: #0d0b1e;
+  --t-panel: #17143a;
+  --t-panel-2: #221e52;
   --t-line: #4a43a8;
   --t-hot: #ff4f81;
-  --t-cyan: #3ce7ff;
-  --t-plus: #5cff6b;
+  --t-cyan: #3ad4f0;
+  --t-on-bright: #0d0b1e;
+  --t-plus: #6cf58a;
   --t-num: 'Press Start 2P', 'ZCOOL QingKe HuangYou', monospace;
+  /* 像素味的标题字只给大标题用；名字、按钮、说明都用正文字体，不然小字认不出来 */
   --t-title: 'ZCOOL QingKe HuangYou', 'Noto Sans SC', sans-serif;
   --t-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --t-px-c: #f4f4f4;
+  --t-px-c: #f6f5ff;
 }
 
 /* 像素描边：上下左右各挪 4px 的硬边，四角缺一格，再加一道往下的黑影。
@@ -1748,18 +1783,9 @@
 :root[data-theme='arcade'] .select-screen {
   position: relative;
   background:
-    radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55)),
-    linear-gradient(#0b0920, #17134a);
-}
-
-/* 显像管扫描线 */
-:root[data-theme='arcade'] .select-screen::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 40;
-  background: repeating-linear-gradient(transparent 0 3px, rgba(0, 0, 0, 0.28) 3px 4px);
+    repeating-linear-gradient(transparent 0 3px, rgba(0, 0, 0, 0.16) 3px 4px),
+    radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.5)),
+    linear-gradient(#0d0b1e, #17143a);
 }
 
 :root[data-theme='arcade'] .select-screen h1 {
@@ -1767,7 +1793,7 @@
   font-size: 40px;
   letter-spacing: 6px;
   color: var(--gold);
-  text-shadow: 4px 4px 0 var(--t-hot), 8px 8px 0 rgba(0, 0, 0, 0.6);
+  text-shadow: 4px 4px 0 rgba(0, 0, 0, 0.65);
 }
 
 :root[data-theme='arcade'] .select-screen h1::after {
@@ -1790,7 +1816,7 @@
 @media (max-height: 500px) {
   :root[data-theme='arcade'] .select-screen h1 {
     font-size: 24px;
-    text-shadow: 3px 3px 0 var(--t-hot);
+    text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.65);
   }
 
   :root[data-theme='arcade'] .select-screen h1::after {
@@ -1800,7 +1826,7 @@
 
 :root[data-theme='arcade'] .subtitle,
 :root[data-theme='arcade'] .footnote {
-  color: #8c86c9;
+  color: var(--ink-quiet);
 }
 
 :root[data-theme='arcade'] .sel-set,
@@ -1810,7 +1836,7 @@
   border-radius: 0;
   background: var(--t-panel);
   box-shadow: var(--t-px);
-  --t-px-c: #8c86c9;
+  --t-px-c: #6a63c0;
 }
 
 :root[data-theme='arcade'] .sel-set:hover,
@@ -1851,8 +1877,8 @@
 :root[data-theme='arcade'] .sel-modes > .sel-random {
   border: none;
   border-radius: 0;
-  background: var(--t-hot);
-  color: #fff;
+  background: var(--gold);
+  color: var(--t-on-bright);
   box-shadow: var(--t-px);
   --t-px-c: #fff;
 }
@@ -1870,8 +1896,8 @@
 }
 
 :root[data-theme='arcade'] .school-tabs button.on {
-  background: var(--s);
-  color: #0b0920;
+  background: var(--gold);
+  color: var(--t-on-bright);
   box-shadow: 0 0 0 2px #fff, 4px 4px 0 2px rgba(0, 0, 0, 0.6);
 }
 
@@ -1880,11 +1906,19 @@
 }
 
 :root[data-theme='arcade'] .school-head b {
-  font-family: var(--t-title);
-  font-weight: 400;
-  font-size: 26px;
-  color: var(--s);
-  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6);
+  font-family: var(--t-body);
+  font-weight: 900;
+  color: #fff;
+}
+
+:root[data-theme='arcade'] .school-head b::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 10px;
+  background: var(--s);
+  box-shadow: 0 0 0 2px #fff;
 }
 
 /* 角色卡：像素框，选中时外面一圈黄框闪 */
@@ -1904,7 +1938,8 @@
   overflow: hidden;
   background:
     linear-gradient(rgba(0, 0, 0, 0.18) 50%, transparent 50%) 0 0 / 100% 4px,
-    linear-gradient(170deg, color-mix(in srgb, var(--c) 75%, #0b0920), #0b0920);
+    linear-gradient(170deg, color-mix(in srgb, var(--c) 60%, #0d0b1e), #0d0b1e);
+  color: color-mix(in srgb, var(--c) 35%, white);
   font-family: var(--t-title);
   font-weight: 400;
 }
@@ -1912,7 +1947,7 @@
 :root[data-theme='arcade'] .char-card .char-name {
   height: 46px;
   padding: 5px 2px;
-  background: #0b0920;
+  background: #0d0b1e;
   border-top: 4px solid var(--c);
 }
 
@@ -1924,7 +1959,7 @@
 
 :root[data-theme='arcade'] .char-cost {
   border-radius: 0;
-  background: #0b0920;
+  background: #0d0b1e;
   color: var(--gold);
   font-family: var(--t-num);
   font-size: 11px;
@@ -1945,7 +1980,7 @@
   top: -14px;
   padding: 3px 4px;
   background: var(--t-hot);
-  color: #fff;
+  color: var(--t-on-bright);
   font: 400 10px var(--t-num);
   animation: arcade-blink 0.9s steps(1) infinite;
 }
@@ -1953,10 +1988,6 @@
 @media (max-height: 500px) {
   :root[data-theme='arcade'] .char-card .char-portrait {
     bottom: 36px;
-  }
-
-  :root[data-theme='arcade'] .char-tip .char-name {
-    text-shadow: 2px 2px 0 var(--t-hot);
   }
 
   :root[data-theme='arcade'] .char-card .char-name {
@@ -1968,8 +1999,7 @@
 :root[data-theme='arcade'] .char-tip {
   background:
     linear-gradient(rgba(0, 0, 0, 0.2) 50%, transparent 50%) 0 0 / 100% 4px,
-    linear-gradient(transparent 62%, rgba(255, 210, 63, 0.18) 62% 63%, transparent 63% 72%, rgba(255, 79, 129, 0.18) 72% 73%, transparent 73%),
-    linear-gradient(180deg, color-mix(in srgb, var(--c) 55%, #0b0920), #0b0920 75%);
+    linear-gradient(180deg, color-mix(in srgb, var(--c) 42%, #0d0b1e), #0d0b1e 75%);
   border-right: 4px solid var(--t-line);
 }
 
@@ -1986,16 +2016,15 @@
 
 :root[data-theme='arcade'] .hero-plate {
   margin: 4px;
-  background: rgba(11, 9, 32, 0.94);
+  background: rgba(13, 11, 30, 0.96);
   box-shadow: var(--t-px);
 }
 
 :root[data-theme='arcade'] .char-tip .char-name {
-  font-family: var(--t-title);
-  font-weight: 400;
+  font-family: var(--t-body);
+  font-weight: 900;
   letter-spacing: 2px;
   color: #fff;
-  text-shadow: 4px 4px 0 var(--t-hot);
 }
 
 :root[data-theme='arcade'] .char-tip .char-school {
@@ -2005,8 +2034,7 @@
 
 :root[data-theme='arcade'] .char-tip .char-ability {
   color: var(--gold);
-  font-family: var(--t-title);
-  font-size: 21px;
+  font-weight: 900;
 }
 
 :root[data-theme='arcade'] .char-tip .char-ability::before {
@@ -2014,7 +2042,7 @@
 }
 
 :root[data-theme='arcade'] .char-tip .char-desc {
-  color: #c9c5ee;
+  color: #d3d0f2;
 }
 
 :root[data-theme='arcade'] .hero-more {
@@ -2024,7 +2052,7 @@
 :root[data-theme='arcade'] .hero-cost {
   border-radius: 0;
   background: var(--gold);
-  color: #0b0920;
+  color: var(--t-on-bright);
   font-family: var(--t-num);
   font-size: 15px;
   box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6);
@@ -2034,18 +2062,17 @@
   border: none;
   border-radius: 0;
   background: var(--t-hot);
-  color: #fff;
+  color: var(--t-on-bright);
   font-family: var(--t-title);
   font-weight: 400;
   font-size: 24px;
   letter-spacing: 6px;
   box-shadow: var(--t-px);
   --t-px-c: #fff;
-  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
 }
 
 :root[data-theme='arcade'] .hero-go:hover {
-  background: #ff6b98;
+  background: #ff7fa3;
 }
 
 :root[data-theme='arcade'] .hero-rules {
@@ -2061,9 +2088,9 @@
   border-radius: 0;
   background:
     linear-gradient(rgba(0, 0, 0, 0.18) 50%, transparent 50%) 0 0 / 100% 4px,
-    linear-gradient(170deg, color-mix(in srgb, var(--c) 75%, #0b0920), #0b0920);
+    linear-gradient(170deg, color-mix(in srgb, var(--c) 60%, #0d0b1e), #0d0b1e);
   box-shadow: var(--t-px);
-  --t-px-c: #f4f4f4;
+  --t-px-c: #f6f5ff;
   font-family: var(--t-title);
   font-weight: 400;
 }
@@ -2076,22 +2103,22 @@
 :root[data-theme='arcade'] .seat-frame .wind {
   border: none;
   border-radius: 0;
-  background: var(--t-hot);
-  color: #fff;
-  box-shadow: 0 0 0 2px #fff;
+  background: var(--gold);
+  color: var(--t-on-bright);
+  box-shadow: 0 0 0 2px #0d0b1e;
 }
 
 :root[data-theme='arcade'] .seat-info {
   margin-top: 10px;
   border: none;
   border-radius: 0;
-  background: #0b0920;
+  background: #0d0b1e;
   letter-spacing: 1px;
   box-shadow: 0 0 0 2px var(--c), 4px 4px 0 2px rgba(0, 0, 0, 0.6);
 }
 
 :root[data-theme='arcade'] .seat-frame.active .seat-info {
-  color: #0b0920;
+  color: var(--t-on-bright);
   background: var(--gold);
   box-shadow: 0 0 0 2px #fff, 4px 4px 0 2px rgba(0, 0, 0, 0.6);
 }
@@ -2101,11 +2128,10 @@
   border-radius: 0;
   background: var(--t-panel-2);
   color: #fff;
-  font-family: var(--t-title);
-  font-weight: 400;
-  font-size: 20px;
+  font-weight: 900;
+  font-size: 19px;
   box-shadow: var(--t-px);
-  --t-px-c: #f4f4f4;
+  --t-px-c: #f6f5ff;
 }
 
 :root[data-theme='arcade'] .act:active {
@@ -2115,13 +2141,15 @@
 :root[data-theme='arcade'] .act.ron,
 :root[data-theme='arcade'] .act.tsumo {
   background: var(--t-hot);
+  color: var(--t-on-bright);
+  font-family: var(--t-title);
+  font-weight: 400;
   font-size: 24px;
-  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
 }
 
 :root[data-theme='arcade'] .act.riichi {
   background: var(--gold);
-  color: #0b0920;
+  color: var(--t-on-bright);
 }
 
 :root[data-theme='arcade'] .act.riichi.on {
@@ -2134,27 +2162,25 @@
 :root[data-theme='arcade'] .act.daiminkan,
 :root[data-theme='arcade'] .act.ankan,
 :root[data-theme='arcade'] .act.kakan {
-  background: #1f8fa8;
+  --t-px-c: var(--t-cyan);
 }
 
 :root[data-theme='arcade'] .act.pass {
-  background: #3a3670;
-  color: #c9c5ee;
-  --t-px-c: #8c86c9;
+  background: var(--t-panel);
+  color: #d3d0f2;
+  --t-px-c: #6a63c0;
 }
 
 :root[data-theme='arcade'] .waits {
   border: none;
   border-radius: 0;
-  background: rgba(11, 9, 32, 0.94);
+  background: rgba(13, 11, 30, 0.96);
   box-shadow: var(--t-px);
   --t-px-c: var(--gold);
 }
 
 :root[data-theme='arcade'] .waits-title {
-  font-family: var(--t-title);
-  font-weight: 400;
-  font-size: 15px;
+  font-weight: 900;
   color: var(--gold);
 }
 
@@ -2169,24 +2195,25 @@
 }
 
 :root[data-theme='arcade'] .hud .hint {
-  font-family: var(--t-title);
-  font-size: 16px;
+  padding: 2px 12px;
+  background: rgba(13, 11, 30, 0.88);
   color: #fff;
-  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.7);
-  animation: arcade-blink 1.4s steps(1) infinite;
+  font-weight: 700;
+  text-shadow: none;
+  box-shadow: 0 0 0 2px var(--t-line);
 }
 
 :root[data-theme='arcade'] .auto-btn {
   border: none;
   border-radius: 0;
   background: var(--t-panel);
-  font-family: var(--t-title);
-  font-weight: 400;
-  box-shadow: 0 0 0 3px #8c86c9;
+  font-weight: 900;
+  box-shadow: 0 0 0 3px #6a63c0;
 }
 
 :root[data-theme='arcade'] .auto-btn.on {
-  background: var(--t-hot);
+  background: var(--gold);
+  color: var(--t-on-bright);
   box-shadow: 0 0 0 3px #fff;
 }
 
@@ -2194,36 +2221,30 @@
 :root[data-theme='arcade'] .nameplate {
   border: none;
   border-radius: 0;
-  background: rgba(11, 9, 32, 0.92);
+  background: rgba(13, 11, 30, 0.95);
   box-shadow: 0 0 0 3px var(--t-line);
 }
 
-:root[data-theme='arcade'] .ab-name {
-  font-family: var(--t-title);
-  font-weight: 400;
-}
 
 :root[data-theme='arcade'] .center {
   border: none;
   border-radius: 0;
-  background: rgba(11, 9, 32, 0.9);
+  background: rgba(13, 11, 30, 0.94);
   box-shadow: 0 0 0 4px var(--t-line);
 }
 
 :root[data-theme='arcade'] .center .round {
-  font-family: var(--t-title);
-  font-weight: 400;
-  font-size: 20px;
+  font-weight: 900;
 }
 
 :root[data-theme='arcade'] .modal {
-  background: repeating-linear-gradient(transparent 0 3px, rgba(0, 0, 0, 0.25) 3px 4px), rgba(11, 9, 32, 0.75);
+  background: repeating-linear-gradient(transparent 0 3px, rgba(0, 0, 0, 0.25) 3px 4px), rgba(13, 11, 30, 0.8);
 }
 
 :root[data-theme='arcade'] .result {
   border: none;
   border-radius: 0;
-  background: #0f0c2c;
+  background: #110e2c;
   box-shadow: var(--t-px), 0 0 0 12px rgba(0, 0, 0, 0.35);
 }
 
@@ -2232,12 +2253,13 @@
   font-weight: 400;
   font-size: 32px;
   color: var(--gold);
-  text-shadow: 4px 4px 0 var(--t-hot);
+  text-shadow: 4px 4px 0 rgba(0, 0, 0, 0.65);
 }
 
 :root[data-theme='arcade'] .summary {
-  font-family: var(--t-num), var(--t-title);
+  font-family: var(--t-body);
   font-size: 20px;
+  font-weight: 900;
   line-height: 1.6;
   color: #fff;
 }
@@ -2249,13 +2271,13 @@
 
 :root[data-theme='arcade'] .delta .minus,
 :root[data-theme='arcade'] .rank-row .minus {
-  color: var(--t-hot);
+  color: #ff7fa3;
 }
 
 :root[data-theme='arcade'] .primary {
   border-radius: 0;
   background: var(--gold);
-  color: #0b0920;
+  color: var(--t-on-bright);
   font-family: var(--t-title);
   font-weight: 400;
   font-size: 22px;
@@ -2271,8 +2293,8 @@
 
 :root[data-theme='arcade'] .rbn-band {
   border-top: 4px solid var(--gold);
-  border-bottom: 4px solid var(--t-hot);
-  background: repeating-linear-gradient(transparent 0 3px, rgba(0, 0, 0, 0.3) 3px 4px), rgba(11, 9, 32, 0.92);
+  border-bottom: 4px solid var(--gold);
+  background: rgba(13, 11, 30, 0.94);
   -webkit-mask-image: none;
   mask-image: none;
 }
@@ -2281,11 +2303,12 @@
   font-family: var(--t-title);
   font-weight: 400;
   color: var(--gold);
-  text-shadow: 5px 5px 0 var(--t-hot);
+  text-shadow: 5px 5px 0 rgba(0, 0, 0, 0.65);
 }
 
 :root[data-theme='arcade'] .rbn-sub {
-  font-family: var(--t-num);
+  font-family: var(--t-body);
+  font-weight: 900;
   font-size: clamp(11px, 2.6vh, 18px);
   color: #fff;
 }
@@ -2293,14 +2316,14 @@
 :root[data-theme='arcade'] .setup {
   border: none;
   border-radius: 0;
-  background: #0f0c2c;
+  background: #110e2c;
   box-shadow: var(--t-px), 0 0 0 12px rgba(0, 0, 0, 0.35);
-  --set-quiet: #9d97d6;
+  --set-quiet: var(--ink-quiet);
   --set-line: var(--t-line);
   --set-row: rgba(140, 134, 201, 0.18);
   --set-btn: var(--t-panel);
-  --set-btn-line: #4a43a8;
-  --set-field: #0b0920;
+  --set-btn-line: #6a63c0;
+  --set-field: #0d0b1e;
 }
 
 :root[data-theme='arcade'] .setup h2 {
@@ -2308,12 +2331,11 @@
   font-weight: 400;
   font-size: 26px;
   color: var(--gold);
-  text-shadow: 3px 3px 0 var(--t-hot);
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.65);
 }
 
 :root[data-theme='arcade'] .set-sec {
-  font-family: var(--t-title);
-  font-weight: 400;
+  font-weight: 900;
   color: var(--t-cyan);
 }
 
@@ -2328,15 +2350,74 @@
 :root[data-theme='arcade'] .setup-actions .primary {
   border-color: #fff;
   background: var(--gold);
-  color: #0b0920;
+  color: var(--t-on-bright);
 }
 
 /* 动画少一点的设置：街机的闪烁字停下来 */
 @media (prefers-reduced-motion: reduce) {
   :root[data-theme='arcade'] .select-screen h1::after,
   :root[data-theme='arcade'] .sel-modes > button.on::before,
-  :root[data-theme='arcade'] .char-card.armed::before,
-  :root[data-theme='arcade'] .hud .hint {
+  :root[data-theme='arcade'] .char-card.armed::before {
     animation: none;
   }
+}
+
+/* ======================================================================
+   四套共用：对比度检查查出来的漏
+   游戏本身的界面里有几处字太淡，或者白字压在亮色上，换哪套皮肤都看不清，这里一并补上
+   ====================================================================== */
+
+/* 团体赛选人：队名牌是白字压队色，黄队、绿队的看不清，把底色压暗一档 */
+:root:is([data-theme='porcelain'], [data-theme='neon'], [data-theme='manga'], [data-theme='arcade']) .tmd-lab {
+  background: color-mix(in srgb, var(--t) 60%, #000);
+}
+
+:root:is([data-theme='porcelain'], [data-theme='neon'], [data-theme='manga'], [data-theme='arcade']) .tmd-sum {
+  opacity: 1;
+}
+
+/* 牌桌右边“理、和、鸣、切”四个小开关：关着的那几个原来只有三成半的白 */
+:root:is([data-theme='porcelain'], [data-theme='neon'], [data-theme='manga'], [data-theme='arcade']) .assist-bar button:not(.on) {
+  background: rgba(14, 20, 28, 0.92);
+  color: rgba(255, 255, 255, 0.74);
+}
+
+/* 高校页签上的人数 */
+:root:is([data-theme='porcelain'], [data-theme='neon'], [data-theme='manga'], [data-theme='arcade']) .school-tabs button small {
+  opacity: 0.85;
+}
+
+/* 团体赛选人：已经被选走的牌上斜着的“某队”小牌子，同样把队色压暗；每档标题后面的小字用正文色 */
+:root:is([data-theme='porcelain'], [data-theme='neon'], [data-theme='manga'], [data-theme='arcade']) .tmd-tag {
+  background: color-mix(in srgb, var(--t) 55%, #000);
+}
+
+:root:is([data-theme='porcelain'], [data-theme='neon'], [data-theme='manga'], [data-theme='arcade']) .tmd-pool-head span {
+  color: var(--ink);
+}
+
+:root:is([data-theme='porcelain'], [data-theme='neon'], [data-theme='manga'], [data-theme='arcade']) .tmd-tile.back {
+  color: #fff;
+}
+
+/* 街机的牌背是金色，上面的名字用深色 */
+:root[data-theme='arcade'] .tmd-tile.back {
+  color: var(--t-on-bright);
+}
+
+/* 平面牌桌左上的能力说明：能力名跟着角色色走，遇到深色角色就看不清，统一提亮 */
+:root:is([data-theme='porcelain'], [data-theme='neon'], [data-theme='manga'], [data-theme='arcade']) .ability-panel .ab-name {
+  color: color-mix(in srgb, var(--c) 45%, #fff);
+  filter: none;
+}
+
+/* 平面牌桌中间四家的风位字：深色底的两套同样提亮（浅色底的白瓷、漫画在各自那段里压暗） */
+:root:is([data-theme='neon'], [data-theme='arcade']) .center .score .wind {
+  color: color-mix(in srgb, var(--c) 45%, #fff);
+  filter: none;
+}
+
+/* 结算页“能力痕迹”里每行前面的巡目 */
+:root:is([data-theme='porcelain'], [data-theme='neon'], [data-theme='manga'], [data-theme='arcade']) .trace-turn {
+  color: var(--ink);
 }

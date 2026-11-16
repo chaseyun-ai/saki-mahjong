@@ -73,17 +73,17 @@ const TABLES: Record<ThemeId, TableColors> = {
     frame: '#ebe6dc',
     trim: '#b9b0a2',
     room: '#efeae0',
-    console: { bg: ['#ffffff', '#ebe6dc'], line: '#c9c1b2', ink: '#1d232a', dim: '#7a8088', accent: '#c8553d', title: "700 1em 'Noto Serif SC','Noto Sans SC','PingFang SC',serif" },
+    console: { bg: ['#ffffff', '#ebe6dc'], line: '#c9c1b2', ink: '#1d232a', dim: '#5b636d', accent: '#a83f29', title: "700 1em 'Noto Serif SC','Noto Sans SC','PingFang SC',serif" },
   },
-  // 赛博霓虹：近黑的桌布配青色细线，洋红牌背
+  // 赛博霓虹：近黑的桌布配青色细线，青蓝牌背（品红只留给和牌、立直这些要紧的字）
   neon: {
-    felt: ['#101a33', '#0a1224', '#050914'],
-    feltLine: 'rgba(46,242,255,0.55)',
-    back: '#c01a9c',
-    frame: '#070a12',
-    trim: '#2ef2ff',
-    room: '#03050a',
-    console: { bg: ['#0a1630', '#02040a'], line: '#2ef2ff', ink: '#e6fbff', dim: '#6f93a8', accent: '#ff2bd6', title: "900 1em 'Orbitron','Noto Sans SC','PingFang SC',sans-serif" },
+    felt: ['#121d33', '#0c1424', '#070b14'],
+    feltLine: 'rgba(63,224,255,0.45)',
+    back: '#1e7fa6',
+    frame: '#070b14',
+    trim: '#3fe0ff',
+    room: '#04070e',
+    console: { bg: ['#0a1630', '#02040a'], line: '#3fe0ff', ink: '#eaf4ff', dim: '#9db1c7', accent: '#ff5cc8', title: "900 1em 'Orbitron','Noto Sans SC','PingFang SC',sans-serif" },
   },
   // 漫画分镜：浅灰纸色桌布、黑牌背、黑桌框
   manga: {
@@ -93,17 +93,17 @@ const TABLES: Record<ThemeId, TableColors> = {
     frame: '#121212',
     trim: '#f5f5f5',
     room: '#e9e6dd',
-    console: { bg: ['#ffffff', '#e7e3d9'], line: '#121212', ink: '#121212', dim: '#6a6a6a', accent: '#e0262d', title: "400 1em 'ZCOOL KuaiLe','Noto Sans SC','PingFang SC',sans-serif" },
+    console: { bg: ['#ffffff', '#e7e3d9'], line: '#141414', ink: '#141414', dim: '#555555', accent: '#c2141f', title: "400 1em 'ZCOOL KuaiLe','Noto Sans SC','PingFang SC',sans-serif" },
   },
-  // 复古街机：靛蓝桌布配黄线，青色牌背
+  // 复古街机：靛蓝桌布配黄线，金黄牌背
   arcade: {
-    felt: ['#2d2b80', '#1f1d5c', '#14123d'],
-    feltLine: 'rgba(255,210,63,0.6)',
-    back: '#3ce7ff',
-    frame: '#0b0920',
+    felt: ['#2a2670', '#221e52', '#17143a'],
+    feltLine: 'rgba(255,210,63,0.5)',
+    back: '#e0a82e',
+    frame: '#0d0b1e',
     trim: '#ffd23f',
-    room: '#0b0920',
-    console: { bg: ['#221d5a', '#0b0920'], line: '#ffd23f', ink: '#f4f4f4', dim: '#9d97d6', accent: '#ff4f81', title: "400 1em 'ZCOOL QingKe HuangYou','Noto Sans SC','PingFang SC',sans-serif" },
+    room: '#0d0b1e',
+    console: { bg: ['#221d5a', '#0d0b1e'], line: '#ffd23f', ink: '#f6f5ff', dim: '#b0abe0', accent: '#ff7fa3', title: "900 1em 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" },
   },
 };
 
