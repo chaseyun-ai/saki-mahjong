@@ -7,7 +7,8 @@ import * as THREE from 'three';
 //   里面一柱紫光；风里卷着少许沙土和几块碎石；紫白色的电弧在风上爬、从风顶往天上劈，偶尔劈到桌上；
 //   卷了一秒多，风带往外散开、淡成一片紫光，碎石被甩出去落在桌上，残电再闪几下；
 //   风没了，牌还在原地转，慢慢停下来、停回原来的方向。
-// 连和越多（size 0–1）风越高越粗、碎石和电弧越多。
+// 和得越大（size 0–1：12000 点是 0，32000 点以上是 1，见 teru.ts 的 teruTwister）风越高越粗、风带风丝越多、碎石和电弧越多，
+// 小的只在风上爬几道电，大的电劈到桌上、顶上的大圈也多。
 // 风带、风丝、沙土的位置全在顶点着色器里按时间算（每条只存几个随机数）；风丝朝着镜头展开、细到不足 1.5 个像素时变暗不变细，
 // 照 Humpalumps/ultra-elements（MIT）的 Ribbons.js（和初美的旋风 gale.ts 一样）；碎石甩出去以后按初速度、重力解析地算。
 // 电弧、起风、劈下来那一闪由牌桌放（onErupt、onClimax、onArc、onBreak 回调：Effects 的 arc、flash、ring），这里只定时间和位置。
@@ -27,11 +28,6 @@ export const TWISTER = {
 };
 export const TWISTER_TIME = TWISTER.erupt + TWISTER.hold + TWISTER.fade + TWISTER.after + TWISTER.settle;
 
-// 连和到第几次时风多大（0–1）：第 2 次起卷，第 6 次起最大
-export function twisterSize(streak: number): number {
-  return Math.max(0, Math.min(1, (streak - 1) / 5));
-}
-
 export interface TwisterOpts {
   floor: THREE.Vector3; // 牌底下的桌面点：风从这里起
   scale: number; // 牌的大小（牌宽）
@@ -45,7 +41,7 @@ export interface TwisterOpts {
 // 风本来多高、风顶本来往桌子中间歪多少（牌桌照镜头再压矮、多歪一点，风顶才留在画面里），风脚、风顶的半径。
 // 风脚比牌转起来扫过的圆（半对角线约 0.84 牌宽）还宽一点：转着的牌整个裹在风里
 export function twisterShape(size: number, scale: number): { height: number; leanAmt: number; r0: number; r1: number } {
-  return { height: (11 + 4.5 * size) * scale, leanAmt: (1.0 + 0.6 * size) * scale, r0: (0.98 + 0.1 * size) * scale, r1: (2.9 + 1.1 * size) * scale };
+  return { height: (8 + 9 * size) * scale, leanAmt: (0.8 + 0.9 * size) * scale, r0: (0.98 + 0.12 * size) * scale, r1: (2.2 + 2.2 * size) * scale };
 }
 
 // 电弧：crawl 在风上爬，sky 从风顶往天上劈，ground 从风上劈到桌上，residual 风散以后牌四周的残电
@@ -584,7 +580,7 @@ export class Twister {
     this.buildBands(z, s);
     this.buildWisps(z, s);
     this.buildHalos(z, s);
-    this.sandGeo.setDrawRange(0, Math.round(MAX_SAND * (0.45 + 0.55 * z)));
+    this.sandGeo.setDrawRange(0, Math.round(MAX_SAND * (0.3 + 0.7 * z)));
     this.dust.position.copy(o.floor).setY(o.floor.y + 0.03);
     this.glow.position.copy(o.floor).setY(o.floor.y + 0.4 * s);
     this.buildRocks(z, s);
@@ -600,7 +596,7 @@ export class Twister {
   // 风带：从下往上一条条排（画的时候按这个顺序）
   private buildBands(z: number, s: number): void {
     const foot = 6;
-    const n = Math.min(MAX_BANDS, Math.round(24 + 10 * z) + foot);
+    const n = Math.min(MAX_BANDS, Math.round(16 + 12 * z) + foot);
     const a: number[] = [];
     const b: number[] = [];
     // 风脚：牌浮起来转的那一截（离桌面一牌多高）多绕几圈宽一点的风带，把牌整个包在里面
@@ -622,7 +618,7 @@ export class Twister {
 
   // 风丝：白的、淡紫的，绕在漏斗外面往上爬
   private buildWisps(z: number, s: number): void {
-    const n = Math.round(Math.min(MAX_WISPS, 30 + 40 * z));
+    const n = Math.round(Math.min(MAX_WISPS, 16 + 64 * z));
     const a: number[] = [];
     const b: number[] = [];
     const c: number[] = [];
@@ -642,7 +638,7 @@ export class Twister {
 
   // 风顶的大圈
   private buildHalos(z: number, s: number): void {
-    const n = Math.min(MAX_HALOS, Math.round(3 + 3 * z));
+    const n = Math.min(MAX_HALOS, Math.round(1 + 5 * z));
     const a: number[] = [];
     const b: number[] = [];
     const c: number[] = [];
@@ -661,7 +657,7 @@ export class Twister {
 
   // 碎石：一开始有几块被起风那一下直接崩出去，其余卷在风里转，风散时甩出去（也有中途甩出去的）
   private buildRocks(z: number, s: number): void {
-    const n = Math.min(MAX_ROCKS, Math.round(7 + 9 * z));
+    const n = Math.min(MAX_ROCKS, Math.round(4 + 14 * z));
     this.rocks = [];
     for (let i = 0; i < n; i++) {
       const kicked = i < 3;
@@ -752,7 +748,7 @@ export class Twister {
       this.nextArc -= dt * (tt < T.climax ? 0.4 : 1);
       while (this.nextArc <= 0) {
         this.arc(tt);
-        const dense = tt < end ? 0.05 + 0.05 * (1 - o.size) : 0.12;
+        const dense = tt < end ? 0.04 + 0.11 * (1 - o.size) : 0.12;
         this.nextArc += dense * rand(0.7, 1.4);
       }
     }
@@ -788,7 +784,7 @@ export class Twister {
       const th2 = th1 + rand(0.5, 1.3) * (Math.random() < 0.5 ? -1 : 1);
       this.onArc(this.surface(h1, th1, tt, 1.08), this.surface(h2, th2, tt, 1.08), 'crawl');
       this.flash = Math.max(this.flash, 0.35);
-    } else if (k < 0.82) {
+    } else if (k < 0.82 || o.size < 0.3) {
       const th = face();
       const a = this.surface(rand(0.9, 1.02), th, tt, 1.02);
       const out = new THREE.Vector3(Math.cos(th), 0, Math.sin(th));

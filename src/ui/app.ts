@@ -3,10 +3,9 @@ import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { HIROKO_NOTES } from '../abilities/hiroko';
-import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruNote, teruPoints, teruStreakWith, teruWallCounts, teruWinValue } from '../abilities/teru';
+import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruNote, teruPoints, teruTwister, teruWallCounts, teruWinValue } from '../abilities/teru';
 import { teruMirrors } from './teruFx';
 import { tornado2d } from './tornado2d';
-import { twisterSize } from '../ui3d/twister';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiDomainOn, awaiSourceOn, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
@@ -1670,11 +1669,10 @@ export class App {
     teruMirrors(spots);
   }
 
-  // 照的旋风自摸是不是这一手（连和中自摸：这一手和了以后连和到第 2 次起）：是就给风多大（0–1），不是 null
+  // 照的旋风自摸是不是这一手（自摸 12000 点以上）：是就给风多大（0–1，点数越大越大），不是 null
   private twistSize2d(w: WinInfo): number | null {
     if (this.chars[w.seat]?.id !== 'teru' || w.from !== null) return null;
-    const n = teruStreakWith(this.game!, w.seat, w.result, true);
-    return n >= 2 ? twisterSize(n) : null;
+    return teruTwister(this.game!, w.seat, w.result);
   }
 
   // 2D：和了牌砸到结算上那一下，从这张牌底下卷起龙卷风（tornado2d.ts；牌自己在结算里转）。

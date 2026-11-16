@@ -35,8 +35,8 @@ import { AHEAD_MAX } from './slamEdge';
 import type { SlapOrder, SlapTiming } from './slamSlap';
 import { SlamFx } from './slamFx';
 import { LilyFx, lilyGrand } from './lilyFx';
-import { TWISTER, TWISTER_TIME, Twister, twisterShape, twisterSize, type ArcKind } from './twister';
-import { teruStreakWith } from '../abilities/teru';
+import { TWISTER, TWISTER_TIME, Twister, twisterShape, type ArcKind } from './twister';
+import { teruTwister } from '../abilities/teru';
 import type { WinResult } from '../engine/score';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
@@ -2459,11 +2459,10 @@ export class Table3D {
     this.fxHold = Math.max(this.fxHold, this.now + 1.9 + 0.9 * big);
   }
 
-  // 这一手是不是宫永照的旋风自摸（连和中自摸：这一手和了以后连和到第 2 次起）：是就给风多大（0–1），不是 null
+  // 这一手是不是宫永照的旋风自摸（自摸 12000 点以上）：是就给风多大（0–1，点数越大越大），不是 null
   private twistSize(g: Game, w: { seat: number; from: number | null; result: WinResult }): number | null {
     if (w.from !== null || this.lastSync?.view.ids[w.seat] !== 'teru') return null;
-    const n = teruStreakWith(g, w.seat, w.result, true);
-    return n >= 2 ? twisterSize(n) : null;
+    return teruTwister(g, w.seat, w.result);
   }
 
   // 照的和了牌拍到桌上那一下：牌面朝上在原地打转，过一会儿牌底卷起龙卷风（twister.ts），风散了牌还转一会儿，最后停回 to（updateTwist）

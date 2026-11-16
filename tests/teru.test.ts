@@ -38,7 +38,7 @@ const LINEUPS = [
 const POINTS = { ...TERU };
 
 describe('宫永照（按打点递增的连和）', () => {
-  it('每次和了的点数比上一次高就接上；和小了算新一轮的第一次；别人和了、流局就断', () => {
+  it('每次和了的点数比上一次高就接上；和小了、别人和了、流局都断', () => {
     const n = { up: 0, restart: 0, broke: 0, max: 0 };
     for (let seed = 1; seed <= 30; seed++) {
       play(seed, LINEUPS[seed % 4], {
@@ -69,7 +69,8 @@ describe('宫永照（按打点递增的连和）', () => {
               streak.push(v);
               n.up++;
             } else {
-              streak = [v];
+              // 和小了：天梯断了，下一次和了重新起胡
+              streak = [];
               n.restart++;
             }
           });

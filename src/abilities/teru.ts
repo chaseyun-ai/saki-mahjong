@@ -13,7 +13,7 @@ import type { Ability } from './types';
 //   智叶藏在鞘里的默听也照得穿（TERU.sheathRead，原作里智叶的默听对她没用）
 // - 别人的能力动不了她（Ability.immune）：不被封印，别人对她的配牌、摸牌定的规矩不算；只有玄的宝牌她也得守
 // - 连续和了（按打点递增，原作的规矩）：每次和了拿到的点数（本场、立直棒不算，坐庄的 1.5 倍照算）比上一次高，连和就接得上；
-//   从多少点起胡都行。和小了算新一轮连和的第一次；别人和了、流局就断。
+//   从多少点起胡都行。和小了（没有比上一次高）、别人和了、流局都断，下一次和了重新起胡。
 //   起胡前帮得少一些（TERU.boost[0]；配牌往“副露 1000 点”的形状送：一对役牌，或者断幺九），起胡以后帮得多：
 //   快听牌时先送“刚好比上一次高一档”的和了牌（TERU.tight），台阶踩得小连和才长；宝牌、赤宝牌多半被换走（TERU.doraOut）。
 //   要的打点高了，配牌和进张先偏断幺九，再偏混一色、清一色。
@@ -46,7 +46,7 @@ export const TERU = {
   gatesAll: false, // points：九莲宝灯数的是这一轮连和的次数（荣和也算一道门），不只数自摸
   gatesStrict: false, // points：九莲宝灯数的是连和里的自摸；true 的话中间荣和一次就从头数
   mirrorImmune: false, // true：照魔镜看过以后别人的能力才动不了她（第一局照样吃别人的能力）
-  smallRestart: true, // points：和小了算新的一轮连和的第一次（false：直接断到没起胡）
+  smallRestart: false, // points：和小了算新的一轮连和的第一次（true），还是直接断到没起胡（false，天梯断了就是断了）
   doraOut: 0.85, // 宝牌少找她：配牌里、要摸的宝牌和赤宝牌，每张有这么大的概率被换走（0 是不管）；能力送来的进张不挑宝牌
   dama: 2, // 电脑的照：1 = 起胡以后，默听自摸就接得上的时候不立直，等能力把自摸送来；2 = 没起胡时也一律默听
   menzen: false, // 电脑的照：起胡以后不吃不碰（门清自摸、立直才抬得动打点）
@@ -261,7 +261,18 @@ export function teruCheapNext(g: Game, seat: number): boolean {
   return teruLast(g, seat) / (seat === g.dealer ? 1.5 : 1) < 2000;
 }
 
-// 这一手和了以后连和到第几次（结算前就算得出来，和牌的演出用）；不是打点递增的连和、镜子还没看过是 0
+// 旋风自摸（原作里她和大牌时右手卷起的那股龙卷风）：自摸 TERU_TWISTER_MIN 点以上才卷（本场、立直棒不算，坐庄的 1.5 倍算），
+// 返回风多大（0–1，按点数取对数：12000 最小，16000 约 0.3，24000 约 0.7，32000 以上最大）；不卷是 null。
+// 「自摸动作测试」把要看的点数记在 testValue 里（那里谁都不用能力，手牌也是摆好的）
+export const TERU_TWISTER_MIN = 12000;
+export function teruTwister(g: Game, seat: number, r: WinResult): number | null {
+  if (!teruMirrored(g, seat)) return null;
+  const v = (gameStateOf(g, seat) as { testValue?: number }).testValue ?? teruWinValue(r, true, seat === g.dealer);
+  if (v < TERU_TWISTER_MIN) return null;
+  return Math.min(1, Math.log(v / TERU_TWISTER_MIN) / Math.log(32000 / TERU_TWISTER_MIN));
+}
+
+// 这一手和了以后连和到第几次（结算前就算得出来）；不是打点递增的连和、镜子还没看过是 0
 export function teruStreakWith(g: Game, seat: number, r: WinResult, tsumo: boolean): number {
   if (!teruPoints() || !teruMirrored(g, seat)) return 0;
   const gs = gameStateOf(g, seat);
@@ -566,7 +577,7 @@ export const teruAbility: Ability = {
     gs.broke = '平行宇宙';
   },
   description:
-    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看），也读得出立直的人听什么（手里打出去会放铳的牌标红），智叶藏在鞘里的默听也照得穿。连续和了：每次和了拿到的点数比上一次高，连和就接得上（本场、立直棒不算，坐庄的 1.5 倍算），从多少点起胡都行；和小了算新一轮的第一次，别人和了、流局就断。起胡前配牌多半带一对役牌或者偏断幺九，适合鸣牌和个 1000 点，摸牌也帮一点；起胡以后配牌和摸牌都帮她，要和的牌越大帮得越少、做得越慢；快听牌时先送“刚好比上一次高一档”的和了牌，宝牌多半不找她。压制：别人的进张常被换走。叽叽叽：一轮连和里自摸满八次，下一局必定九莲宝灯。',
+    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看），也读得出立直的人听什么（手里打出去会放铳的牌标红），智叶藏在鞘里的默听也照得穿。连续和了：每次和了拿到的点数比上一次高，连和就接得上（本场、立直棒不算，坐庄的 1.5 倍算），从多少点起胡都行；和小了、别人和了、流局都断。起胡前配牌多半带一对役牌或者偏断幺九，适合鸣牌和个 1000 点，摸牌也帮一点；起胡以后配牌和摸牌都帮她，要和的牌越大帮得越少、做得越慢；快听牌时先送“刚好比上一次高一档”的和了牌，宝牌多半不找她。压制：别人的进张常被换走。叽叽叽：一轮连和里自摸满八次，下一局必定九莲宝灯。',
 
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);

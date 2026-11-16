@@ -105,24 +105,24 @@ export function tornado2d(at: { x: number; y: number }, size: number, opts: Torn
   const k = opts.k ?? Math.max(0.6, Math.min(1.3, window.innerHeight / 820));
   const z = Math.max(0, Math.min(1, size));
   const T = TWISTER;
-  const side = at.y > (230 + 110 * z) * k * 0.9 + 20;
-  const H = side ? (230 + 110 * z) * k : (55 + 25 * z) * k;
+  const side = at.y > (170 + 190 * z) * k * 0.9 + 20;
+  const H = side ? (170 + 190 * z) * k : (45 + 40 * z) * k;
   // 风脚比牌宽一点：转着的牌整个裹在风里
   const R0 = (side ? 20 : 24) * k;
-  const R1 = (side ? 72 + 40 * z : 92 + 46 * z) * k;
+  const R1 = (side ? 55 + 70 * z : 70 + 85 * z) * k;
   const SQ = side ? 0.3 : 0.74; // 斜着看横着的圈压扁成椭圆；从上往下看差不多是圆
   const wob = (side ? 14 + 8 * z : 6 + 4 * z) * k;
   // 风顶往画面中间歪
   const leanX = (window.innerWidth / 2 - at.x) * (side ? 0.12 : 0.04) + (Math.random() - 0.5) * (side ? 20 : 8) * k;
-  const nb = Math.round(18 + 12 * z);
+  const nb = Math.round(14 + 16 * z);
   const bands: Band[] = [];
   for (let i = 0; i < nb; i++) {
     const h = 0.03 + ((i + 0.5 + rnd(-0.3, 0.3)) / nb) * 0.95;
     bands.push({ h, span: rnd(1.15, 1.8) * Math.PI, th0: Math.random() * Math.PI * 2, w: rnd(9, 12.5) * (1.3 - 0.6 * h), thick: (5 + 10 * h) * k * rnd(0.85, 1.15) * (0.85 + 0.3 * z) });
   }
   bands.sort((a, b) => a.h - b.h);
-  const wisps: Wisp[] = Array.from({ length: Math.round(26 + 30 * z) }, () => ({ phase: Math.random(), climb: rnd(0.6, 1.3), th0: Math.random() * Math.PI * 2, w: rnd(8, 13), rMul: rnd(1.08, 1.5), span: rnd(0.9, 2) }));
-  const rocks: Rock[] = Array.from({ length: Math.round(6 + 7 * z) }, (_, i) => {
+  const wisps: Wisp[] = Array.from({ length: Math.round(14 + 46 * z) }, () => ({ phase: Math.random(), climb: rnd(0.6, 1.3), th0: Math.random() * Math.PI * 2, w: rnd(8, 13), rMul: rnd(1.08, 1.5), span: rnd(0.9, 2) }));
+  const rocks: Rock[] = Array.from({ length: Math.round(3 + 10 * z) }, (_, i) => {
     const n = 5 + Math.floor(Math.random() * 3);
     const pts: Pt[] = Array.from({ length: n }, (_, j) => {
       const a = (j / n) * Math.PI * 2;
@@ -427,7 +427,7 @@ export function tornado2d(at: { x: number; y: number }, size: number, opts: Torn
     if (tt > 0.2 && tt < end + T.after * 0.75) {
       nextArc -= dt * (tt < T.climax ? 0.4 : 1);
       while (nextArc <= 0) {
-        nextArc += (tt < end ? 0.07 + 0.07 * (1 - z) : 0.14) * rnd(0.7, 1.4);
+        nextArc += (tt < end ? 0.05 + 0.12 * (1 - z) : 0.14) * rnd(0.7, 1.4);
         if (tt >= end) {
           const [bx, by] = axis(0, tt);
           addArc([bx + rnd(-20, 20) * k, by - rnd(25, 70) * k], [bx + rnd(-50, 50) * k, by + rnd(-6, 6) * k], tAll, 0.8, 0.2, 1);
@@ -442,7 +442,7 @@ export function tornado2d(at: { x: number; y: number }, size: number, opts: Torn
           const h2 = Math.min(1.05, Math.max(0.15, h1 + rnd(-0.28, 0.12)));
           addArc(onFunnel(h1, th1, tt, 1.08), onFunnel(h2, th1 + rnd(0.5, 1.3) * (Math.random() < 0.5 ? -1 : 1), tt, 1.08), tAll, 1, rnd(0.14, 0.22), 1);
           flash = Math.max(flash, 0.35);
-        } else if (kind < 0.82) {
+        } else if (kind < 0.82 || z < 0.3) {
           const th = rnd(-Math.PI, 0);
           const a = onFunnel(rnd(0.9, 1.02), th, tt, 1.02);
           addArc(a, [a[0] + Math.cos(th) * rnd(30, 70) * k, a[1] - rnd(40, 90) * k], tAll, 1.15, rnd(0.15, 0.24), 2);
