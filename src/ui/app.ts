@@ -49,7 +49,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playCrackle, playIaiDraw, playIaiPush, playIaiSheath, playLily, playRiichi, playSlam, playSplash, playWhirl, playWin } from './sound';
+import { playCall, playChime, playClick, playCrackle, playIaiDraw, playIaiPush, playIaiSheath, playLily, playMachine, playRiichi, playSlam, playSplash, playWhirl, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -834,6 +834,8 @@ export class App {
       };
       // 衣的海底牌砸进海里：水声
       this.table3d.onSeaSlam = () => playSplash();
+      // 全自动麻将机：仪表盘抬起落下、牌掉进去、升降板沉下去又升上来、到顶卡住
+      this.table3d.onMachine = (cue, dur) => playMachine(cue, dur);
       // 照的旋风自摸：牌拍下去、风卷起来时一记闷响加一阵风声，电劈下来、劈到桌上“噼啪”一声，风散开时再噼啪一下
       this.table3d.onTwister = (_seat, size, phase) => {
         if (phase === 'erupt') {
@@ -2248,6 +2250,8 @@ export class App {
     const sketch = this.sketchShown();
     setSketchTiles(sketch);
     const net = this.netView;
+    // 全自动麻将机两副牌轮流用：第几副（牌桌风格是自动麻将机时 2D 的牌背照这个换颜色，见 tableStyles.css）
+    table.parentElement?.setAttribute('data-set', String(Math.max(0, g.round - 1) % 2));
     table.innerHTML = `
       ${[1, 2, 3].map((s) => this.opponentHtml(s)).join('')}
       <div class="center${Date.now() < this.diffUntil ? ' diff-on' : ''}">${net ? this.netCenterHtml() : this.centerHtml()}</div>

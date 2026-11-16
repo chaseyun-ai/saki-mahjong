@@ -403,3 +403,102 @@ export function playLily(big = 0): void {
   src.start(now);
   src.stop(now + dur + 0.05);
 }
+
+// ---------- 全自动麻将机（牌桌风格「自动麻将机」，machine.ts） ----------
+
+// 一截滤过的噪声：kind 带通/低通，从 f0 滑到 f1，at 起响 dur 秒，音量 vol（起音很快、慢慢收掉）
+function noiseHit(a: AudioContext, at: number, dur: number, vol: number, kind: BiquadFilterType, f0: number, f1 = f0, q = 1): void {
+  const len = Math.max(1, Math.floor(a.sampleRate * dur));
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = kind;
+  filter.frequency.setValueAtTime(f0, at);
+  if (f1 !== f0) filter.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  filter.Q.value = q;
+  const gain = a.createGain();
+  gain.gain.value = vol;
+  src.connect(filter).connect(gain).connect(bus('sfx', a));
+  src.start(at);
+}
+
+// 电机的嗡嗡声：锯齿波加高一个八度的方波，压在低通里，频率从 f0 滑到 f1；前后各淡入淡出一点。
+// 上面再叠一串很轻的齿轮“咔咔”声（gears 是每秒几下，0 不要）
+function motorHum(a: AudioContext, at: number, dur: number, vol: number, f0: number, f1: number, gears: number): void {
+  const lp = a.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 520;
+  lp.Q.value = 0.7;
+  const gain = a.createGain();
+  const fade = Math.min(0.12, dur / 3);
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(vol, at + fade);
+  gain.gain.setValueAtTime(vol, at + dur - fade);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  lp.connect(gain).connect(bus('sfx', a));
+  for (const [type, mul, v] of [['sawtooth', 1, 1], ['square', 2, 0.35]] as const) {
+    const osc = a.createOscillator();
+    const g = a.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(f0 * mul, at);
+    osc.frequency.linearRampToValueAtTime(f1 * mul, at + dur * 0.6);
+    g.gain.value = v;
+    osc.connect(g).connect(lp);
+    osc.start(at);
+    osc.stop(at + dur + 0.02);
+  }
+  for (let t = at + 0.05; gears && t < at + dur - 0.05; t += 1 / gears) noiseHit(a, t, 0.012, vol * 0.5, 'bandpass', 2600, 2600, 2);
+}
+
+// 全自动麻将机的几声：open 仪表盘抬起来（伺服电机短短一声加一下卡扣），sweep 牌哗啦啦掉进机器（一串高低不一的“嗒”，底下一阵闷响），
+// drop 升降板往下沉（往下走的嗡嗡声），close 仪表盘落回去（一记闷响），rise 升降板往上升（电机嗡嗡声加齿轮声，dur 秒），lock 升到顶卡住（“咔哒”）
+export function playMachine(cue: 'open' | 'sweep' | 'drop' | 'close' | 'rise' | 'lock', dur = 0.3): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  if (cue === 'open') {
+    motorHum(a, now, Math.max(0.15, dur), 0.07, 150, 220, 0);
+    noiseHit(a, now + dur, 0.03, 0.35, 'bandpass', 1900, 1900, 1.4);
+  } else if (cue === 'sweep') {
+    const n = 18;
+    for (let i = 0; i < n; i++) {
+      const at = now + Math.random() * dur * (i < n * 0.7 ? 0.7 : 1);
+      noiseHit(a, at, 0.03 + Math.random() * 0.02, 0.18 + Math.random() * 0.22, 'bandpass', 1800 + Math.random() * 1600, undefined, 1.2);
+    }
+    noiseHit(a, now, dur + 0.2, 0.12, 'lowpass', 420, 160, 0.7);
+  } else if (cue === 'drop') {
+    motorHum(a, now, Math.max(0.15, dur), 0.06, 105, 78, 0);
+  } else if (cue === 'close') {
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(130, now);
+    osc.frequency.exponentialRampToValueAtTime(55, now + 0.14);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.3, now + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+    osc.connect(gain).connect(bus('sfx', a));
+    osc.start(now);
+    osc.stop(now + 0.22);
+    noiseHit(a, now, 0.05, 0.25, 'lowpass', 900);
+  } else if (cue === 'rise') {
+    motorHum(a, now, Math.max(0.2, dur), 0.09, 72, 92, 22);
+  } else {
+    noiseHit(a, now, 0.045, 0.5, 'bandpass', 1500, 900, 1);
+    noiseHit(a, now + 0.035, 0.03, 0.25, 'bandpass', 2400, 2400, 1.5);
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(190, now);
+    osc.frequency.exponentialRampToValueAtTime(80, now + 0.1);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.28, now + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+    osc.connect(gain).connect(bus('sfx', a));
+    osc.start(now);
+    osc.stop(now + 0.18);
+  }
+}

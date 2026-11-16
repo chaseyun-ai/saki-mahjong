@@ -59,7 +59,8 @@ interface Die {
 export class Dice {
   readonly group = new THREE.Group();
   private dice: Die[] = [];
-  private t = -1;
+  private t = 0;
+  private active = false;
   private hideAt = Infinity;
 
   constructor(private surfaceY: number) {
@@ -84,8 +85,8 @@ export class Dice {
     return ROLL_TIME;
   }
 
-  // 掷出指定点数；hideAfter 秒后收起
-  roll(values: [number, number], hideAfter: number): void {
+  // 掷出指定点数；hideAfter 秒后收起。delay：过多久再掷（全自动麻将机先升牌山），这之前看不见
+  roll(values: [number, number], hideAfter: number, delay = 0): void {
     this.dice.forEach((d, i) => {
       const side = i === 0 ? -1 : 1;
       d.to.set(side * 0.75 + (Math.random() - 0.5) * 0.3, this.surfaceY + SIZE / 2, (Math.random() - 0.5) * 0.6);
@@ -94,18 +95,21 @@ export class Dice {
       d.final.copy(yaw.multiply(new THREE.Quaternion().setFromEuler(UP_ROTATION[values[i]])));
       d.spinAxis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
     });
-    this.t = 0;
+    this.t = -delay;
     this.hideAt = hideAfter;
-    this.group.visible = true;
+    this.active = true;
+    this.group.visible = false;
     this.update(0);
   }
 
   update(dt: number): void {
-    if (this.t < 0) return;
+    if (!this.active) return;
     this.t += dt;
+    if (this.t < 0) return;
+    this.group.visible = true;
     if (this.t > this.hideAt) {
       this.group.visible = false;
-      this.t = -1;
+      this.active = false;
       return;
     }
     const k = Math.min(1, this.t / ROLL_TIME);

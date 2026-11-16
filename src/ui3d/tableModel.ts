@@ -66,15 +66,19 @@ export function buildTableModel(d: TableDims, frameTop: number, mats: TableMater
   const group = new THREE.Group();
 
   // 桌框：外圈照款式（圆角、直角、大圆角、切角），内圈就是桌布的方形；上下边都倒圆，倒多大也照款式
-  const bevel = form.bevel;
-  // 框窄的时候外圈圆角也要小，免得四个角上框被圆角切断
-  const rMax = (Math.SQRT2 * d.frame - 0.25) / (Math.SQRT2 - 1);
+  // 有铝台阶时桌框往外让出台阶的宽度
+  const inner = d.tableHalf + (form.trim === 'step' ? STEP_W : 0);
+  const frameW = d.bodyHalf - inner;
+  // 倒边不超过框宽的三成，框调窄时外圈才不会碰到桌布那个洞
+  const bevel = Math.min(form.bevel, frameW * 0.3);
+  // 框窄的时候外圈圆角也要小，免得四个角上框被圆角切断。外圈的角是二次曲线，斜对角那一点比角尖往里 R/4；
+  // 顶面上外圈往里缩一个倒边、洞往外扩一个倒边，顺着对角线量角上的框至少还要留 0.2，
+  // 不然外圈和洞交叉，三角化出错，整块桌框面把桌布盖住
+  const rMax = Math.max(0.3, 4 * (frameW - bevel * 1.75 - 0.2));
   const outerR = form.corner === 'square' ? 0.1 : form.corner === 'pill' ? Math.min(4, rMax) : Math.min(cornerRadius(d.bodyHalf), rMax);
   // 切角：切掉的那一截不能让角上的框窄过 0.6
   const cut = Math.min(1.7, Math.SQRT2 * (d.frame - 0.45));
   const outer = form.corner === 'chamfer' ? chamferShape(d.bodyHalf - bevel, Math.max(0.05, cut - bevel * (2 - Math.SQRT2))) : roundedRectShape(d.bodyHalf - bevel, Math.max(0.05, outerR - bevel));
-  // 有铝台阶时桌框往外让出台阶的宽度
-  const inner = d.tableHalf + (form.trim === 'step' ? STEP_W : 0);
   outer.holes.push(roundedRectShape(inner + bevel, 0.05));
   const frameGeo = new THREE.ExtrudeGeometry(outer, {
     depth: FRAME_H - bevel * 2,
@@ -91,8 +95,11 @@ export function buildTableModel(d: TableDims, frameTop: number, mats: TableMater
   frame.receiveShadow = true;
   group.add(frame);
 
-  // 桌框圆边倒得大时，贴着桌布那一圈底下会露一道缝：桌布底下垫一块，颜色和桌框一样
-  const under = new THREE.Mesh(new THREE.PlaneGeometry(d.bodyHalf * 2, d.bodyHalf * 2), mats.frame);
+  // 桌框圆边倒得大时，贴着桌布那一圈底下会露一道缝：桌布底下垫一圈，颜色和桌框一样。
+  // 只垫桌布外沿那一圈（里面有桌布盖着）：全自动麻将机牌山底下的升降板要往下沉，底下不能有东西挡着
+  const underShape = roundedRectShape(d.bodyHalf, 0.05);
+  underShape.holes.push(roundedRectShape(d.tableHalf - 0.5, 0.05));
+  const under = new THREE.Mesh(new THREE.ShapeGeometry(underShape), mats.frame);
   under.rotation.x = -Math.PI / 2;
   under.position.y = -0.03;
   group.add(under);
@@ -143,28 +150,32 @@ export function buildTableModel(d: TableDims, frameTop: number, mats: TableMater
     const step = new THREE.Mesh(stepGeo, mats.trim);
     step.receiveShadow = true;
     group.add(step);
-  } else if (form.trim === 'piping') {
-    // 软包和桌布接缝的地方一圈金色滚边（圆管），四个角上一颗圆珠接起来
-    const r = 0.06;
-    const y = 0.05;
-    const z = d.tableHalf + 0.035;
+  } else if (form.trim === 'rope') {
+    // 桌框和桌布接缝的地方绕一圈麻绳（圆管贴上斜着拧的一股股），四个角上一团绳结接起来
+    const r = 0.085;
+    const y = 0.07;
+    const z = d.tableHalf + 0.05;
+    const rope = ropeMaterial(mats.trim);
+    const len = z * 2;
+    const tex = rope.map!;
+    tex.repeat.set(1, len / 0.32);
     sides(() => {
-      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(r, r, z * 2, 10), mats.trim);
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 12, 1, true), rope);
       pipe.rotation.z = Math.PI / 2;
       pipe.position.set(0, y, z);
+      pipe.castShadow = true;
       return pipe;
     });
     for (const [x, zz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), mats.trim);
-      ball.position.set(x * z, y, zz * z);
-      group.add(ball);
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(r * 1.25, 12, 10), ropeMaterial(mats.trim, 2));
+      knot.position.set(x * z, y, zz * z);
+      group.add(knot);
     }
   }
 
-  // 框面中线上一排小件：铆钉（扁圆柱）、软包的扣子（压扁的小球）。四个角留出来
+  // 框面中线上一排小件：铆钉（扁圆柱）。四个角留出来
   if (form.studs) {
-    const geo = form.studs === 'rivet' ? new THREE.CylinderGeometry(0.075, 0.085, 0.04, 14) : new THREE.SphereGeometry(0.085, 14, 10);
-    if (form.studs === 'button') geo.scale(1, 0.55, 1);
+    const geo = new THREE.CylinderGeometry(0.075, 0.085, 0.04, 14);
     const span = d.tableHalf - 0.6;
     const n = Math.max(2, Math.round((span * 2) / 2.2));
     const studs = new THREE.InstancedMesh(geo, mats.trim, n * 4);
@@ -176,7 +187,7 @@ export function buildTableModel(d: TableDims, frameTop: number, mats: TableMater
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (s * Math.PI) / 2);
       for (let j = 0; j < n; j++) {
         const x = -span + (j * span * 2) / (n - 1);
-        const p = new THREE.Vector3(x, frameTop + (form.studs === 'rivet' ? 0.015 : 0.02), mid).applyQuaternion(q);
+        const p = new THREE.Vector3(x, frameTop + 0.015, mid).applyQuaternion(q);
         studs.setMatrixAt(i++, m.compose(p, q, one));
       }
     }
@@ -212,6 +223,50 @@ export function buildTableModel(d: TableDims, frameTop: number, mats: TableMater
   floor.receiveShadow = true;
   group.add(floor);
   return group;
+}
+
+// 麻绳：斜着拧的三股，股和股之间一道深缝、每股上一道亮光，再加几根细毛。底色取包边的颜色；repeat 是绕一圈重复几次
+function ropeMaterial(trim: THREE.Material, repeat = 1): THREE.MeshStandardMaterial {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d')!;
+  const base = (trim as THREE.MeshStandardMaterial).color ?? new THREE.Color('#cdb68a');
+  ctx.fillStyle = `#${base.getHexString()}`;
+  ctx.fillRect(0, 0, 64, 64);
+  const pitch = 64 / 3;
+  for (let i = -6; i <= 6; i++) {
+    const y = i * pitch;
+    ctx.strokeStyle = 'rgba(255,248,226,0.32)';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(-2, y + pitch * 0.45 - 2);
+    ctx.lineTo(66, y + pitch * 0.45 + 66);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(70,46,18,0.6)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-2, y - 2);
+    ctx.lineTo(66, y + 66);
+    ctx.stroke();
+  }
+  // 细毛：短短的浅色、深色斜线（固定种子，每次一样）
+  let a = 0x9e3779b9;
+  const rnd = () => ((a = (a * 1664525 + 1013904223) >>> 0) / 4294967296);
+  for (let i = 0; i < 70; i++) {
+    const x = rnd() * 64;
+    const y = rnd() * 64;
+    ctx.strokeStyle = rnd() < 0.5 ? 'rgba(255,250,232,0.25)' : 'rgba(60,40,15,0.25)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + 3, y + 1.5);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, metalness: 0 });
 }
 
 // 以原点为中心、四个角切掉一截的方形（xy 平面）

@@ -1,7 +1,7 @@
 import type { TableColors } from '../ui/theme';
 import { CONSOLE_HALF } from './tableLayout';
 
-// 牌桌风格的中央仪表盘（theme.ts 里牌桌风格的 look）：自动麻将机的数码管、原木的木牌、深夜的纯色、翻牌屏、烫金皮面。
+// 牌桌风格的中央仪表盘（theme.ts 里牌桌风格的 look）：自动麻将机的数码管、原木的木牌、深夜的纯色、翻牌屏、沙滩的海水、草甸的蓝天。
 // 跟皮肤走时不用这里，还是 table3d.ts 原来那种。
 // 画在 512×512 的坐标里（贴图 2048，调用前已经放大 4 倍）。几样东西各套都放在同一个位置，换风格不挪地方：
 // 中间方屏（半宽 124）从上到下是局数、本场和余牌、宝牌指示牌、供托；四边各家朝着自己，左边风位、右边点数，
@@ -81,7 +81,7 @@ export function drawConsoleLook(c: CanvasRenderingContext2D, k: TableColors, inf
 
 // ---------- 共用的小件 ----------
 
-// 固定种子的随机数：木纹、皮纹每次重画都一样，不会一闪一闪
+// 固定种子的随机数：木纹、波光每次重画都一样，不会一闪一闪
 function seeded(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -396,7 +396,7 @@ const VERMILION = '#9b2c17';
 // 点差多了用的蓝：浅木牌上 5.5:1
 const INDIGO = '#1a4a94';
 
-// 木牌、皮面这两套的一排：左边圆圈里写风位，右边点数。圆盘上整排往中间收、窄一点
+// 原木那套的一排：左边圆圈里写风位，右边点数。圆盘上整排往中间收、窄一点
 function circleSeat(k: TableColors) {
   return isDisc(k)
     ? { cx: -104, cy: 176, r: 26, wf: 34, sx: -64, sy: 178, sw: 182, sf: 56, by: 206, bw: 168 }
@@ -660,81 +660,174 @@ const flap: Look = {
   },
 };
 
-// ---------- 酒红皮革：黑皮面、烫金字 ----------
+// ---------- 沙滩：一汪海水，白字，轮到谁亮一块阳光黄 ----------
 
-const foil: Look = {
+// 风位那块是磨圆的海玻璃：浅色底、深青色字
+const SEA_GLASS = '#d9f1ee';
+const SEA_GLASS_INK = '#0a3940';
+
+// 一排四家：左边风位方块，右边点数（深夜、沙滩、草甸三套一样排）。圆盘上整排往中间收、窄一点，点数的字还是 66px
+function boxSeat(k: TableColors) {
+  return isDisc(k) ? { bx: -126, by: 148, bw: 46, wf: 32, sx: -70, sy: 176, sw: 186, sf: 66, bar: 205, bw2: 176, bh: 4 } : { bx: -152, by: 162, bw: 52, wf: 38, sx: -80, sy: 191, sw: 214, sf: 68, bar: 223, bw2: 214, bh: 5 };
+}
+
+const tide: Look = {
   base(c, k) {
-    const bg = c.createRadialGradient(M, M, 40, M, M, M * 1.4);
+    // 海水：中间浅、往外深，水面上几道很淡的波光，外圈两道白色浪花线
+    const bg = c.createRadialGradient(M, M, 30, M, M, M * 1.4);
     bg.addColorStop(0, k.console.bg[0]);
     bg.addColorStop(1, k.console.bg[1]);
     c.fillStyle = bg;
     c.fillRect(0, 0, S, S);
-    // 皮纹：很淡的小颗粒
-    const rnd = seeded(23);
-    for (let i = 0; i < 2600; i++) {
-      const x = rnd() * S;
-      const y = rnd() * S;
-      const r = 0.8 + rnd() * 1.8;
-      c.fillStyle = rnd() < 0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.22)';
+    const rnd = seeded(31);
+    c.lineCap = 'round';
+    for (let i = 0; i < 30; i++) {
+      const x0 = rnd() * S - 20;
+      const y0 = rnd() * S;
+      const len = 26 + rnd() * 56;
+      c.strokeStyle = `rgba(200,245,240,${0.05 + rnd() * 0.06})`;
+      c.lineWidth = 1.5 + rnd() * 1.5;
       c.beginPath();
-      c.arc(x, y, r, 0, Math.PI * 2);
-      c.fill();
-    }
-    // 金色双线框（软包顶上已经有一圈立体的金边，这里照它的圆角往里画）
-    c.strokeStyle = k.console.line;
-    c.lineWidth = 2;
-    outline(c, k, 12, 10);
-    c.stroke();
-    c.lineWidth = 1;
-    outline(c, k, 18, 7);
-    c.stroke();
-    c.lineWidth = 1.5;
-    rr(c, M - 120, M - 120, 240, 240, isDisc(k) ? 30 : 8);
-    c.stroke();
-    c.lineWidth = 0.8;
-    rr(c, M - 114, M - 114, 228, 228, isDisc(k) ? 25 : 6);
-    c.stroke();
-  },
-  center(c, k, info, tile) {
-    c.font = k.console.title.replace('1em', '70px');
-    c.fillStyle = k.console.accent;
-    c.fillText(`${info.wind}${'一二三四'[info.no - 1] ?? info.no}局`, M, M - 62);
-    infoRow(c, info, M - 2, k.console.dim, `700 30px ${SERIF}`, k.console.line);
-    doraRow(c, k, info, M + 24, tile);
-    sticksRow(c, info, M + 98, k.console.ink, `700 28px ${SERIF}`);
-  },
-  seat(c, k, s) {
-    const p = circleSeat(k);
-    c.beginPath();
-    c.arc(p.cx, p.cy, p.r + 6, 0, Math.PI * 2);
-    c.strokeStyle = s.color;
-    c.lineWidth = 2;
-    c.stroke();
-    c.beginPath();
-    c.arc(p.cx, p.cy, p.r, 0, Math.PI * 2);
-    if (s.active) {
-      c.fillStyle = k.console.accent;
-      c.fill();
-    } else {
-      c.strokeStyle = k.console.accent;
-      c.lineWidth = 2.5;
+      for (let x = 0; x <= len; x += 4) {
+        const y = y0 + Math.sin((x / len) * Math.PI * 2) * 2.5;
+        if (x === 0) c.moveTo(x0 + x, y);
+        else c.lineTo(x0 + x, y);
+      }
       c.stroke();
     }
-    c.font = `900 ${p.wf}px ${SERIF}`;
-    c.fillStyle = s.active ? '#1a1210' : k.console.accent;
-    c.fillText(s.wind, p.cx, p.cy + 2);
-    const [text, ink] = scoreFace(s, k.console.ink, '#8fc2ff', '#ff7f6e');
-    c.font = `900 ${p.sf}px ${SERIF}`;
+    c.lineCap = 'butt';
+    c.strokeStyle = 'rgba(240,252,250,0.6)';
+    c.lineWidth = 2.5;
+    outline(c, k, 11, 14);
+    c.stroke();
+    c.strokeStyle = 'rgba(240,252,250,0.25)';
+    c.lineWidth = 1.2;
+    outline(c, k, 17, 11);
+    c.stroke();
+    // 中间方屏：深一点的水
+    c.fillStyle = 'rgba(0,24,30,0.35)';
+    rr(c, M - 122, M - 122, 244, 244, isDisc(k) ? 34 : 16);
+    c.fill();
+    c.strokeStyle = k.console.line;
+    c.globalAlpha = 0.55;
+    c.lineWidth = 1.5;
+    c.stroke();
+    c.globalAlpha = 1;
+  },
+  center(c, k, info, tile) {
+    c.font = k.console.title.replace('1em', '72px');
+    c.fillStyle = k.console.ink;
+    c.fillText(`${info.wind}${'一二三四'[info.no - 1] ?? info.no}局`, M, M - 62);
+    infoRow(c, info, M - 2, k.console.dim, `700 32px ${NUM}`, k.console.line);
+    // 没翻的宝牌是牌背（和海水一个颜色）：描一圈浅色边才看得出来
+    doraRow(c, k, info, M + 24, tile, 'rgba(217,241,238,0.85)');
+    sticksRow(c, info, M + 98, k.console.ink, `700 30px ${NUM}`);
+  },
+  seat(c, k, s) {
+    // 风位：一块海玻璃，边上一圈角色色；轮到这家时换成阳光黄
+    const p = boxSeat(k);
+    rr(c, p.bx, p.by, p.bw, p.bw, 16);
+    c.fillStyle = s.active ? k.console.accent : SEA_GLASS;
+    c.fill();
+    c.strokeStyle = s.color;
+    c.lineWidth = 3;
+    c.stroke();
+    c.font = `900 ${p.wf}px ${SANS}`;
+    c.fillStyle = s.active ? '#1d2a2c' : SEA_GLASS_INK;
+    c.fillText(s.wind, p.bx + p.bw / 2, p.by + p.bw / 2 + 1);
+    const [text, ink] = scoreFace(s, k.console.ink, '#b5e3ff', '#ffc2b4');
+    c.font = `700 ${p.sf}px ${NUM}`;
     c.fillStyle = ink;
     c.textAlign = 'left';
     c.fillText(text, p.sx, p.sy, p.sw);
     c.textAlign = 'center';
     if (s.active) {
       c.fillStyle = k.console.accent;
-      rr(c, p.sx, p.by, p.bw, 4, 2);
+      rr(c, p.sx, p.bar, p.bw2, p.bh, 2.5);
       c.fill();
     }
   },
 };
 
-const LOOKS: Record<string, Look> = { led, plaque, flat, flap, foil };
+// ---------- 草甸：一块蓝天白云，深蓝字，轮到谁亮一块草绿 ----------
+
+// 一朵小白云：几团圆叠起来，底下一道淡淡的蓝影
+function cloud(c: CanvasRenderingContext2D, x: number, y: number, k: number): void {
+  const puffs: [number, number, number][] = [[-22, 4, 14], [-8, -6, 18], [10, -9, 16], [24, 2, 13], [4, 6, 15]];
+  c.fillStyle = 'rgba(120,165,205,0.22)';
+  for (const [dx, dy, r] of puffs) {
+    c.beginPath();
+    c.arc(x + dx * k, y + (dy + 4) * k, r * k, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.fillStyle = 'rgba(255,255,255,0.9)';
+  for (const [dx, dy, r] of puffs) {
+    c.beginPath();
+    c.arc(x + dx * k, y + dy * k, r * k, 0, Math.PI * 2);
+    c.fill();
+  }
+}
+
+const sky: Look = {
+  base(c, k) {
+    const bg = c.createRadialGradient(M, M, 30, M, M, M * 1.4);
+    bg.addColorStop(0, k.console.bg[0]);
+    bg.addColorStop(1, k.console.bg[1]);
+    c.fillStyle = bg;
+    c.fillRect(0, 0, S, S);
+    // 白云：四个斜角上各一小朵，在四家那几排字的外面，不压字（圆盘上往里收一点，才在圆里面）
+    const d = isDisc(k) ? 172 : 194;
+    const sizes = [1, 0.8, 0.75, 0.9];
+    [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy], i) => cloud(c, M + sx * d, M + sy * d, sizes[i]));
+    c.strokeStyle = k.console.line;
+    c.lineWidth = 2;
+    outline(c, k, 10, 12);
+    c.stroke();
+    // 中间方屏：白一点的一块天
+    c.fillStyle = 'rgba(255,255,255,0.45)';
+    rr(c, M - 122, M - 122, 244, 244, isDisc(k) ? 34 : 16);
+    c.fill();
+    c.strokeStyle = k.console.line;
+    c.globalAlpha = 0.6;
+    c.lineWidth = 1.5;
+    c.stroke();
+    c.globalAlpha = 1;
+  },
+  center(c, k, info, tile) {
+    c.font = k.console.title.replace('1em', '72px');
+    c.fillStyle = k.console.ink;
+    c.fillText(`${info.wind}${'一二三四'[info.no - 1] ?? info.no}局`, M, M - 62);
+    infoRow(c, info, M - 2, k.console.dim, `700 32px ${NUM}`, k.console.line);
+    doraRow(c, k, info, M + 24, tile, k.console.line);
+    sticksRow(c, info, M + 98, k.console.ink, `700 30px ${NUM}`);
+  },
+  seat(c, k, s) {
+    // 风位：白色小方块、深蓝字，下面一小条角色色；轮到这家时换成草绿、白字
+    const p = boxSeat(k);
+    rr(c, p.bx, p.by, p.bw, p.bw, 10);
+    c.fillStyle = s.active ? k.console.accent : '#ffffff';
+    c.fill();
+    c.strokeStyle = s.active ? k.console.accent : k.console.line;
+    c.lineWidth = 2;
+    c.stroke();
+    c.fillStyle = s.color;
+    rr(c, p.bx, p.by + p.bw + 3, p.bw, 4, 2);
+    c.fill();
+    c.font = `900 ${p.wf}px ${SANS}`;
+    c.fillStyle = s.active ? '#ffffff' : k.console.ink;
+    c.fillText(s.wind, p.bx + p.bw / 2, p.by + p.bw / 2 + 1);
+    const [text, ink] = scoreFace(s, k.console.ink, '#1a56b0', '#a81e27');
+    c.font = `700 ${p.sf}px ${NUM}`;
+    c.fillStyle = ink;
+    c.textAlign = 'left';
+    c.fillText(text, p.sx, p.sy, p.sw);
+    c.textAlign = 'center';
+    if (s.active) {
+      c.fillStyle = k.console.accent;
+      rr(c, p.sx, p.bar, p.bw2, p.bh, 2.5);
+      c.fill();
+    }
+  },
+};
+
+const LOOKS: Record<string, Look> = { led, plaque, flat, flap, tide, sky };

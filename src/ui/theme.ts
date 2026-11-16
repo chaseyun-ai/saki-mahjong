@@ -29,7 +29,7 @@ export interface TableColors {
   // 中央仪表盘：底色（中心、边缘）、描边、主字色、次要字色、强调色（局数、轮到谁），局数用的字体
   console: { bg: [string, string]; line: string; ink: string; dim: string; accent: string; title: string };
   // 下面几项只有牌桌风格里有；皮肤自带的牌桌不写，就是布纹桌布、原来那种仪表盘
-  // 桌面的材质：布纹、绿呢、木纹、哑光、亚麻、皮面
+  // 桌面的材质：布纹、绿呢、木纹、哑光、亚麻、细沙、青草
   pattern?: FeltPattern;
   // 仪表盘的画法（consoleLooks.ts）
   look?: ConsoleLook;
@@ -41,13 +41,16 @@ export interface TableColors {
   consoleGlow?: number;
   // 款式（形状）：桌框、包边、仪表盘做成什么样子
   form?: TableForm;
+  // 全自动麻将机（只有自动麻将机这套有）：每局开始中间那块抬起来把旧牌收进去，四块升降板托着新码好的牌山从桌面里升上来；
+  // 机器里两副牌轮流用，两副的牌背颜色不一样（backs，第一副就是 back），一局换一副
+  machine?: { backs: [string, string] };
   // 实际用的仪表盘形状（tableColors() 照视觉设置里的「仪表盘形状」填：跟牌桌走时是牌桌风格自己的，跟皮肤走是方盒）
   shape?: ConsoleForm;
 }
 
-export type FeltPattern = 'cloth' | 'baize' | 'wood' | 'matte' | 'linen' | 'leather';
-export type ConsoleLook = 'skin' | 'led' | 'plaque' | 'flat' | 'flap' | 'foil';
-// 仪表盘的形状：圆角方盒（原来的）、矮木牌、圆盘、切角方盒、软包（大圆角、边上鼓起来，顶上一圈金边）
+export type FeltPattern = 'cloth' | 'baize' | 'wood' | 'matte' | 'linen' | 'sand' | 'grass';
+export type ConsoleLook = 'skin' | 'led' | 'plaque' | 'flat' | 'flap' | 'tide' | 'sky';
+// 仪表盘的形状：圆角方盒（原来的）、矮木牌、圆盘、切角方盒、软包（大圆角、边上鼓起来，顶上一圈包边）
 export type ConsoleForm = 'box' | 'plate' | 'disc' | 'chamfer' | 'cushion';
 
 // 牌桌的款式。只有牌桌风格里有；皮肤自带的牌桌不写，就是原来的圆角桌框、金属包边、圆角方仪表盘
@@ -56,14 +59,14 @@ export interface TableForm {
   corner: 'round' | 'square' | 'pill' | 'chamfer';
   // 桌框上下边倒圆多大：大的像一圈软包、木桌的圆边，小的利落
   bevel: number;
-  // 桌框内侧：金属包边条（原来的）、桌框面上嵌一道铜线、没有、低一级的铝台阶、一圈金色滚边
-  trim: 'strip' | 'inlay' | 'none' | 'step' | 'piping';
-  // 桌框面上一排小件：铆钉、软包的扣子
-  studs?: 'rivet' | 'button';
+  // 桌框内侧：金属包边条（原来的）、桌框面上嵌一道铜线、没有、低一级的铝台阶、一圈麻绳
+  trim: 'strip' | 'inlay' | 'none' | 'step' | 'rope';
+  // 桌框面上一排小件：铆钉
+  studs?: 'rivet';
   // 这套牌桌自己的仪表盘形状（视觉设置里「仪表盘形状」选「跟牌桌走」时用这个）
   console: ConsoleForm;
-  // 桌布上那圈线：一道（原来的）、两道、缝线（虚线）、只在四个角上画一截、不画
-  line: 'single' | 'double' | 'stitch' | 'corners' | 'none';
+  // 桌布上那圈线：一道（原来的）、两道、只在四个角上画一截、不画
+  line: 'single' | 'double' | 'corners' | 'none';
 }
 
 const TABLES: Record<ThemeId, TableColors> = {
@@ -147,15 +150,16 @@ const TABLES: Record<ThemeId, TableColors> = {
 
 // ---------- 牌桌风格 ----------
 
-export type TableStyleId = 'skin' | 'auto' | 'wood' | 'night' | 'flap' | 'club';
+export type TableStyleId = 'skin' | 'auto' | 'wood' | 'night' | 'flap' | 'beach' | 'meadow';
 
 // 每套只用一个桌面色、一个仪表盘底色、一个强调色；仪表盘上的字和底色都量过对比度（正文 4.5:1 以上）
 const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
-  // 自动麻将机：绿呢桌布、黑色亮面机身，点数是琥珀色数码管
+  // 自动麻将机：绿呢桌布、黑色亮面机身，点数是琥珀色数码管。蓝、黄两副牌轮流用
   auto: {
     felt: ['#2a6d4f', '#215b44', '#163f30'],
     feltLine: 'rgba(255,255,255,0.16)',
     back: '#2f6fb0',
+    machine: { backs: ['#2f6fb0', '#d99a1e'] },
     frame: '#151617',
     trim: '#9aa0a6',
     room: '#0c1411',
@@ -223,33 +227,52 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     // 车站的铝件：切角桌框、平顶一排铆钉，内侧低一级的亮铝台阶；仪表盘是高一点的切角铝盒；桌布上只在四个角画一截
     form: { corner: 'chamfer', bevel: 0.04, trim: 'step', studs: 'rivet', console: 'chamfer', line: 'corners' },
   },
-  // 酒红皮革：酒红皮面、黑胡桃桌框、金色包边，仪表盘是黑皮面烫金字
-  club: {
-    felt: ['#6a2429', '#57191f', '#3f1216'],
-    feltLine: 'rgba(226,194,127,0.28)',
-    back: '#23503f',
-    frame: '#1b120e',
-    trim: '#c9a45c',
-    room: '#120a09',
-    console: { bg: ['#1f1714', '#140e0c'], line: '#b8955a', ink: '#f1e6cc', dim: '#c2a874', accent: '#e2c27f', title: "900 1em 'Noto Serif SC','STSong',serif" },
-    pattern: 'leather',
-    look: 'foil',
-    frameFinish: [0.42, 0.1],
-    trimFinish: [0.3, 0.9],
-    consoleBody: '#19120f',
-    consoleGlow: 0.2,
-    // 软包：桌框是鼓起来的一圈皮，钉一排金扣子，内侧一圈金色滚边；仪表盘是软包的大圆角盒子，顶上一圈金边；桌布上一圈缝线
-    form: { corner: 'round', bevel: 0.32, trim: 'piping', studs: 'button', console: 'cushion', line: 'stitch' },
+  // 沙滩：细沙桌面（细细的沙粒、几道风吹出来的沙纹）、漂流木桌框、一圈麻绳；仪表盘是一汪海水，白字，轮到谁亮一块阳光黄
+  beach: {
+    felt: ['#e3c48a', '#d4ad6c', '#bb9257'],
+    feltLine: 'rgba(110,80,40,0.3)',
+    back: '#0f6670',
+    frame: '#8f806c',
+    trim: '#cdb68a',
+    room: '#0b222c',
+    console: { bg: ['#0c5a63', '#083a42'], line: '#7ccfc8', ink: '#f4fbfa', dim: '#c3e6e2', accent: '#ffd166', title: "900 1em 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" },
+    pattern: 'sand',
+    look: 'tide',
+    frameFinish: [0.85, 0],
+    trimFinish: [0.9, 0],
+    consoleBody: '#0a3b42',
+    consoleGlow: 0.3,
+    // 冲上岸的漂流木：大圆角、圆边的桌框，和桌布接缝的地方一圈麻绳；仪表盘是一块圆盘（一汪海水）；桌布上一道线，像用手指在沙上划的
+    form: { corner: 'pill', bevel: 0.26, trim: 'rope', console: 'disc', line: 'single' },
+  },
+  // 草甸：青草桌面（一片片深浅不一的草、零星几朵小花）、橡木桌框；仪表盘是一块蓝天白云，深蓝字，轮到谁亮一块草绿
+  meadow: {
+    felt: ['#4a7c31', '#41722e', '#30561f'],
+    feltLine: 'rgba(240,250,210,0.2)',
+    back: '#9d88d0',
+    frame: '#6e4f32',
+    trim: '#d8c69c',
+    room: '#0c1a0f',
+    console: { bg: ['#e2f2ff', '#b8dbf3'], line: '#6d9fc4', ink: '#14304c', dim: '#30577a', accent: '#2f7a3a', title: "900 1em 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" },
+    pattern: 'grass',
+    look: 'sky',
+    frameFinish: [0.7, 0],
+    trimFinish: [0.6, 0],
+    consoleBody: '#5a3f27',
+    consoleGlow: 0.12,
+    // 橡木桌：圆角、圆边，没有包边；仪表盘是软包那种大圆角的木盒，顶上一圈浅色木边，里面镶一块蓝天；桌布上不画线
+    form: { corner: 'round', bevel: 0.3, trim: 'none', console: 'cushion', line: 'none' },
   },
 };
 
 export const TABLE_STYLES: { id: TableStyleId; name: string; note: string }[] = [
   { id: 'skin', name: '跟皮肤走', note: '桌布、牌背、仪表盘用界面皮肤自带的那套' },
-  { id: 'auto', name: '自动麻将机', note: '绿呢桌布、黑色机身、圆角方盒仪表盘，点数是琥珀色数码管，像雀庄里的全自动麻将桌' },
+  { id: 'auto', name: '自动麻将机', note: '绿呢桌布、黑色机身、圆角方盒仪表盘，点数是琥珀色数码管。每局开始中间那块抬起来把旧牌收进去，四块升降板托着新牌山从桌面里升上来；蓝、黄两副牌一局换一副' },
   { id: 'wood', name: '原木', note: '胡桃木桌面、直角木框嵌一道铜线；仪表盘是一块矮矮的浅色木牌，墨色字，轮到谁盖一个朱红印' },
   { id: 'night', name: '深夜', note: '炭灰哑光桌布、大圆角薄框；仪表盘是一块圆盘，只有灰白两色加一点青，不发光、没花纹，适合长时间打' },
   { id: 'flap', name: '翻牌屏', note: '藏青亚麻桌布、切角铝框钉一排铆钉；仪表盘是切角铝盒，点数像车站的翻牌显示屏，一位数一块牌' },
-  { id: 'club', name: '酒红皮革', note: '酒红皮面、软包桌框钉金扣子；仪表盘是软包盒子，黑皮面烫金字' },
+  { id: 'beach', name: '沙滩', note: '细沙桌面、漂流木桌框绕一圈麻绳；仪表盘是一汪海水色的圆盘，白字，轮到谁亮一块阳光黄；青绿牌背' },
+  { id: 'meadow', name: '草甸', note: '青草桌面、橡木桌框；仪表盘是一块蓝天白云，深蓝字，轮到谁亮一块草绿；淡紫牌背' },
 ];
 
 const STYLE_KEY = 'saki-table-style';
@@ -261,6 +284,8 @@ function isTableStyle(v: unknown): v is TableStyleId {
 let currentStyle: TableStyleId = (() => {
   try {
     const v = localStorage.getItem(STYLE_KEY);
+    // 选过已经去掉的酒红皮革：换成顶替它的沙滩
+    if (v === 'club') return 'beach';
     return isTableStyle(v) ? v : 'skin';
   } catch {
     return 'skin';
@@ -285,7 +310,7 @@ export function setTableStyle(id: TableStyleId): void {
 export type ConsoleShapeId = 'auto' | ConsoleForm;
 
 export const CONSOLE_SHAPES: { id: ConsoleShapeId; name: string; note: string }[] = [
-  { id: 'auto', name: '跟牌桌走', note: '用牌桌风格自己的形状（自动麻将机方盒、原木矮牌、深夜圆盘、翻牌屏切角、酒红皮革软包），跟皮肤走时是方盒' },
+  { id: 'auto', name: '跟牌桌走', note: '用牌桌风格自己的形状（自动麻将机方盒、原木矮牌、深夜圆盘、翻牌屏切角、沙滩圆盘、草甸软包），跟皮肤走时是方盒' },
   { id: 'box', name: '方盒', note: '圆角方盒，原来的样子' },
   { id: 'plate', name: '矮牌', note: '矮矮的一块方牌，直角' },
   { id: 'disc', name: '圆盘', note: '一块薄圆盘，四家的点数往中间收一点' },

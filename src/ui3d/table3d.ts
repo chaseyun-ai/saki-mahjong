@@ -9,6 +9,7 @@ import { sketchFaceSvg } from '../ui/sketchArt';
 import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
+import { Machine, type MachineCue, type MachineRect } from './machine';
 import { BOLT_LEADER, Effects } from './effects';
 import { type SpotRow, WinSpots } from './winSpots';
 import { STACKS as MIST_STACKS, WallMist } from './mist';
@@ -599,6 +600,15 @@ export class Table3D {
   private spots: WinSpots | null = null;
   // 桌布、牌背、桌框的颜色跟着界面皮肤走，建牌桌时定下来
   private colors: TableColors = tableColors();
+  // 全自动麻将机（牌桌风格「自动麻将机」才有，machine.ts）：每局开始中间抬起来收旧牌、升降板托着新牌山升上来
+  private machine: Machine | null = null;
+  // 机器里两副牌轮流用：这一局是哪一副（colors.machine.backs 的下标）。plainBack 是原来那份牌背材质（换颜色用；
+  // 手绘板时 this.backMat 换成了铅笔排线那份），ghostBack 是收牌时替身牌用的上一副的牌背
+  private backSet = 0;
+  private plainBack: THREE.MeshStandardMaterial | null = null;
+  private ghostBack: THREE.MeshStandardMaterial | null = null;
+  // 全自动麻将机该响声音的时候通知外面（放音效用）：open 仪表盘抬起，sweep 牌掉进去，drop 升降板沉下去，close 仪表盘落回，rise 升降板升（dur 秒），lock 升到顶卡住
+  onMachine: ((cue: MachineCue, dur: number) => void) | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -667,6 +677,7 @@ export class Table3D {
     cancelAnimationFrame(this.frame);
     this.resizer.disconnect();
     this.water?.dispose();
+    this.machine?.dispose();
     this.moonLift?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -713,6 +724,10 @@ export class Table3D {
     }
     this.feltMat = wet(new THREE.MeshStandardMaterial({ map: feltTexture(this.colors, this.v2 ? this.dim.tableHalf : 0), roughness: 0.95 }));
     this.keyLight = key;
+    if (this.colors.machine) {
+      this.machine = new Machine();
+      this.scene.add(this.machine.group);
+    }
     this.buildTable();
 
     // 点棒抽屉：按画面上的方位建，座位 rel 对应 drawers[rel]
@@ -811,6 +826,8 @@ export class Table3D {
       this.scene.add(m);
     }
     this.consoleParts = [box, face, ...extras];
+    // 全自动麻将机收牌时整个仪表盘往上抬，记下原来的高度
+    for (const p of this.consoleParts) p.userData.baseY = p.position.y;
   }
 
   // 桌布、桌框、机身、地面，按现在的尺寸建；换尺寸时把旧的扔掉重建
@@ -827,8 +844,13 @@ export class Table3D {
       this.water = null;
     }
     const group = buildTableModel(d, FRAME_TOP, this.tableMats!, this.colors.form);
-    const felt = new THREE.Mesh(new THREE.PlaneGeometry(d.tableHalf * 2, d.tableHalf * 2), this.feltMat!);
-    felt.rotation.x = -Math.PI / 2;
+    // 全自动麻将机：桌布在四家牌山底下挖洞，洞里是升降板（machine.ts）
+    let feltGeo: THREE.BufferGeometry;
+    if (this.machine) {
+      this.machine.build(this.wallRects(), this.feltMat!, d.tableHalf, CONSOLE_HALF, this.colors.shape === 'disc');
+      feltGeo = this.machine.feltGeometry(d.tableHalf);
+    } else feltGeo = new THREE.PlaneGeometry(d.tableHalf * 2, d.tableHalf * 2).rotateX(-Math.PI / 2);
+    const felt = new THREE.Mesh(feltGeo, this.feltMat!);
     felt.receiveShadow = true;
     group.add(felt);
     this.tableGroup = group;
@@ -854,6 +876,7 @@ export class Table3D {
     this.deadlyMat = wet(new THREE.MeshStandardMaterial({ color: '#f08a80', emissive: '#d23a2e', emissiveIntensity: 0.35, roughness: matte || 0.35 }));
     const backMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: matte || 0.4 }));
     this.backMat = backMat;
+    this.plainBack = backMat;
     // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
     this.tintMats = ['#e0453a', '#3a6df0', '#2fb25a', '#f4f4f0'].map(
       (c) => wet(new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.35, roughness: matte || 0.4 })),
@@ -1014,6 +1037,7 @@ export class Table3D {
   snap(): void {
     this.handAnims = [];
     this.vanish.clear();
+    this.machine?.finish();
     for (const f of this.flights) if (f.fade) this.setTileOpacity(this.tiles[f.tile], 1);
     this.flights = [];
     this.heldDraw = null;
@@ -1194,8 +1218,9 @@ export class Table3D {
         else if (r.deltas[ch.seat] < 0) ch.avatar?.setMood('sad', 2);
       }
     } else if (e.type === 'roundStart') {
-      // 掷骰子时大家看桌子中间
-      for (const ch of all) ch.avatar?.lookAtPoint(new THREE.Vector3(0, 0.5, 0), DEAL_START);
+      // 掷骰子时大家看桌子中间（全自动麻将机先收牌、升牌山，看得久一点）
+      const lead = this.deal ? Math.max(0, this.deal.start - this.now) : 0;
+      for (const ch of all) ch.avatar?.lookAtPoint(new THREE.Vector3(0, 0.5, 0), DEAL_START + lead);
     }
   }
 
@@ -1644,8 +1669,75 @@ export class Table3D {
     return (((seat - me + 4) % 4) * Math.PI) / 2;
   }
 
+  // ---------- 全自动麻将机 ----------
+
+  // 每家牌山脚下那块地方（升降板）：照牌山两头那两墩的位置算，2.5D 各边挪过的也照算
+  private wallRects(): MachineRect[] {
+    const out: MachineRect[] = [];
+    for (let rel = 0; rel < 4; rel++) {
+      const a = this.wallPlacement({ wall: rel, stack: 1, level: 1, faceUp: false }, 0).pos;
+      const b = this.wallPlacement({ wall: rel, stack: STACKS_HALF * 2 - 1, level: 1, faceUp: false }, 0).pos;
+      // 躺着的牌：顺着牌山的方向宽 TILE_W，横过去长 TILE_H
+      const alongX = Math.abs(a.x - b.x) > Math.abs(a.z - b.z);
+      out.push({
+        x: (a.x + b.x) / 2,
+        z: (a.z + b.z) / 2,
+        hx: alongX ? Math.abs(a.x - b.x) / 2 + TILE_W / 2 : TILE_H / 2,
+        hz: alongX ? TILE_H / 2 : Math.abs(a.z - b.z) / 2 + TILE_W / 2,
+      });
+    }
+    return out;
+  }
+
+  // 收牌：桌上看得见的牌各复制一份交给机器去演（滑到中间掉进去），原来的牌藏起来留给新的一局。
+  // 替身牌用上一副的牌背颜色（新的一局马上换另一副）
+  private ghostTiles(): THREE.Object3D[] {
+    const out: THREE.Object3D[] = [];
+    const plain = this.plainBack;
+    if (plain) {
+      this.ghostBack ??= plain.clone();
+      this.ghostBack.color.copy(plain.color);
+    }
+    for (const t of this.tiles) {
+      if (!t.group.visible) continue;
+      const ghost = t.group.clone();
+      ghost.userData = {};
+      ghost.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh && m.material === plain && this.ghostBack) m.material = this.ghostBack;
+      });
+      out.push(ghost);
+      t.group.visible = false;
+      t.shown = false;
+    }
+    return out;
+  }
+
+  // 这一局用哪副牌：第 1、3、5…局第一副，第 2、4…局第二副（连庄也算一局）
+  private useBackSet(g: Game): void {
+    const m = this.colors.machine;
+    if (!m) return;
+    const set = Math.max(0, g.round - 1) % 2;
+    if (set === this.backSet) return;
+    this.backSet = set;
+    this.plainBack?.color.set(m.backs[set]);
+    this.moonMats?.back.color.set(m.backs[set]);
+  }
+
+  // 现在的牌背颜色（全自动麻将机两副牌轮流用）
+  private get tableBack(): string {
+    return this.colors.machine?.backs[this.backSet] ?? this.colors.back;
+  }
+
   private startDeal(g: Game): void {
-    const start = this.now;
+    // 全自动麻将机：先把桌上的旧牌收进中间、升降板沉下去，再托着新码好的另一副牌升上来，卡住以后才掷骰子发牌
+    let lead = 0;
+    if (this.machine) {
+      const ready = this.machine.sweep(this.ghostTiles(), this.now);
+      this.useBackSet(g);
+      lead = this.machine.rise(this.now, ready);
+    }
+    const start = this.now + lead;
     const order = new Map<TileId, { d: number; time: number }>();
     for (let s = 0; s < 4; s++) {
       const rel = (s - g.dealer + 4) % 4;
@@ -1674,7 +1766,7 @@ export class Table3D {
       const fireAt = start + this.deal.extra + DEAL_END + 0.15;
       this.himekoDeal = { seat: hk, land, pending: new Set(mine), axes: new Map(), open, aimed: false, final: open + beatFinal(n, seed), shook: false, fireAt, fired: false };
     }
-    this.dice.roll(g.dice, DEAL_END + 0.6);
+    this.dice.roll(g.dice, DEAL_END + 0.6, lead);
     for (const a of this.handAnims) this.emitMarkers(a, Infinity);
     this.handAnims = [];
     // 新的一局：所有牌从上方落下，重新码好牌山
@@ -1683,6 +1775,12 @@ export class Table3D {
 
   sync(g: Game, view: SyncView): void {
     if (this.characters.length === 0 && this.style === '3d') this.buildCharacters(view);
+    if (this.machine) {
+      // 发牌前选技能时桌上的牌已经收走了：照样演一遍收牌，升降板沉下去，发牌时再升上来
+      if (g.phase === 'predeal' && this.tiles.some((t) => t.group.visible)) this.machine.sweep(this.ghostTiles(), this.now);
+      // 牌局打到一半才建的牌桌：照局数用对那副牌
+      if (!this.deal) this.useBackSet(g);
+    }
     this.setSketch(!!view.sketch);
     this.lastSync = { g, view };
     this.clickable = view.clickable;
@@ -1987,7 +2085,7 @@ export class Table3D {
     const matte = this.style === '25d' ? 0.62 : 0;
     this.moonMats ??= {
       body: wet(new THREE.MeshStandardMaterial({ color: '#f6f1e3', emissive: MOON_GLOW, emissiveIntensity: 0, roughness: matte || 0.35 })),
-      back: wet(new THREE.MeshStandardMaterial({ color: this.colors.back, emissive: MOON_GLOW, emissiveIntensity: 0, roughness: matte || 0.4 })),
+      back: wet(new THREE.MeshStandardMaterial({ color: this.tableBack, emissive: MOON_GLOW, emissiveIntensity: 0, roughness: matte || 0.4 })),
     };
     return this.moonMats;
   }
@@ -3399,6 +3497,7 @@ export class Table3D {
       view.me,
       view.colors,
       this.consoleHover,
+      this.backSet,
     ]);
     if (key === this.consoleKey) return;
     this.consoleKey = key;
@@ -3417,7 +3516,7 @@ export class Table3D {
     if (this.colors.look && this.colors.look !== 'skin') {
       drawConsoleLook(
         c,
-        this.colors,
+        { ...this.colors, back: this.tableBack },
         {
           wind: WIND_CN[g.roundWind],
           no: g.roundNumber + 1,
@@ -3559,7 +3658,7 @@ export class Table3D {
       const open = i < g.wall.doraRevealed && t !== undefined;
       const x = M + (i - 2.5) * (w + 5) + 2.5;
       const y = M + 28;
-      c.fillStyle = open ? '#f6f1e3' : this.colors.back;
+      c.fillStyle = open ? '#f6f1e3' : this.tableBack;
       c.beginPath();
       c.roundRect(x, y, w, h, 5);
       c.fill();
@@ -4433,17 +4532,35 @@ export class Table3D {
       this.gravityDisc.scale.setScalar(1 + 0.012 * Math.sin(this.now * 2.2));
     }
     this.updateCamera(dt);
+    // 全自动麻将机：升降板、仪表盘抬起落下、收牌的替身牌；机器动着的时候牌山上的牌跟着升降板走（新牌山还没放上去就先藏着）
+    const mach = this.machine;
+    if (mach) {
+      for (const { cue, dur } of mach.update(this.now)) this.onMachine?.(cue, dur);
+      const lift = mach.lift;
+      for (const p of this.consoleParts) p.position.y = (p.userData.baseY ?? 0) + lift;
+    }
+    const riding = mach?.busy ? mach : null;
     const slow = 1 - Math.exp(-dt * 16);
     const fast = 1 - Math.exp(-dt * 60);
     const snap = this.now < this.hoverSnap.until ? this.hoverSnap.ids : [];
     for (const [id, t] of this.tiles.entries()) {
       if (!t.target || this.held.has(id)) continue;
+      if (riding?.onPlate(t.target.pos.x, t.target.pos.z)) {
+        t.group.visible = !riding.hideNew;
+        t.group.position.copy(t.target.pos);
+        t.group.position.y += riding.plateY;
+        t.group.quaternion.copy(t.target.quat);
+        t.group.scale.setScalar(t.target.scale);
+        continue;
+      }
       const k = snap.includes(id) ? fast : slow;
       t.group.position.lerp(t.target.pos, k);
       t.group.quaternion.slerp(t.target.quat, k);
       const sc = t.group.scale.x + (t.target.scale - t.group.scale.x) * k;
       t.group.scale.setScalar(sc);
     }
+    // 王牌感知浮在牌山上、牌山前面的那些牌面：牌山还没升到顶就先不出来
+    if (riding) for (const gr of this.projections.values()) gr.visible = false;
     this.updateMarks();
     this.updateRipple();
     for (const c of this.characters) c.avatar?.update(dt);
@@ -4785,22 +4902,74 @@ function feltPattern(ctx: CanvasRenderingContext2D, pattern: FeltPattern): void 
       ctx.fillRect(x, 0, 1.2, 1024);
     }
     feltNoise(ctx, 6);
-  } else if (pattern === 'leather') {
-    // 皮面：一粒一粒的小疙瘩，上面亮一点、下面暗一点
-    for (let i = 0; i < 30000; i++) {
+  } else if (pattern === 'sand') {
+    // 细沙：先是几十道风吹出来的沙纹（暗的一道、紧挨着亮的一道，横着起伏），再撒满细细的沙粒，偶尔一粒深色的
+    for (let y0 = -30; y0 < 1060; y0 += 20 + rnd() * 14) {
+      const amp = 3 + rnd() * 6;
+      const f = 0.006 + rnd() * 0.008;
+      const ph = rnd() * Math.PI * 2;
+      const tilt = (rnd() - 0.5) * 0.08;
+      for (const [dy, color, w] of [[0, `rgba(100,70,32,${0.09 + rnd() * 0.06})`, 2.4], [-2.8, `rgba(255,246,222,${0.08 + rnd() * 0.06})`, 2]] as const) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = w;
+        ctx.beginPath();
+        for (let x = -8; x <= 1032; x += 8) {
+          const y = y0 + dy + x * tilt + Math.sin(x * f + ph) * amp + Math.sin(x * f * 2.3 + ph * 1.7) * amp * 0.35;
+          if (x < 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+    }
+    for (let i = 0; i < 70000; i++) {
+      const v = rnd();
+      ctx.fillStyle = v < 0.45 ? 'rgba(255,250,236,0.22)' : v < 0.96 ? 'rgba(96,70,36,0.16)' : 'rgba(70,55,40,0.4)';
+      ctx.fillRect(rnd() * 1024, rnd() * 1024, 1 + rnd() * 0.6, 1 + rnd() * 0.6);
+    }
+    feltNoise(ctx, 7);
+  } else if (pattern === 'grass') {
+    // 青草：先铺几大片深一点、浅一点的草（像有云影、有太阳照着），再密密的短草叶（多半竖着，稍微往一边倒），
+    // 最后零星几朵小花（白的、黄的、淡紫的，都很小很淡，不跟牌抢眼）
+    for (let i = 0; i < 46; i++) {
       const x = rnd() * 1024;
       const y = rnd() * 1024;
-      const r = 1.2 + rnd() * 2.6;
-      ctx.fillStyle = 'rgba(0,0,0,0.14)';
+      const r = 50 + rnd() * 130;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, rnd() < 0.5 ? 'rgba(214,236,150,0.07)' : 'rgba(16,44,10,0.09)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    for (let i = 0; i < 42000; i++) {
+      const x = rnd() * 1024;
+      const y = rnd() * 1024;
+      const a = -Math.PI / 2 + 0.18 + (rnd() - 0.5) * 0.8;
+      const l = 3 + rnd() * 7;
+      ctx.strokeStyle = rnd() < 0.5 ? `rgba(206,238,140,${0.05 + rnd() * 0.05})` : `rgba(14,42,8,${0.07 + rnd() * 0.06})`;
+      ctx.lineWidth = 0.8 + rnd() * 0.7;
       ctx.beginPath();
-      ctx.arc(x, y + 0.8, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.035)';
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+      ctx.stroke();
+    }
+    const petals = ['rgba(246,243,232,0.6)', 'rgba(242,211,91,0.6)', 'rgba(205,190,240,0.55)'];
+    for (let i = 0; i < 110; i++) {
+      const x = rnd() * 1024;
+      const y = rnd() * 1024;
+      const r = 1.2 + rnd() * 1.1;
+      ctx.fillStyle = petals[Math.floor(rnd() * petals.length)];
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, r * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(232,180,60,0.7)';
       ctx.beginPath();
-      ctx.arc(x - 0.5, y - 0.6, r * 0.7, 0, Math.PI * 2);
+      ctx.arc(x, y, r * 0.55, 0, Math.PI * 2);
       ctx.fill();
     }
-    feltNoise(ctx, 5);
+    feltNoise(ctx, 7);
   } else if (pattern === 'matte') {
     feltNoise(ctx, 5);
   } else {
@@ -4824,9 +4993,8 @@ function feltTexture(colors: TableColors, zones = 0): THREE.CanvasTexture {
   feltPattern(ctx, colors.pattern ?? 'cloth');
   ctx.strokeStyle = colors.feltLine;
   ctx.lineWidth = 3;
-  // 那圈线的画法照牌桌风格的款式：一道（原来的）、两道、缝线、只画四个角、不画
+  // 那圈线的画法照牌桌风格的款式：一道（原来的）、两道、只画四个角、不画
   const line = colors.form?.line ?? 'single';
-  if (line === 'stitch') ctx.setLineDash([16, 10]);
   if (line === 'double') ctx.lineWidth = 2;
   if (line === 'none') {
     // 不画
@@ -4862,7 +5030,6 @@ function feltTexture(colors: TableColors, zones = 0): THREE.CanvasTexture {
     ctx.strokeRect(150, 150, 724, 724);
     if (line === 'double') ctx.strokeRect(161, 161, 702, 702);
   }
-  ctx.setLineDash([]);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
