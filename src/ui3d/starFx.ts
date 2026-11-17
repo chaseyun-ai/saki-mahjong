@@ -98,6 +98,7 @@ uniform float uBoost;
 uniform float uHalf;
 uniform float uPx;
 uniform float uMin;
+uniform float uResY;
 uniform float uTurn;
 uniform float uSpin;
 uniform vec2 uOrigin;
@@ -105,6 +106,7 @@ varying float vA;
 varying float vK;
 varying float vM;
 varying vec3 vC;
+varying vec4 vZ; // 这颗星正中的深度、深度沿屏幕横竖每个像素变多少（星所在的平面上）、点有多少像素宽
 void main() {
   float ang = uTurn + uTime * uSpin * aMove.x;
   float cs = cos(ang), sn = sin(ang);
@@ -127,6 +129,20 @@ void main() {
   vA = aStar.w * (tw + glint * 2.2) * inside * edge * uA * (1.0 + uBoost * 1.5) * (1.0 + uBoost * 0.8) * (px / size);
   vC = aColor;
   gl_PointSize = size;
+  // 点是一块正对镜头的小方片，整片只有正中那一个深度；桌面是斜的，方片下半截对着的桌面离镜头更近，
+  // 会把星的下半截（十字光朝下的那一道芒）挡掉。所以把深度改成贴着桌面走：在平面上往两个方向各挪一步，
+  // 看屏幕位置和深度各变多少，解出深度沿屏幕横竖的变化，片元里按离点心几个像素算自己的深度
+  vec4 cx = projectionMatrix * modelViewMatrix * vec4(p.x + 1.0, position.y, p.y, 1.0);
+  vec4 cz = projectionMatrix * modelViewMatrix * vec4(p.x, position.y, p.y + 1.0, 1.0);
+  vec3 n0 = gl_Position.xyz / gl_Position.w;
+  vec3 n1 = cx.xyz / cx.w - n0;
+  vec3 n2 = cz.xyz / cz.w - n0;
+  vec2 halfRes = vec2(uResY * projectionMatrix[1][1] / projectionMatrix[0][0], uResY) * 0.5;
+  vec2 a = n1.xy * halfRes;
+  vec2 b = n2.xy * halfRes;
+  float det = a.x * b.y - a.y * b.x;
+  vec2 g = abs(det) > 1e-6 ? vec2(n1.z * b.y - n2.z * a.y, a.x * n2.z - b.x * n1.z) / det : vec2(0.0);
+  vZ = vec4(n0.z, g, size);
 }
 `;
 
@@ -135,8 +151,13 @@ varying float vA;
 varying float vK;
 varying float vM;
 varying vec3 vC;
+varying vec4 vZ;
 void main() {
   vec2 u = gl_PointCoord * 2.0 - 1.0;
+  // 深度贴着桌面走（gl_PointCoord 的竖轴朝下），再往镜头这边让两个像素的坡度：和夜空那一层的深度偏移一样多
+  vec2 off = vec2(u.x, -u.y) * vZ.w * 0.5;
+  float z = vZ.x + dot(vZ.yz, off) - 2.0 * max(abs(vZ.y), abs(vZ.z));
+  gl_FragDepth = clamp(z * 0.5 + 0.5 - 4e-7, 0.0, 1.0);
   vec2 d = abs(u) * vK;
   float core = smoothstep(1.0, 0.0, length(d));
   float spike = (exp(-d.x * 6.6 - d.y * 0.77) + exp(-d.y * 6.6 - d.x * 0.77)) * vM * 1.6 * smoothstep(1.0, 0.6, length(u));
@@ -426,6 +447,7 @@ export class StarSky {
     uOrigin: { value: new THREE.Vector2() },
     uPx: { value: 800 },
     uMin: { value: 2 },
+    uResY: { value: 760 },
     uTurn: { value: 0 },
     uSpin: { value: 0.012 },
     uOffA: { value: new THREE.Vector4() },
@@ -760,6 +782,7 @@ export class StarSky {
     this.moteU.uPx.value = resY * proj;
     this.skyU.uPx.value = resY * proj;
     this.skyU.uMin.value = Math.max(1.5, resY / 500);
+    this.skyU.uResY.value = resY;
 
     // 转角的星
     const wantA = this.beaconAt && this.on ? 1 : 0;
