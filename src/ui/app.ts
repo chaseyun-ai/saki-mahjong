@@ -7,6 +7,7 @@ import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruN
 import { teruMirrors } from './teruFx';
 import { tornado2d } from './tornado2d';
 import { flapPages } from '../ui3d/flapBoard';
+import { DARK, FLICK, FLICKER } from '../ui3d/lamp';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiCornerKan, awaiDomainOn, awaiFields, awaiKanUra, awaiSourceOn, awaiStars, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
@@ -51,7 +52,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playIaiDraw, playIaiPush, playIaiSheath, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin } from './sound';
+import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playIaiDraw, playIaiPush, playIaiSheath, playLamp, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -602,6 +603,8 @@ export class App {
   // 2D 牌桌：手指点过中间那块，到这个时候（毫秒）为止写点差
   private diffUntil = 0;
   private diffTimer = 0;
+  // 深夜：2D 中间那只小表拨针的定时器（clockHtml）
+  private clockTimer: number | undefined;
   private heroTip(): boolean {
     return currentTheme() !== 'classic';
   }
@@ -1345,21 +1348,23 @@ export class App {
     return koromoSea(g, this.chars.map((c) => c?.id));
   }
 
-  // 2D 换局（牌桌风格沙滩、草甸、原木、翻牌屏）：换了局就把换局前那一刻 #table 里的东西复制一份（结算框不要）盖在新的一局上面，
+  // 2D 换局（牌桌风格沙滩、草甸、原木、翻牌屏、深夜）：换了局就把换局前那一刻 #table 里的东西复制一份（结算框不要）盖在新的一局上面，
   // 沙滩一个浪打过来把它冲掉（wash2d），草甸一阵风把它吹散（gust2d），原木的牌扣过来绕着中间搓几圈再码出去（shuffle2d），
-  // 翻牌屏的牌一排排翻成牌背、中间那块的字一页页翻到新的一局（flip2d）。
-  // 3D、2.5D 的在 tide.ts、gust.ts、shuffle.ts、flip.ts；这里只是一层画面，不挡发牌、出牌
+  // 翻牌屏的牌一排排翻成牌背、中间那块的字一页页翻到新的一局（flip2d），深夜熄灯，黑里扫一圈换成新的一局（lamp2d）。
+  // 3D、2.5D 的在 tide.ts、gust.ts、shuffle.ts、flip.ts、lamp.ts；这里只是一层画面，不挡发牌、出牌
   private shift2d(g: Game, table: HTMLElement, off: boolean): void {
     const prev = this.shiftRound;
     this.shiftRound = { g, round: g.round };
     const kind = document.documentElement.dataset.table;
-    if (off || !prev || prev.g !== g || prev.round === g.round || (kind !== 'beach' && kind !== 'meadow' && kind !== 'wood' && kind !== 'flap')) return;
+    if (off || !prev || prev.g !== g || prev.round === g.round || (kind !== 'beach' && kind !== 'meadow' && kind !== 'wood' && kind !== 'flap' && kind !== 'night')) return;
     // 系统里设了「减少动态效果」：不演
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const host = table.parentElement;
     if (!host || !table.firstElementChild) return;
     host
-      .querySelectorAll(':scope > .wash-old, :scope > .wash-water, :scope > .wash-wet, :scope > .gust-old, :scope > .gust-cover, :scope > .gust-air, :scope > .shuf-old, :scope > .shuf-cover, :scope > .flip-old, :scope > .flip-cover')
+      .querySelectorAll(
+        ':scope > .wash-old, :scope > .wash-water, :scope > .wash-wet, :scope > .gust-old, :scope > .gust-cover, :scope > .gust-air, :scope > .shuf-old, :scope > .shuf-cover, :scope > .flip-old, :scope > .flip-cover, :scope > .lamp-old, :scope > .lamp-dark, :scope > .lamp-glow',
+      )
       .forEach((e) => e.remove());
     const old = document.createElement('div');
     old.innerHTML = table.innerHTML;
@@ -1368,7 +1373,85 @@ export class App {
     if (kind === 'beach') this.wash2d(host, old);
     else if (kind === 'meadow') this.gust2d(host, old);
     else if (kind === 'flap') this.flip2d(host, old, g);
+    else if (kind === 'night') this.lamp2d(host, old, table);
     else this.shuffle2d(host, old, tableColors().seals ? lastWinners(g) : []);
+  }
+
+  // 深夜：“啪嗒”一声熄灯，整张桌子罩上一层黑（.lamp-dark），黑里只看得见牌背上的夜光月牙（别家立着的手牌只看得到牌背那半边，是一道光）。
+  // 然后像秒针扫过一圈：从 12 点起顺时针，扫过的地方上一局的样子（.lamp-old，连桌面一起）没了、露出新的一局，上一局牌背的光跟着灭掉；
+  // 隔一小会儿再扫一圈，新一局牌背的光一处处亮起来。扫完日光灯闪两下亮起来（黑的那层照 lamp.ts 的 FLICK 一闪一闪淡掉）。
+  // 都是 WAAPI 动画（扫到哪是注册过的 CSS 变量 --lamp-sweep），截图时暂停、拨时间一起走。
+  // 调用的时候 #table 里还是上一局，新的一局等这一下画完（microtask）再找它的牌背
+  private lamp2d(host: HTMLElement, old: HTMLElement, table: HTMLElement): void {
+    old.className = 'lamp-old';
+    const dark = document.createElement('div');
+    dark.className = 'lamp-dark';
+    const glow = document.createElement('div');
+    glow.className = 'lamp-glow';
+    host.append(old, dark, glow);
+    const box = host.getBoundingClientRect();
+    // 扫的中心是中间那块的中心
+    const mid = old.querySelector('.center')?.getBoundingClientRect();
+    const cx = mid ? mid.left + mid.width / 2 - box.left : box.width / 2;
+    const cy = mid ? mid.top + mid.height / 2 - box.top : box.height / 2;
+    old.style.setProperty('--lamp-x', `${cx.toFixed(1)}px`);
+    old.style.setProperty('--lamp-y', `${cy.toFixed(1)}px`);
+    // 熄灯要多久、熄灯以后多久开始扫、扫一圈多久、新的光那一圈晚多久、什么时候开灯（毫秒）；黑的那层最黑多不透明
+    const [OFF, FROM, SWEEP, LAG, ON] = [120, 170, 560, 200, 1150];
+    const DIM = 0.93;
+    const total = ON + FLICKER * 1000;
+    // 黑的那层、发光的那层：灯多亮（lamp.ts 的 DARK 到 1）换成多不透明
+    const frames = (op: (v: number) => number): Keyframe[] => [
+      { opacity: 0, offset: 0 },
+      { opacity: op(DARK), offset: OFF / total },
+      { opacity: op(DARK), offset: ON / total },
+      ...FLICK.map(([t, v]) => ({ opacity: op(v), offset: Math.min(1, (ON + t * 1000) / total) })),
+    ];
+    dark.animate(frames((v) => (1 - v) * DIM), { duration: total, fill: 'both' });
+    glow.animate(frames((v) => Math.min(1, Math.max(0, (1 - v) / (1 - DARK)))), { duration: total, fill: 'both' });
+    old.animate([{ '--lamp-sweep': '0deg' }, { '--lamp-sweep': '360deg' }], { duration: SWEEP, delay: FROM, fill: 'both' });
+    // 牌背的光：扣着的牌是一弯月牙，别家立着的手牌是靠桌子中间那半边（牌背）一道光。旧的扫到就灭，新的第二圈扫到才亮
+    const lights = (root: Element, gone: boolean) => {
+      for (const el of root.querySelectorAll<HTMLElement>('.tile.back:not(.tint, .sketch)')) {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        const x = r.left + r.width / 2 - box.left;
+        const y = r.top + r.height / 2 - box.top;
+        const i = document.createElement('i');
+        if (el.classList.contains('t-top')) {
+          // 横着的（对家）还是竖着的（上下家）：靠中间那半边
+          const flat = r.width >= r.height;
+          const [w, h] = flat ? [r.width, r.height / 2] : [r.width / 2, r.height];
+          const left = flat ? r.left : x < cx ? r.left + r.width / 2 : r.left;
+          const top = flat ? (y < cy ? r.top + r.height / 2 : r.top) : r.top;
+          i.className = 'edge';
+          i.style.cssText = `left:${(left - box.left).toFixed(1)}px;top:${(top - box.top).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px`;
+        } else {
+          const d = Math.min(r.width, r.height) * 0.54;
+          i.className = 'moon';
+          i.style.cssText = `left:${(x - d / 2).toFixed(1)}px;top:${(y - d / 2).toFixed(1)}px;width:${d.toFixed(1)}px;height:${d.toFixed(1)}px;--d:${d.toFixed(1)}px`;
+        }
+        glow.append(i);
+        // 这一张在表盘上是几点（12 点在上，顺时针）
+        let a = Math.atan2(x - cx, cy - y) / (Math.PI * 2);
+        if (a < 0) a += 1;
+        const at = FROM + (gone ? 0 : LAG) + a * SWEEP;
+        i.animate(gone ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 0 }, { opacity: 1 }], { duration: 120, delay: at, fill: 'both' });
+      }
+    };
+    lights(old, true);
+    queueMicrotask(() => {
+      if (glow.isConnected) lights(table, false);
+    });
+    playLamp('off', 0.1);
+    window.setTimeout(() => playLamp('collect', SWEEP / 1000), FROM);
+    window.setTimeout(() => playLamp('stack', SWEEP / 1000), FROM + LAG);
+    window.setTimeout(() => playLamp('flicker', FLICKER), ON);
+    window.setTimeout(() => {
+      old.remove();
+      dark.remove();
+      glow.remove();
+    }, total + 200);
   }
 
   // 沙滩：一个浪从对面（画面上方）涌下来盖住上一局的牌，停一下再退回去，退过的地方露出新的一局，
@@ -3285,7 +3368,27 @@ export class App {
       <div class="sticks">立直棒 ×${g.shownSticks(this.me)}</div>
       <div class="dora">${dora}</div>
       ${this.sakiPeekHtml()}
-      ${scores}`;
+      ${scores}${tableColors().clock ? this.clockHtml() : ''}`;
+  }
+
+  // 深夜：中间那块角上一只小表，指着现在几点（3D 是仪表盘中间的表盘）。牌桌不重画的时候每 15 秒自己拨一次针
+  private clockHtml(): string {
+    const d = new Date();
+    const [h, m] = [d.getHours(), d.getMinutes()];
+    this.clockTimer ??= window.setInterval(() => {
+      const el = document.querySelector<HTMLElement>('#table .center .night-clock');
+      if (!el) {
+        window.clearInterval(this.clockTimer);
+        this.clockTimer = undefined;
+        return;
+      }
+      const t = document.createElement('template');
+      t.innerHTML = this.clockHtml();
+      const fresh = t.content.firstElementChild as HTMLElement | null;
+      if (fresh && fresh.getAttribute('style') !== el.getAttribute('style')) el.replaceWith(fresh);
+    }, 15000);
+    const hm = `${h}:${String(m).padStart(2, '0')}`;
+    return `<i class="night-clock" style="--h:${(((h % 12) + m / 60) * 30).toFixed(1)}deg;--m:${m * 6}deg" title="现在 ${hm}" aria-label="现在 ${hm}"></i>`;
   }
 
   // 中间那块上一家的点数。其他三家另外备一份点差（自己比他多几点）：鼠标停在中间那块上（手机上点一下，3 秒）时换成点差，

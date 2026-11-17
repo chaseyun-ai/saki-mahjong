@@ -5,7 +5,7 @@ import { TILE_H, TILE_W } from './tableLayout';
 // 牌桌风格自己的牌（theme.ts 的 tile）：沙滩的牌是沙子捏的（牌身一粒粒的浅沙、牌背湿一点的深沙，正中压一个贝壳印），
 // 草甸的牌是花瓣捏的（牌身花瓣白、细细的一丝丝纹路，牌背是一片叶子的绿、正中压一道道叶脉），
 // 原木的牌是老式竹背牌（牌身光面的骨白，牌背一层竹子，顺着牌长一丝丝竹纤维）；
-// 翻牌屏的牌背是一块翻牌（中间一道缝、上半亮下半暗）。牌面上的字和图案照旧，只换牌身、牌背。
+// 翻牌屏的牌背是一块翻牌（中间一道缝、上半亮下半暗），深夜的牌背正中一弯夜光月牙（熄了灯会发光）。牌面上的字和图案照旧，只换牌身、牌背。
 // 2D 牌桌的同一套样子在 tableStyles.css 里（贝壳、叶子是同样的路径，写成 SVG）
 
 // ---------- 细纹理：贴在牌身、牌背上，和底色相乘 ----------
@@ -123,10 +123,19 @@ export const LEAF_TILT = -0.26;
 
 const marks = new Map<string, THREE.CanvasTexture>();
 
+// 月牙：外圆在牌背正中（半径是牌宽的 MOON_R），挖掉的那个圆往右偏多少、往上偏多少、半径多大（都按外圆半径算）。
+// 2D 的牌背（tableStyles.css）、2D 熄灯时发光的月牙（app.ts）照同一个形状画
+export const MOON_R = 0.27;
+export const MOON_CUT: [number, number, number] = [0.36, 0.2, 0.9];
+function moonCircle(w: number, h: number): [number, number, number] {
+  return [w / 2, h / 2, w * MOON_R];
+}
+
 // 牌背那一面的贴图（宽高比和牌一样）：红色通道是亮还是暗（0 压暗、1 提亮），透明度是压得多深（提亮最多到 1.6 倍，压暗最多到 0.7 倍）。
 // 贝壳：壳面提亮一点（干一点的沙），棱是压下去的暗线。
 // 叶子：一大片叶子斜躺在牌背上（几乎和牌一样长），叶子外面的牌背压深一点，叶面稍亮，叶脉是亮的（真的叶子叶脉颜色浅），叶边一道暗线。
-// 翻牌的缝：横过牌背正中一道暗缝，缝下面紧贴一道亮线（下半块的上沿），上半块稍亮、下半块稍暗；缝两头各一颗小轴
+// 翻牌的缝：横过牌背正中一道暗缝，缝下面紧贴一道亮线（下半块的上沿），上半块稍亮、下半块稍暗；缝两头各一颗小轴。
+// 月牙：一个圆挖掉偏右上的一个大一点的圆，剩下左下一弯，提亮；绿色通道标出发光的地方（tileSurface 的 glow，只有月牙用）
 function markTexture(kind: NonNullable<TileLook['mark']>): THREE.CanvasTexture {
   const hit = marks.get(kind);
   if (hit) return hit;
@@ -138,7 +147,19 @@ function markTexture(kind: NonNullable<TileLook['mark']>): THREE.CanvasTexture {
   const ctx = c.getContext('2d')!;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  if (kind === 'seam') {
+  if (kind === 'moon') {
+    const [cx, cy, R] = moonCircle(W, H);
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fill();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(cx + R * MOON_CUT[0], cy - R * MOON_CUT[1], R * MOON_CUT[2], 0, Math.PI * 2);
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  } else if (kind === 'seam') {
     const mid = H / 2;
     ctx.fillStyle = 'rgba(255,255,255,0.1)';
     ctx.fillRect(0, 0, W, mid);
@@ -208,16 +229,22 @@ function markTexture(kind: NonNullable<TileLook['mark']>): THREE.CanvasTexture {
 
 // 牌身、牌背的材质上加颗粒和花样（在材质第一次编译之前调用；接在原来的 onBeforeCompile，也就是泡水的那个后面）：
 // 纹理照物体坐标贴（一张牌宽正好一遍，侧面按侧面的方向贴，不会拉长）；smoothFace 时牌面那一面（朝 +z）颗粒淡很多，牌上的字干净。
-// mark 只画在牌背朝外那一面（朝 -z），四周的边不画
-export function tileSurface(m: THREE.MeshStandardMaterial, opts: { grain?: Grain; smoothFace?: boolean; mark?: TileLook['mark'] }): void {
+// mark 只画在牌背朝外那一面（朝 -z），四周的边不画。
+// glow：花样发光（深夜的夜光月牙），给的是发光的颜色乘亮度，table3d.ts 每帧照灯多亮改（灯越暗越亮）
+export function tileSurface(
+  m: THREE.MeshStandardMaterial,
+  opts: { grain?: Grain; smoothFace?: boolean; mark?: TileLook['mark']; glow?: { value: THREE.Color } },
+): void {
   const grain = opts.grain ? grainTexture(opts.grain) : null;
   const mark = opts.mark ? markTexture(opts.mark) : null;
+  const glow = mark ? opts.glow : undefined;
   if (!grain && !mark) return;
   const prev = m.onBeforeCompile;
   m.onBeforeCompile = (sh, r) => {
     prev.call(m, sh, r);
     sh.uniforms.uGrain = { value: grain };
     sh.uniforms.uMark = { value: mark };
+    if (glow) sh.uniforms.uMarkGlow = glow;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vTileP;\nvarying vec3 vTileN;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTileP = position;\nvTileN = normal;');
@@ -236,12 +263,15 @@ export function tileSurface(m: THREE.MeshStandardMaterial, opts: { grain?: Grain
       frag += `
 if (vTileN.z < -0.7) {
   vec4 mk = texture2D(uMark, vec2(vTileP.x / ${TILE_W.toFixed(3)} + 0.5, vTileP.y / ${TILE_H.toFixed(3)} + 0.5));
-  diffuseColor.rgb *= mix(1.0, 0.7 + mk.r * 0.9, mk.a);
+  diffuseColor.rgb *= mix(1.0, 0.7 + mk.r * 0.9, mk.a);${glow ? '\n  totalEmissiveRadiance += uMarkGlow * mk.g * mk.a;' : ''}
 }`;
     }
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${grain ? 'uniform sampler2D uGrain;' : ''}\n${mark ? 'uniform sampler2D uMark;' : ''}\nvarying vec3 vTileP;\nvarying vec3 vTileN;`)
+      .replace(
+        '#include <common>',
+        `#include <common>\n${grain ? 'uniform sampler2D uGrain;' : ''}\n${mark ? 'uniform sampler2D uMark;' : ''}\n${glow ? 'uniform vec3 uMarkGlow;' : ''}\nvarying vec3 vTileP;\nvarying vec3 vTileN;`,
+      )
       .replace('#include <map_fragment>', `#include <map_fragment>\n${frag}`);
   };
-  m.customProgramCacheKey = () => `tile-surface-${opts.grain ?? ''}-${!!opts.smoothFace}-${opts.mark ?? ''}`;
+  m.customProgramCacheKey = () => `tile-surface-${opts.grain ?? ''}-${!!opts.smoothFace}-${opts.mark ?? ''}-${!!glow}`;
 }

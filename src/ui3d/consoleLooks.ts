@@ -47,6 +47,8 @@ export interface ConsoleInfo {
   sticks: number;
   // 五张宝牌指示牌：翻开的是牌面编号，没翻的是 null（画牌背）
   dora: (number | null)[];
+  // 现在几点几分（只有深夜的表盘要）：[时 0–23, 分 0–59]
+  clock?: [number, number];
 }
 
 type DrawTile = (c: CanvasRenderingContext2D, face: number, x: number, y: number, w: number, h: number) => void;
@@ -551,6 +553,58 @@ export function sealSpot(k: TableColors, rel: number, n: number, i: number): { x
 
 // ---------- 深夜：纯色底、灰白字加一点青，不发光 ----------
 
+// ---------- 深夜：中间的方屏换成一块圆表盘 ----------
+
+// 表盘半径；一圈 60 格刻度（整点的长一点、粗一点）从多大半径画到多大；指针只露出靠外圈的那一截（从 HAND_IN 画到表盘边上），
+// 不伸进中间压着字。字都在 DIAL_TEXT 以内（局数的字小一点：60px）
+export const DIAL_R = 146;
+const TICK_IN = 138;
+const HOUR_TICK_IN = 132;
+const HAND_IN = 129;
+export const DIAL_TEXT = 126;
+
+// 时针、分针指向几点几分（从 12 点顺时针转多少弧度）
+export function clockAngles(h: number, m: number): { hour: number; minute: number } {
+  return { hour: (((h % 12) + m / 60) / 12) * Math.PI * 2, minute: (m / 60) * Math.PI * 2 };
+}
+
+// 一根从半径 r0 到 r1 的线，指向 a（从 12 点顺时针）
+function spoke(c: CanvasRenderingContext2D, a: number, r0: number, r1: number): void {
+  const x = Math.sin(a);
+  const y = -Math.cos(a);
+  c.beginPath();
+  c.moveTo(M + x * r0, M + y * r0);
+  c.lineTo(M + x * r1, M + y * r1);
+  c.stroke();
+}
+
+// 表盘：一圈刻度（分钟的很淡，整点的亮一点，12 点那一格最亮）；时针是一截粗的青色，分针是一截白色、比刻度长出一截，都只在外圈
+function dial(c: CanvasRenderingContext2D, k: TableColors, time: [number, number]): void {
+  c.save();
+  c.lineCap = 'butt';
+  for (let i = 0; i < 60; i++) {
+    const hour = i % 5 === 0;
+    c.strokeStyle = i === 0 ? k.console.dim : hour ? '#636c77' : '#383f48';
+    c.lineWidth = hour ? 3 : 1.5;
+    spoke(c, (i / 60) * Math.PI * 2, hour ? HOUR_TICK_IN : TICK_IN, DIAL_R - 4);
+  }
+  // 表盘的边：细细一圈
+  c.strokeStyle = '#3a414a';
+  c.lineWidth = 1.5;
+  c.beginPath();
+  c.arc(M, M, DIAL_R - 1, 0, Math.PI * 2);
+  c.stroke();
+  const { hour, minute } = clockAngles(time[0], time[1]);
+  c.lineCap = 'round';
+  c.strokeStyle = k.console.accent;
+  c.lineWidth = 9;
+  spoke(c, hour, HAND_IN + 4, DIAL_R - 8);
+  c.strokeStyle = k.console.ink;
+  c.lineWidth = 4.5;
+  spoke(c, minute, HAND_IN, DIAL_R - 2);
+  c.restore();
+}
+
 const flat: Look = {
   base(c, k) {
     const bg = c.createRadialGradient(M, M, 40, M, M, M * 1.4);
@@ -562,13 +616,17 @@ const flat: Look = {
     c.lineWidth = 2;
     outline(c, k, 10, 12);
     c.stroke();
-    // 中间方屏：圆盘上圆角大一点
+    // 中间方屏：圆盘上圆角大一点。深夜是一块圆表盘
     c.fillStyle = '#23272d';
-    rr(c, M - 120, M - 120, 240, 240, isDisc(k) ? 36 : 16);
+    if (k.clock) {
+      c.beginPath();
+      c.arc(M, M, DIAL_R, 0, Math.PI * 2);
+    } else rr(c, M - 120, M - 120, 240, 240, isDisc(k) ? 36 : 16);
     c.fill();
   },
   center(c, k, info, tile) {
-    c.font = k.console.title.replace('1em', '72px');
+    if (k.clock && info.clock) dial(c, k, info.clock);
+    c.font = k.console.title.replace('1em', k.clock ? '60px' : '72px');
     c.fillStyle = k.console.ink;
     c.fillText(`${info.wind}${'一二三四'[info.no - 1] ?? info.no}局`, M, M - 62);
     infoRow(c, info, M - 2, k.console.dim, `700 32px ${NUM}`, k.console.line);

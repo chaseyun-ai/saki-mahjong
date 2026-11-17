@@ -682,14 +682,111 @@ export function playFlapTicks(n: number): void {
   for (let i = 0; i < Math.min(n, 4); i++) flapTick(a, now + Math.random() * 0.03, 0.03 + Math.random() * 0.025);
 }
 
-// 换局的声音（table3d.ts 的 onShift）：沙滩那几声给 playTide，草甸那几声给 playGust，原木那几声给 playShuffle，翻牌屏那几声给 playFlip
+// ---------- 深夜（牌桌风格「深夜」，lamp.ts）：熄灯换局 ----------
+
+// 日光灯启辉器那一下“叮”：很短很高的一声金属响，带一点点电流的“滋”
+function tink(a: AudioContext, at: number, vol: number): void {
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(5400 + Math.random() * 500, at);
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(vol, at + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.05);
+  osc.connect(gain).connect(bus('sfx', a));
+  osc.start(at);
+  osc.stop(at + 0.06);
+  noiseHit(a, at, 0.03, vol * 0.8, 'bandpass', 1300, 900, 3);
+}
+
+// 镇流器的“嗡”：100 赫兹的电流声（锯齿波压在带通里），dur 秒，前后淡入淡出
+function buzz(a: AudioContext, at: number, dur: number, vol: number): void {
+  const bp = a.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 420;
+  bp.Q.value = 0.9;
+  const gain = a.createGain();
+  const fade = Math.min(0.05, dur / 3);
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(vol, at + fade);
+  gain.gain.setValueAtTime(vol, at + dur - fade * 2);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  bp.connect(gain).connect(bus('sfx', a));
+  const osc = a.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.value = 100;
+  osc.connect(bp);
+  osc.start(at);
+  osc.stop(at + dur + 0.02);
+}
+
+// 深夜的几声：off 拉灯（拉线开关“啪嗒”两下，底下一点闷的），collect 黑里收牌（稀稀拉拉的碰牌声加一点推牌的摩擦，dur 秒），
+// stack 码牌山（一串很轻的“嗒”，dur 秒），flicker 日光灯闪着亮起来（闪一下“叮”一声带一下“嗡”，亮稳以后嗡嗡声慢慢收掉；
+// 时间照 lamp.ts 的 FLICK：0.015、0.215 秒各闪一下，0.33 秒起亮上去）
+export function playLamp(cue: 'off' | 'collect' | 'stack' | 'flicker', dur = 0.5): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  if (cue === 'off') {
+    noiseHit(a, now, 0.012, 0.32, 'bandpass', 3200, 2600, 2.2);
+    noiseHit(a, now + 0.055, 0.01, 0.2, 'bandpass', 2400, 2000, 2.2);
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(70, now + 0.08);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
+    osc.connect(gain).connect(bus('sfx', a));
+    osc.start(now);
+    osc.stop(now + 0.12);
+  } else if (cue === 'collect') {
+    for (let i = 0; i < 22; i++) clack(a, now + Math.random() * dur, 0.025 + Math.random() * 0.045, 1300 + Math.random() * 1800);
+    surf(a, now, dur + 0.1, 0.035, 280, 600, dur * 0.4, 0.8);
+  } else if (cue === 'stack') {
+    for (let t = 0; t < dur; t += 0.026 + Math.random() * 0.03) clack(a, now + t, 0.025 + Math.random() * 0.03, 1900 + Math.random() * 900);
+  } else {
+    tink(a, now + 0.015, 0.09);
+    buzz(a, now + 0.015, 0.05, 0.05);
+    tink(a, now + 0.215, 0.06);
+    buzz(a, now + 0.215, 0.035, 0.04);
+    tink(a, now + 0.33, 0.05);
+    buzz(a, now + 0.33, Math.max(0.6, dur + 0.5), 0.028);
+  }
+}
+
+// 换局的声音（table3d.ts 的 onShift）：沙滩那几声给 playTide，草甸那几声给 playGust，原木那几声给 playShuffle，翻牌屏那几声给 playFlip，
+// 深夜那几声给 playLamp
 export function playShift(
-  cue: 'surge' | 'crash' | 'ebb' | 'gather' | 'settle' | 'gust' | 'scatter' | 'breeze' | 'land' | 'pour' | 'scoop' | 'shuffle' | 'build' | 'push' | 'clatter' | 'riffle' | 'latch',
+  cue:
+    | 'surge'
+    | 'crash'
+    | 'ebb'
+    | 'gather'
+    | 'settle'
+    | 'gust'
+    | 'scatter'
+    | 'breeze'
+    | 'land'
+    | 'pour'
+    | 'scoop'
+    | 'shuffle'
+    | 'build'
+    | 'push'
+    | 'clatter'
+    | 'riffle'
+    | 'latch'
+    | 'off'
+    | 'collect'
+    | 'stack'
+    | 'flicker',
   dur = 0.5,
 ): void {
   if (cue === 'gust' || cue === 'scatter' || cue === 'breeze' || cue === 'land') playGust(cue, dur);
   else if (cue === 'pour' || cue === 'scoop' || cue === 'shuffle' || cue === 'build' || cue === 'push') playShuffle(cue, dur);
   else if (cue === 'clatter' || cue === 'riffle' || cue === 'latch') playFlip(cue, dur);
+  else if (cue === 'off' || cue === 'collect' || cue === 'stack' || cue === 'flicker') playLamp(cue, dur);
   else playTide(cue, dur);
 }
 

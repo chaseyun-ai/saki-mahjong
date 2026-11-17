@@ -460,6 +460,112 @@
 
 /* ---------- 深夜：炭灰哑光、灰白字加一点青 ---------- */
 
+/* 牌背正中一弯夜光月牙（和 3D 的 tileLooks.ts 同一个形状：外圆挖掉往右上偏的一个大一点的圆） */
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .tile.back:not(.tint, .t-top, .sketch) {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cmask id='m'%3E%3Crect width='100' height='100' fill='%23fff'/%3E%3Ccircle cx='64.4' cy='42' r='36'/%3E%3C/mask%3E%3Ccircle cx='50' cy='50' r='40' fill='rgb(206,246,240)' fill-opacity='.62' mask='url(%23m)'/%3E%3C/svg%3E") center / 66% no-repeat,
+    linear-gradient(160deg, color-mix(in srgb, var(--tile-back) 62%, #fff), var(--tile-back));
+}
+
+/* 局数前面一只小表：一圈整点刻度，青色时针、白色分针（app.ts 的 clockHtml 写 --h、--m）。
+   跟局数排在同一行（不是钉在角上），四家的点数、立直棒怎么摆都碰不到 */
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .night-clock {
+  order: -1;
+  flex: none;
+  position: relative;
+  width: 22px;
+  height: 22px;
+  margin-right: -6px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #23272d 0 7.5px, transparent 8px),
+    repeating-conic-gradient(from -3deg, #8a939e 0 6deg, transparent 6deg 30deg),
+    #23272d;
+  box-shadow: 0 0 0 1px #4a525c;
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .night-clock::before,
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .night-clock::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  border-radius: 2px;
+  transform-origin: 50% 100%;
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .night-clock::before {
+  width: 2.5px;
+  height: 5.5px;
+  margin-left: -1.25px;
+  background: #5fd3c6;
+  transform: rotate(var(--h));
+}
+
+:root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) .center .night-clock::after {
+  width: 1.5px;
+  height: 8.5px;
+  margin-left: -0.75px;
+  background: #eef1f5;
+  transform: rotate(var(--m));
+}
+
+/* 深夜换局（2D，app.ts 的 lamp2d）：上一局的样子连桌面一起（.lamp-old）盖在新的一局上面，熄灯以后照 --lamp-sweep 从 12 点起
+   顺时针一扇一扇挖掉，露出新的一局；上面一层黑（.lamp-dark），再上面一层只在黑里看得见的光（.lamp-glow：扣着的牌一弯月牙，
+   别家立着的手牌靠中间那半边一道光） */
+@property --lamp-sweep {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.stage .table > .lamp-old {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  border-radius: inherit;
+  background: inherit;
+  box-shadow: inherit;
+  -webkit-mask-image: conic-gradient(from 0deg at var(--lamp-x, 50%) var(--lamp-y, 50%), transparent 0 var(--lamp-sweep), #000 0);
+  mask-image: conic-gradient(from 0deg at var(--lamp-x, 50%) var(--lamp-y, 50%), transparent 0 var(--lamp-sweep), #000 0);
+}
+
+.stage .table > .lamp-dark {
+  position: absolute;
+  inset: 0;
+  z-index: 41;
+  pointer-events: none;
+  border-radius: inherit;
+  background: #020407;
+  opacity: 0;
+}
+
+.stage .table > .lamp-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 42;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.stage .table > .lamp-glow > i {
+  position: absolute;
+}
+
+/* 月牙：圆里挖掉往右上偏的一个小一点的圆（内阴影：往右上偏 0.18、0.1 个直径，往里缩 0.05 个直径），外面一圈淡淡的光 */
+.stage .table > .lamp-glow > .moon {
+  border-radius: 50%;
+  box-shadow: inset calc(var(--d) * 0.18) calc(var(--d) * -0.1) 0 calc(var(--d) * 0.05) #a6f7ea;
+  filter: drop-shadow(0 0 3px rgba(143, 245, 228, 0.75));
+}
+
+.stage .table > .lamp-glow > .edge {
+  border-radius: 2px;
+  background: rgba(143, 245, 228, 0.6);
+  box-shadow: 0 0 5px rgba(143, 245, 228, 0.6);
+}
+
 :root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) {
   --felt: #252a30;
   --felt-dark: #1b1f24;

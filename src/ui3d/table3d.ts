@@ -14,6 +14,7 @@ import type { Changeover } from './changeover';
 import { Flip, type FlipCue } from './flip';
 import { FlapBoard } from './flapBoard';
 import { Gust, type GustCue } from './gust';
+import { Lamp, type LampCue } from './lamp';
 import { Shuffle, type ShuffleCue } from './shuffle';
 import { SealStamps } from './sealStamp';
 import { Tide, type TideCue } from './tide';
@@ -224,6 +225,10 @@ const MOON_GLOW = '#cfe4ff';
 const MOON_AT = 6.1;
 const MOON_R = 2.35;
 const MOON_R_SCOOP = 0.95;
+// 深夜牌背的夜光月牙：发什么颜色的光；灯亮着时多亮（只是浅一点），熄了灯多亮
+const MOON_MARK_GLOW = new THREE.Color('#8ff5e4');
+const MOON_MARK_LIT = 0.06;
+const MOON_MARK_DARK = 0.9;
 // 海水涨满时四周暗下来多少（夜里的海，月亮更亮）；捞月那一下再暗 SCOOP_NIGHT
 const SEA_NIGHT = 0.42;
 const SCOOP_NIGHT = 0.22;
@@ -662,9 +667,15 @@ export class Table3D {
   onMachine: ((cue: MachineCue, dur: number) => void) | null = null;
   // 换局的演出（牌桌风格自己的，changeover.ts）：沙滩每局开始一个浪打过来把牌冲散、退潮后沙子聚成新牌山（tide.ts）；
   // 草甸一阵风把牌吹成花瓣飘走、花瓣再飘回来落成新牌山（gust.ts）；原木手搓洗牌，码好牌山往前一推（shuffle.ts）；
-  // 翻牌屏桌上的牌一排排翻下去、新牌山一墩墩翻上来（flip.ts）。该响声音的时候通知外面
-  private shift: Changeover<TideCue | GustCue | ShuffleCue | FlipCue> | null = null;
-  onShift: ((cue: TideCue | GustCue | ShuffleCue | FlipCue, dur: number) => void) | null = null;
+  // 翻牌屏桌上的牌一排排翻下去、新牌山一墩墩翻上来（flip.ts）；深夜熄灯，黑里收牌、码牌山，日光灯闪两下亮起来（lamp.ts）。
+  // 该响声音的时候通知外面
+  private shift: Changeover<TideCue | GustCue | ShuffleCue | FlipCue | LampCue> | null = null;
+  onShift: ((cue: TideCue | GustCue | ShuffleCue | FlipCue | LampCue, dur: number) => void) | null = null;
+  // 深夜：牌背上的夜光月牙发多亮的光（tileLooks.ts 的 glow，updateSpots 照灯多亮每帧改）；仪表盘顶面（熄灯时它的光不跟着暗）
+  private markGlow = { value: new THREE.Color(0, 0, 0) };
+  private consoleTop: THREE.MeshStandardMaterial | null = null;
+  // 深夜：仪表盘上的表盘上次画的是几点几分（每秒看一次，分钟变了重画）
+  private clockSec = -1;
   // 原木：谁和一局，仪表盘上那家点数旁边盖一个小朱印。结算时印从半空落下来盖上（sealStamp.ts），落地才画进仪表盘：
   // sealShown 是仪表盘上现在画着几个（还在半空的不算），sealGame 是数的哪一场。盖下去那一下通知外面（放音效用）
   private stamps: SealStamps | null = null;
@@ -807,6 +818,7 @@ export class Table3D {
     else if (this.colors.changeover === 'gust') this.shift = new Gust([body, '#f6e7a6', '#f4d3da', this.colors.back, '#8db06c'], '#eef3d2');
     else if (this.colors.changeover === 'shuffle') this.shift = new Shuffle();
     else if (this.colors.changeover === 'flip') this.shift = new Flip();
+    else if (this.colors.changeover === 'lamp') this.shift = new Lamp();
     if (this.shift) this.scene.add(this.shift.group);
     if (this.colors.seals) {
       this.stamps = new SealStamps(this.colors.consoleGlow ?? 0.35);
@@ -831,6 +843,7 @@ export class Table3D {
       // 顶面的点数、局数是自己发光的屏幕，淹在水里也照样看得清（不泡水）；木牌、皮面这种不是屏幕的，发光弱一点
       new THREE.MeshStandardMaterial({ map: this.consoleTex, roughness: 0.2, emissive: '#ffffff', emissiveMap: this.consoleTex, emissiveIntensity: this.colors.consoleGlow ?? 0.35 }),
     ];
+    this.consoleTop = consoleMats[1] as THREE.MeshStandardMaterial;
     this.buildConsole(consoleMats[0], consoleMats[1], trimMat);
   }
 
@@ -965,7 +978,7 @@ export class Table3D {
     this.bodyMat = bodyMat;
     this.deadlyMat = wet(new THREE.MeshStandardMaterial({ color: '#f08a80', emissive: '#d23a2e', emissiveIntensity: 0.35, roughness: matte || 0.35 }));
     const backMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: rough(0.4) }));
-    if (look) tileSurface(backMat, { grain: look.backGrain ?? look.grain, mark: look.mark });
+    if (look) tileSurface(backMat, { grain: look.backGrain ?? look.grain, mark: look.mark, glow: look.mark === 'moon' ? this.markGlow : undefined });
     this.backMat = backMat;
     this.plainBack = backMat;
     // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
@@ -1545,6 +1558,14 @@ export class Table3D {
     const night = 1 - SEA_NIGHT * (this.water?.night ?? 0) - SCOOP_NIGHT * this.scoopDim;
     if (this.hemi) this.hemi.intensity = HEMI_BASE * (1 - STAGE_DIM * lvl) * night;
     if (this.keyLight) this.keyLight.intensity = KEY_BASE * (1 - STAGE_DIM * 1.15 * lvl) * night;
+    // 深夜熄灯：整个画面一起暗下去（曝光，角色身上不靠灯的那几层颜色也跟着暗）；
+    // 牌背的夜光月牙灯越暗越亮，仪表盘的光不跟着暗（都除掉曝光）
+    const lamp = this.shift?.lightAt?.(this.now) ?? 1;
+    if (this.renderer.toneMappingExposure !== lamp) this.renderer.toneMappingExposure = lamp;
+    if (this.colors.tile?.mark === 'moon') {
+      this.markGlow.value.copy(MOON_MARK_GLOW).multiplyScalar((MOON_MARK_LIT + (MOON_MARK_DARK - MOON_MARK_LIT) * (1 - lamp)) / lamp);
+      if (this.consoleTop) this.consoleTop.emissiveIntensity = (this.colors.consoleGlow ?? 0.35) / lamp;
+    }
     const light = this.stageLight;
     if (light) {
       light.intensity = STAGE_LIGHT * lvl;
@@ -3987,6 +4008,13 @@ export class Table3D {
     return this.sealShown;
   }
 
+  // 深夜的表盘指着几点几分（别的牌桌是 null）
+  private clockTime(): [number, number] | null {
+    if (!this.colors.clock) return null;
+    const d = new Date();
+    return [d.getHours(), d.getMinutes()];
+  }
+
   // 仪表盘：中间一块方屏写局数、本场、余牌、宝牌和供托；四边各家的风位和点数朝着自己，轮到谁谁那边亮一条。
   // 颜色和局数的字体跟皮肤走（theme.ts 的 console）
   private drawConsole(g: Game, view: SyncView): void {
@@ -4009,6 +4037,8 @@ export class Table3D {
       this.colors.seals ? this.shownSeals(g, view) : null,
       // 翻牌屏翻着的时候一秒重画 30 次
       this.flaps?.busy ? Math.floor(this.now * 30) : null,
+      // 深夜的表盘：分钟变了重画
+      this.clockTime(),
     ]);
     if (key === this.consoleKey) return;
     this.consoleKey = key;
@@ -4040,6 +4070,7 @@ export class Table3D {
             const t = g.wall.doraIndicators[i];
             return i < g.wall.doraRevealed && t !== undefined ? faceIndex(t) : null;
           }),
+          clock: this.clockTime() ?? undefined,
         },
         [0, 1, 2, 3].map((s) => ({
           rel: (s - view.me + 4) % 4,
@@ -5196,6 +5227,14 @@ export class Table3D {
     }
     // 翻牌屏：仪表盘上还有翻牌在翻
     if (this.flaps?.busy && this.lastSync) this.drawConsole(this.lastSync.g, this.lastSync.view);
+    // 深夜：表盘每秒看一次几点了（分钟变了 drawConsole 才真的重画）
+    if (this.colors.clock && this.lastSync) {
+      const sec = Math.floor(Date.now() / 1000);
+      if (sec !== this.clockSec) {
+        this.clockSec = sec;
+        this.drawConsole(this.lastSync.g, this.lastSync.view);
+      }
+    }
     const pose = this.shiftPose;
     const slow = 1 - Math.exp(-dt * 16);
     const fast = 1 - Math.exp(-dt * 60);
