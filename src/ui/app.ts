@@ -3114,11 +3114,21 @@ export class App {
     const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·软封印' : c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
-        ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
         <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.fjHtml(s)}${this.mgHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'seat')}</div>
         ${this.towerHtml(s)}
-        <div class="seat-info">${c.name}</div>${s === this.me ? this.bladeBarHtml() : ''}
+        <div class="seat-info">${c.name}</div>${this.teamPlateHtml(s)}${s === this.me ? this.bladeBarHtml() : ''}
       </div>`;
+  }
+
+  // 团体赛：名牌下面一条队伍颜色的牌子写队名。头像上沿正中常挂着能力的标记（智叶的间合、哩的光锁、梅根的牛仔帽），
+  // 队名不放那里，免得被盖住；浅色的队（黄队）用深色字
+  private teamPlateHtml(s: number): string {
+    const t = this.teamOf(s);
+    if (!t) return '';
+    const hex = t.color.replace('#', '');
+    const [r, gr, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    const light = 0.2126 * r + 0.7152 * gr + 0.0722 * b > 0.35;
+    return `<div class="tm-plate${light ? ' light' : ''}" style="--t:${t.color}">${t.name}</div>`;
   }
 
   // 每局开始：屏幕中间横着播一下“东场 第一局 0本场”。

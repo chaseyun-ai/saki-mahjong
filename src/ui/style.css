@@ -4265,20 +4265,51 @@ button {
   vertical-align: baseline;
 }
 
-/* 2.5D 头像框上的队伍名 */
-.tm-ribbon {
-  position: absolute;
-  z-index: 2;
-  top: -10px;
-  left: 50%;
-  translate: -50% 0;
-  padding: 1px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--t);
+/* 头像框（2.5D、2D）上的队伍：名牌下面一条队伍颜色的牌子，和头像一样宽。
+   头像上沿正中留给能力的标记（智叶的间合、哩的光锁、梅根的牛仔帽），队名放那里会被盖住 */
+.tm-plate {
+  margin-top: 4px;
+  padding: 1px 4px;
+  overflow: hidden;
+  border-radius: 5px;
+  font-size: clamp(10px, 2.2vh, 13px);
+  font-weight: 900;
+  line-height: 1.4;
+  letter-spacing: 3px;
+  text-indent: 3px;
+  text-align: center;
   white-space: nowrap;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--t) 86%, white), var(--t) 45%, color-mix(in srgb, var(--t) 78%, black));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.tm-plate.light {
+  color: #1d1606;
+  text-shadow: none;
+}
+
+/* 和纸皮肤的名牌外面有一圈木框，队名牌往下让开 */
+:root[data-theme='washi'] .tm-plate {
+  margin-top: 9px;
+}
+
+/* 横过来的手机：队名牌矮一点；改良布局右边那家的头像框往上挪一点，别压到右下角的喇叭按钮 */
+@media (max-height: 500px) {
+  .tm-plate {
+    margin-top: 2px;
+    font-size: 9px;
+    line-height: 1.3;
+    letter-spacing: 2px;
+    text-indent: 2px;
+  }
+
+  .stage3d.flat.v2 .seat-frame.right:has(.tm-plate) {
+    top: 34%;
+  }
 }
 
 @media (max-width: 640px) {
