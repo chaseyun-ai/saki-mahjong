@@ -24,6 +24,8 @@ export const PRIORITY = {
   awai: 10,
   koromo: 20,
   kasumi: 30,
+  // 梅根的决斗：霞之后、涅莉之前
+  megan: 35,
   nelly: 40,
   // 雀明华的风牌：在初美前面（她坐西、南家时自风暗刻先到手，初美挑还凑得出的风）
   myeonghwa: 42,

@@ -14,6 +14,7 @@ import { mihokoEyeOpen, mihokoLikelySafe, mihokoSafeKinds } from '../abilities/m
 import { akoDistance, akoSense } from '../abilities/ako';
 import { satohaCutsDealer, satohaDistance, satohaScouts } from '../abilities/satoha';
 import { myeonghwaYaku } from '../abilities/myeonghwa';
+import { meganBlindRound, meganDuelTarget, meganSenses } from '../abilities/megan';
 import { seikoFish } from '../abilities/seiko';
 import { warmKind } from '../abilities/yu';
 import { yuukiActive } from '../abilities/yuuki';
@@ -176,6 +177,8 @@ function threats(g: Game, seat: number): number[] {
   const mugoku = g.abilities[seat]?.id === 'ryuuka' && ryuukaMugoku(g, seat);
   const nelly = g.abilities[seat]?.id === 'nelly' && nellySenses(g, seat);
   const iai = g.abilities[seat]?.id === 'satoha';
+  // 梅根：自己听牌时看得出谁听牌了（没听牌时和别人一样猜）
+  const megan = g.active(seat)?.id === 'megan' && shanten(toCounts(g.players[seat].hand), g.players[seat].melds.length) <= 0 ? meganSenses(g, seat) : null;
   // 照连和起来了：另外三家谁和都是断她的连和，彼此的立直、副露不躲（只防她）
   const rising = teruRising(g, seat);
   return [0, 1, 2, 3].filter((s) => {
@@ -191,6 +194,7 @@ function threats(g: Game, seat: number): number[] {
     if (nelly && !g.isSealed(seat)) return nellySensesTenpai(g, s, seat);
     // 智叶的间合：只防真的听牌的人，不被副露多的空架子吓住（是她的技术，被封印也照旧）
     if (iai) return satohaDistance(g, seat, s) === 0;
+    if (megan) return megan.includes(s);
     const id = g.abilities[s]?.id;
     if (g.isSealed(s)) return p.melds.length >= melds;
     return p.melds.length >= melds || (id === 'seiko' && seikoFish(g, s) >= 2) || (id === 'saki' && p.melds.some((m) => m.type.endsWith('kan')));
@@ -821,6 +825,13 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     }
     // 胡桃：从不立直，默听才有能力
     if (style.dama && !sealed) return best.a;
+    // 梅根：伏牌的局不立直（立直了加成就没了）。感知到的听牌对手正好一家：立直决斗。两家以上听牌：默听。
+    // 只有自己听：有役、牌山还多就默听等人听牌再拔枪；没役的照常立直
+    if (style.duel && !sealed) {
+      if (meganBlindRound(g, seat)) return best.a;
+      if (meganDuelTarget(g, seat) !== null) return riichi;
+      if (meganSenses(g, seat).length >= 2) return best.a;
+    }
     // 咲：有杠材、离岭上开花不远时默听（立直了就改不了听，杠也可能开不了）
     if (style.rinshan && !sealed && (sakiLineShanten(g, seat, c)?.sh ?? 9) <= SAKI.damaWithin) return best.a;
     // 春：别人立直以后不立直，小牌快和

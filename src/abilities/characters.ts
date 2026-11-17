@@ -46,6 +46,7 @@ import { kinueAbility } from './kinue';
 import { huiyuAbility } from './huiyu';
 import { satohaAbility } from './satoha';
 import { myeonghwaAbility } from './myeonghwa';
+import { meganAbility } from './megan';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -95,6 +96,7 @@ export interface AiStyle {
   twin: boolean; // 鹤田姬子：钥匙的那一局只照着那副牌打，先打不要的牌，不立直、不鸣牌、不荣和，等自摸
   iai?: boolean; // 辻垣内智叶：靠间合防守（只防真的听牌的人）；听牌时挑听立直家现物的听法；别人连庄的局，碰了能跳过庄家摸牌的就碰；第 3 局起照浩子的资料本打（scout）
   fuujin?: boolean; // 雀明华：自风暗刻在手就算有役，不退向听就鸣
+  duel?: boolean; // 梅根：自己听牌时看得出谁听牌。正好一家听牌就立直决斗；只有自己听、两家以上听时默听（没役、牌山不多了才立直）；伏着牌不立直
   gb?: boolean; // 郝慧宇：照国标番种打，先打番种用不到的牌，听牌挑国标番多的；不立直，只在鸣了日麻还有役时鸣，一向听以内照样推
 }
 
@@ -268,6 +270,22 @@ export const CHARACTERS: Character[] = [
     ],
     // 欧洲联赛排名第一。自风暗刻一番到手，放心鸣牌
     ai: { ...baseAi, mistakeRate: 0.03, fuujin: true },
+  },
+  {
+    id: 'megan',
+    cost: 3,
+    name: '梅根·达文',
+    school: '临海女子',
+    color: '#c08a3e',
+    ability: meganAbility,
+    // 决斗：她立直向一家决斗时；击中：决斗的对手打出她的和了牌；伏牌：她把牌伏下的那一局
+    skillArts: [
+      { id: 'duel', name: '决斗', hint: '她立直向听牌的一家决斗时放' },
+      { id: 'hit', name: '击中', label: '决斗·击中', hint: '决斗的对手打出她的和了牌时放' },
+      { id: 'blind', name: '伏牌', hint: '她把牌伏下的那一局放' },
+    ],
+    // 喜欢断幺、役牌这种简单的牌，快听牌；决斗看准了才拔枪
+    ai: { ...baseAi, mistakeRate: 0.04, duel: true },
   },
   {
     id: 'sawaya',

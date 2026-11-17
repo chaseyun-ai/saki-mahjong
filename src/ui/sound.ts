@@ -205,6 +205,58 @@ export function playBreeze(vol = 1): void {
   src.start(now);
 }
 
+// 梅根的决斗开始：靴子踩地两步、马刺一响，远处一声低低的风
+export function playDuelStart(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  noiseHit(a, now, 0.9, 0.1, 'bandpass', 300, 520, 0.8);
+  for (const [i, at] of [0.15, 0.6].entries()) {
+    noiseHit(a, now + at, 0.12, 0.3, 'lowpass', 260, 90, 1);
+    tone(a, 2400 + i * 300, now + at + 0.07, 0.16, 0.05, 'triangle');
+    tone(a, 3300 + i * 300, now + at + 0.09, 0.14, 0.035, 'triangle');
+  }
+}
+
+// 决斗里对手每摸一次牌：转轮转一格的“咔”，加一声很轻的马刺
+export function playDuelStep(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  noiseHit(a, now, 0.035, 0.22, 'highpass', 2600, 3200, 1.5);
+  noiseHit(a, now + 0.06, 0.05, 0.16, 'bandpass', 1400, 900, 3);
+  tone(a, 2900, now + 0.1, 0.12, 0.03, 'triangle');
+}
+
+// 击中：一声枪响（噪声爆音加一个往下掉的低音，后面拖一点回声）
+export function playGunshot(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  noiseHit(a, now, 0.09, 0.9, 'lowpass', 5200, 900, 0.7);
+  noiseHit(a, now + 0.02, 0.5, 0.4, 'lowpass', 1800, 220, 0.6);
+  noiseHit(a, now + 0.22, 0.7, 0.14, 'bandpass', 700, 300, 0.8);
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(170, now);
+  osc.frequency.exponentialRampToValueAtTime(42, now + 0.28);
+  gain.gain.setValueAtTime(0.5, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.34);
+  osc.connect(gain).connect(bus('sfx', a));
+  osc.start(now);
+  osc.stop(now + 0.36);
+}
+
+// 逃脱：转轮空转的“咔哒”
+export function playDuelMiss(): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  for (let i = 0; i < 4; i++) noiseHit(a, now + i * 0.07, 0.03, 0.16 - i * 0.03, 'highpass', 2400, 3000, 1.5);
+  noiseHit(a, now + 0.34, 0.06, 0.2, 'bandpass', 900, 600, 3);
+}
+
 // 智叶的居合：拇指把刀镡推开鞘口的一声轻响（很轻，一局里可能响好几回）
 export function playIaiPush(): void {
   const a = audio();

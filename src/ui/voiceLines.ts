@@ -109,6 +109,10 @@ const ABILITY_LINES: Record<string, VoiceLine[]> = {
     { key: 'luck', label: '运势', hint: '「波、来てる」', texts: ['运势'] },
     { key: 'sisters', label: '七姐妹', hint: '「星よ…」', texts: ['七姐妹'] },
   ],
+  megan: [
+    { key: 'duel', label: '决斗', hint: '她立直向一家决斗时', texts: ['决斗'] },
+    { key: 'blind', label: '伏牌', hint: '她把牌伏下时', texts: ['伏牌'] },
+  ],
   myeonghwa: [
     { key: 'song', label: '开嗓', hint: '她开始唱歌时', texts: ['开嗓'] },
     { key: 'cut', label: '断风', hint: '她对一家断风时', texts: ['断风'] },

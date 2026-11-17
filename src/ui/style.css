@@ -10077,3 +10077,369 @@ canvas.rii-sky {
     opacity: 0.9;
   }
 }
+
+/* ---------- 梅根·达文：决斗 ---------- */
+
+/* 听牌的对手头上的牛仔帽（只给操作她的玩家看） */
+.dist.mg-hat {
+  top: -17px;
+  bottom: auto;
+  padding: 0;
+  width: 36px;
+  height: 22px;
+  background: none;
+  border-radius: 0;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+.dist.mg-hat svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 决斗的对手头像上：准星和三发的转轮 */
+.mg-mark {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  pointer-events: auto;
+}
+.mg-mark b {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #ffb648;
+  border-radius: 50%;
+  box-shadow:
+    0 0 8px rgba(255, 170, 60, 0.8),
+    inset 0 0 6px rgba(255, 170, 60, 0.5);
+  background:
+    linear-gradient(#ffb648, #ffb648) center / 2px 62px no-repeat,
+    linear-gradient(#ffb648, #ffb648) center / 62px 2px no-repeat;
+  animation: mg-aim 1.4s ease-in-out infinite;
+}
+.mg-mark em {
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  display: flex;
+  gap: 3px;
+  padding: 2px 5px;
+  transform: translateX(-50%);
+  border-radius: 9px;
+  background: rgba(30, 20, 10, 0.88);
+  border: 1px solid #c08a3e;
+}
+.mg-mark em i {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffe7a8, #d99a2b 60%, #7a4f12);
+  box-shadow: 0 0 4px rgba(255, 190, 80, 0.9);
+}
+.mg-mark em i.spent {
+  background: #2a2018;
+  box-shadow: inset 0 0 2px #000;
+}
+.nameplate .mg-mark b {
+  width: 34px;
+  height: 34px;
+  background:
+    linear-gradient(#ffb648, #ffb648) center / 2px 46px no-repeat,
+    linear-gradient(#ffb648, #ffb648) center / 46px 2px no-repeat;
+}
+@keyframes mg-aim {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(0.86);
+    opacity: 0.7;
+  }
+}
+
+/* 决斗开始：正午。画面压成旧照片色，两家之间拉一条线，中间落下「決闘」 */
+.mg-noon {
+  position: absolute;
+  z-index: 59;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(255, 190, 90, 0.16), rgba(120, 70, 20, 0.42));
+  animation: mg-noon 2.4s ease-out forwards;
+}
+.mg-noon svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.mg-noon line {
+  stroke: #ffcf7a;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  filter: drop-shadow(0 0 2px rgba(255, 180, 60, 0.9));
+  animation: mg-line 0.6s 0.25s ease-out forwards;
+  vector-effect: non-scaling-stroke;
+  stroke-width: 2px;
+}
+.mg-noon span {
+  position: absolute;
+  width: 74px;
+  height: 74px;
+  margin: -37px 0 0 -37px;
+  border: 3px solid #ffcf7a;
+  border-radius: 50%;
+  opacity: 0;
+  box-shadow: 0 0 14px rgba(255, 180, 60, 0.9);
+  animation: mg-ring 0.9s 0.15s ease-out forwards;
+}
+.mg-noon span.mg-noon-b {
+  animation-delay: 0.75s;
+}
+.mg-noon > b {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  font-family: 'Noto Serif SC', 'Songti SC', serif;
+  font-size: 92px;
+  font-weight: 900;
+  letter-spacing: 12px;
+  color: #fff1cf;
+  text-shadow:
+    0 0 16px rgba(255, 170, 50, 0.95),
+    0 3px 0 #5a340f,
+    0 0 2px #000;
+  opacity: 0;
+  animation: mg-word 1.7s 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+}
+@keyframes mg-noon {
+  0% {
+    opacity: 0;
+  }
+  12%,
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes mg-line {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes mg-ring {
+  0% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+}
+@keyframes mg-word {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.8);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.04);
+  }
+}
+
+/* 击中：枪口焰、弹孔、「命中」 */
+.mg-flash {
+  position: absolute;
+  z-index: 60;
+  inset: 0;
+  pointer-events: none;
+  background: #fff3d6;
+  animation: mg-flash 0.5s ease-out forwards;
+}
+.mg-shot {
+  position: absolute;
+  z-index: 61;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.mg-shot i {
+  position: absolute;
+  left: -90px;
+  top: -90px;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fffbe8 0 12%, #ffd36a 26%, rgba(255, 120, 30, 0.75) 46%, rgba(255, 80, 20, 0) 70%);
+  animation: mg-muzzle 0.7s ease-out forwards;
+}
+.mg-shot u {
+  position: absolute;
+  left: -13px;
+  top: -13px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #000 0 38%, #2a1b10 52%, rgba(60, 40, 25, 0.6) 66%, transparent 72%);
+  box-shadow: 0 0 0 2px rgba(255, 220, 170, 0.25);
+  opacity: 0;
+  animation: mg-hole 2.1s 0.12s ease-out forwards;
+}
+.mg-shot b {
+  position: absolute;
+  left: 0;
+  top: -78px;
+  transform: translateX(-50%);
+  font-family: 'Noto Serif SC', 'Songti SC', serif;
+  font-size: 46px;
+  font-weight: 900;
+  letter-spacing: 6px;
+  white-space: nowrap;
+  color: #fff1cf;
+  text-shadow:
+    0 0 12px rgba(255, 120, 30, 0.95),
+    0 2px 0 #5a1a0a;
+  opacity: 0;
+  animation: mg-hitword 1.9s 0.15s ease-out forwards;
+}
+@keyframes mg-flash {
+  0% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes mg-muzzle {
+  0% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+@keyframes mg-hole {
+  0% {
+    opacity: 0;
+    transform: scale(2);
+  }
+  10%,
+  80% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes mg-hitword {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(1.6);
+  }
+  14%,
+  75% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+}
+
+/* 逃脱 */
+.mg-escape {
+  position: absolute;
+  z-index: 61;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.mg-escape b {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  font-family: 'Noto Serif SC', 'Songti SC', serif;
+  font-size: 64px;
+  font-weight: 900;
+  color: #d8dee8;
+  text-shadow:
+    0 0 10px rgba(160, 180, 210, 0.8),
+    0 2px 0 #1c2430;
+  opacity: 0;
+  animation: mg-escape 1.6s ease-out forwards;
+}
+@keyframes mg-escape {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.7);
+  }
+  20% {
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-30%, -70%) scale(1.1) rotate(8deg);
+    filter: blur(3px);
+  }
+}
+
+/* 伏牌：自己的手牌上罩一层帽檐的阴影（牌面还看得见，不然没法打） */
+.me.mg-blind .hand {
+  position: relative;
+}
+.me.mg-blind .hand::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  inset: -6px -8px 38% -8px;
+  border-radius: 10px 10px 60% 60% / 10px 10px 100% 100%;
+  background: linear-gradient(rgba(12, 8, 4, 0.78), rgba(12, 8, 4, 0.35) 70%, rgba(12, 8, 4, 0));
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mg-mark b {
+    animation: none;
+  }
+}
+
+/* 2D 的能力面板限高 200：说明文字长的时候，要按的选项（决斗、伏牌）会被挤到面板外面要滚动才看得见。
+   有选项时改成说明文字自己滚，选项一直露着 */
+.stage .ability-panel:has(.skill-choices) .ab-desc {
+  max-height: 66px;
+  overflow-y: auto;
+}
+
+/* 选项里现在按不了的那个要看得出来（2D 里按钮的配色把一般的灰掉盖住了） */
+.skill-choices .deep-btn:disabled {
+  opacity: 0.45;
+}

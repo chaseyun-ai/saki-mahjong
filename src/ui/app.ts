@@ -17,6 +17,8 @@ import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
 import { MYEONGHWA, myeonghwaCut, myeonghwaSinging, myeonghwaSong } from '../abilities/myeonghwa';
 import { cutTagHtml, fuujinBreeze, fuujinCut, fuujinGust, songHtml } from './fuujin';
+import { MEGAN, MEGAN_BULLET, MEGAN_STAND, duelledBy, meganBlind, meganDuel, meganDuelEnd, meganDuelTarget, meganSenses } from '../abilities/megan';
+import { duelEscape, duelMarkHtml, duelShot, duelStart, hatHtml } from './duel';
 import { Gale2D } from './gale2d';
 import { Stars2D } from './stars2d';
 import { Lily2D } from './lily2d';
@@ -54,7 +56,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playBreeze, playIaiDraw, playIaiPush, playIaiSheath, playSong, playLamp, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin } from './sound';
+import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playBreeze, playDuelMiss, playDuelStart, playDuelStep, playGunshot, playIaiDraw, playIaiPush, playIaiSheath, playSong, playLamp, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -1170,6 +1172,8 @@ export class App {
       this.voiceSeen.clear();
       preloadVoices(this.chars.map((c) => c?.id));
     }
+    // 梅根的决斗：对手每摸一次牌，转轮转一格
+    if (e.type === 'draw' && this.game && duelledBy(this.game, e.seat) !== null) playDuelStep();
     if (e.type === 'discard') {
       // 隐身的桃子打的牌：看不见也听不见。刚隐身的那一张照常打出去，牌河和手牌慢慢淡掉（不放立直特效）
       if (this.game!.stealthed(e.seat, this.me)) {
@@ -1238,6 +1242,33 @@ export class App {
       if (e.ability === 'satoha') {
         if (e.text === '看破') this.toast(e.seat, e.text, false);
         return;
+      }
+      // 梅根：决斗开始时画面压成正午、两家之间拉一条线；换牌（子弹、对峙）不出字；对手拆听逃了转轮空转一下
+      if (e.ability === 'megan') {
+        const g = this.game!;
+        if (e.text === MEGAN_BULLET || e.text === MEGAN_STAND) return;
+        const fx = (ms: number, run: (host: HTMLElement) => void) =>
+          window.setTimeout(() => {
+            const host = this.game === g ? this.fxHost() : null;
+            if (host) run(host);
+          }, ms);
+        if (e.text === '决斗' && e.target !== undefined) {
+          const t = e.target;
+          // 等「立直」的大字过去再放
+          fx(700, (host) => duelStart(host, POS[e.seat], POS[t]));
+          window.setTimeout(() => this.game === g && playDuelStart(), 700);
+        }
+        if (e.text === '逃脱' && e.target !== undefined) {
+          const t = e.target;
+          fx(0, (host) => duelEscape(host, POS[t]));
+          playDuelMiss();
+          this.toast(e.seat, `${this.chars[t].name}拆听，逃掉了`, false);
+          return;
+        }
+        if (e.text === '决斗结束' || e.text === '抬牌') {
+          this.toast(e.seat, e.text === '抬牌' ? '抬牌（役做出来了）' : '决斗结束', false);
+          return;
+        }
       }
       // 明华：起风每局都有，不出字，她座位上吹一阵风；场风悄悄摸来（只有操作她的人听得到一声风）；
       // 开嗓、升段时哼一句（越往后越长）；断风时那一家座位上的风被截断
@@ -1328,6 +1359,8 @@ export class App {
         if (this.iaiWinFx(w)) continue;
         // 明华唱着歌和牌：一阵风吹过整张桌子
         if (this.fuujinWinFx(w)) continue;
+        // 梅根决斗打中了：一声枪响
+        if (this.duelWinFx(w)) continue;
         // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
         const c = this.chars[w.seat];
         const word = w.from === null ? '自摸' : '荣和';
@@ -2171,7 +2204,7 @@ export class App {
     return `
       <div class="net-card ${POS[s]}${active}${mine ? ' mine' : ''}" data-seat="${s}">
         <div class="net-name">${mine ? 'のどっち' : c.name}</div>
-        <div class="portrait">${face}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.fjHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'net')}</div>
+        <div class="portrait">${face}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.fjHtml(s)}${this.mgHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'net')}</div>
         ${this.towerHtml(s)}${mine ? this.bladeBarHtml() : ''}
       </div>`;
   }
@@ -2317,6 +2350,38 @@ export class App {
     const art = skillArt(c.id, 'song-win');
     if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art, glyph: c.name.slice(-1) })) return true;
     return false;
+  }
+
+  // 梅根决斗的对手打出了她的和了牌：对手座位上一声枪响（素材页“决斗·击中”那格有动画就放那段），然后照一般的荣和放
+  private duelWinFx(w: WinInfo): boolean {
+    const g = this.game!;
+    const c = this.chars[w.seat];
+    if (c?.id !== 'megan' || w.from === null) return false;
+    const end = meganDuelEnd(g, w.seat);
+    if (!end || end.end !== 'hit' || end.target !== w.from) return false;
+    const host = this.fxHost();
+    if (host) duelShot(host, POS[w.from]);
+    playGunshot();
+    const art = skillArt(c.id, 'hit');
+    if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word: '荣和', kind: 'win', art, glyph: c.name.slice(-1) })) return true;
+    return false;
+  }
+
+  // 立直按钮：梅根现在立直是向谁决斗就写出来
+  private duelRiichiLabel(): string {
+    const g = this.game!;
+    if (this.chars[this.me]?.id !== 'megan' || this.vision) return '立直';
+    const t = meganDuelTarget(g, this.me);
+    return t === null ? '立直' : `决斗立直<small> → ${this.chars[t].name}</small>`;
+  }
+
+  // 梅根决斗的对手头像上：准星和转轮（谁都看得见：被决斗的人要知道这几巡别打生张）
+  private mgHtml(s: number): string {
+    const g = this.game;
+    if (!g || !this.chars.some((c) => c?.id === 'megan')) return '';
+    const by = duelledBy(g, s);
+    if (by === null) return '';
+    return duelMarkHtml(this.chars[by].name, meganDuel(g, by)!.left, MEGAN.duelSteps);
   }
 
   // 头像旁的东西：明华唱着歌时飘音符（谁都看得见，歌是唱给全桌听的）；被她断风的那一家挂一块“無風”
@@ -2935,7 +3000,7 @@ export class App {
       : [1, 2, 3]
           .map((s) => {
             const c = this.chars[s];
-            return `<div class="nameplate float ${POS[s]}" data-seat="${s}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.fjHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'plate')}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>${this.towerHtml(s)}</div>`;
+            return `<div class="nameplate float ${POS[s]}" data-seat="${s}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.fjHtml(s)}${this.mgHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'plate')}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>${this.towerHtml(s)}</div>`;
           })
           .join('');
     hud.innerHTML = `
@@ -3044,7 +3109,7 @@ export class App {
     return `
       <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.fjHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'seat')}</div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.fjHtml(s)}${this.mgHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'seat')}</div>
         ${this.towerHtml(s)}
         <div class="seat-info">${c.name}</div>${s === this.me ? this.bladeBarHtml() : ''}
       </div>`;
@@ -3108,6 +3173,11 @@ export class App {
     // 涅莉：手里还有运势就看得出谁听牌了
     if (this.chars[this.me]?.id === 'nelly' && !g.isSealed(this.me) && nellySenses(g, this.me)) {
       return nellySensesTenpai(g, s, this.me) ? '<span class="dist tenpai" title="运势：听牌了">听</span>' : '';
+    }
+    // 梅根：她自己听牌时，听牌的对手戴上牛仔帽
+    if (this.chars[this.me]?.id === 'megan') {
+      if (this.vision) return '';
+      return meganSenses(g, this.me).includes(s) ? hatHtml() : '';
     }
     // 智叶的间合：一到三道刀痕是还差几步，听牌了变红（旁边另有洋榎那种灯，见 bulbHtml）。连庄的庄家少算一步
     if (this.chars[this.me]?.id === 'satoha') {
@@ -3967,7 +4037,7 @@ export class App {
     });
     if (legal.some((a) => a.type === 'discard' && a.riichi)) {
       buttons.unshift(
-        `<button class="act riichi ${this.riichiMode ? 'on' : ''}" data-ui="riichi">${this.riichiMode ? '取消立直' : '立直'}</button>`,
+        `<button class="act riichi ${this.riichiMode ? 'on' : ''}" data-ui="riichi">${this.riichiMode ? '取消立直' : this.duelRiichiLabel()}</button>`,
       );
     }
 
@@ -3978,7 +4048,7 @@ export class App {
         : '';
     const c = this.chars[this.me];
     return `
-      <div class="me${c.id === 'satoha' ? ' iai' : ''}" style="--c:${c.color}">
+      <div class="me${c.id === 'satoha' ? ' iai' : ''}${c.id === 'megan' && meganBlind(g, this.me) ? ' mg-blind' : ''}" style="--c:${c.color}">
         <div class="actions">${buttons.join('')}</div>
         ${this.autoBtnHtml()}${this.assistHtml()}
         ${this.sketchPlanHtml()}${this.gbBarHtml()}${waitHtml}${hint}${this.riiPickerHtml()}
@@ -3990,7 +4060,7 @@ export class App {
         </div>`
             : ''
         }
-        ${withPlate && !this.netView ? `<div class="nameplate mine" data-seat="${this.me}"><div class="avatar">${c.name.slice(-1)}${this.fjHtml(this.me)}${this.riiLockHtml(this.me, 'plate')}</div><div class="pname">${this.seatLabel(this.me)}</div>${this.bladeBarHtml()}</div>` : ''}
+        ${withPlate && !this.netView ? `<div class="nameplate mine" data-seat="${this.me}"><div class="avatar">${c.name.slice(-1)}${this.fjHtml(this.me)}${this.mgHtml(this.me)}${this.riiLockHtml(this.me, 'plate')}</div><div class="pname">${this.seatLabel(this.me)}</div>${this.bladeBarHtml()}</div>` : ''}
       </div>`;
   }
 
