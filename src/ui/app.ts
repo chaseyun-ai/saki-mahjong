@@ -15,7 +15,7 @@ import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
-import { MYEONGHWA, myeonghwaCut, myeonghwaSinging, myeonghwaSong } from '../abilities/myeonghwa';
+import { MYEONGHWA, myeonghwaCut, myeonghwaSecondSong, myeonghwaSinging, myeonghwaSong, myeonghwaWinds } from '../abilities/myeonghwa';
 import { cutTagHtml, fuujinBreeze, fuujinCut, fuujinGust, songHtml } from './fuujin';
 import { MEGAN, MEGAN_BULLET, MEGAN_STAND, duelledBy, meganBlind, meganDuel, meganDuelEnd, meganDuelTarget, meganSenses } from '../abilities/megan';
 import { duelEscape, duelMarkHtml, duelShot, duelStart, hatHtml } from './duel';
@@ -1281,9 +1281,11 @@ export class App {
             if (host) fx(host);
           }, ms);
         if (e.text === '起风') {
-          const wind = g.seatWind(e.seat) - 27;
+          const winds = myeonghwaWinds(g, e.seat);
+          const wind = winds.seat - 27;
+          const more = [winds.round, winds.guest].filter((k): k is number => k !== null).map((k) => k - 27);
           const level = myeonghwaSinging(g, e.seat);
-          later(350, (host) => fuujinBreeze(host, POS[e.seat], wind, level));
+          later(350, (host) => fuujinBreeze(host, POS[e.seat], wind, level, more));
           playBreeze(0.5);
           return;
         }
@@ -1298,7 +1300,11 @@ export class App {
         if (e.text === '断风') {
           const t = myeonghwaCut(g, e.seat);
           if (t !== null) later(500, (host) => fuujinCut(host, POS[t]));
-        } else playSong(myeonghwaSong(g, e.seat));
+        } else {
+          playSong(myeonghwaSong(g, e.seat));
+          // 一场里的第二次开嗓：在场外唱够了带进来的，一阵大风吹过整张桌子
+          if (e.text === '开嗓' && myeonghwaSecondSong(g, e.seat)) later(450, (host) => fuujinGust(host, POS[e.seat]));
+        }
       }
       playChime(this.sayAbility(e.seat, e.text) ? VOICED_CUE : 1);
       // 大星淡的技能：平行宇宙换牌桌时画面错开一下（三种视角都有）；2D 牌桌上的光圈、流星、北斗七星（3D、2.5D 画在牌桌里）

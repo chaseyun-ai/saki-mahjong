@@ -9868,6 +9868,17 @@ canvas.rii-sky {
   opacity: 0;
   animation: fj-char 1.9s ease-out both;
 }
+.fj-breeze b {
+  white-space: nowrap;
+}
+.fj-breeze b small {
+  margin-left: 0.12em;
+  font-size: 0.46em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  opacity: 0.9;
+  vertical-align: 0.5em;
+}
 @keyframes fj-char {
   0% {
     opacity: 0;

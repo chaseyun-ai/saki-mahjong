@@ -42,8 +42,11 @@ describe('雀明华：登记', () => {
 });
 
 describe('雀明华：风', () => {
-  it('每一局配牌都有自风暗刻和一张场风；场风的第二张开局几巡之内摸到', async () => {
+  it('每一局配牌都有自风暗刻和一张场风；场风的第二张开局几巡之内摸到；南场配牌多一对客风，成对的风有时摸成暗刻', async () => {
     let rounds = 0;
+    let south = 0;
+    let grew = 0;
+    let came = 0;
     let long = 0;
     let paired = 0;
     for (let seed = 1; seed <= 12; seed++) {
@@ -53,8 +56,16 @@ describe('雀明华：风', () => {
       const g = newGame(seed, ids);
       let draws = 0;
       const check = () => {
-        const { seat: sw, round } = myeonghwaWinds(g, seat);
+        const { seat: sw, round, guest } = myeonghwaWinds(g, seat);
         const hand = g.players[seat].hand;
+        const label = `种子 ${seed} ${g.roundLabel()} 客风`;
+        if (g.roundWind === 0) expect(guest, label).toBe(null);
+        else {
+          expect(guest === null || guest === sw || guest === EAST + g.roundWind, label).toBe(false);
+          expect(hand.filter((t) => kindOf(t) === guest).length, label).toBeGreaterThanOrEqual(MYEONGHWA.guestWind);
+          south++;
+        }
+        came = 0;
         expect(hand.filter((t) => kindOf(t) === sw).length, `种子 ${seed} ${g.roundLabel()} 自风`).toBeGreaterThanOrEqual(3);
         if (round !== null) expect(hand.filter((t) => kindOf(t) === round).length, `种子 ${seed} ${g.roundLabel()} 场风`).toBeGreaterThanOrEqual(1);
         rounds++;
@@ -63,7 +74,10 @@ describe('雀明华：风', () => {
       g.onEvent((e) => {
         if (e.type === 'roundStart') check();
         if (e.type === 'draw' && e.seat === seat) draws++;
+        if (e.type === 'ability' && e.ability === 'myeonghwa' && e.text === '风来') came++;
         if (e.type !== 'roundEnd') return;
+        // 一局里风来了不止一次：除了场风的第二张，还有一对摸成了暗刻
+        if (g.roundWind >= 1 && came >= 2) grew++;
         const { round } = myeonghwaWinds(g, seat);
         if (round === null || draws < MYEONGHWA.roundWithin) return;
         long++;
@@ -77,6 +91,8 @@ describe('雀明华：风', () => {
       await new Promise((r) => setTimeout(r, 0));
     }
     expect(rounds).toBeGreaterThan(80);
+    expect(south).toBeGreaterThan(20);
+    expect(grew).toBeGreaterThan(0);
     expect(long).toBeGreaterThan(20);
     // 别人先拿走三张的局凑不成，极少
     expect(paired / long).toBeGreaterThan(0.9);
@@ -86,14 +102,15 @@ describe('雀明华：风', () => {
     const g = newGame(3, ['myeonghwa', 'izumi', 'izumi', 'izumi']);
     // 东一局坐庄：自风、场风都是东
     expect(g.dealer).toBe(0);
-    expect(myeonghwaWinds(g, 0)).toEqual({ seat: EAST, round: null });
+    expect(myeonghwaWinds(g, 0)).toEqual({ seat: EAST, round: null, guest: null });
     expect(myeonghwaWinds(g, 1).round).toBe(EAST);
   });
 });
 
 describe('雀明华：歌', () => {
-  it('电脑一场只开一次嗓；她和牌升一段，别人和牌就停，停了不再唱', async () => {
+  it('电脑一场最多开两次嗓，第二次在南场；她和牌升一段，别人和牌就停', async () => {
     let opened = 0;
+    let twice = 0;
     let stopped = 0;
     let rose = 0;
     for (let seed = 1; seed <= 12; seed++) {
@@ -103,7 +120,10 @@ describe('雀明华：歌', () => {
       let mine = 0;
       let before = myeonghwaSong(g, seat);
       g.onEvent((e) => {
-        if (e.type === 'ability' && e.ability === 'myeonghwa' && e.text === '开嗓') mine++;
+        if (e.type === 'ability' && e.ability === 'myeonghwa' && e.text === '开嗓') {
+          mine++;
+          if (mine === 2) expect(g.roundWind, `种子 ${seed} 第二次开嗓`).toBeGreaterThanOrEqual(1);
+        }
         if (e.type === 'ability' && e.ability === 'myeonghwa' && e.text === '歌停了') stopped++;
         if (e.type === 'roundStart') before = myeonghwaSong(g, seat);
         if (e.type !== 'roundEnd') return;
@@ -120,75 +140,82 @@ describe('雀明华：歌', () => {
       });
       if (myeonghwaSong(g, seat) > 0) mine++;
       play(g, ids);
-      expect(mine, `种子 ${seed}`).toBeLessThanOrEqual(1);
+      expect(mine, `种子 ${seed}`).toBeLessThanOrEqual(MYEONGHWA.songs);
+      if (mine === 2) twice++;
       opened += mine;
       await new Promise((r) => setTimeout(r, 0));
     }
     expect(opened).toBeGreaterThan(6);
+    expect(twice).toBeGreaterThan(0);
     expect(stopped).toBeGreaterThan(3);
     expect(rose).toBeGreaterThan(0);
   }, 120000);
 
-  it('玩家发牌前选了才唱；一场一次', () => {
-    const ids = ['izumi', 'myeonghwa', 'izumi', 'izumi'];
-    const g = newGame(5, ids);
-    g.manual[1] = true;
-    let asked = 0;
-    let sangAt = -1;
-    play(g, ids, () => {
-      asked++;
-      const opts = myeonghwaAbility.preDeal!(g, 1);
-      const song = opts.find((o) => o.id === 'song')!;
-      if (asked === 2) {
-        expect(song.enabled).toBe(true);
-        myeonghwaAbility.setPreDeal!(g, 1, ['song']);
-        sangAt = g.round + 1;
-      } else {
-        if (asked > 2) expect(song.enabled).toBe(false);
-        myeonghwaAbility.setPreDeal!(g, 1, []);
-      }
-    });
-    expect(asked).toBeGreaterThan(2);
-    expect(sangAt).toBeGreaterThan(0);
-    const texts = g.events.filter((e) => e.type === 'ability' && e.ability === 'myeonghwa').map((e) => (e as { text: string }).text);
-    expect(texts.filter((t) => t === '开嗓').length).toBe(1);
-  }, 60000);
+  it('玩家发牌前选了才唱；一场两次，第二次要进了南场、歌停着', () => {
+    let twice = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const ids = ['izumi', 'myeonghwa', 'izumi', 'izumi'];
+      const g = newGame(seed, ids);
+      g.manual[1] = true;
+      let asked = 0;
+      let picked = 0;
+      play(g, ids, () => {
+        asked++;
+        const song = myeonghwaAbility.preDeal!(g, 1).find((o) => o.id === 'song')!;
+        const label = `种子 ${seed} ${g.roundLabel()}`;
+        // 第一局不唱（没选就不唱）；之后能唱就唱
+        if (asked === 1) expect(song.enabled, label).toBe(true);
+        if (picked === 1) expect(song.enabled, label).toBe(myeonghwaSong(g, 1) === 0 && g.roundWind >= 1);
+        if (picked >= 2) expect(song.enabled, label).toBe(false);
+        if (asked >= 2 && song.enabled) {
+          myeonghwaAbility.setPreDeal!(g, 1, ['song']);
+          picked++;
+        } else myeonghwaAbility.setPreDeal!(g, 1, []);
+      });
+      const texts = g.events.filter((e) => e.type === 'ability' && e.ability === 'myeonghwa').map((e) => (e as { text: string }).text);
+      expect(texts.filter((t) => t === '开嗓').length, `种子 ${seed}`).toBe(picked);
+      expect(picked).toBeGreaterThanOrEqual(1);
+      if (picked === 2) twice++;
+    }
+    expect(twice).toBeGreaterThan(0);
+  }, 120000);
 });
 
 describe('雀明华：断风', () => {
-  it('选了一家：那一家这一局配牌里没有风牌、也摸不到；她自己这一局没有风牌的加护，歌不起作用；一场一次', () => {
+  it('选了一家：那一家这一局配牌里没有风牌、也摸不到；她的歌这一局不起作用，自己的风牌照收；不限次数', () => {
     let cuts = 0;
     for (let seed = 1; seed <= 6; seed++) {
       const ids = ['izumi', 'myeonghwa', 'izumi', 'izumi'];
       const g = newGame(seed, ids);
       g.manual[1] = true;
       let asked = 0;
-      let cutRound = -1;
+      let cutting = false;
+      let sangAt = -1;
       g.onEvent((e) => {
-        if (e.type === 'roundStart' && g.round === cutRound) {
-          expect(myeonghwaCut(g, 1)).toBe(3);
-          expect(myeonghwaSinging(g, 1)).toBe(0);
-          expect(g.players[3].hand.filter(isWind).length, `种子 ${seed} 配牌`).toBe(0);
+        if (e.type === 'roundStart') {
+          const label = `种子 ${seed} ${g.roundLabel()}`;
+          expect(myeonghwaCut(g, 1), label).toBe(cutting ? 3 : null);
+          if (!cutting) return;
+          expect(myeonghwaSinging(g, 1), label).toBe(0);
+          if (g.round === sangAt) expect(myeonghwaSong(g, 1), label).toBe(1);
+          expect(g.players[3].hand.filter(isWind).length, `${label} 配牌`).toBe(0);
+          expect(g.players[1].hand.filter((t) => kindOf(t) === g.seatWind(1)).length, `${label} 自风`).toBeGreaterThanOrEqual(3);
           cuts++;
         }
-        if (e.type === 'draw' && e.seat === 3 && g.round === cutRound && g.players[3].melds.every((m) => !m.type.includes('kan'))) expect(isWind(g.players[3].drawn!), `种子 ${seed} 摸牌`).toBe(false);
+        if (e.type === 'draw' && e.seat === 3 && cutting && g.players[3].melds.every((m) => !m.type.includes('kan'))) expect(isWind(g.players[3].drawn!), `种子 ${seed} 摸牌`).toBe(false);
       });
       play(g, ids, () => {
         asked++;
         const opts = myeonghwaAbility.preDeal!(g, 1);
-        if (asked === 1) {
-          expect(opts.find((o) => o.id === 'cut@2')!.enabled).toBe(true);
-          // 上家是 seat 0，对家是 seat 3
-          myeonghwaAbility.setPreDeal!(g, 1, ['cut@2']);
-          cutRound = g.round + 1;
-        } else {
-          expect(opts.filter((o) => o.id.startsWith('cut@')).every((o) => !o.enabled)).toBe(true);
-          myeonghwaAbility.setPreDeal!(g, 1, []);
-        }
+        // 每一局都选得了
+        expect(opts.find((o) => o.id === 'cut@2')!.enabled).toBe(true);
+        // 第二、第三局连着断风（对家是 seat 3），第二局同时开嗓：歌开起来了，但这一局不起作用
+        cutting = asked === 2 || asked === 3;
+        myeonghwaAbility.setPreDeal!(g, 1, cutting ? (asked === 2 ? ['song', 'cut@2'] : ['cut@2']) : []);
+        if (asked === 2) sangAt = g.round + 1;
       });
-      expect(myeonghwaCut(g, 1) === null || g.round === cutRound).toBe(true);
     }
-    expect(cuts).toBe(6);
+    expect(cuts).toBeGreaterThanOrEqual(8);
   }, 60000);
 
   it('电脑：初美坐北家的局对她断风，那一局初美配牌里没有风牌', async () => {
@@ -197,17 +224,16 @@ describe('雀明华：断风', () => {
     for (let seed = 1; seed <= 8; seed++) {
       const ids = ['myeonghwa', 'izumi', 'hatsumi', 'izumi'];
       const g = newGame(seed, ids);
-      let sat = false;
       const check = () => {
         const north = g.seatWind(2) === NORTH;
-        // 一场一次：初美坐北家的第一局就用
-        expect(myeonghwaCut(g, 0), `种子 ${seed} ${g.roundLabel()}`).toBe(north && !sat ? 2 : null);
-        if (north && !sat) {
+        // 不限次数：初美坐北家的局都用，那一局不开嗓
+        expect(myeonghwaCut(g, 0), `种子 ${seed} ${g.roundLabel()}`).toBe(north ? 2 : null);
+        if (north) {
+          expect(myeonghwaSinging(g, 0), `种子 ${seed} ${g.roundLabel()}`).toBe(0);
           expect(g.players[2].hand.filter(isWind).length, `种子 ${seed} ${g.roundLabel()}`).toBe(0);
           cuts++;
           norths++;
         }
-        sat ||= north;
       };
       g.onEvent((e) => e.type === 'roundStart' && check());
       check();

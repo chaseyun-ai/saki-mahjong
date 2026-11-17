@@ -19,14 +19,15 @@ function streaksSvg(): string {
   return `<svg viewBox="0 0 300 160" aria-hidden="true">${STREAKS.map((d, i) => `<path d="${d}" pathLength="100" style="animation-delay:${i * 90}ms"/>`).join('')}</svg>`;
 }
 
-// 开局起风：她座位上一阵青白色的风，风里浮出这一局自风的字。level 是歌唱到第几段（唱着的局风更大）
-export function fuujinBreeze(host: HTMLElement, pos: string, wind: number, level: number): void {
+// 开局起风：她座位上一阵青白色的风，风里浮出这一局自风的字，旁边小一号的是这一局还收的风（场风、南场的客风）。
+// level 是歌唱到第几段（唱着的局风更大）
+export function fuujinBreeze(host: HTMLElement, pos: string, wind: number, level: number, more: number[] = []): void {
   const [x, y] = SPOT[pos] ?? SPOT.bottom;
   const el = document.createElement('div');
   el.className = `fj-breeze l${level}`;
   el.style.left = `${x}%`;
   el.style.top = `${y}%`;
-  el.innerHTML = `${streaksSvg()}<b>${WIND_CHAR[wind] ?? ''}</b>`;
+  el.innerHTML = `${streaksSvg()}<b>${WIND_CHAR[wind] ?? ''}${more.length ? `<small>${more.map((k) => WIND_CHAR[k] ?? '').join('')}</small>` : ''}</b>`;
   host.appendChild(el);
   window.setTimeout(() => el.remove(), 2100);
 }
