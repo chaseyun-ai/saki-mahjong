@@ -45,6 +45,7 @@ import { yumiAbility } from './yumi';
 import { kinueAbility } from './kinue';
 import { huiyuAbility } from './huiyu';
 import { satohaAbility } from './satoha';
+import { myeonghwaAbility } from './myeonghwa';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -93,6 +94,7 @@ export interface AiStyle {
   pin1?: boolean; // 爱宕娟慧：留着一筒
   twin: boolean; // 鹤田姬子：钥匙的那一局只照着那副牌打，先打不要的牌，不立直、不鸣牌、不荣和，等自摸
   iai?: boolean; // 辻垣内智叶：靠间合防守（只防真的听牌的人）；听牌时挑听立直家现物的听法；别人连庄的局，碰了能跳过庄家摸牌的就碰；第 3 局起照浩子的资料本打（scout）
+  fuujin?: boolean; // 雀明华：自风暗刻在手就算有役，不退向听就鸣
   gb?: boolean; // 郝慧宇：照国标番种打，先打番种用不到的牌，听牌挑国标番多的；不立直，只在鸣了日麻还有役时鸣，一向听以内照样推
 }
 
@@ -250,6 +252,22 @@ export const CHARACTERS: Character[] = [
     ],
     // 全国个人赛第三，几乎不失误。有役、默听够 2600 点就不立直；别人立直时鸣牌消一发
     ai: { ...baseAi, mistakeRate: 0.01, damaMin: 2600, jam: true, iai: true },
+  },
+  {
+    id: 'myeonghwa',
+    cost: 4,
+    name: '雀明华',
+    school: '临海女子',
+    color: '#8f86d9',
+    ability: myeonghwaAbility,
+    // 开嗓：歌唱起来的那一局开头；断风：对一家断风的那一局开头；风神和牌：唱着歌和牌
+    skillArts: [
+      { id: 'song', name: '开嗓', hint: '她开始唱歌的那一局开头放' },
+      { id: 'cut', name: '断风', hint: '她对一家断风的那一局开头放' },
+      { id: 'song-win', name: '风神和牌', label: '风神·和牌', hint: '她唱着歌和牌时放' },
+    ],
+    // 欧洲联赛排名第一。自风暗刻一番到手，放心鸣牌
+    ai: { ...baseAi, mistakeRate: 0.03, fuujin: true },
   },
   {
     id: 'sawaya',

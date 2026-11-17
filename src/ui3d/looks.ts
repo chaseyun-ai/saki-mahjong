@@ -143,6 +143,8 @@ export const LOOKS: Record<string, Look> = {
   hatsumi: { model: 'models/vroid-e.v2.glb', hair: '#b8875a', eyes: '#7a4ab0', hairContrast: 0.6, reveal: 'slam', pose: 'edge', borrowed: true },
   // 辻垣内智叶：先占位，借霞的长发模型换成黑色头发、灰紫色眼睛（比赛时扎马尾、戴眼镜，占位模型做不出来）
   satoha: { model: 'models/vroid-shino.v2.glb', hair: '#1f1e26', eyes: '#55506e', hairContrast: 0.5, reveal: 'slam', pose: 'edge', borrowed: true },
+  // 雀明华：先占位，借和的长发模型换成灰金色头发、红色眼睛（小阳伞占位模型做不出来）
+  myeonghwa: { model: 'models/vroid-g.v2.glb', hair: '#cfc4a8', eyes: '#b23a48', hairContrast: 0.6, reveal: 'wave', pose: 'lap', borrowed: true },
   // 臼泽塞：先占位，借咲的短发模型换成深棕色头发、棕色眼睛
   sae: { model: 'models/vroid-e.v2.glb', hair: '#4a3226', eyes: '#6a4a36', hairContrast: 0.6, reveal: 'wave', pose: 'crossed', borrowed: true },
 };

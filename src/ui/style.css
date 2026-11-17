@@ -9793,3 +9793,287 @@ canvas.rii-sky {
     animation: awai2d-lock 0.7s both;
   }
 }
+
+/* ---------- 雀明华：风神 ---------- */
+
+/* 开局起风：她座位上一阵青白色的风，风里浮出自风的字 */
+.fj-breeze,
+.fj-cutfx {
+  position: absolute;
+  z-index: 58;
+  width: min(34vmin, 300px);
+  aspect-ratio: 300 / 160;
+  translate: -50% -50%;
+  pointer-events: none;
+}
+.fj-breeze svg,
+.fj-cutfx svg,
+.fj-gust svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.fj-breeze path,
+.fj-cutfx path,
+.fj-gust path {
+  fill: none;
+  stroke: #dff6ff;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-dasharray: 34 100;
+  stroke-dashoffset: 34;
+  opacity: 0;
+  filter: drop-shadow(0 0 4px rgba(150, 225, 255, 0.9));
+  animation: fj-streak 1.5s cubic-bezier(0.3, 0.1, 0.3, 1) both;
+}
+.fj-breeze.l2 path,
+.fj-breeze.l3 path {
+  stroke-width: 3.2;
+}
+.fj-breeze.l3 {
+  width: min(44vmin, 380px);
+}
+@keyframes fj-streak {
+  0% {
+    stroke-dashoffset: 34;
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.95;
+  }
+  80% {
+    opacity: 0.7;
+  }
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+.fj-breeze b,
+.fj-cutfx b {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  font-family: 'LXGW WenKai TC', 'Kaiti SC', KaiTi, STKaiti, serif;
+  font-size: min(11vmin, 84px);
+  font-weight: 700;
+  line-height: 1;
+  color: #f2fbff;
+  text-shadow:
+    0 0 10px rgba(120, 215, 255, 0.95),
+    0 2px 6px rgba(0, 20, 40, 0.7);
+  opacity: 0;
+  animation: fj-char 1.9s ease-out both;
+}
+@keyframes fj-char {
+  0% {
+    opacity: 0;
+    transform: translateX(-18px) scale(0.9);
+    filter: blur(4px);
+  }
+  22% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(26px);
+    filter: blur(5px);
+  }
+}
+
+/* 断风：风丝划到一半被一道横线截断，留下“無風” */
+.fj-cutfx path {
+  animation-duration: 0.9s;
+}
+.fj-cutfx i {
+  position: absolute;
+  left: -6%;
+  right: -6%;
+  top: 50%;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff 20%, #fff 80%, rgba(255, 255, 255, 0));
+  box-shadow: 0 0 10px 2px rgba(190, 235, 255, 0.9);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  animation: fj-sever 0.9s 0.45s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+@keyframes fj-sever {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  40% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+.fj-cutfx b {
+  font-size: min(6vmin, 46px);
+  letter-spacing: 6px;
+  color: #c9d3de;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  animation: fj-char 1.7s 0.5s ease-out both;
+}
+
+/* 唱着歌和牌：风吹过整张桌子，带着花瓣 */
+.fj-gust {
+  position: absolute;
+  inset: 0;
+  z-index: 59;
+  overflow: hidden;
+  pointer-events: none;
+}
+.fj-gust-in {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 150vmax;
+  height: 70vmin;
+  margin: -35vmin 0 0 -75vmax;
+}
+.fj-gust svg + svg {
+  top: 34%;
+  left: -12%;
+}
+.fj-gust path {
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  stroke-width: 4px;
+  animation-duration: 1.3s;
+}
+.fj-gust u {
+  position: absolute;
+  left: -4%;
+  width: 14px;
+  height: 9px;
+  border-radius: 80% 10% 80% 10%;
+  background: linear-gradient(135deg, #fff, #ffd3e2);
+  opacity: 0;
+  animation: fj-petal 1.5s cubic-bezier(0.2, 0.5, 0.4, 1) both;
+}
+@keyframes fj-petal {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(var(--r)) scale(var(--s));
+  }
+  15% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(110vmax, -8vmin) rotate(calc(var(--r) + 540deg)) scale(var(--s));
+  }
+}
+
+/* 头像旁的音符：歌唱到第几段就飘几组 */
+.fj-song {
+  position: absolute;
+  z-index: 3;
+  right: -6px;
+  top: -8px;
+  width: 0;
+  height: 0;
+  pointer-events: auto;
+}
+.fj-song em {
+  position: absolute;
+  right: -2px;
+  top: -4px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  white-space: nowrap;
+  color: #10303c;
+  background: linear-gradient(#e9fbff, #a9e3f5);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  text-shadow: none;
+}
+.fj-song i {
+  position: absolute;
+  right: calc(6px + var(--i) * 9px);
+  top: -14px;
+  font-style: normal;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1;
+  color: #e6faff;
+  text-shadow:
+    0 0 6px rgba(120, 215, 255, 0.95),
+    0 1px 2px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  animation: fj-note 3.2s linear infinite;
+}
+.fj-song.l3 i {
+  font-size: 20px;
+  color: #fff6d8;
+  text-shadow:
+    0 0 7px rgba(255, 215, 120, 0.95),
+    0 1px 2px rgba(0, 0, 0, 0.6);
+}
+@keyframes fj-note {
+  0% {
+    opacity: 0;
+    transform: translate(0, 4px) rotate(-8deg);
+  }
+  12% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(10px, -34px) rotate(12deg);
+  }
+}
+.nameplate .fj-song {
+  right: -4px;
+  top: -4px;
+}
+/* 头像框上已经有“歌·X段”的牌子，音符旁边那块小牌子只在名牌（2.5D、3D）上留着 */
+.portrait .fj-song em {
+  display: none;
+}
+.nameplate .fj-song em {
+  font-size: 10px;
+  line-height: 15px;
+}
+
+/* 被断风的那一家头像上的小牌子 */
+.fj-cut {
+  position: absolute;
+  z-index: 3;
+  left: -6px;
+  top: -8px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  white-space: nowrap;
+  color: #e3e8ee;
+  background: #4a5560;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  text-shadow: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fj-song i {
+    animation: none;
+    opacity: 0.9;
+  }
+}

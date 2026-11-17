@@ -15,6 +15,8 @@ import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
 import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
+import { MYEONGHWA, myeonghwaCut, myeonghwaSinging, myeonghwaSong } from '../abilities/myeonghwa';
+import { cutTagHtml, fuujinBreeze, fuujinCut, fuujinGust, songHtml } from './fuujin';
 import { Gale2D } from './gale2d';
 import { Stars2D } from './stars2d';
 import { Lily2D } from './lily2d';
@@ -52,7 +54,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playIaiDraw, playIaiPush, playIaiSheath, playLamp, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin } from './sound';
+import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playBreeze, playIaiDraw, playIaiPush, playIaiSheath, playSong, playLamp, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -1237,6 +1239,36 @@ export class App {
         if (e.text === '看破') this.toast(e.seat, e.text, false);
         return;
       }
+      // 明华：起风每局都有，不出字，她座位上吹一阵风；场风悄悄摸来（只有操作她的人听得到一声风）；
+      // 开嗓、升段时哼一句（越往后越长）；断风时那一家座位上的风被截断
+      if (e.ability === 'myeonghwa') {
+        const g = this.game!;
+        // 第一局的发牌前面板关掉以后牌桌才建好，所以等一下再找画特效的那一层
+        const later = (ms: number, fx: (host: HTMLElement) => void) =>
+          window.setTimeout(() => {
+            const host = this.game === g ? this.fxHost() : null;
+            if (host) fx(host);
+          }, ms);
+        if (e.text === '起风') {
+          const wind = g.seatWind(e.seat) - 27;
+          const level = myeonghwaSinging(g, e.seat);
+          later(350, (host) => fuujinBreeze(host, POS[e.seat], wind, level));
+          playBreeze(0.5);
+          return;
+        }
+        if (e.text === '风来') {
+          if (e.seat === this.me && !this.vision) playBreeze(0.35);
+          return;
+        }
+        if (e.text === '歌停了') {
+          this.toast(e.seat, e.text, false);
+          return;
+        }
+        if (e.text === '断风') {
+          const t = myeonghwaCut(g, e.seat);
+          if (t !== null) later(500, (host) => fuujinCut(host, POS[t]));
+        } else playSong(myeonghwaSong(g, e.seat));
+      }
       playChime(this.sayAbility(e.seat, e.text) ? VOICED_CUE : 1);
       // 大星淡的技能：平行宇宙换牌桌时画面错开一下（三种视角都有）；2D 牌桌上的光圈、流星、北斗七星（3D、2.5D 画在牌桌里）
       if (e.ability === 'awai') this.awaiSkillFx2d(e.seat, e.text);
@@ -1294,6 +1326,8 @@ export class App {
         if (this.gbWinFx(w)) continue;
         // 智叶没立直和牌：先一道刀光；结束了别人的连庄出「斬」
         if (this.iaiWinFx(w)) continue;
+        // 明华唱着歌和牌：一阵风吹过整张桌子
+        if (this.fuujinWinFx(w)) continue;
         // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
         const c = this.chars[w.seat];
         const word = w.from === null ? '自摸' : '荣和';
@@ -2137,7 +2171,7 @@ export class App {
     return `
       <div class="net-card ${POS[s]}${active}${mine ? ' mine' : ''}" data-seat="${s}">
         <div class="net-name">${mine ? 'のどっち' : c.name}</div>
-        <div class="portrait">${face}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'net')}</div>
+        <div class="portrait">${face}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.fjHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'net')}</div>
         ${this.towerHtml(s)}${mine ? this.bladeBarHtml() : ''}
       </div>`;
   }
@@ -2269,6 +2303,34 @@ export class App {
 
   private fxHost(): HTMLElement | null {
     return document.getElementById('toasts')?.parentElement ?? null;
+  }
+
+  // 明华唱着歌和牌：风从她的座位吹过整张桌子（素材页“风神·和牌”那格有动画就放那段）。没在唱照一般的和牌放
+  private fuujinWinFx(w: WinInfo): boolean {
+    const g = this.game!;
+    const c = this.chars[w.seat];
+    if (c?.id !== 'myeonghwa' || myeonghwaSinging(g, w.seat) <= 0) return false;
+    const host = this.fxHost();
+    if (host) fuujinGust(host, POS[w.seat]);
+    playBreeze(1);
+    const word = w.from === null ? '自摸' : '荣和';
+    const art = skillArt(c.id, 'song-win');
+    if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art, glyph: c.name.slice(-1) })) return true;
+    return false;
+  }
+
+  // 头像旁的东西：明华唱着歌时飘音符（谁都看得见，歌是唱给全桌听的）；被她断风的那一家挂一块“無風”
+  private fjHtml(s: number): string {
+    const g = this.game;
+    if (!g || !this.chars.some((c) => c?.id === 'myeonghwa')) return '';
+    let out = '';
+    if (this.chars[s]?.id === 'myeonghwa') {
+      const level = myeonghwaSong(g, s);
+      const on = myeonghwaSinging(g, s) > 0;
+      if (level > 0) out += songHtml(level, performance.now() % 3200, on ? `歌 第${'一二三'[level - 1]}段：配牌、进张 +${Math.round(MYEONGHWA.songDraw[level] * 100)}%。她和牌升一段，别人和牌就停` : '歌还在唱，但这一局不起作用');
+    }
+    if ([0, 1, 2, 3].some((o) => o !== s && myeonghwaCut(g, o) === s)) out += cutTagHtml();
+    return out;
   }
 
   // 她没立直和牌：一道刀光（荣和切向放铳的人，自摸横切另外三家），刀光过后才出「自摸」「荣和」；
@@ -2873,7 +2935,7 @@ export class App {
       : [1, 2, 3]
           .map((s) => {
             const c = this.chars[s];
-            return `<div class="nameplate float ${POS[s]}" data-seat="${s}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'plate')}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>${this.towerHtml(s)}</div>`;
+            return `<div class="nameplate float ${POS[s]}" data-seat="${s}" style="--c:${c.color}"><div class="avatar">${c.name.slice(-1)}${this.bulbHtml(s)}${this.fjHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'plate')}</div><div><div class="pname">${this.seatLabel(s)}</div><div class="pability">${this.blockedText(s) ?? (c.ability?.name ?? '无能力')}</div></div>${this.towerHtml(s)}</div>`;
           })
           .join('');
     hud.innerHTML = `
@@ -2982,7 +3044,7 @@ export class App {
     return `
       <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
         ${this.teamOf(s) ? `<span class="tm-ribbon" style="--t:${this.teamOf(s)!.color}">${this.teamOf(s)!.name}</span>` : ''}
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'seat')}</div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.fjHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'seat')}</div>
         ${this.towerHtml(s)}
         <div class="seat-info">${c.name}</div>${s === this.me ? this.bladeBarHtml() : ''}
       </div>`;
@@ -3928,7 +3990,7 @@ export class App {
         </div>`
             : ''
         }
-        ${withPlate && !this.netView ? `<div class="nameplate mine" data-seat="${this.me}"><div class="avatar">${c.name.slice(-1)}${this.riiLockHtml(this.me, 'plate')}</div><div class="pname">${this.seatLabel(this.me)}</div>${this.bladeBarHtml()}</div>` : ''}
+        ${withPlate && !this.netView ? `<div class="nameplate mine" data-seat="${this.me}"><div class="avatar">${c.name.slice(-1)}${this.fjHtml(this.me)}${this.riiLockHtml(this.me, 'plate')}</div><div class="pname">${this.seatLabel(this.me)}</div>${this.bladeBarHtml()}</div>` : ''}
       </div>`;
   }
 

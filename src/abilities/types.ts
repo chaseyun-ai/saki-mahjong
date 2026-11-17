@@ -25,6 +25,8 @@ export const PRIORITY = {
   koromo: 20,
   kasumi: 30,
   nelly: 40,
+  // 雀明华的风牌：在初美前面（她坐西、南家时自风暗刻先到手，初美挑还凑得出的风）
+  myeonghwa: 42,
   // 薄墨初美坐北家的局：西风、南风留给她
   hatsumi: 45,
   self: 100,

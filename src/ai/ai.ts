@@ -13,6 +13,7 @@ import { KOROMO, KOROMO_READERS, koromoDisruptor, koromoHaiteiOn, koromoHaiteiRe
 import { mihokoEyeOpen, mihokoLikelySafe, mihokoSafeKinds } from '../abilities/mihoko';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { satohaCutsDealer, satohaDistance, satohaScouts } from '../abilities/satoha';
+import { myeonghwaYaku } from '../abilities/myeonghwa';
 import { seikoFish } from '../abilities/seiko';
 import { warmKind } from '../abilities/yu';
 import { yuukiActive } from '../abilities/yuuki';
@@ -1417,7 +1418,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const callCur = kimonGoal ? callSh(counts, p.melds.length) : cur;
   // 坐北家、东北还没鸣齐：东北还碰得到时，别的牌最多鸣到还留得下东北和西南（副露一共三副，手里留西刻、南对）
   const enSlots = style.winds && !g.isSealed(seat) && !kimon ? hatsumiSlotsNeeded(g, seat) : 0;
-  const yakuSecured = hasYakuhaiMeld(g, seat) || kimon;
+  // 明华：自风暗刻在手里，役已经有了
+  const yakuSecured = hasYakuhaiMeld(g, seat) || kimon || (!!style.fuujin && myeonghwaYaku(g, seat));
   // 真子：手里别的花色只剩两张以内，染手那门和字牌能鸣（混一色）；爽开了红云、白云、黑云、海神威，霞请神后，宥也一样
   // 霞请神后做绝掉的那门，宥做万子
   const sealedMe = g.isSealed(seat);

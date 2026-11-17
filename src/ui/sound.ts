@@ -149,6 +149,62 @@ export function playIaiDraw(): void {
   });
 }
 
+// 明华的歌：哼一句。唱到第几段就哼几个音再加两个（五声音阶往上走），每个音带一点颤
+export function playSong(level: number): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const scale = [523.25, 587.33, 659.25, 783.99, 880, 1046.5];
+  const n = Math.min(scale.length, 2 + Math.max(1, level));
+  for (let i = 0; i < n; i++) {
+    const t = now + i * 0.19;
+    const osc = a.createOscillator();
+    const vib = a.createOscillator();
+    const depth = a.createGain();
+    const gain = a.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = scale[i];
+    vib.frequency.value = 5.5;
+    depth.gain.value = 5;
+    vib.connect(depth).connect(osc.frequency);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.13, t + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + (i === n - 1 ? 0.7 : 0.3));
+    osc.connect(gain).connect(bus('sfx', a));
+    osc.start(t);
+    vib.start(t);
+    osc.stop(t + 0.8);
+    vib.stop(t + 0.8);
+    tone(a, scale[i] * 2, t, 0.25, 0.02, 'sine');
+  }
+}
+
+// 明华的风：一阵风吹过去的“呼”（带通的噪声，音高先升后降）。vol 0–1
+export function playBreeze(vol = 1): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const dur = 1.1;
+  const len = Math.floor(a.sampleRate * dur);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.Q.value = 1.2;
+  filter.frequency.setValueAtTime(500, now);
+  filter.frequency.exponentialRampToValueAtTime(1500, now + dur * 0.45);
+  filter.frequency.exponentialRampToValueAtTime(600, now + dur);
+  const gain = a.createGain();
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.22 * vol, now + dur * 0.4);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  src.connect(filter).connect(gain).connect(bus('sfx', a));
+  src.start(now);
+}
+
 // 智叶的居合：拇指把刀镡推开鞘口的一声轻响（很轻，一局里可能响好几回）
 export function playIaiPush(): void {
   const a = audio();
