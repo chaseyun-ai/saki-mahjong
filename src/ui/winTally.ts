@@ -25,3 +25,12 @@ export function lastWinners(g: Game): number[] {
   }
   return [];
 }
+
+// 最近一次结算每家点数加减了多少（还没结算过是 null）：2D 翻牌屏换局时点数从结算前翻到结算后
+export function lastDeltas(g: Game): number[] | null {
+  for (let i = g.events.length - 1; i >= 0; i--) {
+    const e = g.events[i];
+    if (e.type === 'roundEnd') return e.result.deltas;
+  }
+  return null;
+}

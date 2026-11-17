@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 
-// 换局的演出（牌桌风格自己的，theme.ts 的 changeover）：沙滩一个浪打过来（tide.ts），草甸一阵风刮过来（gust.ts），原木手搓洗牌（shuffle.ts）。
+// 换局的演出（牌桌风格自己的，theme.ts 的 changeover）：沙滩一个浪打过来（tide.ts），草甸一阵风刮过来（gust.ts），原木手搓洗牌（shuffle.ts），
+// 翻牌屏像车站的翻牌屏换一屏（flip.ts）。
 // table3d.ts 每局开始时把桌上看得见的牌各复制一份交给它（sweep，原来的牌藏起来留给新的一局），再告诉它四家牌山在哪（rise）；
 // 演着的时候（busy）牌山上的牌照 wallPose 摆，王牌感知那些浮在牌山上的牌面先不出来
 
@@ -32,6 +33,10 @@ export interface Changeover<Cue extends string = string> {
   onWall(x: number, z: number): boolean;
   // 牌山上 (x, z) 那一墩现在离摆好的位置差多少：out = (dx, dy, dz, 绕 tiltAxis 歪多少弧度)；还没出来返回 false（先藏着）
   wallPose(x: number, z: number, out: THREE.Vector4): boolean;
+  // 每一墩绕自己的轴歪（翻牌屏四家各朝自己那边翻）：有这个就不用 tiltAxis
+  wallAxis?(x: number, z: number): THREE.Vector3;
+  // 演着的时候牌山上的牌不露牌面（翻牌屏整墩翻过来，底下那张的牌面会朝上、朝镜头）
+  readonly hideFaces?: boolean;
   // 往前走到 now，返回这一下该响的声音
   update(now: number): { cue: Cue; dur: number }[];
   // 马上演完（牌桌重建、跳过动画时）

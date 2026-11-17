@@ -628,10 +628,68 @@ export function playStamp(at = 0): void {
   clack(a, now + 0.002, 0.08, 1650);
 }
 
-// 换局的声音（table3d.ts 的 onShift）：沙滩那几声给 playTide，草甸那几声给 playGust，原木那几声给 playShuffle
-export function playShift(cue: 'surge' | 'crash' | 'ebb' | 'gather' | 'settle' | 'gust' | 'scatter' | 'breeze' | 'land' | 'pour' | 'scoop' | 'shuffle' | 'build' | 'push', dur = 0.5): void {
+// ---------- 翻牌屏（牌桌风格「翻牌屏」，flip.ts）：像车站的翻牌屏换一屏 ----------
+
+// 一片翻牌拍到挡片上的“嗒”：很短很干的一下塑料声（比骨头牌的 clack 轻、薄），底下带一点点闷的
+function flapTick(a: AudioContext, at: number, vol: number): void {
+  noiseHit(a, at, 0.008 + Math.random() * 0.006, vol, 'bandpass', 2900 + Math.random() * 1500, undefined, 2.4);
+  noiseHit(a, at + 0.001, 0.014, vol * 0.45, 'bandpass', 950 + Math.random() * 250, undefined, 1.6);
+}
+
+// 翻牌屏的几声：clatter 桌上的牌一排排翻下去（一阵哗啦啦的翻牌声，前面密后面疏，dur 秒），
+// riffle 牌山一墩墩翻上来（四家一起，一墩一下“嗒”，dur 秒里均匀排开），latch 都翻好了（“咔哒”一声卡住）
+export function playFlip(cue: 'clatter' | 'riffle' | 'latch', dur = 0.5): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  if (cue === 'clatter') {
+    const n = Math.round(dur * 95);
+    for (let i = 0; i < n; i++) {
+      const t = dur * Math.random() ** 1.15;
+      const fade = Math.min(1, t / 0.06, (dur - t) / 0.3);
+      flapTick(a, now + t, (0.05 + Math.random() * 0.06) * Math.max(0.25, fade));
+    }
+  } else if (cue === 'riffle') {
+    const n = 17;
+    for (let i = 0; i < n; i++) {
+      const t = (dur * i) / (n - 1);
+      // 四家一起翻，差一点点
+      for (let w = 0; w < 4; w++) flapTick(a, now + t + Math.random() * 0.012, 0.045 + Math.random() * 0.035);
+    }
+  } else {
+    flapTick(a, now, 0.14);
+    const at = now + 0.012;
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(240, at);
+    osc.frequency.exponentialRampToValueAtTime(120, at + 0.07);
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.16, at + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.1);
+    osc.connect(gain).connect(bus('sfx', a));
+    osc.start(at);
+    osc.stop(at + 0.12);
+    flapTick(a, at + 0.018, 0.08);
+  }
+}
+
+// 翻牌屏仪表盘上的字翻了 n 页（table3d.ts 的 onFlaps，一帧报一次）：几下很轻的“嗒”，挤在这一帧里
+export function playFlapTicks(n: number): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  for (let i = 0; i < Math.min(n, 4); i++) flapTick(a, now + Math.random() * 0.03, 0.03 + Math.random() * 0.025);
+}
+
+// 换局的声音（table3d.ts 的 onShift）：沙滩那几声给 playTide，草甸那几声给 playGust，原木那几声给 playShuffle，翻牌屏那几声给 playFlip
+export function playShift(
+  cue: 'surge' | 'crash' | 'ebb' | 'gather' | 'settle' | 'gust' | 'scatter' | 'breeze' | 'land' | 'pour' | 'scoop' | 'shuffle' | 'build' | 'push' | 'clatter' | 'riffle' | 'latch',
+  dur = 0.5,
+): void {
   if (cue === 'gust' || cue === 'scatter' || cue === 'breeze' || cue === 'land') playGust(cue, dur);
   else if (cue === 'pour' || cue === 'scoop' || cue === 'shuffle' || cue === 'build' || cue === 'push') playShuffle(cue, dur);
+  else if (cue === 'clatter' || cue === 'riffle' || cue === 'latch') playFlip(cue, dur);
   else playTide(cue, dur);
 }
 

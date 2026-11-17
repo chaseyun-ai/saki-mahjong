@@ -4,7 +4,8 @@ import { TILE_H, TILE_W } from './tableLayout';
 
 // 牌桌风格自己的牌（theme.ts 的 tile）：沙滩的牌是沙子捏的（牌身一粒粒的浅沙、牌背湿一点的深沙，正中压一个贝壳印），
 // 草甸的牌是花瓣捏的（牌身花瓣白、细细的一丝丝纹路，牌背是一片叶子的绿、正中压一道道叶脉），
-// 原木的牌是老式竹背牌（牌身光面的骨白，牌背一层竹子，顺着牌长一丝丝竹纤维）。牌面上的字和图案照旧，只换牌身、牌背。
+// 原木的牌是老式竹背牌（牌身光面的骨白，牌背一层竹子，顺着牌长一丝丝竹纤维）；
+// 翻牌屏的牌背是一块翻牌（中间一道缝、上半亮下半暗）。牌面上的字和图案照旧，只换牌身、牌背。
 // 2D 牌桌的同一套样子在 tableStyles.css 里（贝壳、叶子是同样的路径，写成 SVG）
 
 // ---------- 细纹理：贴在牌身、牌背上，和底色相乘 ----------
@@ -124,7 +125,8 @@ const marks = new Map<string, THREE.CanvasTexture>();
 
 // 牌背那一面的贴图（宽高比和牌一样）：红色通道是亮还是暗（0 压暗、1 提亮），透明度是压得多深（提亮最多到 1.6 倍，压暗最多到 0.7 倍）。
 // 贝壳：壳面提亮一点（干一点的沙），棱是压下去的暗线。
-// 叶子：一大片叶子斜躺在牌背上（几乎和牌一样长），叶子外面的牌背压深一点，叶面稍亮，叶脉是亮的（真的叶子叶脉颜色浅），叶边一道暗线
+// 叶子：一大片叶子斜躺在牌背上（几乎和牌一样长），叶子外面的牌背压深一点，叶面稍亮，叶脉是亮的（真的叶子叶脉颜色浅），叶边一道暗线。
+// 翻牌的缝：横过牌背正中一道暗缝，缝下面紧贴一道亮线（下半块的上沿），上半块稍亮、下半块稍暗；缝两头各一颗小轴
 function markTexture(kind: NonNullable<TileLook['mark']>): THREE.CanvasTexture {
   const hit = marks.get(kind);
   if (hit) return hit;
@@ -136,7 +138,27 @@ function markTexture(kind: NonNullable<TileLook['mark']>): THREE.CanvasTexture {
   const ctx = c.getContext('2d')!;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  if (kind === 'shell') {
+  if (kind === 'seam') {
+    const mid = H / 2;
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillRect(0, 0, W, mid);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(0, mid, W, H - mid);
+    ctx.fillStyle = 'rgba(0,0,0,1)';
+    ctx.fillRect(0, mid - 3, W, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillRect(0, mid + 3, W, 3);
+    for (const x of [W * 0.07, W * 0.93]) {
+      ctx.beginPath();
+      ctx.arc(x, mid, 6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x - 1.5, mid - 1.5, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fill();
+    }
+  } else if (kind === 'shell') {
     const p = shellPaths();
     const size = W * 0.6;
     ctx.translate(W / 2 - size / 2, H / 2 - size / 2);

@@ -1,4 +1,5 @@
 import type { TableColors } from '../ui/theme';
+import { FLAP_DOWN, FLAP_UP, FLAP_WINDS, type FlapBoard } from './flapBoard';
 import { CONSOLE_HALF } from './tableLayout';
 
 // 牌桌风格的中央仪表盘（theme.ts 里牌桌风格的 look）：自动麻将机的数码管、原木的木牌、深夜的纯色、翻牌屏、沙滩的海水、草甸的亚麻布。
@@ -63,8 +64,13 @@ interface Look {
   seat(c: CanvasRenderingContext2D, k: TableColors, s: ConsoleSeat): void;
 }
 
-export function drawConsoleLook(c: CanvasRenderingContext2D, k: TableColors, info: ConsoleInfo, seats: ConsoleSeat[], tile: DrawTile): void {
+// 翻牌屏这一遍照哪块翻牌板翻（drawConsoleLook 画的时候才有）
+let board: FlapBoard | null = null;
+
+// flaps：翻牌屏的翻牌板（flapBoard.ts）。给了的话字变了一页页翻过去，没给就直接画新字
+export function drawConsoleLook(c: CanvasRenderingContext2D, k: TableColors, info: ConsoleInfo, seats: ConsoleSeat[], tile: DrawTile, flaps?: FlapBoard): void {
   const look = LOOKS[k.look ?? 'flat'] ?? LOOKS.flat;
+  board = flaps ?? null;
   c.save();
   c.textAlign = 'center';
   c.textBaseline = 'middle';
@@ -79,6 +85,8 @@ export function drawConsoleLook(c: CanvasRenderingContext2D, k: TableColors, inf
     c.restore();
   }
   c.restore();
+  board = null;
+  flaps?.endFrame();
 }
 
 // ---------- 共用的小件 ----------
@@ -622,28 +630,62 @@ function screw(c: CanvasRenderingContext2D, x: number, y: number, r: number): vo
   c.stroke();
 }
 
-// 一块翻牌：上下两半颜色差一点，中间一道缝
-function flapTile(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, ch: string, font: string, ink: string, fill = FLAP): void {
+// 一块翻牌静止时的整面：上下两半颜色差一点。ch 末尾带 ! 的是亮着的那种（轮到这家时的风位，橙色）
+function flapFace(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, ch: string, font: string, ink: string): void {
+  const on = ch.endsWith('!');
   rr(c, x, y, w, h, 4);
-  c.fillStyle = fill;
+  c.fillStyle = on ? FLAP_ON : FLAP;
   c.fill();
-  if (fill === FLAP) {
+  if (!on) {
     c.fillStyle = FLAP_TOP;
     rr(c, x, y, w, h / 2, [4, 4, 0, 0]);
     c.fill();
   }
   c.font = font;
-  c.fillStyle = ink;
-  c.fillText(ch, x + w / 2, y + h / 2 + 1, w - 4);
+  c.fillStyle = on ? '#1a1006' : ink;
+  c.fillText(on ? ch.slice(0, -1) : ch, x + w / 2, y + h / 2 + 1, w - 4);
+}
+
+// 翻牌的上半页（half 0）或下半页（1）：以中缝为轴压扁到 squash（1 是平的），再压暗 shade
+function flapHalf(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, ch: string, font: string, ink: string, half: 0 | 1, squash: number, shade: number): void {
+  const yc = y + h / 2;
+  c.save();
+  c.translate(0, yc);
+  c.scale(1, Math.max(0.02, squash));
+  c.translate(0, -yc);
+  c.beginPath();
+  c.rect(x - 1, half ? yc : y - 1, w + 2, h / 2 + 1);
+  c.clip();
+  flapFace(c, x, y, w, h, ch, font, ink);
+  if (shade > 0.01) {
+    c.fillStyle = `rgba(0,0,0,${shade.toFixed(3)})`;
+    c.fillRect(x, half ? yc : y, w, h / 2);
+  }
+  c.restore();
+}
+
+// 一块翻牌：上下两半颜色差一点，中间一道缝。给了 key 就照翻牌板翻：字变了一页页翻到新字（cycle 是这块上的字的顺序，见 flapBoard.ts）
+function flapTile(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, ch: string, font: string, ink: string, key?: string, cycle = '', order = 0, quiet = false): void {
+  const f = key && board ? board.face(key, ch, cycle, order, quiet) : null;
+  if (!f || f.next === null) flapFace(c, x, y, w, h, f ? f.cur : ch, font, ink);
+  else {
+    // 后面露出来的：上半页已经是下一页的字，下半页还是这一页的；翻下来的那一页前一半是这一页的上半页往前倒（越倒越扁、越暗），
+    // 过了中间是下一页的下半页落下来盖住
+    flapHalf(c, x, y, w, h, f.next, font, ink, 0, 1, 0);
+    flapHalf(c, x, y, w, h, f.cur, font, ink, 1, 1, 0);
+    const cos = Math.cos(Math.PI * f.p);
+    if (cos > 0) flapHalf(c, x, y, w, h, f.cur, font, ink, 0, cos, 0.5 * (1 - cos));
+    else flapHalf(c, x, y, w, h, f.next, font, ink, 1, -cos, 0.35 * (1 + cos));
+  }
   c.fillStyle = 'rgba(0,0,0,0.55)';
   c.fillRect(x, y + h / 2 - 1, w, 2);
 }
 
-// 一串翻牌靠右排
-function flapRow(c: CanvasRenderingContext2D, text: string, right: number, y: number, w: number, h: number, gap: number, font: string, ink: string): void {
+// 一串翻牌靠右排（key 给了就照翻牌板翻，位数变了的那一串直接换成新字）
+function flapRow(c: CanvasRenderingContext2D, text: string, right: number, y: number, w: number, h: number, gap: number, font: string, ink: string, key?: string, cycle = '', quiet = false): void {
   for (let i = 0; i < text.length; i++) {
     const x = right - (text.length - i) * w - (text.length - 1 - i) * gap;
-    flapTile(c, x, y, w, h, text[i], font, ink);
+    flapTile(c, x, y, w, h, text[i], font, ink, key && `${key}:${text.length}:${i}`, cycle, i, quiet);
   }
 }
 
@@ -677,8 +719,8 @@ const flap: Look = {
   center(c, k, info, tile) {
     // 局数：东、几、局三块大翻牌
     const font = `900 48px ${SANS}`;
-    flapTile(c, M - 101, M - 106, 62, 72, info.wind, font, k.console.ink);
-    flapTile(c, M - 31, M - 106, 62, 72, String(info.no), `700 62px ${NUM}`, k.console.ink);
+    flapTile(c, M - 101, M - 106, 62, 72, info.wind, font, k.console.ink, 'rw', FLAP_WINDS, 0);
+    flapTile(c, M - 31, M - 106, 62, 72, String(info.no), `700 62px ${NUM}`, k.console.ink, 'rn', '1234', 1);
     flapTile(c, M + 39, M - 106, 62, 72, '局', font, k.console.ink);
     // 本场、余牌：印在铝面上的深色小字，数字是小翻牌
     c.font = `900 26px ${SANS}`;
@@ -688,8 +730,9 @@ const flap: Look = {
     c.fillText('余', M + 12, M - 4);
     c.textAlign = 'center';
     const small = `700 34px ${NUM}`;
-    flapRow(c, String(info.honba), M - 24, M - 24, 26, 40, 3, small, k.console.ink);
-    flapRow(c, info.remaining === null ? '--' : String(info.remaining), M + 100, M - 24, 26, 40, 3, small, k.console.ink);
+    flapRow(c, String(info.honba), M - 24, M - 24, 26, 40, 3, small, k.console.ink, 'hb', FLAP_UP);
+    // 余牌每摸一张往下翻一页，不出声
+    flapRow(c, info.remaining === null ? '--' : String(info.remaining), M + 100, M - 24, 26, 40, 3, small, k.console.ink, 'rm', FLAP_DOWN, true);
     doraRow(c, k, info, M + 28, tile);
     sticksRow(c, info, M + 102, k.console.dim, `700 30px ${NUM}`);
   },
@@ -697,14 +740,17 @@ const flap: Look = {
     // 风位一块翻牌，轮到这家时翻成橙色；下面一小条角色色。圆盘上整排往中间收、块矮一点
     const disc = isDisc(k);
     const [tx, ty, tw, th, tf] = disc ? [-124, 148, 44, 50, 36] : [-152, 156, 52, 64, 44];
-    flapTile(c, tx, ty, tw, th, s.wind, `900 ${tf}px ${SANS}`, s.active ? '#1a1006' : k.console.ink, s.active ? FLAP_ON : FLAP);
+    // 轮到谁那家翻成橙色（每巡都翻，不出声）
+    flapTile(c, tx, ty, tw, th, s.wind + (s.active ? '!' : ''), `900 ${tf}px ${SANS}`, k.console.ink, `w${s.rel}`, FLAP_WINDS, 0, true);
     c.fillStyle = s.color;
     rr(c, tx, ty + th + 3, tw, 4, 2);
     c.fill();
     // 点数一位一块：块高 64、数字 56px，和原来仪表盘上点数的字差不多大；位数多了块窄一点（圆盘上块高 50、数字 44px）
+    // 点数变了一位位翻到新的；指着仪表盘看点差的时候直接换，不翻
     const [text, ink] = scoreFace(s, k.console.ink, '#6cbcff', '#ff8a7a', false);
-    if (disc) flapRow(c, text, 118, ty, text.length > 6 ? 22 : text.length > 5 ? 25 : 28, th, 3, `700 44px ${NUM}`, ink);
-    else flapRow(c, text, 134, ty, text.length > 6 ? 26 : text.length > 5 ? 31 : 34, th, 4, `700 56px ${NUM}`, ink);
+    const key = s.diff === null ? `p${s.rel}` : undefined;
+    if (disc) flapRow(c, text, 118, ty, text.length > 6 ? 22 : text.length > 5 ? 25 : 28, th, 3, `700 44px ${NUM}`, ink, key, FLAP_UP);
+    else flapRow(c, text, 134, ty, text.length > 6 ? 26 : text.length > 5 ? 31 : 34, th, 4, `700 56px ${NUM}`, ink, key, FLAP_UP);
     if (s.active) {
       c.fillStyle = FLAP_ON;
       if (disc) rr(c, -70, ty + th + 4, 174, 4, 2);

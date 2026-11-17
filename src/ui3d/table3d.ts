@@ -11,6 +11,8 @@ import { LOOKS, RestPose, applyLook } from './looks';
 import { Dice } from './dice';
 import { Machine, type MachineCue, type MachineRect } from './machine';
 import type { Changeover } from './changeover';
+import { Flip, type FlipCue } from './flip';
+import { FlapBoard } from './flapBoard';
 import { Gust, type GustCue } from './gust';
 import { Shuffle, type ShuffleCue } from './shuffle';
 import { SealStamps } from './sealStamp';
@@ -659,15 +661,19 @@ export class Table3D {
   // 全自动麻将机该响声音的时候通知外面（放音效用）：open 仪表盘抬起，sweep 牌掉进去，drop 升降板沉下去，close 仪表盘落回，rise 升降板升（dur 秒），lock 升到顶卡住
   onMachine: ((cue: MachineCue, dur: number) => void) | null = null;
   // 换局的演出（牌桌风格自己的，changeover.ts）：沙滩每局开始一个浪打过来把牌冲散、退潮后沙子聚成新牌山（tide.ts）；
-  // 草甸一阵风把牌吹成花瓣飘走、花瓣再飘回来落成新牌山（gust.ts）；原木手搓洗牌，码好牌山往前一推（shuffle.ts）。该响声音的时候通知外面
-  private shift: Changeover<TideCue | GustCue | ShuffleCue> | null = null;
-  onShift: ((cue: TideCue | GustCue | ShuffleCue, dur: number) => void) | null = null;
+  // 草甸一阵风把牌吹成花瓣飘走、花瓣再飘回来落成新牌山（gust.ts）；原木手搓洗牌，码好牌山往前一推（shuffle.ts）；
+  // 翻牌屏桌上的牌一排排翻下去、新牌山一墩墩翻上来（flip.ts）。该响声音的时候通知外面
+  private shift: Changeover<TideCue | GustCue | ShuffleCue | FlipCue> | null = null;
+  onShift: ((cue: TideCue | GustCue | ShuffleCue | FlipCue, dur: number) => void) | null = null;
   // 原木：谁和一局，仪表盘上那家点数旁边盖一个小朱印。结算时印从半空落下来盖上（sealStamp.ts），落地才画进仪表盘：
   // sealShown 是仪表盘上现在画着几个（还在半空的不算），sealGame 是数的哪一场。盖下去那一下通知外面（放音效用）
   private stamps: SealStamps | null = null;
   private sealShown: number[] | null = null;
   private sealGame: Game | null = null;
   onStamp: ((seat: number) => void) | null = null;
+  // 翻牌屏：仪表盘上的字变了一块块翻牌翻到新字（flapBoard.ts），翻着的时候每帧重画仪表盘；翻过几页通知外面（放翻牌声）
+  private flaps: FlapBoard | null = null;
+  onFlaps: ((n: number) => void) | null = null;
   // 照 wallPose 摆新牌山时用的临时量
   private shiftPose = new THREE.Vector4();
   private shiftLift = new THREE.Vector3();
@@ -800,6 +806,7 @@ export class Table3D {
     if (this.colors.changeover === 'tide') this.shift = new Tide([body, this.colors.back]);
     else if (this.colors.changeover === 'gust') this.shift = new Gust([body, '#f6e7a6', '#f4d3da', this.colors.back, '#8db06c'], '#eef3d2');
     else if (this.colors.changeover === 'shuffle') this.shift = new Shuffle();
+    else if (this.colors.changeover === 'flip') this.shift = new Flip();
     if (this.shift) this.scene.add(this.shift.group);
     if (this.colors.seals) {
       this.stamps = new SealStamps(this.colors.consoleGlow ?? 0.35);
@@ -1808,6 +1815,9 @@ export class Table3D {
       if (!t.group.visible) continue;
       const ghost = t.group.clone();
       ghost.userData = {};
+      // 牌面那一层标出来（翻牌屏把扣着的牌翻过来时藏牌面）
+      const fi = t.group.children.indexOf(t.face);
+      if (fi >= 0) ghost.children[fi].userData.face = true;
       ghost.traverse((o) => {
         const m = o as THREE.Mesh;
         if (m.isMesh && m.material === plain && this.ghostBack) m.material = this.ghostBack;
@@ -3997,6 +4007,8 @@ export class Table3D {
       this.consoleHover,
       this.backSet,
       this.colors.seals ? this.shownSeals(g, view) : null,
+      // 翻牌屏翻着的时候一秒重画 30 次
+      this.flaps?.busy ? Math.floor(this.now * 30) : null,
     ]);
     if (key === this.consoleKey) return;
     this.consoleKey = key;
@@ -4013,6 +4025,8 @@ export class Table3D {
     c.imageSmoothingQuality = 'high';
     // 选了牌桌风格：仪表盘照那一套画（consoleLooks.ts），位置和原来一样
     if (this.colors.look && this.colors.look !== 'skin') {
+      const flaps = this.colors.look === 'flap' ? (this.flaps ??= new FlapBoard()) : null;
+      if (flaps) flaps.now = this.now;
       drawConsoleLook(
         c,
         { ...this.colors, back: this.tableBack },
@@ -4037,8 +4051,11 @@ export class Table3D {
           seals: this.sealShown?.[s],
         })),
         (cx, face, x, y, w, h) => this.atlas.drawFace(cx, face, x, y, w, h),
+        flaps ?? undefined,
       );
       this.consoleTex.needsUpdate = true;
+      const flips = flaps?.takeFlips() ?? 0;
+      if (flips) this.onFlaps?.(flips);
       return;
     }
     const bg = c.createRadialGradient(M, M, 40, M, M, M * 1.4);
@@ -5177,11 +5194,16 @@ export class Table3D {
         this.drawConsole(this.lastSync.g, this.lastSync.view);
       }
     }
+    // 翻牌屏：仪表盘上还有翻牌在翻
+    if (this.flaps?.busy && this.lastSync) this.drawConsole(this.lastSync.g, this.lastSync.view);
     const pose = this.shiftPose;
     const slow = 1 - Math.exp(-dt * 16);
     const fast = 1 - Math.exp(-dt * 60);
     const snap = this.now < this.hoverSnap.until ? this.hoverSnap.ids : [];
+    const hideFaces = !!forming?.hideFaces;
     for (const [id, t] of this.tiles.entries()) {
+      // 翻牌屏翻牌山时藏起来的牌面：演完了露出来
+      if (!hideFaces && !t.face.visible) t.face.visible = true;
       if (!t.target || this.held.has(id)) continue;
       if (riding?.onPlate(t.target.pos.x, t.target.pos.z)) {
         t.group.visible = !riding.hideNew;
@@ -5193,12 +5215,13 @@ export class Table3D {
       }
       if (forming?.onWall(t.target.pos.x, t.target.pos.z)) {
         t.group.visible = forming.wallPose(t.target.pos.x, t.target.pos.z, pose);
+        if (hideFaces) t.face.visible = false;
         t.group.quaternion.copy(t.target.quat);
         t.group.scale.setScalar(t.target.scale);
         // 歪着落：整墩绕桌面上它脚下那一点转（上下两张一起歪，不会错开）
         const lift = this.shiftLift.set(0, t.target.pos.y, 0);
         if (pose.w) {
-          const q = this.shiftQuat.setFromAxisAngle(forming.tiltAxis, pose.w);
+          const q = this.shiftQuat.setFromAxisAngle(forming.wallAxis?.(t.target.pos.x, t.target.pos.z) ?? forming.tiltAxis, pose.w);
           lift.applyQuaternion(q);
           t.group.quaternion.premultiply(q);
         }

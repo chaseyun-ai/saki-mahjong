@@ -406,6 +406,58 @@
   opacity: 0;
 }
 
+/* 翻牌屏换局（2D，app.ts 的 flip2d）：上一局的样子（.flip-old）盖在新的一局上面，底下垫一层一模一样的桌面（.flip-cover）
+   把新的一局遮住；上一局的牌一排排翻成橙色的翻牌牌背（.flip-back），中间那块的翻牌一页页翻（.flip-page：上半页、下半页各一层，
+   翻下来的那一页以中缝为轴压扁），都翻完一起淡掉 */
+.stage .table > .flip-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 39;
+  pointer-events: none;
+  border-radius: inherit;
+  background: inherit;
+  box-shadow: inherit;
+}
+
+.stage .table > .flip-old {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.stage .table > .flip-old .flip-back {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  opacity: 0;
+}
+
+.stage .table > .flip-old .flip-block {
+  position: relative;
+}
+
+.stage .table > .flip-old .flip-page {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  padding: inherit;
+  border-radius: inherit;
+  background: inherit;
+  white-space: pre;
+  overflow: hidden;
+  transform-origin: 50% 50%;
+}
+
+.stage .table > .flip-old .flip-page.top {
+  clip-path: inset(0 0 50% 0);
+}
+
+.stage .table > .flip-old .flip-page.bottom {
+  clip-path: inset(50% 0 0 0);
+}
+
 /* ---------- 深夜：炭灰哑光、灰白字加一点青 ---------- */
 
 :root[data-table='night'][data-theme] .stage:not(.net) .table:not(.sketch) {
@@ -502,6 +554,26 @@
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 220' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23d3d8dd'/%3E%3Cstop offset='1' stop-color='%23b9c0c7'/%3E%3C/linearGradient%3E%3Cpattern id='b' width='8' height='2' patternUnits='userSpaceOnUse'%3E%3Crect width='8' height='1' fill='%23fff' fill-opacity='.1'/%3E%3C/pattern%3E%3CradialGradient id='s' cx='.35' cy='.35' r='.7'%3E%3Cstop offset='0' stop-color='%23f2f4f6'/%3E%3Cstop offset='1' stop-color='%238a929a'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpath d='M24 1H196L219 24V196L196 219H24L1 196V24Z' fill='url(%23g)' stroke='%236c747c' stroke-width='2'/%3E%3Cpath d='M24 1H196L219 24V196L196 219H24L1 196V24Z' fill='url(%23b)'/%3E%3Cpath d='M25.2 4H194.8L216 25.2V194.8L194.8 216H25.2L4 194.8V25.2Z' fill='none' stroke='%23fff' stroke-opacity='.55' stroke-width='1.5'/%3E%3Cg fill='url(%23s)' stroke='%235d646b' stroke-width='.8'%3E%3Ccircle cx='18.5' cy='18.5' r='3.2'/%3E%3Ccircle cx='201.5' cy='18.5' r='3.2'/%3E%3Ccircle cx='18.5' cy='201.5' r='3.2'/%3E%3Ccircle cx='201.5' cy='201.5' r='3.2'/%3E%3C/g%3E%3C/svg%3E") center / 100% 100% no-repeat;
   box-shadow: none;
   filter: drop-shadow(0 8px 11px rgba(0, 0, 0, 0.45));
+}
+
+/* 牌背是一块橙色翻牌：上半块亮一点、下半块暗一点，中间一道深缝，缝下面紧贴一道亮线；缝两头各一颗小轴 */
+:root[data-table='flap'][data-theme] .stage:not(.net) .table:not(.sketch) .tile.back:not(.tint, .t-top, .sketch),
+.stage .table > .flip-old .flip-back {
+  background:
+    radial-gradient(circle at 8% 50%, #3a1606 0 1.6px, transparent 2.2px),
+    radial-gradient(circle at 92% 50%, #3a1606 0 1.6px, transparent 2.2px),
+    linear-gradient(
+      180deg,
+      #e1793f 0,
+      #d86a31 calc(50% - 1px),
+      #3a1606 calc(50% - 1px) calc(50% + 1px),
+      #e58a55 calc(50% + 1px) calc(50% + 2px),
+      #c3561f calc(50% + 2px),
+      #b44d1a 100%
+    );
+  box-shadow:
+    0 2px 0 #7a3412,
+    0 2px 3px rgba(0, 0, 0, 0.35);
 }
 
 /* 翻牌：上半块亮一点，中间一道缝 */

@@ -6,6 +6,7 @@ import { HIROKO_NOTES } from '../abilities/hiroko';
 import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruNote, teruPoints, teruTwister, teruWallCounts, teruWinValue } from '../abilities/teru';
 import { teruMirrors } from './teruFx';
 import { tornado2d } from './tornado2d';
+import { flapPages } from '../ui3d/flapBoard';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { awaiCornerKan, awaiDomainOn, awaiFields, awaiKanUra, awaiSourceOn, awaiStars, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
@@ -50,7 +51,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playCrackle, playGust, playIaiDraw, playIaiPush, playIaiSheath, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin } from './sound';
+import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playIaiDraw, playIaiPush, playIaiSheath, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -70,7 +71,7 @@ import { preloadVoices, sayVoice, stopVoices } from './voice';
 import { VoiceCue, cueKeys } from './voiceLines';
 import { TeamFlow } from './teamFlow';
 import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentConsoleShape, currentTableStyle, currentTheme, setConsoleShape, setTableStyle, setTheme, tableColors } from './theme';
-import { lastWinners, winCounts } from './winTally';
+import { lastDeltas, lastWinners, winCounts } from './winTally';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
@@ -863,6 +864,7 @@ export class App {
       // 全自动麻将机：仪表盘抬起落下、牌掉进去、升降板沉下去又升上来、到顶卡住
       this.table3d.onMachine = (cue, dur) => playMachine(cue, dur);
       this.table3d.onShift = (cue, dur) => playShift(cue, dur);
+      this.table3d.onFlaps = (n) => playFlapTicks(n);
       // 原木：小朱印盖到仪表盘上
       this.table3d.onStamp = () => playStamp();
       // 照的旋风自摸：牌拍下去、风卷起来时一记闷响加一阵风声，电劈下来、劈到桌上“噼啪”一声，风散开时再噼啪一下
@@ -1343,20 +1345,21 @@ export class App {
     return koromoSea(g, this.chars.map((c) => c?.id));
   }
 
-  // 2D 换局（牌桌风格沙滩、草甸、原木）：换了局就把换局前那一刻 #table 里的东西复制一份（结算框不要）盖在新的一局上面，
-  // 沙滩一个浪打过来把它冲掉（wash2d），草甸一阵风把它吹散（gust2d），原木的牌扣过来绕着中间搓几圈再码出去（shuffle2d）。
-  // 3D、2.5D 的在 tide.ts、gust.ts、shuffle.ts；这里只是一层画面，不挡发牌、出牌
+  // 2D 换局（牌桌风格沙滩、草甸、原木、翻牌屏）：换了局就把换局前那一刻 #table 里的东西复制一份（结算框不要）盖在新的一局上面，
+  // 沙滩一个浪打过来把它冲掉（wash2d），草甸一阵风把它吹散（gust2d），原木的牌扣过来绕着中间搓几圈再码出去（shuffle2d），
+  // 翻牌屏的牌一排排翻成牌背、中间那块的字一页页翻到新的一局（flip2d）。
+  // 3D、2.5D 的在 tide.ts、gust.ts、shuffle.ts、flip.ts；这里只是一层画面，不挡发牌、出牌
   private shift2d(g: Game, table: HTMLElement, off: boolean): void {
     const prev = this.shiftRound;
     this.shiftRound = { g, round: g.round };
     const kind = document.documentElement.dataset.table;
-    if (off || !prev || prev.g !== g || prev.round === g.round || (kind !== 'beach' && kind !== 'meadow' && kind !== 'wood')) return;
+    if (off || !prev || prev.g !== g || prev.round === g.round || (kind !== 'beach' && kind !== 'meadow' && kind !== 'wood' && kind !== 'flap')) return;
     // 系统里设了「减少动态效果」：不演
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const host = table.parentElement;
     if (!host || !table.firstElementChild) return;
     host
-      .querySelectorAll(':scope > .wash-old, :scope > .wash-water, :scope > .wash-wet, :scope > .gust-old, :scope > .gust-cover, :scope > .gust-air, :scope > .shuf-old, :scope > .shuf-cover')
+      .querySelectorAll(':scope > .wash-old, :scope > .wash-water, :scope > .wash-wet, :scope > .gust-old, :scope > .gust-cover, :scope > .gust-air, :scope > .shuf-old, :scope > .shuf-cover, :scope > .flip-old, :scope > .flip-cover')
       .forEach((e) => e.remove());
     const old = document.createElement('div');
     old.innerHTML = table.innerHTML;
@@ -1364,6 +1367,7 @@ export class App {
     old.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
     if (kind === 'beach') this.wash2d(host, old);
     else if (kind === 'meadow') this.gust2d(host, old);
+    else if (kind === 'flap') this.flip2d(host, old, g);
     else this.shuffle2d(host, old, tableColors().seals ? lastWinners(g) : []);
   }
 
@@ -1627,6 +1631,150 @@ export class App {
       old.remove();
       cover.remove();
     }, all + 500);
+  }
+
+  // 翻牌屏：上一局的牌从画面上方那排起，一排排往下翻成橙色的牌背（像车站的翻牌屏一行行翻过去），都翻完停一下，
+  // 连着垫着的桌面一起淡掉，露出新的一局。中间那块的局数、风位、点数一块块翻牌一页页翻到新的一局（点数从结算前翻到结算后）
+  private flip2d(host: HTMLElement, old: HTMLElement, g: Game): void {
+    old.className = 'flip-old';
+    const cover = document.createElement('div');
+    cover.className = 'flip-cover';
+    host.append(cover, old);
+    const box = host.getBoundingClientRect();
+    // 从最上面一排翻到最下面一排要多久，同一排从左到右晚多少，一张翻一下（压扁、换成牌背、展开）多久；
+    // 都翻完以后停多久，淡掉多久；中间那块的翻牌翻一页多久
+    const [SWEEP, SKEW, TURN, HOLD, FADE, PAGE] = [520, 110, 190, 260, 300, 75];
+    // 每张牌外面那几层的旋转（左右两家的牌是转过 90 度的）：压扁的方向换成这张牌自己那层的方向（和 shuffle2d 一样）
+    const frames = new Map<Element, DOMMatrix>();
+    const frameOf = (el: Element | null): DOMMatrix => {
+      if (!el || el === old) return new DOMMatrix();
+      const hit = frames.get(el);
+      if (hit) return hit;
+      const t = getComputedStyle(el).transform;
+      const own = t && t !== 'none' ? new DOMMatrix(t) : new DOMMatrix();
+      const m = frameOf(el.parentElement).multiply(new DOMMatrix([own.a, own.b, own.c, own.d, 0, 0]));
+      frames.set(el, m);
+      return m;
+    };
+    let last = 0;
+    const tiles = [...old.querySelectorAll<HTMLElement>('.tile')].filter((el) => !el.closest('.center'));
+    for (const el of tiles) {
+      const r = el.getBoundingClientRect();
+      const row = Math.min(1, Math.max(0, (r.top + r.height / 2 - box.top) / box.height));
+      const col = Math.min(1, Math.max(0, (r.left + r.width / 2 - box.left) / box.width));
+      const delay = row * SWEEP + col * SKEW + Math.random() * 25;
+      last = Math.max(last, delay + TURN);
+      // 绕画面上横着的轴翻：在这张牌那一层里，画面的上下是哪个方向就往哪个方向压扁
+      const v = frameOf(el.parentElement).inverse().transformPoint(new DOMPoint(0, 1, 0, 0));
+      const flat = Math.abs(v.x) > Math.abs(v.y) ? '0.04 1' : '1 0.04';
+      el.animate(
+        [
+          { scale: '1 1', filter: 'brightness(1)', easing: 'ease-in' },
+          { scale: flat, filter: 'brightness(0.55)', offset: 0.5, easing: 'ease-out' },
+          { scale: '1 1', filter: 'brightness(1)' },
+        ],
+        { duration: TURN, delay, fill: 'both' },
+      );
+      // 翻到侧面那一下换成橙色的翻牌牌背
+      const back = document.createElement('b');
+      back.className = 'flip-back';
+      el.append(back);
+      back.animate([{ opacity: 0 }, { opacity: 0, offset: 0.5 }, { opacity: 1, offset: 0.5 }, { opacity: 1 }], { duration: TURN, delay, fill: 'both' });
+    }
+    playFlip('clatter', last / 1000);
+    // 中间那块：结算前的点数（这一局结算的点数加减倒回去），翻到现在的
+    const deltas = lastDeltas(g);
+    const before = (s: number) => g.shownScore(s, this.me) - (deltas?.[s] ?? 0);
+    const inner = (html: string) => {
+      const t = document.createElement('template');
+      t.innerHTML = html;
+      return t.content.firstElementChild?.innerHTML ?? '';
+    };
+    const blocks: { el: HTMLElement; pages: string[]; at: number; html: (text: string) => string }[] = [];
+    const add = (el: HTMLElement | null | undefined, from: string, to: string, at: number, html = (text: string) => text) => {
+      if (!el) return;
+      const pages = flapPages(from, to);
+      if (pages.length) blocks.push({ el, pages: [from, ...pages], at, html });
+    };
+    const center = old.querySelector('.center');
+    const mid = SWEEP * 0.45;
+    add(center?.querySelector<HTMLElement>(':scope > .round'), center?.querySelector(':scope > .round')?.textContent ?? '', g.roundLabel(), mid);
+    center?.querySelectorAll<HTMLElement>(':scope > .score').forEach((row, s) => {
+      add(row.querySelector<HTMLElement>('.wind'), row.querySelector('.wind')?.textContent ?? '', WIND_CN[g.seatWind(s) - 27], mid + 60 + s * 30);
+      const pts = row.querySelector<HTMLElement>('.pts');
+      if (!pts) return;
+      // 点数那块：自己的是一个数，别家的还有一份点差（.d，指着的时候才露出来），翻的时候点差直接用新的
+      const now = this.ptsHtml(s);
+      const d = (() => {
+        const t = document.createElement('template');
+        t.innerHTML = now;
+        return t.content.querySelector('.d')?.outerHTML ?? '';
+      })();
+      const wrap = (text: string) => (s === this.me ? text : `<span class="v">${text}</span>${d}`);
+      pts.innerHTML = inner(this.ptsHtml(s, before));
+      add(pts, String(before(s)), String(g.shownScore(s, this.me)), mid + 120 + s * 40, wrap);
+    });
+    // 一块翻牌翻一页：上半页已经是下一页，下半页还是这一页；前一半是这一页的上半页往前倒，后一半是下一页的下半页落下来
+    const PARTS = ['top next', 'bottom cur', 'top flap', 'bottom flap'];
+    const live = blocks.map((b) => {
+      b.el.classList.add('flip-block');
+      const parts = PARTS.map((cls) => {
+        const p = document.createElement('span');
+        p.className = `flip-page ${cls}`;
+        // 还没轮到这块翻：先藏着，露出原来的字
+        p.style.visibility = 'hidden';
+        b.el.append(p);
+        return p;
+      });
+      return { ...b, parts, shown: -1 };
+    });
+    let end = last;
+    for (const b of live) end = Math.max(end, b.at + (b.pages.length - 1) * PAGE);
+    // 都翻完了：停一下，连着垫着的桌面一起淡掉。中间那块的翻牌照淡掉那段动画的时间走（动画暂停、拨时间的时候一起停、一起拨）
+    const fadeAt = Math.max(last, end) + HOLD;
+    const [clock] = [old, cover].map((el) => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FADE, delay: fadeAt, fill: 'both', easing: 'ease-in-out' }));
+    let ticked = 0;
+    const step = () => {
+      if (!old.isConnected) return;
+      const t = Number(clock.currentTime ?? 0);
+      let flips = 0;
+      for (const b of live) {
+        const k = (t - b.at) / PAGE;
+        if (k < 0) continue;
+        const i = Math.floor(k);
+        flips += Math.min(i + 1, b.pages.length - 1);
+        if (i >= b.pages.length - 1) {
+          if (b.shown !== Infinity) {
+            for (const p of b.parts) p.remove();
+            b.el.classList.remove('flip-block');
+            b.el.innerHTML = b.html(b.pages[b.pages.length - 1]);
+            b.shown = Infinity;
+          }
+          continue;
+        }
+        const [cur, next] = [b.html(b.pages[i]), b.html(b.pages[i + 1])];
+        if (b.shown !== i) {
+          b.parts[0].innerHTML = next;
+          b.parts[1].innerHTML = cur;
+          b.parts[2].innerHTML = cur;
+          b.parts[3].innerHTML = next;
+          b.parts[0].style.visibility = b.parts[1].style.visibility = '';
+          b.shown = i;
+        }
+        const c = Math.cos(Math.PI * (k - i));
+        b.parts[2].style.cssText = c > 0 ? `transform: scaleY(${c.toFixed(3)}); filter: brightness(${(1 - 0.5 * (1 - c)).toFixed(3)})` : 'visibility: hidden';
+        b.parts[3].style.cssText = c <= 0 ? `transform: scaleY(${(-c).toFixed(3)}); filter: brightness(${(1 - 0.35 * (1 + c)).toFixed(3)})` : 'visibility: hidden';
+      }
+      if (flips > ticked) playFlapTicks(flips - ticked);
+      ticked = Math.max(ticked, flips);
+      if (t < end + PAGE) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+    window.setTimeout(() => playFlip('latch', 0.2), Math.max(last, end));
+    window.setTimeout(() => {
+      old.remove();
+      cover.remove();
+    }, fadeAt + FADE + 300);
   }
 
   // 2D：牌桌上盖一层水面（几圈慢慢荡开的涟漪和水底的光纹）
@@ -3142,11 +3290,11 @@ export class App {
 
   // 中间那块上一家的点数。其他三家另外备一份点差（自己比他多几点）：鼠标停在中间那块上（手机上点一下，3 秒）时换成点差，
   // 多了是 +、蓝字，少了是 -、红字（颜色看底色深浅，见 style.css 的 --diff-plus）
-  private ptsHtml(s: number): string {
-    const g = this.game!;
-    const score = g.shownScore(s, this.me);
+  // scoreOf：照哪份点数写（翻牌屏换局时要写结算前的，见 flip2d）
+  private ptsHtml(s: number, scoreOf = (x: number) => this.game!.shownScore(x, this.me)): string {
+    const score = scoreOf(s);
     if (s === this.me) return `<span class="pts">${score}</span>`;
-    const d = g.shownScore(this.me, this.me) - score;
+    const d = scoreOf(this.me) - score;
     const sign = d > 0 ? ['plus', '+'] : d < 0 ? ['minus', '-'] : ['even', '±'];
     return `<span class="pts"><span class="v">${score}</span><span class="d ${sign[0]}">${sign[1]}${Math.abs(d)}</span></span>`;
   }
