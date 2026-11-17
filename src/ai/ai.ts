@@ -13,7 +13,7 @@ import { KOROMO, KOROMO_READERS, koromoDisruptor, koromoHaiteiOn, koromoHaiteiRe
 import { mihokoEyeOpen, mihokoLikelySafe, mihokoSafeKinds } from '../abilities/mihoko';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { satohaCutsDealer, satohaDistance, satohaScouts } from '../abilities/satoha';
-import { myeonghwaSinging, myeonghwaYaku } from '../abilities/myeonghwa';
+import { myeonghwaSinging, myeonghwaWinds, myeonghwaYaku } from '../abilities/myeonghwa';
 import { meganBlindRound, meganDuelTarget, meganSenses } from '../abilities/megan';
 import { seikoFish } from '../abilities/seiko';
 import { warmKind } from '../abilities/yu';
@@ -604,11 +604,17 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const flush = style.waves && !sealed ? nellyFlush(g, seat) : null;
   const inFlush = (k: Kind) =>
     flush ? (k >= 27 ? flush.honors : Math.floor(k / 9) === flush.suit) : harvest !== null ? (k >= 27 ? counts[k] >= 2 : Math.floor(k / 9) === harvest) : false;
+  // 明华：手里的自风暗刻（要留着的役），成对的场风、客风
+  const fuujinWinds = style.fuujin ? myeonghwaWinds(g, seat) : null;
+  const fuujinTrip = fuujinWinds && counts[fuujinWinds.seat] === 3 ? fuujinWinds.seat : null;
+  const fuujinPairs = new Set<Kind>(fuujinWinds ? [fuujinWinds.round, fuujinWinds.guest].filter((k): k is Kind => k !== null && counts[k] === 2) : []);
   const keep = (c: Cand) =>
     (flush || harvest !== null ? inFlush(kindOf(c.a.tile)) : suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) ||
     (style.warm && warmKind(kindOf(c.a.tile))) ||
     (style.bowling && !sealed && isPin(kindOf(c.a.tile))) ||
     (style.pin1 && !sealed && kindOf(c.a.tile) === 9) ||
+    // 明华：成对的场风、南场收的客风留着（摸成暗刻就是役、是一组面子）
+    (style.fuujin && fuujinPairs.has(kindOf(c.a.tile))) ||
     (style.winds && !sealed && hatsumiNorth(g, seat) && isWind(kindOf(c.a.tile))) ||
     seeds?.has(kindOf(c.a.tile)) ||
     teruSet?.(kindOf(c.a.tile)) ||
@@ -705,6 +711,14 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (style.keepDora) {
     const keep = cands.filter((x) => !isDoraTile(g, x.a.tile));
     if (keep.length) cands.splice(0, cands.length, ...keep, ...cands.filter((x) => !keep.includes(x)));
+  }
+  // 明华：自风暗刻是到手的役，进攻时不拆（拆了往往没役，还白白少一组面子）。
+  // 只有拆了向听更少时才拆（对子多的手转七对子）；弃和时照样拿它当安全牌
+  if (fuujinTrip !== null) {
+    const others = cands.filter((x) => kindOf(x.a.tile) !== fuujinTrip);
+    const floor = Math.min(...others.map((x) => x.sh));
+    const keep = cands.filter((x) => kindOf(x.a.tile) !== fuujinTrip || x.sh < floor);
+    if (others.length) cands.splice(0, cands.length, ...keep, ...cands.filter((x) => !keep.includes(x)));
   }
   // 淡：等转角暗杠，暗刻不拆
   const kanKind = style.cornerKan ? awaiWaitingForCorner(g, seat) : null;

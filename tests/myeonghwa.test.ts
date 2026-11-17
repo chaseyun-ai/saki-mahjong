@@ -4,6 +4,7 @@ import { HIROKO_NOTES } from '../src/abilities/hiroko';
 import { MYEONGHWA, myeonghwaAbility, myeonghwaCut, myeonghwaSinging, myeonghwaSong, myeonghwaWinds } from '../src/abilities/myeonghwa';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
+import { shanten } from '../src/engine/shanten';
 import { EAST, NORTH, kindOf } from '../src/engine/tiles';
 import { SCHOOLS } from '../src/ui/schools';
 
@@ -243,6 +244,53 @@ describe('雀明华：断风', () => {
     // 有几场她坐庄连和把人击飞了，初美没轮到北家
     expect(norths).toBeGreaterThan(3);
     expect(cuts).toBe(norths);
+  }, 120000);
+});
+
+describe('雀明华：电脑的打法', () => {
+  it('没人立直、没人鸣满两副时不拆自风暗刻（拆了向听更少的除外；有人逼得紧时照样拿它当安全牌）', async () => {
+    let held = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const ids = ['izumi', 'izumi', 'izumi', 'izumi'];
+      const me = seed % 4;
+      ids[me] = 'myeonghwa';
+      const g = newGame(seed, ids);
+      let steps = 0;
+      while (g.phase !== 'gameEnd' && ++steps < 60000) {
+        if (g.phase === 'roundEnd') {
+          g.nextRound();
+          continue;
+        }
+        if ((g.phase as string) === 'predeal') {
+          g.deal();
+          continue;
+        }
+        const s = g.waitingSeats()[0];
+        const a = chooseAction(g, s, byId(ids[s]).ai);
+        if (s === me && g.phase === 'turn' && a.type === 'discard' && !g.players.some((q) => q.seat !== me && (q.riichi || q.melds.length >= 2))) {
+          const p = g.players[me];
+          const sw = g.seatWind(me);
+          const c = new Array(34).fill(0);
+          p.hand.forEach((t) => c[kindOf(t)]++);
+          if (c[sw] === 3) {
+            held++;
+            if (kindOf(a.tile) === sw) {
+              const sh = (k: number) => {
+                c[k]--;
+                const v = shanten(c, p.melds.length);
+                c[k]++;
+                return v;
+              };
+              const other = Math.min(...[...new Set(p.hand.map(kindOf))].filter((k) => k !== sw).map(sh));
+              expect(sh(sw), `种子 ${seed} ${g.roundLabel()} 拆了自风暗刻`).toBeLessThan(other);
+            }
+          }
+        }
+        g.act(s, a);
+      }
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(held).toBeGreaterThan(200);
   }, 120000);
 });
 
