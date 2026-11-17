@@ -1,5 +1,5 @@
 import { kuroSeat } from '../src/abilities/doraControl';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { stackAt } from '../src/engine/wall';
 import { AWAI, awaiCanUse, awaiDomainOn, awaiEnergy, awaiStarPlan, awaiWaitingForCorner, awaiWaveTiles } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
@@ -16,6 +16,10 @@ import { isCornerDraw } from '../src/engine/wall';
 const saved = { ...AWAI };
 const HONOR_KINDS = [27, 28, 29, 30, 31, 32, 33];
 afterEach(() => Object.assign(AWAI, saved));
+// 字牌手默认不发（各条测试查的是天听的局）；查星符汇聚的测试自己打开
+beforeEach(() => {
+  AWAI.starsDeal = 0;
+});
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 const lineup = ['awai', 'saki', 'nodoka', 'kuro'].map(byId);
@@ -254,41 +258,56 @@ describe('大星淡：主动技能', () => {
     expect(tsumo).toBeGreaterThan(3);
   });
 
-  it('星符汇聚：按下时七种字牌各来一张进手牌（牌一张不多一张不少），转角暗杠不留了', () => {
+  it('字牌手：约三成的局她的配牌是七种字牌各一张（不是天听），第二张各在牌山后面留一张锁着；能量不够按一次就不发', () => {
+    const count = (g: Game) => toCounts(g.players[0].hand);
+    const starHand = (g: Game) => HONOR_KINDS.every((k) => count(g)[k] >= 1);
+    // 每局都发
+    AWAI.starsDeal = 1;
     for (let seed = 1; seed <= 8; seed++) {
       const { g, chars } = manualGame(['saki', 'nodoka', 'mako'], seed);
       runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
       const p = g.players[0];
-      const size = p.hand.length;
-      const drawnBefore = p.drawn;
-      expect(awaiCanUse(g, 0, 'stars')).toBe(true);
-      g.abilities[0]!.pressSkill!(g, 0, 'stars');
-      expect(awaiStarPlan(g, 0)).toBe(true);
+      expect(starHand(g)).toBe(true);
       expect(awaiWaitingForCorner(g, 0)).toBeNull();
-      expect(p.hand.length).toBe(size);
-      const c = toCounts(p.hand);
-      expect(HONOR_KINDS.every((k) => c[k] >= 1)).toBe(true);
-      // 刚摸的那张还在手里（换的是别的牌），或者换成了字牌
-      expect(p.drawn !== null && p.hand.includes(p.drawn)).toBe(true);
-      if (p.drawn !== drawnBefore) expect(kindOf(p.drawn!)).toBeGreaterThanOrEqual(27);
+      expect(shanten(toCounts(p.hand.filter((t) => t !== p.drawn)))).toBeGreaterThan(0);
       const all = [...g.wall.live, ...g.wall.rinshan, ...g.wall.doraIndicators, ...g.wall.uraIndicators, ...g.players.flatMap((q) => [...q.hand, ...q.discards.map((d) => d.tile), ...q.melds.flatMap((m) => m.tiles)])];
-      expect(all.length).toBe(136);
       expect(new Set(all).size).toBe(136);
-      for (const q of g.players) expect(q.hand.length).toBe(q.seat === 0 ? size : 13);
-      // 每种还缺的那张留在牌山最后面、锁着；牌山里没有的从别人手里拿来了（咲、和没有挡得住的）
-      const kept = g.wall.live.filter((t) => g.wall.locked.has(t) && kindOf(t) >= 27 && c[kindOf(t)] < 2);
-      const need = HONOR_KINDS.reduce((n, k) => n + Math.max(0, 2 - c[k]), 0);
-      expect(kept.length).toBeGreaterThanOrEqual(Math.min(need, 5));
+      // 每种还缺的那张都留在牌山后面（最后 4 张之前）、锁着
+      const c = count(g);
+      const kept = g.wall.live.filter((t) => g.wall.locked.has(t) && kindOf(t) >= 27);
+      for (const k of HONOR_KINDS) expect(kept.filter((t) => kindOf(t) === k).length).toBeGreaterThanOrEqual(Math.min(1, 2 - Math.min(2, c[k] - (p.drawn !== null && kindOf(p.drawn) === k ? 1 : 0))));
       for (const t of kept) expect(g.wall.live.indexOf(t)).toBeLessThan(g.wall.live.length - 4);
+      // 时间迟滞照常：别人的配牌还是散的
+      for (const s of [1, 2, 3]) expect(shanten(toCounts(g.players[s].hand))).toBeGreaterThanOrEqual(3);
+    }
+    // 约三成
+    AWAI.starsDeal = 0.3;
+    let stars = 0;
+    for (let seed = 1; seed <= 60; seed++) {
+      const { g } = manualGame(['izumi', 'izumi', 'izumi'], seed);
+      if (starHand(g)) stars++;
+    }
+    console.log({ stars, of: 60 });
+    expect(stars).toBeGreaterThan(8);
+    expect(stars).toBeLessThan(30);
+    // 能量不够；电脑的淡（不到最后两局落后很多）：都是天听
+    AWAI.starsDeal = 1;
+    AWAI.energyMax = 20;
+    for (let seed = 1; seed <= 4; seed++) expect(starHand(manualGame(['izumi', 'izumi', 'izumi'], seed).g)).toBe(false);
+    AWAI.energyMax = 100;
+    for (let seed = 1; seed <= 4; seed++) {
+      const chars = ['awai', 'izumi', 'izumi', 'izumi'].map(byId);
+      const g = new Game({ seed, players: chars.map((c) => ({ name: c.id, ability: c.ability })) });
+      expect(starHand(g)).toBe(false);
     }
   });
 
-  it('星符汇聚：之后每次摸牌都是大七星还缺的字牌，没人抢先和的话第 8 巡前后自摸大七星', () => {
+  it('星符汇聚：按下不换牌（自己的、别人的都不动）；之后每次摸牌都是大七星还缺的字牌，没人抢先和的话第 8 巡前后自摸大七星', () => {
+    AWAI.starsDeal = 1;
     let yakuman = 0;
     let rounds = 0;
     for (let seed = 1; seed <= 8; seed++) {
-      const chars = ['awai', 'izumi', 'izumi', 'izumi'].map(byId);
-      const g = new Game({ seed, players: chars.map((c) => ({ name: c.id, ability: c.ability })) });
+      const { g, chars } = manualGame(['izumi', 'izumi', 'izumi'], seed);
       if (!runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0 && g.players[0].discards.length === 0)) continue;
       rounds++;
       const p = g.players[0];
@@ -296,7 +315,13 @@ describe('大星淡：主动技能', () => {
         const c = toCounts(p.hand);
         return HONOR_KINDS.reduce((n, k) => n + Math.min(2, c[k]), 0);
       };
+      const hands = () => g.players.map((q) => q.hand.join());
+      const before = hands();
+      expect(awaiCanUse(g, 0, 'stars')).toBe(true);
       g.abilities[0]!.pressSkill!(g, 0, 'stars');
+      expect(awaiStarPlan(g, 0)).toBe(true);
+      expect(awaiEnergy(g, 0)).toBe(70);
+      expect(hands()).toEqual(before);
       let ended: { yakuman: number; turn: number } | null = null;
       g.onEvent((e) => {
         if (e.type !== 'roundEnd' || ended) return;
@@ -305,11 +330,11 @@ describe('大星淡：主动技能', () => {
       });
       for (let i = 0; i < 20 && !ended; i++) {
         g.act(0, chooseAction(g, 0, chars[0].ai));
-        const before = pairs();
+        const had = pairs();
         if (!runUntil(g, chars, () => !!ended || (g.phase === 'turn' && g.turn === 0 && p.drawn !== null))) break;
         if (ended) break;
         // 还缺的字牌牌山里留着：每摸一张多一张用得上的字牌
-        if (before < 14) expect(pairs()).toBe(before + 1);
+        if (had < 14) expect(pairs()).toBe(had + 1);
       }
       const end = ended as { yakuman: number; turn: number } | null;
       if (end?.yakuman) {
@@ -319,30 +344,28 @@ describe('大星淡：主动技能', () => {
     }
     console.log({ rounds, yakuman });
     expect(rounds).toBeGreaterThan(5);
-    expect(yakuman).toBeGreaterThanOrEqual(rounds - 2);
+    expect(yakuman).toBeGreaterThanOrEqual(rounds - 1);
   });
 
-  it('星符汇聚：AWAI.starsPull 关掉就不动别人的手牌；她管不到的人（照）手里的字牌拿不走', () => {
-    const hands = (g: Game) => [1, 2, 3].map((s) => [...g.players[s].hand].sort((a, b) => a - b).join());
-    AWAI.starsPull = false;
+  it('星符汇聚：不是字牌手的局按不了；字牌手没按就打出第一张，留着的字牌解锁', () => {
+    AWAI.starsDeal = 0;
     for (let seed = 1; seed <= 4; seed++) {
       const { g, chars } = manualGame(['saki', 'nodoka', 'mako'], seed);
       runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
-      const before = hands(g);
-      g.abilities[0]!.pressSkill!(g, 0, 'stars');
-      expect(hands(g)).toEqual(before);
+      expect(awaiCanUse(g, 0, 'stars')).toBe(false);
     }
-    AWAI.starsPull = true;
-    for (let seed = 1; seed <= 6; seed++) {
-      const { g, chars } = manualGame(['teru', 'nodoka', 'mako'], seed);
-      runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
-      const before = hands(g)[0];
-      g.abilities[0]!.pressSkill!(g, 0, 'stars');
-      expect(hands(g)[0]).toBe(before);
-    }
+    AWAI.starsDeal = 1;
+    const { g, chars } = manualGame(['saki', 'nodoka', 'mako'], 3);
+    runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
+    const locked = () => g.wall.live.filter((t) => g.wall.locked.has(t) && kindOf(t) >= 27).length;
+    expect(locked()).toBeGreaterThanOrEqual(5);
+    g.act(0, g.legalActions(0).find((a) => a.type === 'discard' && !a.riichi)!);
+    expect(locked()).toBe(0);
+    expect(awaiCanUse(g, 0, 'stars')).toBe(false);
   });
 
   it('星符汇聚：打出第一张牌以后按不了；没轮到自己（别人在打牌、在考虑鸣牌）时也按不了', () => {
+    AWAI.starsDeal = 1;
     const { g, chars } = manualGame(['saki', 'nodoka', 'mako'], 11);
     runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
     g.act(0, g.legalActions(0).find((a) => a.type === 'discard' && !a.riichi)!);

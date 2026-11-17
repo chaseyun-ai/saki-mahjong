@@ -14,16 +14,17 @@ import { PRIORITY, type Ability } from './types';
 // 被动
 // - 时间迟滞：另外三家的配牌 5–6 向听。挡得住别人影响（天使和、哩）或者自己会支配牌山（定配牌规矩、调整牌山、给别人的摸牌定规矩）
 //   的人只压到 AWAI.slowShantenWeak 向听。照这样 immune 的人管不到
-// - 命运支配：天听，配牌就听牌，但永远不给天和。配牌里有一个暗刻，第四张放在开局后摸牌经过的第 2 个转角前、轮到她摸的位置（锁住）。
+// - 命运支配：天听，配牌就听牌，但永远不给天和（有时换成字牌手，见星符汇聚）。配牌里有一个暗刻，第四张放在开局后摸牌经过的第 2 个转角前、轮到她摸的位置（锁住）。
 //   不坐庄时第一张也不给地和。第一张就立直（双立直）的话：转角之前不让她提前和，摸到第四张暗杠，杠里指示牌指向她杠的牌（四张都是里宝牌），下一张就是和了牌。
 //   第一张没立直（或者别人先鸣了牌，双立直不成立）就不留转角暗杠，第四张解锁
 //   破法：有人鸣牌，摸牌顺序错开，第四张就轮不到她；被别人的能力挡住和了牌，也和不了
 //
 // 主动（能量）
-// - 星符汇聚（30）：自己第一次摸牌以后、打出第一张牌前。按下的那一刻七种字牌各来一张进手牌（手里没有的才换，换下来的牌回牌山；AWAI.starsSeed），
-//   每种还缺的那张各留一张（挪到牌山最后面锁住，别人摸不走；牌山里没有的从别人手里拿，换给他们一张数牌，AWAI.starsPull）。
-//   之后每次摸牌都是还没凑成对子的字牌，凑成大七星（东南西北白发中各两张）自摸。转角暗杠不留了。
-//   破法：有人抢在她前面和；字牌攥在立直了的人、她管不到的人（照）手里时凑不齐
+// - 星符汇聚（30）：原作里她是看完配牌才发动的。能量够按一次时，约三成的局（AWAI.starsDeal）她的配牌不是天听，
+//   而是七种字牌各一张的「字牌手」（另外六张随便；这一局没有天听、双立直、转角暗杠）；每种字牌的第二张配牌时就在牌山最后面各留一张锁住，
+//   时间迟滞塞给别人的字牌拿不走它们。手里七种字牌到齐才能按，自己第一次摸牌以后、打出第一张牌前按：按下不换手牌，
+//   之后每次摸牌都是还没凑成对子的字牌，凑成大七星（东南西北白发中各两张）自摸。没按就打出第一张的话，留着的字牌解锁。
+//   破法：有人抢在她前面和
 // - 高维领域（20）：这一局黑暗笼罩牌桌：别人控牌山的能力失效（Ability.quells），别人摸牌有 AWAI.domainSlow 的概率摸不到进张
 // - 退相干（10）：下一次摸牌必定是进张；听牌（或立直）时必定自摸
 // - 引力波（10）：听牌后才能按。这一局牌山里她的和了牌都亮出来（只有她看得到），挑立直的时机
@@ -34,21 +35,20 @@ import { PRIORITY, type Ability } from './types';
 //   这一局摸到圆里的牌时：别人控牌山的能力失效，她没听牌时必定摸进有效牌。圆外的牌照常
 //
 // 电脑的淡：被动照常，听牌就立直（第一张就是双立直）；退相干在有人立直、牌山快见底时用；
-// 桌上有强的控场能力、自己没领先时开高维领域或巨引力源；照的连续和了爬到 3 层以上、漫爆发时开平行宇宙；落后很多的最后两局开星符汇聚
+// 桌上有强的控场能力、自己没领先时开高维领域或巨引力源；照的连续和了爬到 3 层以上、漫爆发时开平行宇宙；
+// 落后很多的最后两局才拿字牌手（拿到就开星符汇聚），别的局都是天听
 // 强度参数（测试和平衡脚本会临时改它们）
 export const AWAI = {
   energyMax: 100,
   regen: 0,
-  // 星符汇聚：按下时手里凑到几种字牌（没有的各来一张；7 是七种都来，0 是不换）
-  starsSeed: 7,
-  // 星符汇聚：牌山里找不到的字牌从别人手里拿（换给他们牌山里的数牌）
-  starsPull: true,
+  // 星符汇聚：玩家的淡每一局有多大概率拿到字牌手（七种字牌各一张；能量不够按一次时不发）。0 是从来不发，1 是每局都发
+  starsDeal: 0.3,
   // 时间迟滞：别人的配牌压到几向听（slowShanten 和 slowShanten + 1 各一半）；挡得住、会支配牌山的人只压到 slowShantenWeak
   slowShanten: 5,
   slowShantenWeak: 3,
   // 高维领域：别人这次摸牌摸不到进张的概率
   domainSlow: 0.5,
-  // 电脑：落后第一这么多就开星符汇聚（最后两局）
+  // 电脑：最后两局落后第一这么多就拿字牌手、开星符汇聚
   aiStarsBehind: 24000,
   // 巨引力源罩住每边正中那墩左右各几墩（圆和牌山外沿相切，墩的中心在圆里的：17 墩里的第 6–12 墩）
   sourceSpan: 3,
@@ -59,7 +59,7 @@ export const AWAI = {
 export type AwaiSkillId = 'stars' | 'domain' | 'decohere' | 'wave' | 'parallel' | 'accel' | 'source';
 
 export const AWAI_SKILLS: { id: AwaiSkillId; name: string; cost: number; desc: string }[] = [
-  { id: 'stars', name: '星符汇聚', cost: 30, desc: '第一次轮到自己、打出第一张牌前：七种字牌各来一张进手牌，之后每次摸牌都是大七星（东南西北白发中各两张）还缺的字牌' },
+  { id: 'stars', name: '星符汇聚', cost: 30, desc: '配牌七种字牌到齐的局（约三成）、打出第一张牌前：之后每次摸牌都是大七星（东南西北白发中各两张）还缺的字牌' },
   { id: 'domain', name: '高维领域', cost: 20, desc: '这一局黑暗笼罩牌桌：别人控牌山的能力失效，摸牌也变慢' },
   { id: 'decohere', name: '退相干', cost: 10, desc: '下一次摸牌必定是进张；听牌、立直时必定自摸' },
   { id: 'wave', name: '引力波', cost: 10, desc: '听牌后：牌山里所有和了牌亮出来，挑立直的时机' },
@@ -78,6 +78,7 @@ interface AwaiGameState {
 interface AwaiState {
   goals?: Record<number, number>; // 时间迟滞：别人的配牌要压到几向听
   tenpaiDeal?: boolean; // 这一局是天听配牌（不给天和）
+  starDeal?: boolean; // 这一局是字牌手（七种字牌各一张，等她按星符汇聚）
   kanKind?: Kind; // 暗刻是哪种牌（转角暗杠还有戏时才有）
   corner?: TileId; // 放在转角的第四张
   kanned?: boolean; // 已经暗杠了
@@ -165,70 +166,61 @@ function starNeed(g: Game, seat: number): Set<Kind> {
   return new Set(HONORS.filter((k) => counts[k] < 2));
 }
 
-// 星符汇聚按下的那一刻：
-// 1. 手里没有的字牌各来一张，凑到 AWAI.starsSeed 种，大七星用不上的牌换出去
-// 2. 每种还缺的字牌各留够数：挪到牌山最后面（最后 4 张开杠会被挖走，放在它们前面）锁住，
-//    别人摸不到、别的能力也换不走，等她一张张摸来
-// 字牌从哪来：牌山；没有了找没用过的岭上牌、没翻的里宝牌指示牌；还没有就从别人手里拿（AWAI.starsPull）——
-// 时间迟滞把别人的配牌压得很散，字牌大半在他们手里，不拿的话十局里七局凑不齐。
-// 被拿的人换到牌山里一张数牌；立直了的、她的能力管不到的人（照、挡住了的）不拿
-function gatherStars(g: Game, seat: number): void {
+// 这一局发不发字牌手。玩家的淡：能量够按一次时掷 AWAI.starsDeal；电脑的淡：最后两局落后很多才要。
+// 不从 g.rng 里掷（那样不发字牌手的局牌山也跟着变了）：拿洗好的牌山最后几张算一个数
+function wantsStarDeal(g: Game, seat: number): boolean {
+  if (awaiEnergy(g, seat) < skillOf('stars')!.cost) return false;
+  if (!g.manual[seat]) return AWAI.aiSkills && g.isLastRounds(2) && behind(g, seat) >= AWAI.aiStarsBehind;
+  if (AWAI.starsDeal <= 0 || AWAI.starsDeal >= 1) return AWAI.starsDeal >= 1;
+  const h = g.wall.live.slice(-8).reduce((a, t) => (a * 137 + t) >>> 0, 7);
+  return new Rng(h).next() < AWAI.starsDeal;
+}
+
+// 字牌手：她的配牌位置上七种字牌各一张（已经有的不动，缺的换掉数牌），另外六张是原来的牌。
+// 别人对她配牌的规矩不许的字牌不拿（比如宝牌是字牌、玄在场）；凑不齐返回 false
+function dealStars(g: Game, mine: number[], fits: (t: TileId) => boolean): boolean {
   const w = g.wall;
-  const p = g.players[seat];
+  const mineSet = new Set(mine);
+  const have = new Set(mine.map((i) => kindOf(w.live[i])));
+  const spare = g.rng.shuffle(mine.filter((i) => kindOf(w.live[i]) < 27));
+  for (const k of HONORS) {
+    if (have.has(k)) continue;
+    const i = spare.pop();
+    if (i === undefined) return false;
+    const want = (t: TileId) => kindOf(t) === k && fits(t);
+    if (!w.bringToLive(i, want, g.rng, (j) => j >= 52) && !w.bringToLive(i, want, g.rng, (j) => !mineSet.has(j))) return false;
+  }
+  return true;
+}
+
+// 大七星还缺的字牌各留够数：挪到牌山最后面（最后 4 张开杠会被挖走，放在它们前面）锁住，
+// 别人摸不到、别的能力也换不走，等她按了星符汇聚一张张摸来。hand 是她的手牌（配牌时是她会拿到的那 13 张）。
+// 字牌从哪来：牌山；没有了找没用过的岭上牌、没翻的里宝牌指示牌。
+// deal：配牌时留（字牌手）。这时别人的配牌还没发，他们配牌位置上的字牌也能换过来；发了牌以后不动别人的手牌
+function reserveStars(g: Game, seat: number, hand: TileId[], deal: boolean): void {
+  const w = g.wall;
   const st = stateOf(g, seat);
   const free = (t: TileId) => !w.locked.has(t);
-  const others = [0, 1, 2, 3].filter((o) => o !== seat);
-  // 找一张没锁的 k：返回它在哪（牌山的话是第几张）。别人手里的先换进牌山再返回
-  const fetch = (k: Kind): { src: TileId[]; i: number } | null => {
-    const live = w.live.map((_, i) => i).filter((i) => kindOf(w.live[i]) === k && free(w.live[i]));
-    if (live.length) return { src: w.live, i: live[g.rng.int(live.length)] };
-    for (const dead of [w.rinshan, w.uraIndicators]) {
-      const j = dead.findIndex((t) => kindOf(t) === k && free(t));
-      if (j >= 0) return { src: dead, i: j };
-    }
-    if (!AWAI.starsPull) return null;
-    for (const o of g.rng.shuffle(others)) {
-      const q = g.players[o];
-      if (!g.binds(seat, o) || q.riichi || q.riichiPending) continue;
-      const at = q.hand.findIndex((t) => kindOf(t) === k && t !== q.drawn);
-      if (at < 0) continue;
-      const plain = w.live.map((_, i) => i).filter((i) => kindOf(w.live[i]) < 27 && free(w.live[i]));
-      if (!plain.length) return null;
-      const j = plain[g.rng.int(plain.length)];
-      [q.hand[at], w.live[j]] = [w.live[j], q.hand[at]];
-      return { src: w.live, i: j };
-    }
-    return null;
-  };
-  const counts = toCounts(p.hand);
-  const missing = g.rng.shuffle(HONORS.filter((k) => counts[k] === 0));
-  let kinds = HONORS.length - missing.length;
-  for (const k of missing) {
-    if (kinds >= AWAI.starsSeed) break;
-    // 换出去的牌：刚摸的那张留到最后再换
-    const extra = awaiStarsExtra(g, seat).sort((a, b) => Number(a === p.drawn) - Number(b === p.drawn));
-    if (!extra.length) break;
-    const from = fetch(k);
-    if (!from) continue;
-    const out = extra[0];
-    const at = p.hand.indexOf(out);
-    p.hand[at] = from.src[from.i];
-    from.src[from.i] = out;
-    if (p.drawn === out) p.drawn = p.hand[at];
-    kinds++;
-  }
-  // 留牌
+  const mineSet = new Set(deal ? g.dealIndices(seat) : []);
   const keep: TileId[] = [];
-  const have = toCounts(p.hand);
+  const have = toCounts(hand);
   let slot = w.live.length - 5;
   for (const k of HONORS) {
     for (let n = have[k]; n < 2; n++) {
       while (slot >= 1 && !free(w.live[slot])) slot--;
-      if (slot < 1) break;
-      const from = fetch(k);
-      if (!from) break;
-      // 岭上牌、里宝牌指示牌里找到的：和留牌的位置对换；牌山里找到的：挪到留牌的位置
-      [from.src[from.i], w.live[slot]] = [w.live[slot], from.src[from.i]];
+      if (slot < (deal ? 52 : 1)) break;
+      const isK = (t: TileId) => kindOf(t) === k;
+      let ok = deal ? w.bringToLive(slot, isK, g.rng, (j) => j >= 52) || w.bringToLive(slot, isK, g.rng, (j) => !mineSet.has(j)) : isK(w.live[slot]) || w.bringToLive(slot, isK, g.rng);
+      if (!ok) {
+        for (const dead of [w.rinshan, w.uraIndicators]) {
+          const j = dead.findIndex((t) => isK(t) && free(t));
+          if (j < 0) continue;
+          [dead[j], w.live[slot]] = [w.live[slot], dead[j]];
+          ok = true;
+          break;
+        }
+      }
+      if (!ok) break;
       w.locked.add(w.live[slot], 'awai');
       keep.push(w.live[slot]);
       slot--;
@@ -237,7 +229,7 @@ function gatherStars(g: Game, seat: number): void {
   st.starKeep = keep;
 }
 
-// 大七星不做了（鸣了牌）：留着的字牌解锁
+// 大七星不做了（鸣了牌，或者字牌手没按星符汇聚就打出了第一张）：留着的字牌解锁
 function releaseStars(g: Game, seat: number): void {
   const st = stateOf(g, seat);
   for (const t of st.starKeep ?? []) g.wall.locked.delete(t, 'awai');
@@ -564,9 +556,12 @@ export function awaiCanUse(g: Game, seat: number, id: AwaiSkillId): boolean {
   if (!k || !g.active(seat) || (g.phase !== 'turn' && g.phase !== 'calls')) return false;
   if (on(g, seat, id) || awaiEnergy(g, seat) < k.cost) return false;
   const p = g.players[seat];
-  // 星符汇聚会换手牌（她的，别人的）：只在轮到她自己时按（刚摸完第一张，或者电脑在摸牌前），
-  // 别人在考虑鸣不鸣、和不和的时候不能按，不然他们手上的选项就对不上牌了
-  if (id === 'stars') return p.discards.length === 0 && p.melds.length === 0 && ((g.phase === 'turn' && g.turn === seat && p.drawn !== null) || g.drawing?.seat === seat);
+  // 星符汇聚：手里七种字牌到齐（字牌手）、还没打出第一张牌；只在轮到她自己时按（刚摸完第一张，或者电脑在摸牌前）
+  if (id === 'stars') {
+    if (p.discards.length || p.melds.length || !((g.phase === 'turn' && g.turn === seat && p.drawn !== null) || g.drawing?.seat === seat)) return false;
+    const c = toCounts(p.hand);
+    return HONORS.every((h) => c[h] > 0);
+  }
   if (id === 'wave' || id === 'accel') return tenpaiNow(g, seat);
   return true;
 }
@@ -588,7 +583,8 @@ function use(g: Game, seat: number, id: AwaiSkillId): void {
   st.used = [...(st.used ?? []), id];
   if (id === 'stars') {
     dropCorner(g, seat);
-    gatherStars(g, seat);
+    // 字牌手的局配牌时就留好了；碰巧自己摸成七种字牌的局现在留
+    if (!st.starKeep) reserveStars(g, seat, g.players[seat].hand, false);
   }
   if (id === 'decohere') st.decohere = true;
   if (id === 'parallel') parallel(g, seat);
@@ -624,7 +620,7 @@ function aiPress(g: Game, seat: number): void {
   const p = g.players[seat];
   const try_ = (id: AwaiSkillId) => awaiCanUse(g, seat, id) && (use(g, seat, id), true);
   if (marksDanger(g, seat)) try_('parallel');
-  if (p.discards.length === 0 && g.isLastRounds(2) && behind(g, seat) >= AWAI.aiStarsBehind) try_('stars');
+  if (stateOf(g, seat).starDeal && p.discards.length === 0) try_('stars');
   if (behind(g, seat) > 0 && strongControl(g, seat) && !on(g, seat, 'source')) try_('domain');
   if (!tenpaiNow(g, seat) && !on(g, seat, 'domain') && strongControl(g, seat) && awaiEnergy(g, seat) >= 40) try_('source');
   const threat = g.players.some((q) => q.seat !== seat && q.riichi && g.seesRiichi(q.seat, seat));
@@ -636,7 +632,7 @@ function aiPress(g: Game, seat: number): void {
 export const awaiAbility: Ability = {
   id: 'awai',
   name: '星空',
-  description: `星空能量开局 ${AWAI.energyMax} 点，${AWAI.regen ? `每局回复 ${AWAI.regen} 点` : '用掉不回复'}。被动：时间迟滞（别人配牌 5–6 向听，挡得住或会支配牌山的人减弱）、命运支配（天听但永远不天和；双立直的话在第 2 个转角前暗杠，杠里四张都是里宝牌，下一张自摸）。主动：星符汇聚 30（七种字牌各来一张，之后摸牌凑大七星）、高维领域 20、退相干 10、引力波 10、平行宇宙 50、加速驱动 10、巨引力源 10（罩住每边牌山中间 7 墩）。`,
+  description: `星空能量开局 ${AWAI.energyMax} 点，${AWAI.regen ? `每局回复 ${AWAI.regen} 点` : '用掉不回复'}。被动：时间迟滞（别人配牌 5–6 向听，挡得住或会支配牌山的人减弱）、命运支配（天听但永远不天和；双立直的话在第 2 个转角前暗杠，杠里四张都是里宝牌，下一张自摸）。主动：星符汇聚 30（约三成的局配牌是七种字牌到齐的字牌手，这时按下，之后摸牌凑大七星）、高维领域 20、退相干 10、引力波 10、平行宇宙 50、加速驱动 10、巨引力源 10（罩住每边牌山中间 7 墩）。`,
   priority: PRIORITY.awai,
 
   // 时间迟滞定规矩：另外三家的配牌至少 5–6 向听（减弱的人 3 向听）
@@ -658,7 +654,8 @@ export const awaiAbility: Ability = {
     const s = stateOf(g, seat);
     const p = g.players[seat];
     const lines: string[] = [];
-    if (s.tenpaiDeal && !s.riichiChecked && !on(g, seat, 'stars')) lines.push('天听：第一张就立直（双立直）会在第 2 个转角暗杠、下一张自摸');
+    if (s.starDeal && !s.riichiChecked && !on(g, seat, 'stars')) lines.push(awaiCanUse(g, seat, 'stars') ? '字牌手：七种字牌到齐了，打出第一张牌前可以发动星符汇聚' : '字牌手：轮到你、摸了牌以后可以发动星符汇聚');
+    else if (s.tenpaiDeal && !s.riichiChecked && !on(g, seat, 'stars')) lines.push('天听：第一张就立直（双立直）会在第 2 个转角暗杠、下一张自摸');
     else if (awaiWaitingForCorner(g, seat) !== null) lines.push(`等第 2 个转角暗杠：${kindLabel(s.kanKind!)}`);
     if (awaiStarPlan(g, seat)) {
       const need = [...starNeed(g, seat)];
@@ -708,13 +705,22 @@ export const awaiAbility: Ability = {
     const s = stateOf(g, seat);
     const mine = g.dealIndices(seat);
     const mineSet = new Set(mine);
-    // 命运支配：双立直的配牌。先找一手满足别人规矩的（规矩只看牌种，所以拿每种牌里的一张代表来算）
     const others = g.dealRules.filter((r) => r.target === seat && r.seat !== seat);
+    // 星符汇聚的字牌手：七种字牌各一张，第二张各在牌山后面留一张。凑不成就照常发天听
+    if (wantsStarDeal(g, seat)) {
+      const fits = (t: TileId) => others.every((r) => r.bad([t]) === 0);
+      if (dealStars(g, mine, fits) || g.dealFallback(seat, () => dealStars(g, mine, fits))) {
+        s.starDeal = true;
+        g.addDealRule({ seat, ability: 'awai', text: '字牌手', target: seat, bad: (hand) => HONORS.filter((k) => !hand.some((t) => kindOf(t) === k)).length });
+        reserveStars(g, seat, mine.map((i) => w.live[i]), true);
+      }
+    }
+    // 命运支配：双立直的配牌。先找一手满足别人规矩的（规矩只看牌种，所以拿每种牌里的一张代表来算）
     // 只数单拿一张也不违反别人规矩的牌（比如玄在场时赤五不算：同种的普通牌够了才行）
     const avail = toCounts(w.live.filter((t) => others.every((r) => r.bad([t]) === 0)));
-    let plan = planHand(avail, g.rng, (kinds) => others.every((r) => r.bad(kinds.map((k) => k * 4 + 1)) === 0));
+    let plan = s.starDeal ? null : planHand(avail, g.rng, (kinds) => others.every((r) => r.bad(kinds.map((k) => k * 4 + 1)) === 0));
     // 无解时降级：不顾比她后动的人的规矩，换牌也一样
-    if (!plan) plan = planHand(toCounts(w.live), g.rng, () => true);
+    if (!plan && !s.starDeal) plan = planHand(toCounts(w.live), g.rng, () => true);
     if (plan) {
       const placed = placeHand(g, mine, plan.kinds) || g.dealFallback(seat, () => placeHand(g, mine, plan!.kinds));
       if (placed) {
@@ -752,6 +758,7 @@ export const awaiAbility: Ability = {
   onRoundStart(g, seat) {
     g.emit({ type: 'ability', seat, ability: 'awai', text: '时间迟滞' });
     if (stateOf(g, seat).tenpaiDeal) g.emit({ type: 'ability', seat, ability: 'awai', text: '天听' });
+    if (stateOf(g, seat).starDeal) g.emit({ type: 'ability', seat, ability: 'awai', text: '字牌手' });
   },
 
   // 别人摸牌：加速驱动让他们摸进她的铳牌；高维领域让他们摸不到进张
@@ -794,7 +801,7 @@ export const awaiAbility: Ability = {
         drawStar(g, seat, rinshan, need);
         return;
       }
-    } else if (s.starKeep?.length) releaseStars(g, seat);
+    } else if (s.starKeep?.length && on(g, seat, 'stars')) releaseStars(g, seat);
     // 巨引力源：摸到引力圆里的牌、没听牌时必定是进张
     if (on(g, seat, 'source') && waits.length === 0 && sourceCovers(g)) {
       bring(g, rinshan, useful(g, seat));
@@ -833,5 +840,7 @@ export const awaiAbility: Ability = {
     const p = g.players[seat];
     if (p.riichiPending && p.doubleRiichi) s.dbl = true;
     else dropCorner(g, seat);
+    // 字牌手没按星符汇聚：留着的字牌解锁
+    if (!on(g, seat, 'stars')) releaseStars(g, seat);
   },
 };

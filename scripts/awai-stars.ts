@@ -1,5 +1,6 @@
-// 星符汇聚做得成几成：npx vite-node scripts/awai-stars.ts [场数] [starsSeed] [对手：random|plain]
-// 每一局她第一次轮到就按星符汇聚（能量给够），别的主动技能不按
+// 星符汇聚做得成几成：npx vite-node scripts/awai-stars.ts [场数] [starsDeal，默认 0.3] [对手：random|plain] [能量：real|free]
+// 她当成玩家的淡（拿得到字牌手），拿到字牌手、第一次轮到自己就按星符汇聚，别的主动技能不按。
+// real：能量照实扣（开局 100，不回复）；free：能量给够，每次拿到都能按
 import { AWAI, awaiCanUse } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
 import { chooseAction } from '../src/ai/ai';
@@ -7,11 +8,10 @@ import { Game } from '../src/engine/game';
 import { Rng } from '../src/engine/rng';
 
 const games = Number(process.argv[2] ?? 50);
-AWAI.starsSeed = Number(process.argv[3] ?? 7);
-AWAI.starsPull = process.argv[5] !== "nopull";
+AWAI.starsDeal = Number(process.argv[3] ?? 0.3);
 const pool = process.argv[4] ?? 'random';
 AWAI.aiSkills = false;
-AWAI.energyMax = 100000;
+if (process.argv[5] === 'free') AWAI.energyMax = 100000;
 const me = CHARACTERS.find((c) => c.id === 'awai')!;
 const plain = CHARACTERS.find((c) => c.id === 'izumi')!;
 const S = { rounds: 0, pressed: 0, yakuman: 0, tsumo: 0, otherWin: 0, dealIn: 0, draw: 0, smallWin: 0, turns: [] as number[], endTurns: [] as number[] };
@@ -20,7 +20,7 @@ for (let seed = 1; seed <= games; seed++) {
   const others = pool === 'plain' ? [plain, plain, plain] : rng.shuffle(CHARACTERS.filter((c) => c.id !== 'awai')).slice(0, 3);
   const order = rng.shuffle([me, ...others]);
   const mine = order.indexOf(me);
-  const g = new Game({ seed, format: 'south', players: order.map((c) => ({ name: c.name, ability: c.ability })) });
+  const g = new Game({ seed, format: 'south', players: order.map((c) => ({ name: c.name, ability: c.ability, manual: c === me })) });
   let pressed = false;
   g.onEvent((e) => {
     if (e.type === 'roundStart') pressed = false;
@@ -51,6 +51,6 @@ for (let seed = 1; seed <= games; seed++) {
 const pc = (a: number, b: number) => (b ? ((100 * a) / b).toFixed(1) + '%' : '-');
 const avg = (a: number[]) => (a.length ? (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1) : '-');
 const hist = (a: number[]) => { const h: Record<number, number> = {}; for (const x of a) h[x] = (h[x] ?? 0) + 1; return h; };
-console.log(`starsSeed ${AWAI.starsSeed}，对手 ${pool}，${games} 场 ${S.rounds} 局，按了 ${S.pressed} 局`);
+console.log(`starsDeal ${AWAI.starsDeal}，对手 ${pool}，${games} 场 ${S.rounds} 局，按了 ${S.pressed} 局（每场 ${(S.pressed / games).toFixed(2)} 次，${pc(S.pressed, S.rounds)} 的局）`);
 console.log(`役满和了 ${pc(S.yakuman, S.pressed)}（自摸 ${S.tsumo}），平均第 ${avg(S.turns)} 巡；别的和了 ${pc(S.smallWin, S.pressed)}；别人先和 ${pc(S.otherWin, S.pressed)}（她放铳 ${pc(S.dealIn, S.pressed)}）；流局 ${pc(S.draw, S.pressed)}`);
 console.log('役满巡目', JSON.stringify(hist(S.turns)));
