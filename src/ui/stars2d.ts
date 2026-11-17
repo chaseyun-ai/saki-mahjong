@@ -78,13 +78,7 @@ export class Stars2D {
   constructor() {
     this.sky = document.createElement('div');
     this.sky.className = 'stars2d-sky';
-    this.sky.innerHTML =
-      '<div class="stars2d-band"></div>' +
-      Array.from({ length: 110 }, () => {
-        const d = 1.6 + Math.random() * 3.4;
-        const big = Math.random() < 0.12;
-        return `<i class="${big ? 'big' : ''}${Math.random() < 0.25 ? ' gold' : ''}" style="left:${(Math.random() * 100).toFixed(1)}%;top:${(Math.random() * 100).toFixed(1)}%;--s:${(big ? 3 + Math.random() * 2 : 1 + Math.random() * 1.6).toFixed(1)}px;animation-duration:${d.toFixed(2)}s;animation-delay:${(-Math.random() * d).toFixed(2)}s"></i>`;
-      }).join('');
+    this.reseed();
     this.fx = document.createElement('div');
     this.fx.className = 'stars2d-fx';
     this.beacon = document.createElement('div');
@@ -98,6 +92,45 @@ export class Stars2D {
 
   get active(): boolean {
     return this.on;
+  }
+
+  // 换一片夜空，每一局开始换一次：星云的位置和色调、银河的方向、每颗星的位置都重新随机。
+  // 星分两层，各自慢慢转（快慢、方向每局不同），彼此的位置一直在变；有几颗大星隔一阵闪一下十字光
+  reseed(): void {
+    const r = Math.random;
+    const stars = (n: number) =>
+      Array.from({ length: n }, () => {
+        const d = 1.6 + r() * 3.4;
+        const big = r() < 0.12;
+        const glint = big && r() < 0.5;
+        const g = 7 + r() * 14;
+        return `<i class="${big ? 'big' : ''}${glint ? ' glint' : ''}${r() < 0.25 ? ' gold' : ''}" style="left:${(r() * 100).toFixed(1)}%;top:${(r() * 100).toFixed(1)}%;--s:${(big ? 3 + r() * 2 : 1 + r() * 1.6).toFixed(1)}px;--g:${g.toFixed(1)}s;--gd:${(-r() * g).toFixed(1)}s;animation-duration:${d.toFixed(2)}s;animation-delay:${(-r() * d).toFixed(2)}s"></i>`;
+      }).join('');
+    const dir = r() < 0.5 ? 'normal' : 'reverse';
+    const turn = 500 + r() * 400;
+    this.sky.innerHTML =
+      `<div class="stars2d-neb" style="--n1x:${(15 + r() * 70).toFixed(0)}%;--n1y:${(15 + r() * 70).toFixed(0)}%;--n2x:${(15 + r() * 70).toFixed(0)}%;--n2y:${(15 + r() * 70).toFixed(0)}%;--n3x:${(15 + r() * 70).toFixed(0)}%;--n3y:${(15 + r() * 70).toFixed(0)}%;--hue:${(-45 + r() * 80).toFixed(0)}deg"></div>` +
+      `<div class="stars2d-layer" style="--turn:${turn.toFixed(0)}s;--from:${(r() * 360).toFixed(0)}deg;animation-direction:${dir}"><div class="stars2d-band" style="--band:${(r() * 180).toFixed(0)}deg"></div>${stars(170)}</div>` +
+      `<div class="stars2d-layer" style="--turn:${(turn * (0.45 + r() * 0.2)).toFixed(0)}s;--from:${(r() * 360).toFixed(0)}deg;animation-direction:${dir}">${stars(150)}</div>`;
+  }
+
+  // 流星：夜空开着时隔几秒划过一颗（画在夜空这一层里，在牌底下）
+  private meteorTimer = 0;
+  private meteor(): void {
+    window.clearTimeout(this.meteorTimer);
+    if (!this.on || reduced()) return;
+    this.meteorTimer = window.setTimeout(() => {
+      if (this.on && this.sky.isConnected) {
+        const el = document.createElement('div');
+        el.className = 'stars2d-meteor';
+        const a = Math.random() * Math.PI * 2;
+        const len = 180 + Math.random() * 260;
+        el.style.cssText = `left:${(10 + Math.random() * 80).toFixed(1)}%;top:${(10 + Math.random() * 80).toFixed(1)}%;--a:${a.toFixed(3)}rad;--dx:${(Math.cos(a) * len).toFixed(0)}px;--dy:${(Math.sin(a) * len).toFixed(0)}px;--d:${(0.6 + Math.random() * 0.5).toFixed(2)}s`;
+        el.addEventListener('animationend', () => el.remove());
+        this.sky.append(el);
+      }
+      this.meteor();
+    }, 2500 + Math.random() * 6000);
   }
 
   // 屏幕上的一点换成这一层里的坐标（牌桌整个缩放过）
@@ -132,6 +165,7 @@ export class Stars2D {
       this.sky.classList.remove('open', 'instant');
       this.beacon.hidden = true;
     }
+    this.meteor();
   }
 
   // 双立直宣言：金色的光圈从 at 扫过整张桌子，扫过的地方变成夜空
@@ -202,6 +236,7 @@ export class Stars2D {
 
   clear(): void {
     this.setOn(false);
+    this.reseed();
     this.beaconLast = null;
     this.flares.length = 0;
     this.comets.length = 0;

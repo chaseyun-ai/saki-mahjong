@@ -9428,11 +9428,7 @@ canvas.rii-sky {
   overflow: hidden;
   z-index: 0;
   opacity: 0;
-  background:
-    radial-gradient(ellipse 60% 45% at 28% 30%, rgba(96, 52, 190, 0.55), rgba(96, 52, 190, 0) 70%),
-    radial-gradient(ellipse 55% 50% at 74% 68%, rgba(30, 84, 200, 0.5), rgba(30, 84, 200, 0) 70%),
-    radial-gradient(ellipse 40% 30% at 62% 26%, rgba(150, 70, 190, 0.3), rgba(150, 70, 190, 0) 70%),
-    linear-gradient(160deg, #070a1e, #0a0f2c 45%, #060818);
+  background: linear-gradient(160deg, #070a1e, #0a0f2c 45%, #060818);
   clip-path: circle(0% at var(--x, 50%) var(--y, 50%));
   transition: opacity 1.4s ease;
 }
@@ -9444,10 +9440,36 @@ canvas.rii-sky {
 .stars2d-sky.open.instant {
   transition: opacity 0.8s ease;
 }
-/* 斜着的一道银河 */
+/* 星云：三团云的位置、整体的色调每一局随机（stars2d.ts 的 reseed 写进这些变量），慢慢地一明一暗 */
+.stars2d-neb {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 45% at var(--n1x, 28%) var(--n1y, 30%), rgba(96, 52, 190, 0.55), rgba(96, 52, 190, 0) 70%),
+    radial-gradient(ellipse 55% 50% at var(--n2x, 74%) var(--n2y, 68%), rgba(30, 84, 200, 0.5), rgba(30, 84, 200, 0) 70%),
+    radial-gradient(ellipse 40% 30% at var(--n3x, 62%) var(--n3y, 26%), rgba(150, 70, 190, 0.3), rgba(150, 70, 190, 0) 70%);
+  filter: hue-rotate(var(--hue, 0deg));
+  animation: stars2d-nebula 11s ease-in-out infinite;
+}
+@keyframes stars2d-nebula {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+/* 星分两层，比桌子大一圈，各自慢慢转（转到哪都盖得住四个角）：两层快慢不同，星和星的相对位置一直在变 */
+.stars2d-layer {
+  position: absolute;
+  inset: -35%;
+  rotate: var(--from, 0deg);
+  animation: stars2d-turn var(--turn, 700s) linear infinite;
+}
+@keyframes stars2d-turn {
+  to { rotate: calc(var(--from, 0deg) + 360deg); }
+}
+/* 斜着的一道银河，方向每一局随机，跟着第一层星转 */
 .stars2d-band {
   position: absolute;
-  inset: -30%;
+  inset: -10%;
+  rotate: var(--band, 0deg);
   background: linear-gradient(118deg, rgba(160, 170, 255, 0) 38%, rgba(170, 180, 255, 0.16) 47%, rgba(230, 220, 255, 0.24) 50%, rgba(170, 180, 255, 0.16) 53%, rgba(160, 170, 255, 0) 62%);
 }
 .stars2d-sky i {
@@ -9469,6 +9491,44 @@ canvas.rii-sky {
 @keyframes stars2d-twinkle {
   0%, 100% { opacity: 0.25; }
   50% { opacity: 1; }
+}
+/* 有几颗大星隔一阵闪一下十字光 */
+.stars2d-sky i.glint::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px;
+  background:
+    radial-gradient(ellipse 50% 3% at 50% 50%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0)),
+    radial-gradient(ellipse 3% 50% at 50% 50%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0));
+  opacity: 0;
+  animation: stars2d-glint var(--g, 11s) ease-in-out var(--gd, 0s) infinite;
+}
+@keyframes stars2d-glint {
+  0%, 90%, 100% { opacity: 0; scale: 0.2; }
+  95% { opacity: 1; scale: 1; }
+}
+/* 划过夜空的流星 */
+.stars2d-meteor {
+  position: absolute;
+  width: 110px;
+  height: 2px;
+  margin-left: -110px;
+  transform-origin: 100% 50%;
+  rotate: var(--a, 0rad);
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(200, 220, 255, 0), rgba(235, 242, 255, 0.95));
+  box-shadow: 0 0 6px rgba(160, 190, 255, 0.7);
+  opacity: 0;
+  animation: stars2d-meteor var(--d, 0.8s) ease-out forwards;
+}
+@keyframes stars2d-meteor {
+  0% { translate: 0 0; opacity: 0; }
+  15% { opacity: 1; }
+  100% { translate: var(--dx, 200px) var(--dy, 80px); opacity: 0; }
 }
 /* 盖在牌桌上面的一层：流星、闪光、光圈（canvas）和转角的星 */
 .stars2d-fx {
@@ -9570,6 +9630,9 @@ canvas.rii-sky {
     animation: none;
   }
   .stars2d-sky i,
+  .stars2d-sky i.glint::after,
+  .stars2d-neb,
+  .stars2d-layer,
   .stars2d-beacon .star {
     animation: none;
   }

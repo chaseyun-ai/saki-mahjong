@@ -7,6 +7,8 @@ import * as THREE from 'three';
 // - 杠里：和牌时四颗流星从王牌里那张里宝牌指示牌飞到杠的四张牌上
 // - 技能发动时的流星、闪光也借这里的四芒星画；星符汇聚的北斗七星（figure）挂到这一局结束
 // 星云是开局前在 JS 里算好的一张贴图（四个通道四层云），星是一颗一个点。
+// 夜空是活的，而且局局不同（reseed）：每一局星的位置、银河的方向和宽窄、星云的浓淡和颜色都重新随机；
+// 几层星转得不一样快，彼此的位置一直在变；有些星隔一阵猛地亮一下，隔几秒有流星划过。
 // 不在着色器里现算噪声：那种散列函数在不同显卡上算出来的数对不上，相邻两格接不起来，夜空会裂成一块一块的
 
 const SKY_VERT = /* glsl */ `
@@ -26,23 +28,50 @@ uniform float uWave;
 uniform float uBoost;
 uniform float uHalf;
 uniform vec2 uOrigin;
+// 这一局的夜空长什么样（每局随机，见 StarSky.reseed）
+uniform float uTurn;  // 整片夜空先转过多少
+uniform float uSpin;  // 之后转多快（有正有负）
+uniform vec4 uOffA;   // 两层星云在贴图上从哪取
+uniform vec4 uOffB;   // 银河里两层细云从哪取
+uniform vec2 uDrift;  // 云往哪边飘
+uniform vec3 uBand;   // 银河：偏离桌心多少、多宽、多亮
+uniform vec3 uColA;
+uniform vec3 uColB;
+uniform vec3 uColBand;
+uniform vec3 uColDust;
+uniform vec2 uDense;  // 两层星云各有多浓（阈值）
+// 划过夜空的流星（两颗）：头、尾的位置，和各自多亮
+uniform vec4 uMetA;
+uniform vec4 uMetB;
+uniform vec2 uMetK;
 varying vec2 vP;
+float meteor(vec2 p, vec4 m, float a) {
+  vec2 pa = p - m.xy, ba = m.zw - m.xy;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-4), 0.0, 1.0);
+  float d = length(pa - ba * h);
+  float w = mix(0.1, 0.02, h);
+  float head = exp(-dot(pa, pa) / 0.03);
+  return a * (exp(-d * d / (w * w)) * pow(1.0 - h, 1.6) + head * 0.8);
+}
 void main() {
   vec2 p = vP;
-  float ang = uTime * 0.012;
+  float ang = uTurn + uTime * uSpin;
   float cs = cos(ang), sn = sin(ang);
   vec2 q = vec2(cs * p.x + sn * p.y, cs * p.y - sn * p.x);
   // 星云：四层云都从一张烤好的贴图里取（四个通道各是一层），用不同的大小、慢慢错开着飘
-  float n = texture2D(uNeb, q * 0.02125 + vec2(0.0, uTime * 0.002)).r;
-  float n2 = texture2D(uNeb, q * 0.04 - vec2(uTime * 0.00275, 0.37)).g;
+  float n = texture2D(uNeb, q * 0.02125 + uOffA.xy + uDrift * uTime).r;
+  float n2 = texture2D(uNeb, q * 0.04 + uOffA.zw - uDrift.yx * uTime * 1.4).g;
   vec3 col = vec3(0.010, 0.014, 0.045);
-  col += vec3(0.17, 0.07, 0.40) * smoothstep(0.46, 0.86, n) * 0.8;
-  col += vec3(0.04, 0.15, 0.50) * smoothstep(0.5, 0.88, n2) * 0.7;
+  // 云慢慢地一明一暗，各处不同步
+  float breath = 0.86 + 0.14 * sin(uTime * 0.23 + n2 * 9.0);
+  col += uColA * smoothstep(uDense.x, uDense.x + 0.4, n) * 0.8 * breath;
+  col += uColB * smoothstep(uDense.y, uDense.y + 0.38, n2) * 0.7 * (1.72 - breath);
   // 斜着横过桌面的一条银河
-  float across = (q.x * 0.62 + q.y * 0.78) / (uHalf * 0.3);
+  float across = (q.x * 0.62 + q.y * 0.78 - uBand.x) / (uHalf * uBand.y);
   float band = exp(-across * across);
-  col += (vec3(0.30, 0.26, 0.5) * texture2D(uNeb, q * 0.0825 + 0.21).b + vec3(1.0, 0.78, 0.36) * 0.16 * texture2D(uNeb, q * 0.175 + 0.63).a) * band * 0.7;
+  col += (uColBand * texture2D(uNeb, q * 0.0825 + uOffB.xy).b + uColDust * 0.16 * texture2D(uNeb, q * 0.175 + uOffB.zw).a) * band * uBand.z;
   col *= 1.0 + uBoost * 0.8;
+  col += vec3(0.85, 0.92, 1.0) * (meteor(p, uMetA, uMetK.x) + meteor(p, uMetB, uMetK.y)) * 2.0;
   // 从她那边扫过来的金色光圈：扫过的地方才是夜空
   float d = distance(p, uOrigin);
   float inside = smoothstep(uWave, uWave - 2.2, d);
@@ -56,10 +85,12 @@ void main() {
 }
 `;
 
-// 夜空里的星：一颗星一个点，跟着夜空慢慢转；大的带十字星芒。光圈没扫到的地方、桌子外面的不画
+// 夜空里的星：一颗星一个点；大的带十字星芒。几层星转得不一样快，彼此的位置一直在变；
+// 有些星隔一阵猛地亮一下、十字光伸出来（aGlint）。光圈没扫到的地方、桌子外面的不画
 const STAR_VERT = /* glsl */ `
 attribute vec4 aStar; // 半径、星芒、闪烁的种子、亮度
-attribute float aGold;
+attribute vec3 aColor;
+attribute vec2 aMove; // 这一层转得多快（夜空的几倍）、会不会猛地亮一下
 uniform float uTime;
 uniform float uA;
 uniform float uWave;
@@ -67,13 +98,15 @@ uniform float uBoost;
 uniform float uHalf;
 uniform float uPx;
 uniform float uMin;
+uniform float uTurn;
+uniform float uSpin;
 uniform vec2 uOrigin;
 varying float vA;
 varying float vK;
 varying float vM;
-varying float vGold;
+varying vec3 vC;
 void main() {
-  float ang = uTime * 0.012;
+  float ang = uTurn + uTime * uSpin * aMove.x;
   float cs = cos(ang), sn = sin(ang);
   vec2 q = position.xz;
   vec2 p = vec2(cs * q.x - sn * q.y, sn * q.x + cs * q.y);
@@ -84,13 +117,15 @@ void main() {
   float inside = smoothstep(uWave, uWave - 2.2, distance(p, uOrigin));
   float h = aStar.z;
   float tw = 0.55 + 0.45 * sin(uTime * (0.8 + h * 2.6) + h * 40.0);
-  vK = 1.0 + 4.0 * aStar.y;
+  // 猛地亮一下：十几到几十秒一回，一回不到一秒
+  float glint = aMove.y * pow(max(0.0, sin(uTime * (0.12 + h * 0.3) + h * 91.0)), 90.0);
+  vM = min(1.0, aStar.y + glint * 0.9);
+  vK = 1.0 + 4.0 * vM;
   float px = uPx * aStar.x * vK / max(-mv.z, 0.1);
   float size = max(px, uMin);
   // 小到不足一个像素的星：点不再缩小，改成变暗
-  vA = aStar.w * tw * inside * edge * uA * (1.0 + uBoost * 1.5) * (1.0 + uBoost * 0.8) * (px / size);
-  vM = aStar.y;
-  vGold = aGold;
+  vA = aStar.w * (tw + glint * 2.2) * inside * edge * uA * (1.0 + uBoost * 1.5) * (1.0 + uBoost * 0.8) * (px / size);
+  vC = aColor;
   gl_PointSize = size;
 }
 `;
@@ -99,14 +134,13 @@ const STAR_FRAG = /* glsl */ `
 varying float vA;
 varying float vK;
 varying float vM;
-varying float vGold;
+varying vec3 vC;
 void main() {
   vec2 u = gl_PointCoord * 2.0 - 1.0;
   vec2 d = abs(u) * vK;
   float core = smoothstep(1.0, 0.0, length(d));
   float spike = (exp(-d.x * 6.6 - d.y * 0.77) + exp(-d.y * 6.6 - d.x * 0.77)) * vM * 1.6 * smoothstep(1.0, 0.6, length(u));
-  vec3 c = mix(vec3(0.82, 0.9, 1.0), vec3(1.0, 0.82, 0.45), vGold);
-  gl_FragColor = vec4(c * (core * core * 1.4 + spike) * vA, 1.0);
+  gl_FragColor = vec4(vC * (core * core * 1.4 + spike) * vA, 1.0);
   #include <colorspace_fragment>
 }
 `;
@@ -265,41 +299,78 @@ function nebulaTexture(): THREE.DataTexture {
   return tex;
 }
 
-// 夜空里的星：撒在一个罩得住整张桌子的圆里（夜空在转，圆转到哪都盖得住四个角）。
-// 三层：少而大的、多而小的、银河里密密的碎星；每颗记下半径、星芒、闪烁的种子、亮度、是不是金色
-function starField(half: number): THREE.BufferGeometry {
-  const rnd = mulberry(20260);
+// 夜空里的星：撒在一个罩得住整张桌子的圆里（夜空在转，圆转到哪都盖得住四个角）。每一局按种子重撒一遍。
+// 四层：少而大的、多而小的、银河里密密的碎星（跟着银河转）、几颗特别亮的带颜色的大星；
+// 每颗记下半径、星芒、闪烁的种子、亮度、颜色、这一层转多快、会不会猛地亮一下
+const WHITE: [number, number, number] = [0.82, 0.9, 1.0];
+const WARM: [number, number, number] = [1.0, 0.82, 0.45];
+const GIANTS: [number, number, number][] = [[1.0, 0.55, 0.35], [0.55, 0.85, 1.0], [1.0, 0.9, 0.6], [0.8, 0.7, 1.0], [0.6, 1.0, 0.9]];
+function starField(half: number, seed: number, band: { off: number; width: number }): THREE.BufferGeometry {
+  const rnd = mulberry(seed);
   const R = half * 1.42;
   const area = Math.PI * R * R;
   const pos: number[] = [];
   const star: number[] = [];
-  const gold: number[] = [];
-  const layer = (count: number, lo: number, hi: number, bright: number, band: number) => {
+  const color: number[] = [];
+  const move: number[] = [];
+  const spot = (): [number, number] => {
+    const r = R * Math.sqrt(rnd());
+    const a = rnd() * Math.PI * 2;
+    return [r * Math.cos(a), r * Math.sin(a)];
+  };
+  const layer = (count: number, lo: number, hi: number, bright: number, inBandOnly: number, speed: number, glints: number) => {
     for (let i = 0; i < count; i++) {
-      const r = R * Math.sqrt(rnd());
-      const a = rnd() * Math.PI * 2;
-      const x = r * Math.cos(a);
-      const z = r * Math.sin(a);
+      const [x, z] = spot();
       const m = Math.pow(rnd(), 5);
       const seed = rnd();
-      const g = rnd() < 0.18 ? 1 : 0;
-      const across = (x * 0.62 + z * 0.78) / (half * 0.3);
+      const c = rnd() < 0.18 ? WARM : WHITE;
+      const across = (x * 0.62 + z * 0.78 - band.off) / (half * band.width);
       const inBand = Math.exp(-across * across);
+      const glint = rnd() < glints ? 1 : 0;
       // 碎星：银河外面稀、也暗
-      if (band > 0 && rnd() > 1 - band + band * inBand) continue;
+      if (inBandOnly > 0 && rnd() > 1 - inBandOnly + inBandOnly * inBand) continue;
       pos.push(x, 0, z);
-      star.push(lo + (hi - lo) * m, m, seed, bright * (band > 0 ? 0.4 + 0.6 * inBand : 1));
-      gold.push(g);
+      star.push(lo + (hi - lo) * m, m, seed, bright * (inBandOnly > 0 ? 0.4 + 0.6 * inBand : 1));
+      color.push(...c);
+      move.push(speed, glint);
     }
   };
-  layer(Math.round(area * 0.4), 0.039, 0.122, 1, 0);
-  layer(Math.round(area * 1.8), 0.017, 0.052, 0.7, 0);
-  layer(Math.round(area * 5), 0.009, 0.022, 0.8, 0.6);
+  layer(Math.round(area * 0.4), 0.039, 0.122, 1, 0, 0.55, 0.1);
+  layer(Math.round(area * 1.8), 0.017, 0.052, 0.7, 0, 1.7, 0.03);
+  layer(Math.round(area * 5), 0.009, 0.022, 0.8, 0.6, 1, 0);
+  // 大星：只撒在桌面里面，一局四到七颗
+  const giants = 4 + Math.floor(rnd() * 4);
+  for (let i = 0; i < giants; i++) {
+    pos.push((rnd() * 2 - 1) * half * 0.85, 0, (rnd() * 2 - 1) * half * 0.85);
+    star.push(0.1 + rnd() * 0.08, 0.45 + rnd() * 0.4, rnd(), 1.15);
+    color.push(...GIANTS[Math.floor(rnd() * GIANTS.length)]);
+    move.push(0.3 + rnd() * 0.5, 1);
+  }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('aStar', new THREE.Float32BufferAttribute(star, 4));
-  geo.setAttribute('aGold', new THREE.Float32BufferAttribute(gold, 1));
+  geo.setAttribute('aColor', new THREE.Float32BufferAttribute(color, 3));
+  geo.setAttribute('aMove', new THREE.Float32BufferAttribute(move, 2));
   return geo;
+}
+
+// 夜空的几套颜色（两层星云、银河、银河里的星尘）：每一局在两套之间随便调一个比例
+const PALETTES: [number, number, number][][] = [
+  [[0.17, 0.07, 0.4], [0.04, 0.15, 0.5], [0.3, 0.26, 0.5], [1.0, 0.78, 0.36]],
+  [[0.3, 0.05, 0.28], [0.02, 0.22, 0.36], [0.22, 0.34, 0.5], [0.6, 0.9, 1.0]],
+  [[0.05, 0.1, 0.45], [0.03, 0.26, 0.25], [0.25, 0.3, 0.55], [1.0, 0.85, 0.5]],
+  [[0.34, 0.07, 0.22], [0.12, 0.08, 0.46], [0.36, 0.24, 0.46], [1.0, 0.7, 0.5]],
+  [[0.1, 0.06, 0.46], [0.24, 0.05, 0.34], [0.28, 0.24, 0.56], [0.8, 0.85, 1.0]],
+];
+
+// 划过夜空的一颗流星
+interface Meteor {
+  from: THREE.Vector2;
+  dir: THREE.Vector2;
+  travel: number;
+  tail: number;
+  t: number;
+  dur: number;
 }
 
 const GOLD = new THREE.Color('#ffd36b');
@@ -345,7 +416,33 @@ const FLARES = 72;
 export class StarSky {
   readonly group = new THREE.Group();
   private sky: THREE.Mesh;
-  private skyU = { uNeb: { value: null as THREE.Texture | null }, uTime: { value: 0 }, uA: { value: 0 }, uWave: { value: 0 }, uBoost: { value: 0 }, uHalf: { value: 10 }, uOrigin: { value: new THREE.Vector2() }, uPx: { value: 800 }, uMin: { value: 2 } };
+  private skyU = {
+    uNeb: { value: null as THREE.Texture | null },
+    uTime: { value: 0 },
+    uA: { value: 0 },
+    uWave: { value: 0 },
+    uBoost: { value: 0 },
+    uHalf: { value: 10 },
+    uOrigin: { value: new THREE.Vector2() },
+    uPx: { value: 800 },
+    uMin: { value: 2 },
+    uTurn: { value: 0 },
+    uSpin: { value: 0.012 },
+    uOffA: { value: new THREE.Vector4() },
+    uOffB: { value: new THREE.Vector4() },
+    uDrift: { value: new THREE.Vector2() },
+    uBand: { value: new THREE.Vector3(0, 0.3, 0.7) },
+    uColA: { value: new THREE.Vector3() },
+    uColB: { value: new THREE.Vector3() },
+    uColBand: { value: new THREE.Vector3() },
+    uColDust: { value: new THREE.Vector3() },
+    uDense: { value: new THREE.Vector2(0.46, 0.5) },
+    uMetA: { value: new THREE.Vector4() },
+    uMetB: { value: new THREE.Vector4() },
+    uMetK: { value: new THREE.Vector2() },
+  };
+  private meteors: (Meteor | null)[] = [null, null];
+  private meteorIn = 2;
   private dots: THREE.Points;
   private moteU = { uTime: { value: 0 }, uA: { value: 0 }, uPx: { value: 800 } };
   private beacon: THREE.Mesh;
@@ -387,7 +484,7 @@ export class StarSky {
     this.sky.renderOrder = 1;
     this.sky.frustumCulled = false;
     this.dots = new THREE.Points(
-      starField(half),
+      new THREE.BufferGeometry(),
       new THREE.ShaderMaterial({ uniforms: this.skyU, vertexShader: STAR_VERT, fragmentShader: STAR_FRAG, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
     );
     this.dots.position.y = 0.03;
@@ -427,6 +524,67 @@ export class StarSky {
     }
     this.group.add(this.sky, this.dots, motes, this.pillar, this.beacon);
     this.group.visible = false;
+    this.reseed();
+  }
+
+  // 换一片夜空：整片转过的角度、转的方向和快慢、星云取贴图的哪一块、往哪飘、浓淡、颜色，银河的位置和宽窄，
+  // 还有每颗星的位置，都按种子重来。每一局开始换一次（clear 里），所以局局不一样
+  reseed(seed = Math.floor(Math.random() * 0x7fffffff)): void {
+    const rnd = mulberry(seed);
+    const u = this.skyU;
+    u.uTurn.value = rnd() * Math.PI * 2;
+    u.uSpin.value = (rnd() < 0.5 ? -1 : 1) * (0.008 + rnd() * 0.009);
+    u.uOffA.value.set(rnd(), rnd(), rnd(), rnd());
+    u.uOffB.value.set(rnd(), rnd(), rnd(), rnd());
+    const drift = rnd() * Math.PI * 2;
+    u.uDrift.value.set(Math.cos(drift), Math.sin(drift)).multiplyScalar(0.0016 + rnd() * 0.0012);
+    const band = { off: (rnd() - 0.5) * this.half * 0.7, width: 0.22 + rnd() * 0.16 };
+    u.uBand.value.set(band.off, band.width, 0.55 + rnd() * 0.35);
+    u.uDense.value.set(0.4 + rnd() * 0.1, 0.44 + rnd() * 0.1);
+    const a = PALETTES[Math.floor(rnd() * PALETTES.length)];
+    const b = PALETTES[Math.floor(rnd() * PALETTES.length)];
+    const k = rnd();
+    [u.uColA, u.uColB, u.uColBand, u.uColDust].forEach((c, i) => c.value.set(a[i][0] + (b[i][0] - a[i][0]) * k, a[i][1] + (b[i][1] - a[i][1]) * k, a[i][2] + (b[i][2] - a[i][2]) * k));
+    this.dots.geometry.dispose();
+    this.dots.geometry = starField(this.half, seed ^ 0x5bd1e995, band);
+    this.meteors = [null, null];
+    u.uMetK.value.set(0, 0);
+    this.meteorIn = 1.5 + rnd() * 3;
+  }
+
+  // 流星：隔几秒从桌面的一边斜着划到另一边
+  private updateMeteors(dt: number): void {
+    const u = this.skyU;
+    this.meteorIn -= dt;
+    if (this.meteorIn <= 0) {
+      const slot = this.meteors.findIndex((m) => !m);
+      this.meteorIn = 2.5 + Math.random() * 6;
+      if (slot >= 0) {
+        const a = Math.random() * Math.PI * 2;
+        const from = new THREE.Vector2(Math.cos(a), Math.sin(a)).multiplyScalar(this.half * (0.35 + Math.random() * 0.6));
+        // 朝桌心附近划过去，偏一点
+        const dir = from.clone().multiplyScalar(-1).normalize().rotateAround(new THREE.Vector2(), (Math.random() - 0.5) * 1.6);
+        this.meteors[slot] = { from, dir, travel: this.half * (0.5 + Math.random() * 0.7), tail: 2.5 + Math.random() * 3, t: 0, dur: 0.55 + Math.random() * 0.5 };
+      }
+    }
+    this.meteors.forEach((m, i) => {
+      const dst = i === 0 ? u.uMetA.value : u.uMetB.value;
+      if (!m) return;
+      m.t += dt;
+      const k = m.t / m.dur;
+      if (k >= 1) {
+        this.meteors[i] = null;
+        if (i === 0) u.uMetK.value.x = 0;
+        else u.uMetK.value.y = 0;
+        return;
+      }
+      const head = m.from.clone().addScaledVector(m.dir, m.travel * k);
+      const tail = head.clone().addScaledVector(m.dir, -m.tail * Math.min(1, k * 3));
+      dst.set(head.x, head.y, tail.x, tail.y);
+      const alpha = Math.sin(Math.PI * k) ** 0.6;
+      if (i === 0) u.uMetK.value.x = alpha;
+      else u.uMetK.value.y = alpha;
+    });
   }
 
   // 四周压暗多少（0–1），牌桌拿去调房间的颜色
@@ -553,6 +711,7 @@ export class StarSky {
     for (const f of this.flares) f.mesh.visible = false;
     this.dropFigure(true);
     this.group.visible = false;
+    this.reseed();
   }
 
   update(dt: number, camera: THREE.Camera, resY: number): void {
@@ -594,6 +753,7 @@ export class StarSky {
     this.skyU.uA.value = this.shown;
     this.skyU.uWave.value = this.wave;
     this.skyU.uBoost.value = this.boost;
+    if (this.shown > 0.5) this.updateMeteors(dt);
     this.moteU.uTime.value = this.t;
     this.moteU.uA.value = this.shown * Math.min(1, this.wave / (this.half * 2));
     const proj = (camera as THREE.PerspectiveCamera).projectionMatrix.elements[5];
