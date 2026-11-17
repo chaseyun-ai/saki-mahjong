@@ -50,7 +50,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playCrackle, playGust, playIaiDraw, playIaiPush, playIaiSheath, playLily, playMachine, playRiichi, playShift, playSlam, playSplash, playTide, playWhirl, playWin } from './sound';
+import { playCall, playChime, playClick, playCrackle, playGust, playIaiDraw, playIaiPush, playIaiSheath, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -69,7 +69,8 @@ import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { preloadVoices, sayVoice, stopVoices } from './voice';
 import { VoiceCue, cueKeys } from './voiceLines';
 import { TeamFlow } from './teamFlow';
-import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentConsoleShape, currentTableStyle, currentTheme, setConsoleShape, setTableStyle, setTheme } from './theme';
+import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentConsoleShape, currentTableStyle, currentTheme, setConsoleShape, setTableStyle, setTheme, tableColors } from './theme';
+import { lastWinners, winCounts } from './winTally';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
@@ -231,7 +232,7 @@ export class App {
   private starHold2d = 0; // 双立直宣言的光圈放出来之前，夜空先不铺
   private fxHold2d = 0; // 2D：平行宇宙的动画放完之前牌局先等着（performance.now 的时刻）
   private starUraShown = false; // 这一局杠里的流星放过了
-  // 2D 沙滩、草甸换局：上一次画的是哪一局（换了局就一个浪打过来、一阵风刮过来，见 shift2d）
+  // 2D 沙滩、草甸、原木换局：上一次画的是哪一局（换了局就一个浪打过来、一阵风刮过来、手搓洗牌，见 shift2d）
   private shiftRound: { g: Game; round: number } | null = null;
   // 2D：初美聚着风和牌，结算里手牌先倒、和了牌往下砸（哪一家、什么时候开始；结算重画时动画接着放）
   private galeSlam: { seat: number; t0: number } | null = null;
@@ -861,6 +862,8 @@ export class App {
       // 全自动麻将机：仪表盘抬起落下、牌掉进去、升降板沉下去又升上来、到顶卡住
       this.table3d.onMachine = (cue, dur) => playMachine(cue, dur);
       this.table3d.onShift = (cue, dur) => playShift(cue, dur);
+      // 原木：小朱印盖到仪表盘上
+      this.table3d.onStamp = () => playStamp();
       // 照的旋风自摸：牌拍下去、风卷起来时一记闷响加一阵风声，电劈下来、劈到桌上“噼啪”一声，风散开时再噼啪一下
       this.table3d.onTwister = (_seat, size, phase) => {
         if (phase === 'erupt') {
@@ -1335,24 +1338,28 @@ export class App {
     return koromoSea(g, this.chars.map((c) => c?.id));
   }
 
-  // 2D 换局（牌桌风格沙滩、草甸）：换了局就把换局前那一刻 #table 里的东西复制一份（结算框不要）盖在新的一局上面，
-  // 沙滩一个浪打过来把它冲掉（wash2d），草甸一阵风把它吹散（gust2d）。3D、2.5D 的在 tide.ts、gust.ts；这里只是一层画面，不挡发牌、出牌
+  // 2D 换局（牌桌风格沙滩、草甸、原木）：换了局就把换局前那一刻 #table 里的东西复制一份（结算框不要）盖在新的一局上面，
+  // 沙滩一个浪打过来把它冲掉（wash2d），草甸一阵风把它吹散（gust2d），原木的牌扣过来绕着中间搓几圈再码出去（shuffle2d）。
+  // 3D、2.5D 的在 tide.ts、gust.ts、shuffle.ts；这里只是一层画面，不挡发牌、出牌
   private shift2d(g: Game, table: HTMLElement, off: boolean): void {
     const prev = this.shiftRound;
     this.shiftRound = { g, round: g.round };
     const kind = document.documentElement.dataset.table;
-    if (off || !prev || prev.g !== g || prev.round === g.round || (kind !== 'beach' && kind !== 'meadow')) return;
+    if (off || !prev || prev.g !== g || prev.round === g.round || (kind !== 'beach' && kind !== 'meadow' && kind !== 'wood')) return;
     // 系统里设了「减少动态效果」：不演
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const host = table.parentElement;
     if (!host || !table.firstElementChild) return;
-    host.querySelectorAll(':scope > .wash-old, :scope > .wash-water, :scope > .wash-wet, :scope > .gust-old, :scope > .gust-cover, :scope > .gust-air').forEach((e) => e.remove());
+    host
+      .querySelectorAll(':scope > .wash-old, :scope > .wash-water, :scope > .wash-wet, :scope > .gust-old, :scope > .gust-cover, :scope > .gust-air, :scope > .shuf-old, :scope > .shuf-cover')
+      .forEach((e) => e.remove());
     const old = document.createElement('div');
     old.innerHTML = table.innerHTML;
     old.querySelectorAll('.modal, .hiroe-say, canvas').forEach((e) => e.remove());
     old.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
     if (kind === 'beach') this.wash2d(host, old);
-    else this.gust2d(host, old);
+    else if (kind === 'meadow') this.gust2d(host, old);
+    else this.shuffle2d(host, old, tableColors().seals ? lastWinners(g) : []);
   }
 
   // 沙滩：一个浪从对面（画面上方）涌下来盖住上一局的牌，停一下再退回去，退过的地方露出新的一局，
@@ -1506,6 +1513,115 @@ export class App {
       cover.remove();
       air.remove();
     }, fadeAt + FADE + 400);
+  }
+
+  // 原木：上一局的牌一张张扣过来（翻成竹子牌背），推到中间那块四周，绕着它搓几圈；然后往四边散出去、淡掉，
+  // 垫着的那层木桌面（.shuf-cover）跟着淡掉，露出码好牌山的新一局。中间那块（宝牌指示牌）不动
+  private shuffle2d(host: HTMLElement, old: HTMLElement, winners: number[]): void {
+    old.className = 'shuf-old';
+    const cover = document.createElement('div');
+    cover.className = 'shuf-cover';
+    host.append(cover, old);
+    const box = host.getBoundingClientRect();
+    const panel = old.querySelector('.center')?.getBoundingClientRect();
+    // 牌堆绕着中间那块：圈的中心、里圈半径（中间那块外面一点）、外圈半径（不出桌子）
+    const cx = panel ? panel.left + panel.width / 2 - box.left : box.width / 2;
+    const cy = panel ? panel.top + panel.height / 2 - box.top : box.height / 2;
+    const inner = (panel ? Math.max(panel.width, panel.height) / 2 : 70) + 16;
+    const outer = Math.max(inner + 20, Math.min(inner + 80, cx - 24, box.width - cx - 24, cy - 24, box.height - cy - 24));
+    // 扣过来推进去 0.45 秒，搓到 1.3 秒，然后 0.55 秒散出去（新的一局同时露出来）
+    const [SCOOP, SWIRL_END, OUT] = [450, 1300, 550];
+    const all = SWIRL_END + OUT;
+    // 每张牌外面那几层的旋转（左右两家的牌河是转过 90 度的）：屏幕上的位移换成这张牌自己那层的方向（和 gust2d 一样）
+    const frames = new Map<Element, DOMMatrix>();
+    const frameOf = (el: Element | null): DOMMatrix => {
+      if (!el || el === old) return new DOMMatrix();
+      const hit = frames.get(el);
+      if (hit) return hit;
+      const t = getComputedStyle(el).transform;
+      const own = t && t !== 'none' ? new DOMMatrix(t) : new DOMMatrix();
+      const m = frameOf(el.parentElement).multiply(new DOMMatrix([own.a, own.b, own.c, own.d, 0, 0]));
+      frames.set(el, m);
+      return m;
+    };
+    const tiles = [...old.querySelectorAll<HTMLElement>('.tile')].filter((el) => !el.closest('.center'));
+    for (const el of tiles) {
+      const r = el.getBoundingClientRect();
+      const x0 = r.left + r.width / 2 - box.left;
+      const y0 = r.top + r.height / 2 - box.top;
+      const inv = frameOf(el.parentElement).inverse();
+      const local = (x: number, y: number) => {
+        const p = inv.transformPoint(new DOMPoint(x - x0, y - y0, 0, 0));
+        return `${p.x.toFixed(1)}px ${p.y.toFixed(1)}px`;
+      };
+      // 推到圈上离它最近的地方，然后逆时针搓；每张转多少、离中心多远都不一样
+      const a0 = Math.atan2(y0 - cy, x0 - cx) + (Math.random() - 0.5) * 0.5;
+      const rad = inner + Math.random() * (outer - inner);
+      const turn = 1.4 + Math.random() * 0.9;
+      const spin = (Math.random() - 0.5) * 120;
+      // 大小统一成牌河那么大，别家手牌那种只看得到顶边的扁条拉成整张
+      const w = Math.max(1, el.offsetWidth);
+      const h = Math.max(1, el.offsetHeight);
+      const sc = `${(24 / w).toFixed(3)} ${(33 / h).toFixed(3)}`;
+      const at = (k: number, dr = 0) => {
+        const a = a0 - turn * k;
+        return local(cx + Math.cos(a) * (rad + dr), cy + Math.sin(a) * (rad + dr));
+      };
+      const lag = Math.random() * 80;
+      const kf: Keyframe[] = [
+        { offset: 0, translate: '0px 0px', rotate: '0deg', scale: '1 1', opacity: 1, easing: 'ease-in' },
+        // 翻身：先压扁成一条（侧面），翻过来是牌背
+        { offset: (SCOOP * 0.25) / all, translate: local(x0 + (cx - x0) * 0.12, y0 + (cy - y0) * 0.12), rotate: `${(spin * 0.2).toFixed(0)}deg`, scale: `0.08 ${(33 / h).toFixed(3)}`, opacity: 1, easing: 'ease-out' },
+        { offset: SCOOP / all, translate: at(0), rotate: `${spin.toFixed(0)}deg`, scale: sc, opacity: 1, easing: 'linear' },
+      ];
+      for (let i = 1; i <= 4; i++) {
+        const k = i / 4;
+        kf.push({ offset: (SCOOP + (SWIRL_END - SCOOP) * k) / all, translate: at(k, Math.sin(k * 5 + a0) * 7), rotate: `${(spin + k * 160).toFixed(0)}deg`, scale: sc, opacity: 1, easing: i === 4 ? 'ease-in' : 'linear' });
+      }
+      // 码牌：往外散到牌山那边，淡掉
+      kf.push({ offset: 1, translate: at(1.15, outer - rad + 60), rotate: `${(spin + 200).toFixed(0)}deg`, scale: sc, opacity: 0 });
+      el.animate(kf, { duration: all, delay: lag, fill: 'both' });
+      // 牌背：翻到侧面那一下换成竹子牌背
+      const back = document.createElement('b');
+      back.className = 'shuf-back';
+      el.append(back);
+      back.animate([{ opacity: 0 }, { opacity: 0, offset: 0.24 }, { opacity: 1, offset: 0.25 }, { opacity: 1 }], { duration: SCOOP, delay: lag, fill: 'both' });
+    }
+    // 上一局和了的那家：点数旁边新的小朱印从上面按下来，“嗒”地盖上，四周一圈印泥的红晕散开（结算框挡着的时候没看到）
+    const [STAMP_AT, DROP] = [140, 220];
+    const scores = old.querySelectorAll('.center > .score');
+    let stamped = false;
+    for (const s of new Set(winners)) {
+      const seal = scores[s]?.querySelector<HTMLElement>('.seals > i:last-child');
+      if (!seal) continue;
+      stamped = true;
+      seal.animate(
+        [
+          { scale: '3.2', opacity: 0 },
+          { scale: '2.6', opacity: 1, offset: 0.3 },
+          { scale: '1', opacity: 1 },
+        ],
+        { duration: DROP, delay: STAMP_AT, easing: 'cubic-bezier(.55,0,1,.45)', fill: 'backwards' },
+      );
+      seal.animate(
+        [
+          { boxShadow: 'inset 0 0 0 1px rgba(255,244,230,.6), 0 0 0 0 rgba(181,55,28,.65)' },
+          { boxShadow: 'inset 0 0 0 1px rgba(255,244,230,.6), 0 0 0 7px rgba(181,55,28,0)' },
+        ],
+        { duration: 420, delay: STAMP_AT + DROP, easing: 'cubic-bezier(.2,.7,.3,1)' },
+      );
+    }
+    if (stamped) playStamp((STAMP_AT + DROP) / 1000);
+    // 散出去的时候：垫着的木桌面和上一局剩下的东西（中间那块）一起淡掉，新的一局露出来
+    for (const el of [cover, old]) el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: OUT, delay: SWIRL_END + 60, fill: 'both', easing: 'ease-in-out' });
+    playShuffle('scoop', SCOOP / 1000);
+    window.setTimeout(() => playShuffle('shuffle', (SWIRL_END - 250) / 1000), 250);
+    window.setTimeout(() => playShuffle('build', OUT / 1000), SWIRL_END);
+    window.setTimeout(() => playShuffle('push', 0.18), SWIRL_END + OUT - 120);
+    window.setTimeout(() => {
+      old.remove();
+      cover.remove();
+    }, all + 500);
   }
 
   // 2D：牌桌上盖一层水面（几圈慢慢荡开的涟漪和水底的光纹）
@@ -2995,13 +3111,16 @@ export class App {
     const dora = [0, 1, 2, 3, 4]
       .map((i) => (i < g.wall.doraRevealed ? tileHtml(g.wall.doraIndicators[i], { size: 'mini' }) : backHtml('mini')))
       .join('');
+    // 原木：这个半庄谁和一局，那家点数后面多盖一个小朱印
+    const wins = tableColors().seals ? winCounts(g) : null;
     const scores = [0, 1, 2, 3]
       .map((s) => {
         const active = g.phase === 'turn' && g.turn === s ? 'active' : '';
+        const seals = wins?.[s] ? `<span class="seals" title="这个半庄和了 ${wins[s]} 局">${'<i></i>'.repeat(wins[s])}</span>` : '';
         return `<div class="score ${POS[s]} ${active}" style="--c:${this.chars[s].color}">
           <span class="wind">${WIND_CN[g.seatWind(s) - 27]}</span>
           ${this.ptsHtml(s)}
-          ${g.players[s].riichi && g.seesRiichi(s, this.me) ? '<span class="stick"></span>' : ''}
+          ${g.players[s].riichi && g.seesRiichi(s, this.me) ? '<span class="stick"></span>' : ''}${seals}
         </div>`;
       })
       .join('');

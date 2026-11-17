@@ -32,6 +32,8 @@ export interface ConsoleSeat {
   color: string;
   // 鼠标指着仪表盘时（手机上是点一下）：自己比这家多几点，多了写 +、少了写 -；自己那边和平时是 null，照常写点数
   diff: number | null;
+  // 这个半庄和了几局（原木：点数上面盖几个小朱印）；别的牌桌不写
+  seals?: number;
 }
 
 export interface ConsoleInfo {
@@ -484,8 +486,60 @@ const plaque: Look = {
       rr(c, p.sx, p.by, p.bw, 5, 2.5);
       c.fill();
     }
+    if (s.seals) sealRow(c, s.seals, p.sx, p.sy - p.sf / 2 - 15, p.sw);
   },
 };
+
+// 和了一局盖一个小朱印：点数上面一排，从点数左头排起；多了就挤一挤，不出这一排。
+// 每个印都是朱红的小方块，里面一圈白边、一个白色的“和”，盖得稍微有点歪（每个歪得不一样，但每次画都一样）
+export const SEAL_SIZE = 28;
+
+// 一排 n 个印里的第 i 个：离这一排左头多远（印的中心），歪多少（弧度）
+function sealAt(n: number, i: number, width: number): { dx: number; tilt: number } {
+  const step = n > 1 ? Math.min(32, (width - SEAL_SIZE) / (n - 1)) : 0;
+  return { dx: SEAL_SIZE / 2 + i * step, tilt: ((((i * 37) % 11) - 5) * Math.PI) / 180 };
+}
+
+function sealRow(c: CanvasRenderingContext2D, n: number, x0: number, y: number, width: number): void {
+  for (let i = 0; i < n; i++) {
+    const { dx, tilt } = sealAt(n, i, width);
+    c.save();
+    c.translate(x0 + dx, y);
+    c.rotate(tilt);
+    drawSeal(c);
+    c.restore();
+  }
+}
+
+// 一个印，中心在原点、SEAL_SIZE 见方（3D 盖印动画的贴图也用它画）
+export function drawSeal(c: CanvasRenderingContext2D): void {
+  const size = SEAL_SIZE;
+  c.save();
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.fillStyle = VERMILION;
+  rr(c, -size / 2, -size / 2, size, size, 2.5);
+  c.fill();
+  c.strokeStyle = 'rgba(255,244,230,0.8)';
+  c.lineWidth = 1.6;
+  rr(c, -size / 2 + 3.5, -size / 2 + 3.5, size - 7, size - 7, 1.5);
+  c.stroke();
+  c.font = `900 17px ${SERIF}`;
+  c.fillStyle = '#fff4e6';
+  c.fillText('和', 0, 1.5);
+  c.restore();
+}
+
+// 这家（rel：画面上的方位）一排 n 个印里的第 i 个，画在仪表盘贴图上的哪儿（512 的坐标）、转了多少（弧度，画布上顺时针为正）。
+// 3D 盖印的动画照这个对准位置，落下去正好盖在贴图上那个印上
+export function sealSpot(k: TableColors, rel: number, n: number, i: number): { x: number; y: number; rot: number } {
+  const p = circleSeat(k);
+  const { dx, tilt } = sealAt(n, i, p.sw);
+  const lx = p.sx + dx;
+  const ly = p.sy - p.sf / 2 - 15;
+  const th = (-rel * Math.PI) / 2;
+  return { x: M + lx * Math.cos(th) - ly * Math.sin(th), y: M + lx * Math.sin(th) + ly * Math.cos(th), rot: th + tilt };
+}
 
 // ---------- 深夜：纯色底、灰白字加一点青，不发光 ----------
 

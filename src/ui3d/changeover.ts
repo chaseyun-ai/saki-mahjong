@@ -1,6 +1,6 @@
 import type * as THREE from 'three';
 
-// 换局的演出（牌桌风格自己的，theme.ts 的 changeover）：沙滩一个浪打过来（tide.ts），草甸一阵风刮过来（gust.ts）。
+// 换局的演出（牌桌风格自己的，theme.ts 的 changeover）：沙滩一个浪打过来（tide.ts），草甸一阵风刮过来（gust.ts），原木手搓洗牌（shuffle.ts）。
 // table3d.ts 每局开始时把桌上看得见的牌各复制一份交给它（sweep，原来的牌藏起来留给新的一局），再告诉它四家牌山在哪（rise）；
 // 演着的时候（busy）牌山上的牌照 wallPose 摆，王牌感知那些浮在牌山上的牌面先不出来
 
@@ -24,6 +24,8 @@ export interface Changeover<Cue extends string = string> {
   setScale(px: number): void;
   // 收牌：这些替身牌交给它演（演完它自己拿掉）
   sweep(objs: THREE.Object3D[], now: number): void;
+  // 第一局桌上没牌时要不要另给一副扣着的替身牌（手搓洗牌要先把一副牌倒在桌上）；给的牌 userData.fresh 是 true
+  wantsTiles?(): boolean;
   // 摆新牌山：返回从 now 起多久以后可以掷骰子
   rise(now: number, rects: WallRect[]): number;
   // (x, z) 在不在新牌山上

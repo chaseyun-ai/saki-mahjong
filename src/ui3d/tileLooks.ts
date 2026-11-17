@@ -3,23 +3,27 @@ import type { TileLook } from '../ui/theme';
 import { TILE_H, TILE_W } from './tableLayout';
 
 // 牌桌风格自己的牌（theme.ts 的 tile）：沙滩的牌是沙子捏的（牌身一粒粒的浅沙、牌背湿一点的深沙，正中压一个贝壳印），
-// 草甸的牌是花瓣捏的（牌身花瓣白、细细的一丝丝纹路，牌背是一片叶子的绿、正中压一道道叶脉）。牌面上的字和图案照旧，只换牌身、牌背。
+// 草甸的牌是花瓣捏的（牌身花瓣白、细细的一丝丝纹路，牌背是一片叶子的绿、正中压一道道叶脉），
+// 原木的牌是老式竹背牌（牌身光面的骨白，牌背一层竹子，顺着牌长一丝丝竹纤维）。牌面上的字和图案照旧，只换牌身、牌背。
 // 2D 牌桌的同一套样子在 tableStyles.css 里（贝壳、叶子是同样的路径，写成 SVG）
 
 // ---------- 细纹理：贴在牌身、牌背上，和底色相乘 ----------
 
 const grains = new Map<string, THREE.CanvasTexture>();
 
+type Grain = NonNullable<TileLook['grain'] | TileLook['backGrain']>;
+
 // 一张 64 见方的小图，一张牌正好铺一遍（手牌上一个像素大约就是一粒）：底子接近白（乘上去几乎不变色）。
-// sand 撒满亮点、暗点，偶尔一粒深的；fiber 是顺着牌竖向的一丝丝细纹（花瓣上的纹路），有亮有暗、都很淡
-export function grainTexture(kind: NonNullable<TileLook['grain']> = 'sand'): THREE.CanvasTexture {
+// sand 撒满亮点、暗点，偶尔一粒深的；fiber 是顺着牌竖向的一丝丝细纹（花瓣上的纹路），有亮有暗、都很淡；
+// bamboo 是顺着牌长一整条一整条的竹纤维（细的暗线、亮线，深浅一段段变一点），夹着几点短短的维管束
+export function grainTexture(kind: Grain = 'sand'): THREE.CanvasTexture {
   const hit = grains.get(kind);
   if (hit) return hit;
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const ctx = c.getContext('2d')!;
   // 固定种子：每次建出来一样
-  let a = kind === 'sand' ? 0x2545f491 : 0x7f4a7c15;
+  let a = kind === 'sand' ? 0x2545f491 : kind === 'fiber' ? 0x7f4a7c15 : 0x3c6ef372;
   const rnd = () => ((a = (a * 1664525 + 1013904223) >>> 0) / 4294967296);
   if (kind === 'sand') {
     ctx.fillStyle = 'rgb(244,240,234)';
@@ -29,6 +33,27 @@ export function grainTexture(kind: NonNullable<TileLook['grain']> = 'sand'): THR
       const v = rnd();
       ctx.fillStyle = v < 0.45 ? 'rgb(255,253,248)' : v < 0.93 ? 'rgb(214,196,170)' : 'rgb(170,146,116)';
       ctx.fillRect(Math.floor(rnd() * 64), Math.floor(rnd() * 64), 1, 1);
+    }
+  } else if (kind === 'bamboo') {
+    ctx.fillStyle = 'rgb(246,242,234)';
+    ctx.fillRect(0, 0, 64, 64);
+    // 一条条竖线贯通上下（上下接得上），每条深浅沿着走一段段变一点
+    for (let i = 0; i < 30; i++) {
+      const x = Math.floor(rnd() * 64);
+      const dark = rnd() < 0.62;
+      const base = dark ? 0.1 + rnd() * 0.12 : 0.18 + rnd() * 0.2;
+      for (let y = 0; y < 64; y += 4) {
+        const k = base * (0.7 + 0.6 * rnd());
+        ctx.fillStyle = dark ? `rgba(120,84,40,${k.toFixed(3)})` : `rgba(255,252,240,${k.toFixed(3)})`;
+        ctx.fillRect(x, y, 1, 4);
+      }
+    }
+    // 维管束：短短的深色小点，竖着拉长
+    for (let i = 0; i < 40; i++) {
+      const x = Math.floor(rnd() * 64);
+      const y = Math.floor(rnd() * 64);
+      ctx.fillStyle = `rgba(110,74,34,${(0.12 + rnd() * 0.16).toFixed(3)})`;
+      ctx.fillRect(x, y, 1, 2 + Math.floor(rnd() * 4));
     }
   } else {
     ctx.fillStyle = 'rgb(246,246,242)';
@@ -162,7 +187,7 @@ function markTexture(kind: NonNullable<TileLook['mark']>): THREE.CanvasTexture {
 // 牌身、牌背的材质上加颗粒和花样（在材质第一次编译之前调用；接在原来的 onBeforeCompile，也就是泡水的那个后面）：
 // 纹理照物体坐标贴（一张牌宽正好一遍，侧面按侧面的方向贴，不会拉长）；smoothFace 时牌面那一面（朝 +z）颗粒淡很多，牌上的字干净。
 // mark 只画在牌背朝外那一面（朝 -z），四周的边不画
-export function tileSurface(m: THREE.MeshStandardMaterial, opts: { grain?: TileLook['grain']; smoothFace?: boolean; mark?: TileLook['mark'] }): void {
+export function tileSurface(m: THREE.MeshStandardMaterial, opts: { grain?: Grain; smoothFace?: boolean; mark?: TileLook['mark'] }): void {
   const grain = opts.grain ? grainTexture(opts.grain) : null;
   const mark = opts.mark ? markTexture(opts.mark) : null;
   if (!grain && !mark) return;

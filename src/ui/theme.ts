@@ -46,10 +46,13 @@ export interface TableColors {
   machine?: { backs: [string, string] };
   // 实际用的仪表盘形状（tableColors() 照视觉设置里的「仪表盘形状」填：跟牌桌走时是牌桌风格自己的，跟皮肤走是方盒）
   shape?: ConsoleForm;
-  // 牌本身的样子（只有沙滩、草甸有）：牌身什么颜色、什么质地，牌背上压什么花样。没写就是原来的象牙白牌身
+  // 牌本身的样子（只有沙滩、草甸、原木有）：牌身什么颜色、什么质地，牌背上压什么花样。没写就是原来的象牙白牌身
   tile?: TileLook;
-  // 换局的演法（只有沙滩、草甸有）：tide 一个浪打过来把牌冲散、退潮后沙子聚成新牌山；gust 一阵风把牌吹散、下一局再聚拢
-  changeover?: 'tide' | 'gust';
+  // 换局的演法（只有沙滩、草甸、原木有）：tide 一个浪打过来把牌冲散、退潮后沙子聚成新牌山；gust 一阵风把牌吹散、下一局再聚拢；
+  // shuffle 手搓洗牌：牌扣过来推到中间搓几圈，四家各自码好牌山往前一推
+  changeover?: 'tide' | 'gust' | 'shuffle';
+  // 仪表盘上记每家这个半庄和了几局（只有原木有）：谁和一局，那家旁边多盖一个小朱印
+  seals?: boolean;
 }
 
 export interface TileLook {
@@ -57,6 +60,8 @@ export interface TileLook {
   body: string;
   // 牌身、牌背上的细纹理：sand 一粒粒的沙（沙滩），fiber 一丝丝花瓣的纹路（草甸）；不写就是光面
   grain?: 'sand' | 'fiber';
+  // 牌背单独的纹理：bamboo 顺着牌长的一丝丝竹纤维（原木的竹背牌，牌身是光面的骨白）；不写就和牌身一样
+  backGrain?: 'bamboo';
   // 牌身、牌背的粗糙度（沙子一点都不反光，花瓣有一点点光泽）
   rough?: number;
   // 牌背正中压出来的花样：贝壳（沙滩）、叶子（草甸）
@@ -188,11 +193,15 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
     // 雀庄的全自动麻将桌：就是原来的样子，圆角桌框、金属包边、圆角方盒
     form: { corner: 'round', bevel: 0.14, trim: 'strip', console: 'box', line: 'single' },
   },
-  // 原木：深色胡桃木桌面、铜色包边，仪表盘是一块浅色木牌，墨色字，轮到谁盖一个朱红印
+  // 原木：深色胡桃木桌面、铜色包边，仪表盘是一块浅色木牌，墨色字，轮到谁盖一个朱红印。
+  // 牌是老式的竹背牌：骨白的牌面接一层竹子的牌背。换局是手搓洗牌（shuffle.ts）；谁和一局，仪表盘上那家旁边多盖一个小朱印
   wood: {
     felt: ['#5f412a', '#4e3522', '#3a2718'],
     feltLine: 'rgba(240,210,160,0.2)',
-    back: '#2f6a4f',
+    back: '#c99b52',
+    tile: { body: '#f3ebd9', backGrain: 'bamboo', rough: 0.42 },
+    changeover: 'shuffle',
+    seals: true,
     frame: '#2c1d12',
     trim: '#b58e4f',
     room: '#140d08',
@@ -290,7 +299,7 @@ const STYLE_TABLES: Record<Exclude<TableStyleId, 'skin'>, TableColors> = {
 export const TABLE_STYLES: { id: TableStyleId; name: string; note: string }[] = [
   { id: 'skin', name: '跟皮肤走', note: '桌布、牌背、仪表盘用界面皮肤自带的那套' },
   { id: 'auto', name: '自动麻将机', note: '绿呢桌布、黑色机身、圆角方盒仪表盘，点数是琥珀色数码管。每局开始中间那块抬起来把旧牌收进去，四块升降板托着新牌山从桌面里升上来；蓝、黄两副牌一局换一副' },
-  { id: 'wood', name: '原木', note: '胡桃木桌面、直角木框嵌一道铜线；仪表盘是一块矮矮的浅色木牌，墨色字，轮到谁盖一个朱红印' },
+  { id: 'wood', name: '原木', note: '胡桃木桌面、直角木框嵌一道铜线；牌是骨白牌面接竹子牌背的老式竹背牌；仪表盘是一块矮矮的浅色木牌，墨色字，轮到谁盖一个朱红印，谁和一局，那家点数旁边“嗒”地再盖一个小朱印。换局时手搓洗牌：牌扣过来推到中间搓几圈，四家码好牌山往前一推' },
   { id: 'night', name: '深夜', note: '炭灰哑光桌布、大圆角薄框；仪表盘是一块圆盘，只有灰白两色加一点青，不发光、没花纹，适合长时间打' },
   { id: 'flap', name: '翻牌屏', note: '藏青亚麻桌布、切角铝框钉一排铆钉；仪表盘是切角铝盒，点数像车站的翻牌显示屏，一位数一块牌' },
   { id: 'beach', name: '沙滩', note: '浅色细沙桌面、海水色桌框绕一圈白船绳；牌是沙子捏的，牌背压一个贝壳印；仪表盘是一汪深海水，白字，轮到谁亮一块阳光黄。换局时一个浪打过来把牌冲散，退潮后沙子聚成新牌山' },

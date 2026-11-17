@@ -12,6 +12,8 @@ import { Dice } from './dice';
 import { Machine, type MachineCue, type MachineRect } from './machine';
 import type { Changeover } from './changeover';
 import { Gust, type GustCue } from './gust';
+import { Shuffle, type ShuffleCue } from './shuffle';
+import { SealStamps } from './sealStamp';
 import { Tide, type TideCue } from './tide';
 import { BOLT_LEADER, Effects } from './effects';
 import { type SpotRow, WinSpots } from './winSpots';
@@ -25,12 +27,13 @@ import { ChainEnd, outcomeTime } from '../ui/riiChainPlan';
 import { faceSvg, glowGlyph } from '../ui/tileArt';
 import { TileBeam } from './tileBeam';
 import { tileSurface } from './tileLooks';
+import { winCounts } from '../ui/winTally';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
 import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
 import { CONSOLE_SCALE, type FeltPattern, TableColors, tableColors } from '../ui/theme';
-import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, outline, skinSignColors } from './consoleLooks';
+import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, outline, sealSpot, skinSignColors } from './consoleLooks';
 import { hash01, pondJitter, varyDiscard, vary } from '../ui/vary';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
@@ -637,9 +640,15 @@ export class Table3D {
   // 全自动麻将机该响声音的时候通知外面（放音效用）：open 仪表盘抬起，sweep 牌掉进去，drop 升降板沉下去，close 仪表盘落回，rise 升降板升（dur 秒），lock 升到顶卡住
   onMachine: ((cue: MachineCue, dur: number) => void) | null = null;
   // 换局的演出（牌桌风格自己的，changeover.ts）：沙滩每局开始一个浪打过来把牌冲散、退潮后沙子聚成新牌山（tide.ts）；
-  // 草甸一阵风把牌吹成花瓣飘走、花瓣再飘回来落成新牌山（gust.ts）。该响声音的时候通知外面
-  private shift: Changeover<TideCue | GustCue> | null = null;
-  onShift: ((cue: TideCue | GustCue, dur: number) => void) | null = null;
+  // 草甸一阵风把牌吹成花瓣飘走、花瓣再飘回来落成新牌山（gust.ts）；原木手搓洗牌，码好牌山往前一推（shuffle.ts）。该响声音的时候通知外面
+  private shift: Changeover<TideCue | GustCue | ShuffleCue> | null = null;
+  onShift: ((cue: TideCue | GustCue | ShuffleCue, dur: number) => void) | null = null;
+  // 原木：谁和一局，仪表盘上那家点数旁边盖一个小朱印。结算时印从半空落下来盖上（sealStamp.ts），落地才画进仪表盘：
+  // sealShown 是仪表盘上现在画着几个（还在半空的不算），sealGame 是数的哪一场。盖下去那一下通知外面（放音效用）
+  private stamps: SealStamps | null = null;
+  private sealShown: number[] | null = null;
+  private sealGame: Game | null = null;
+  onStamp: ((seat: number) => void) | null = null;
   // 照 wallPose 摆新牌山时用的临时量
   private shiftPose = new THREE.Vector4();
   private shiftLift = new THREE.Vector3();
@@ -715,6 +724,7 @@ export class Table3D {
     this.machine?.dispose();
     this.warp?.dispose();
     this.shift?.dispose();
+    this.stamps?.dispose();
     this.moonLift?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -769,7 +779,12 @@ export class Table3D {
     const body = this.colors.tile?.body ?? '#f3e9d4';
     if (this.colors.changeover === 'tide') this.shift = new Tide([body, this.colors.back]);
     else if (this.colors.changeover === 'gust') this.shift = new Gust([body, '#f6e7a6', '#f4d3da', this.colors.back, '#8db06c'], '#eef3d2');
+    else if (this.colors.changeover === 'shuffle') this.shift = new Shuffle();
     if (this.shift) this.scene.add(this.shift.group);
+    if (this.colors.seals) {
+      this.stamps = new SealStamps(this.colors.consoleGlow ?? 0.35);
+      this.scene.add(this.stamps.group);
+    }
     this.buildTable();
 
     // 点棒抽屉：按画面上的方位建，座位 rel 对应 drawers[rel]
@@ -923,7 +938,7 @@ export class Table3D {
     this.bodyMat = bodyMat;
     this.deadlyMat = wet(new THREE.MeshStandardMaterial({ color: '#f08a80', emissive: '#d23a2e', emissiveIntensity: 0.35, roughness: matte || 0.35 }));
     const backMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.back, roughness: rough(0.4) }));
-    if (look) tileSurface(backMat, { grain: look.grain, mark: look.mark });
+    if (look) tileSurface(backMat, { grain: look.backGrain ?? look.grain, mark: look.mark });
     this.backMat = backMat;
     this.plainBack = backMat;
     // 美穗子睁眼时的牌背：万红、筒蓝、索绿、字牌白，微微发光，隔着桌子也看得清
@@ -1774,6 +1789,16 @@ export class Table3D {
     return out;
   }
 
+  // 第一局手搓洗牌要倒在桌上的那副牌：每张牌复制一份（扣着，在半空里），交给换局去演
+  private pileTiles(): THREE.Object3D[] {
+    return this.tiles.map((t) => {
+      const ghost = t.group.clone();
+      ghost.userData = { fresh: true };
+      ghost.visible = true;
+      return ghost;
+    });
+  }
+
   // 这一局用哪副牌：第 1、3、5…局第一副，第 2、4…局第二副（连庄也算一局）
   private useBackSet(g: Game): void {
     const m = this.colors.machine;
@@ -1798,9 +1823,11 @@ export class Table3D {
       this.useBackSet(g);
       lead = this.machine.rise(this.now, ready);
     } else if (this.shift) {
-      // 沙滩：浪打过来把桌上的牌冲散，退潮退过哪里，哪里的沙子聚拢、牌山拱出来；草甸：风把牌吹散，花瓣飘回来、牌山一墩墩落下来。
-      // 都摆好了才掷骰子
-      this.shift.sweep(this.ghostTiles(), this.now);
+      // 沙滩：浪打过来把桌上的牌冲散，退潮退过哪里，哪里的沙子聚拢、牌山拱出来；草甸：风把牌吹散，花瓣飘回来、牌山一墩墩落下来；
+      // 原木：牌扣过来推到中间搓，四家各自码好往前推。都摆好了才掷骰子。第一局桌上没牌，手搓洗牌要另给一副倒在桌上
+      let ghosts = this.ghostTiles();
+      if (!ghosts.length && this.shift.wantsTiles?.()) ghosts = this.pileTiles();
+      this.shift.sweep(ghosts, this.now);
       lead = this.shift.rise(this.now, this.wallRects());
     }
     const start = this.now + lead;
@@ -3749,6 +3776,30 @@ export class Table3D {
 
   // ---------- 中央控制台 ----------
 
+  // 原木：仪表盘上每家画几个小朱印。结算时谁和了，等和了牌倒完、特效放出来，那家的新印从半空落下来盖上，落地才画进去；
+  // 读档、中途换成原木之类不在结算的时候，照实直接画
+  private shownSeals(g: Game, view: SyncView): number[] {
+    const won = winCounts(g);
+    if (!this.sealShown || this.sealGame !== g) {
+      this.sealGame = g;
+      this.sealShown = won.slice();
+      this.stamps?.clear();
+      return this.sealShown;
+    }
+    for (let s = 0; s < 4; s++) {
+      if (won[s] < this.sealShown[s]) this.sealShown[s] = won[s];
+      for (let n = this.sealShown[s] + (this.stamps?.pending(s) ?? 0) + 1; n <= won[s]; n++) {
+        if (!this.stamps || g.phase !== 'roundEnd') {
+          this.sealShown[s] = n;
+          continue;
+        }
+        const at = Math.max(this.now + 0.6, (this.reveal?.fxAt ?? 0) + 0.15);
+        this.stamps.add(s, n, at, sealSpot(this.colors, (s - view.me + 4) % 4, n, n - 1), this.consoleH + 0.012);
+      }
+    }
+    return this.sealShown;
+  }
+
   // 仪表盘：中间一块方屏写局数、本场、余牌、宝牌和供托；四边各家的风位和点数朝着自己，轮到谁谁那边亮一条。
   // 颜色和局数的字体跟皮肤走（theme.ts 的 console）
   private drawConsole(g: Game, view: SyncView): void {
@@ -3768,6 +3819,7 @@ export class Table3D {
       view.colors,
       this.consoleHover,
       this.backSet,
+      this.colors.seals ? this.shownSeals(g, view) : null,
     ]);
     if (key === this.consoleKey) return;
     this.consoleKey = key;
@@ -3805,6 +3857,7 @@ export class Table3D {
           active: g.phase === 'turn' && g.turn === s,
           color: view.colors[s],
           diff: diffOf(s),
+          seals: this.sealShown?.[s],
         })),
         (cx, face, x, y, w, h) => this.atlas.drawFace(cx, face, x, y, w, h),
       );
@@ -4918,6 +4971,18 @@ export class Table3D {
       shift.setScale(this.renderer.getDrawingBufferSize(new THREE.Vector2()).y / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2)));
     }
     const forming = shift?.busy ? shift : null;
+    // 原木：小朱印落到仪表盘上了，画进去
+    if (this.stamps) {
+      const hit = this.stamps.update(this.now, this.camera.position);
+      for (const { seat, n } of hit) {
+        if (this.sealShown) this.sealShown[seat] = Math.max(this.sealShown[seat], n);
+        this.onStamp?.(seat);
+      }
+      if (hit.length && this.lastSync) {
+        this.consoleKey = '';
+        this.drawConsole(this.lastSync.g, this.lastSync.view);
+      }
+    }
     const pose = this.shiftPose;
     const slow = 1 - Math.exp(-dt * 16);
     const fast = 1 - Math.exp(-dt * 60);

@@ -241,12 +241,15 @@
   color: #ffb02e;
 }
 
-/* ---------- 原木：胡桃木桌面、浅色木牌、墨色字、朱红印 ---------- */
+/* ---------- 原木：胡桃木桌面、浅色木牌、墨色字、朱红印；牌是老式竹背牌（骨白牌面接竹子牌背） ---------- */
 
 :root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) {
   --felt: #4e3522;
   --felt-dark: #3a2718;
-  --tile-back: #2f6a4f;
+  /* 竹背牌：牌面骨白，牌的厚度那一截看得到竹子的牌背 */
+  --tile-face: #f3ebd9;
+  --tile-edge: #b98a45;
+  --tile-back: #c99b52;
   background:
     repeating-linear-gradient(177deg, rgba(20, 10, 4, 0.12) 0 2px, transparent 2px 9px, rgba(255, 214, 160, 0.035) 9px 12px, transparent 12px 23px),
     radial-gradient(ellipse at 50% 47%, #5f412a 0%, #4e3522 50%, #3a2718 100%);
@@ -255,6 +258,19 @@
     inset 0 0 0 10px #2c1d12,
     inset 0 0 0 12px #b58e4f,
     inset 0 0 0 13px #2c1d12;
+}
+
+/* 牌背：一层竹子，顺着牌长一丝丝竹纤维（几种间距叠起来，不成规整的条纹）；扣着的牌厚度那一截是骨白的牌面 */
+:root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .tile.back:not(.tint, .t-top, .sketch),
+.stage .table > .shuf-old .shuf-back {
+  background:
+    repeating-linear-gradient(90deg, rgba(118, 80, 36, 0.2) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 248, 228, 0.18) 2px 3px, transparent 3px 7px),
+    repeating-linear-gradient(90deg, transparent 0 9px, rgba(110, 74, 34, 0.14) 9px 10px, transparent 10px 13px),
+    linear-gradient(160deg, #d8ae69, #c39349);
+  box-shadow:
+    0 2px 0 #e4d8bd,
+    0 2px 3px rgba(0, 0, 0, 0.35);
 }
 
 /* 木牌：直角，四个角各钉一颗铜钉 */
@@ -329,6 +345,65 @@
 /* 浅色木牌上白色立直棒描一圈木框的深棕边 */
 :root[data-table='wood'][data-theme] .stage:not(.net) .table:not(.sketch) .center .stick {
   box-shadow: 0 0 0 1px #7d5d3a;
+}
+
+/* 和了几局：点数后面一排小朱印（排在这一行外面，不把这一行撑长：左右两家那一行是转过来的，撑长了会挪位置） */
+.center .score .seals {
+  position: absolute;
+  left: calc(100% + 5px);
+  top: 50%;
+  display: flex;
+  gap: 2px;
+  translate: 0 -50%;
+}
+
+.center .score .seals i {
+  width: 10px;
+  height: 10px;
+  border-radius: 1.5px;
+  background: #9b2c17;
+  box-shadow: inset 0 0 0 1px rgba(255, 244, 230, 0.6);
+}
+
+.center .score .seals i:nth-child(2n) {
+  rotate: -7deg;
+}
+
+.center .score .seals i:nth-child(3n) {
+  rotate: 5deg;
+}
+
+/* 咲的杠材那行字写在中间那块的下半截：左边这家的小朱印改排到这一行前头（往上），不压到字 */
+.center:has(.kan-peek) .score.left .seals {
+  left: auto;
+  right: calc(100% + 5px);
+}
+
+/* 原木换局（2D，app.ts 的 shuffle2d）：上一局的样子（.shuf-old）盖在新的一局上面，底下垫一层一模一样的木桌面（.shuf-cover）
+   把新的一局遮住；上一局的牌扣过来（.shuf-back 是翻过来的竹子牌背）推到中间那块四周搓几圈，再往四边散出去，垫着的桌面跟着淡掉 */
+.stage .table > .shuf-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 39;
+  pointer-events: none;
+  border-radius: inherit;
+  background: inherit;
+  box-shadow: inherit;
+}
+
+.stage .table > .shuf-old {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.stage .table > .shuf-old .shuf-back {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  opacity: 0;
 }
 
 /* ---------- 深夜：炭灰哑光、灰白字加一点青 ---------- */

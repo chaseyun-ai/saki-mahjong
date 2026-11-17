@@ -543,9 +543,95 @@ export function playGust(cue: 'gust' | 'scatter' | 'breeze' | 'land', dur = 0.5)
   }
 }
 
-// 换局的声音（table3d.ts 的 onShift）：沙滩那几声给 playTide，草甸那几声给 playGust
-export function playShift(cue: 'surge' | 'crash' | 'ebb' | 'gather' | 'settle' | 'gust' | 'scatter' | 'breeze' | 'land', dur = 0.5): void {
+// ---------- 原木（牌桌风格「原木」，shuffle.ts）：手搓洗牌 ----------
+
+// 牌碰牌、牌碰木头的一声“嗒”：一小截很窄的带通噪声，叠一点同音高、一下就没的正弦（骨头牌那种脆的音头）
+function clack(a: AudioContext, at: number, vol: number, f: number): void {
+  noiseHit(a, at, 0.022 + Math.random() * 0.014, vol, 'bandpass', f, f * 0.92, 3.2);
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(f * 1.04, at);
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(vol * 0.35, at + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.02);
+  osc.connect(gain).connect(bus('sfx', a));
+  osc.start(at);
+  osc.stop(at + 0.025);
+}
+
+// 原木的几声：pour 一副牌倒在木桌上（一大把“哗啦”，先密后疏，底下一记闷响），scoop 牌扣过来推到中间（一阵碰撞加推牌的摩擦声），
+// shuffle 搓牌（哗啦哗啦一阵一阵的，dur 秒），build 码牌山（一墩一墩轻轻的“嗒”，dur 秒），push 牌山往前一推（木头上一记短短的摩擦，推到位“咚”一下）
+export function playShuffle(cue: 'pour' | 'scoop' | 'shuffle' | 'build' | 'push', dur = 0.5): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  if (cue === 'pour') {
+    for (let i = 0; i < 70; i++) {
+      const t = dur * Math.random() ** 1.8;
+      clack(a, now + t, (0.07 + Math.random() * 0.09) * (1 - (t / dur) * 0.6), 1500 + Math.random() * 2200);
+    }
+    noiseHit(a, now + 0.03, 0.3, 0.16, 'lowpass', 300, 120, 0.7);
+  } else if (cue === 'scoop') {
+    for (let i = 0; i < 30; i++) clack(a, now + Math.random() * dur, 0.05 + Math.random() * 0.07, 1400 + Math.random() * 2000);
+    surf(a, now, dur + 0.15, 0.06, 300, 700, dur * 0.4, 0.8);
+  } else if (cue === 'shuffle') {
+    // 手掌按着牌一圈一圈地搓：一阵密一阵疏（大约一秒三下），一直有一层低低的摩擦声
+    const n = Math.round(dur * 75);
+    for (let i = 0; i < n; i++) {
+      const t = Math.random() * dur;
+      const stroke = 0.55 + 0.45 * Math.sin(t * Math.PI * 2 * 3.1);
+      const fade = Math.min(1, t / 0.12, (dur - t) / 0.25);
+      if (Math.random() > 0.35 + 0.65 * stroke) continue;
+      clack(a, now + t, (0.035 + Math.random() * 0.06) * Math.max(0.2, fade), 1300 + Math.random() * 2600);
+    }
+    surf(a, now, dur + 0.1, 0.05, 260, 520, dur * 0.3, 0.7);
+  } else if (cue === 'build') {
+    // 四家一起码：一串轻轻的“嗒”，节奏有点乱
+    for (let t = 0; t < dur; t += 0.024 + Math.random() * 0.03) clack(a, now + t, 0.04 + Math.random() * 0.04, 1900 + Math.random() * 900);
+  } else {
+    noiseHit(a, now, Math.max(0.12, dur), 0.1, 'bandpass', 420, 900, 0.9);
+    const end = now + Math.max(0.12, dur) - 0.02;
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, end);
+    osc.frequency.exponentialRampToValueAtTime(70, end + 0.12);
+    gain.gain.setValueAtTime(0.0001, end);
+    gain.gain.exponentialRampToValueAtTime(0.2, end + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, end + 0.16);
+    osc.connect(gain).connect(bus('sfx', a));
+    osc.start(end);
+    osc.stop(end + 0.18);
+    for (let i = 0; i < 5; i++) clack(a, end + Math.random() * 0.03, 0.05 + Math.random() * 0.04, 2000 + Math.random() * 800);
+  }
+}
+
+// 原木：和了一局，仪表盘上盖一个小朱印。印章按在木头上“嗒”的一记：一下往下沉的闷响，一点压下去的摩擦，一声很短的木头脆响。
+// at：过几秒再响（2D 换局时印要先落一会儿）
+export function playStamp(at = 0): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime + at;
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(230, now);
+  osc.frequency.exponentialRampToValueAtTime(85, now + 0.09);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.34, now + 0.004);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+  osc.connect(gain).connect(bus('sfx', a));
+  osc.start(now);
+  osc.stop(now + 0.16);
+  noiseHit(a, now, 0.06, 0.2, 'lowpass', 1500, 420, 0.8);
+  clack(a, now + 0.002, 0.08, 1650);
+}
+
+// 换局的声音（table3d.ts 的 onShift）：沙滩那几声给 playTide，草甸那几声给 playGust，原木那几声给 playShuffle
+export function playShift(cue: 'surge' | 'crash' | 'ebb' | 'gather' | 'settle' | 'gust' | 'scatter' | 'breeze' | 'land' | 'pour' | 'scoop' | 'shuffle' | 'build' | 'push', dur = 0.5): void {
   if (cue === 'gust' || cue === 'scatter' || cue === 'breeze' || cue === 'land') playGust(cue, dur);
+  else if (cue === 'pour' || cue === 'scoop' || cue === 'shuffle' || cue === 'build' || cue === 'push') playShuffle(cue, dur);
   else playTide(cue, dur);
 }
 
