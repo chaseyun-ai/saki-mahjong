@@ -394,7 +394,8 @@ const VANISH_DELAY = 0.15;
 // 淡掉的时候牌往这个颜色靠（苍白、带一点冷色）
 const GHOST = new THREE.Color('#e6edf5');
 const VANISH_TIME = 1;
-// 宫永咲的王牌感知：牌山前面投影出来的牌比真牌小一点，平贴在桌面上（像投在桌布上的影子）
+// 宫永咲的王牌感知：牌山前面投影出来的牌比真牌小一点，平贴在桌面上（像投在桌布上的影子）；
+// 自己跟前那排牌山的投影抬到牌顶那么高（见 projPlacement）
 const PROJ_SCALE = 0.8;
 const PROJ_Y = 0.012;
 
@@ -4469,13 +4470,15 @@ export class Table3D {
     const wallZ = this.wallZ(rel);
     // 左右两边（竖着的）牌山转角那一墩：前面正好是横着那排牌山转角墩的投影，所以投到旁边，转角的空地上
     const corner = (rel === 1 || rel === 3) && (slot.stack === 1 || slot.stack === STACKS_HALF * 2 - 1);
-    // 上层：贴在牌顶上；下层：牌山前面一排
+    // 上层：贴在牌顶上；下层：牌山前面一排。
+    // 自己跟前那排牌山的下层：镜头在牌山这一边，平贴在桌面上会被两层高的牌山挡住，抬到和牌顶的牌面一样高（还在牌山前面）
+    const top = TILE_T * 2 + 0.006;
     const out =
       slot.level === 0
-        ? this.toWorld(slot.wall, me, x, TILE_T * 2 + 0.006, wallZ, FACE_UP)
+        ? this.toWorld(slot.wall, me, x, top, wallZ, FACE_UP)
         : corner
           ? this.toWorld(slot.wall, me, x + Math.sign(x) * WALL_PITCH * 1.35, PROJ_Y, wallZ, FACE_UP)
-          : this.toWorld(slot.wall, me, x, PROJ_Y, wallZ - TILE_H / 2 - 0.08 - (TILE_H * PROJ_SCALE) / 2, FACE_UP);
+          : this.toWorld(slot.wall, me, x, rel === 0 ? top : PROJ_Y, wallZ - TILE_H / 2 - 0.08 - (TILE_H * PROJ_SCALE) / 2, FACE_UP);
     if (flat && rel === 1) out.pos.z += RIGHT_WALL_DOWN_25D;
     return out;
   }
