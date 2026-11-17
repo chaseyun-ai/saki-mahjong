@@ -1,4 +1,4 @@
-// 星符汇聚做得成几成：npx vite-node scripts/awai-stars.ts [场数] [starsDeal，默认 0.1] [对手：random|plain] [能量：real|free] [差几张以内才按，默认 10]
+// 星符汇聚做得成几成：npx vite-node scripts/awai-stars.ts [场数] [starsDeal，默认 0.05] [对手：random|plain] [能量：real|free] [差几张以内才按，默认 10]
 // 她当成玩家的淡（拿得到字牌手），第一次轮到自己、大七星差得不多就按星符汇聚，别的主动技能不按。
 // real：能量照实扣（开局 100，不回复）；free：能量给够，每次拿到都能按
 // 最后一行是她整场的成绩（平均顺位、一位率、终局均分、和了率、每场役满几次），拿 starsDeal 0 跑一遍当对照
@@ -9,7 +9,7 @@ import { Game } from '../src/engine/game';
 import { Rng } from '../src/engine/rng';
 
 const games = Number(process.argv[2] ?? 50);
-AWAI.starsDeal = Number(process.argv[3] ?? 0.1);
+AWAI.starsDeal = Number(process.argv[3] ?? 0.05);
 const maxShort = Number(process.argv[6] ?? 10);
 const short = (hand: number[]) => {
   const c = new Array<number>(34).fill(0);
