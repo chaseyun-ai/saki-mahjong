@@ -63,6 +63,9 @@ export class Wall {
   doraRevealed = 1;
   // 被锁住的牌（园城寺怜看到的、能力预定好的），谁都不能再移动它们
   locked = new Locks();
+  // 这一次摸牌里被 forceNext 强行换上来的那一张（锁跟着位置转到了它身上）。
+  // 规则引擎最后对账时用：后面还有规矩不许摸它，就照强行的换法再换一次。每次摸牌开头清掉
+  forced: TileId | null = null;
   // 控场能力给这一次摸牌定的规矩：为真的牌不能换到下一张摸的位置（live[0] 或 rinshan[0]）
   deny: ((t: TileId) => boolean) | null = null;
   // 配牌调整期间的把关：live 的这些位置换成这些牌行不行（不能让配牌的规矩变差）。别的时候是 null
@@ -229,6 +232,7 @@ export class Wall {
     [dst[0], c.src[c.i]] = [c.src[c.i], dst[0]];
     this.locked.delete(old);
     for (const o of owners) this.locked.add(dst[0], o);
+    this.forced = dst[0];
     return true;
   }
 

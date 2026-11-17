@@ -817,6 +817,7 @@ export class Game {
   // bust：不会被击飞的人的规矩，排在最前面，谁也越不过去
   private applyDrawAbilities(seat: number, rinshan: boolean, bust: DrawRule[]): void {
     const w = this.wall;
+    w.forced = null;
     const rules: DrawRule[] = [...bust];
     const union = (n: number) => (n === 0 ? null : (t: TileId) => rules.slice(0, n).some((r) => r.deny(t)));
     // 佛灭：控场的人不出手（摸牌的人自己的能力照样动）
@@ -848,6 +849,9 @@ export class Game {
       if (!deny(before)) return;
       const ok = rinshan ? w.bringToRinshan((t) => !deny(t), this.rng) : w.bringToLive(0, (t) => !deny(t), this.rng);
       if (ok) break;
+      // 这一张是这一次摸牌里被强行换上来的（涅莉的七姐妹换掉被封的人锁好的和了牌）：锁跟着位置转到了它身上，
+      // 一般的换法动不了它。强行换的人只看了自己的规矩，别人的规矩不许摸它时，照强行的换法再换一次
+      if (w.forced === before && w.forceNext(rinshan, (t) => !deny(t), this.rng)) break;
     }
     if (next() === before) return;
     for (const r of rules.slice(0, n)) {
