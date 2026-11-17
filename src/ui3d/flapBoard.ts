@@ -1,6 +1,6 @@
 // 翻牌屏（牌桌风格「翻牌屏」）仪表盘上的一块块翻牌：字变了就像车站的翻牌屏那样，一页一页翻，翻到新字为止
 // （往近的那头翻：点数 25000 变 17000 是 16000、17000，不会先翻到 97000 再绕回来，看着不会以为涨了）
-// （consoleLooks.ts 的 flap 照这个画，table3d.ts 翻着的时候每帧重画仪表盘）。
+// （consoleLooks.ts 的 flap 照这个画，table3d.ts 翻着的时候每帧重画仪表盘，只把翻动的那几块传给显卡）。
 // 每一块翻牌一个 key；第一次见到的直接是新字，不翻（刚进牌桌、指着仪表盘看点差的时候）
 
 // 翻一页要多久（秒）；一排里从左到右每块晚多少开始翻
@@ -38,10 +38,21 @@ function nextFace(cur: string, target: string, cycle: string): string {
   return cycle[(i + (ahead <= n - ahead ? 1 : n - 1)) % n];
 }
 
+// 画布上的一块（像素，左上角起）
+export interface FlapRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export class FlapBoard {
   now = 0;
   private cells = new Map<string, Cell>();
   private seen = new Set<string>();
+  // 每块翻牌上一遍画成什么样；这一遍画得不一样的那几块在画布上的位置（table3d.ts 只把这几块传给显卡）
+  private drawn = new Map<string, string>();
+  private dirty: FlapRect[] = [];
   // 上次取走以后翻过几页（不算 quiet 的）：放翻牌声用
   private flips = 0;
 
@@ -73,9 +84,25 @@ export class FlapBoard {
     return { cur: c.shown, next: nextFace(c.shown, c.target, cycle), p: Math.min(1, (this.now - c.at) / STEP_T) };
   }
 
+  // 这一块这一遍画成了 look（字、翻到哪、颜色、位置），在画布上占 rect：和上一遍画的不一样就记下来
+  touch(key: string, look: string, rect: FlapRect): void {
+    this.seen.add(key);
+    if (this.drawn.get(key) === look) return;
+    this.drawn.set(key, look);
+    this.dirty.push(rect);
+  }
+
+  // 取走这一遍画得不一样的那几块
+  takeDirty(): FlapRect[] {
+    const d = this.dirty;
+    this.dirty = [];
+    return d;
+  }
+
   // 画完一遍：这次没画到的翻牌扔掉（点数位数变了、换成点差、仪表盘换了样子）
   endFrame(): void {
     for (const k of this.cells.keys()) if (!this.seen.has(k)) this.cells.delete(k);
+    for (const k of this.drawn.keys()) if (!this.seen.has(k)) this.drawn.delete(k);
     this.seen.clear();
   }
 

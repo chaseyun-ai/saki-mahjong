@@ -52,4 +52,25 @@ describe('翻牌屏的翻牌板', () => {
     b.now = 3;
     expect(b.face('p1:5:0', '7', FLAP_UP).next).toBeNull();
   });
+
+  it('只记画得和上一遍不一样的翻牌（翻牌在翻时只把这几块传给显卡）', () => {
+    const b = new FlapBoard();
+    const at = (x: number) => ({ x, y: 0, w: 10, h: 10 });
+    b.touch('a', '1|null|0.000', at(0));
+    b.touch('b', '2|null|0.000', at(20));
+    b.endFrame();
+    expect(b.takeDirty()).toEqual([at(0), at(20)]);
+    // 下一遍：a 在翻，b 没动
+    b.touch('a', '1|2|0.400', at(0));
+    b.touch('b', '2|null|0.000', at(20));
+    b.endFrame();
+    expect(b.takeDirty()).toEqual([at(0)]);
+    // 取走以后清空；没画到的扔掉，再出现时算新的
+    expect(b.takeDirty()).toEqual([]);
+    b.touch('a', '1|2|0.400', at(0));
+    b.endFrame();
+    b.touch('b', '2|null|0.000', at(20));
+    b.endFrame();
+    expect(b.takeDirty()).toEqual([at(20)]);
+  });
 });

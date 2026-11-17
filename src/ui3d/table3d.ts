@@ -12,7 +12,7 @@ import { Dice } from './dice';
 import { Machine, type MachineCue, type MachineRect } from './machine';
 import type { Changeover } from './changeover';
 import { Flip, type FlipCue } from './flip';
-import { FlapBoard } from './flapBoard';
+import { FlapBoard, type FlapRect } from './flapBoard';
 import { Gust, type GustCue } from './gust';
 import { Lamp, type LampCue } from './lamp';
 import { Shuffle, type ShuffleCue } from './shuffle';
@@ -399,6 +399,30 @@ const VANISH_TIME = 1;
 const PROJ_SCALE = 0.8;
 const PROJ_Y = 0.012;
 
+// 挨着的几块并成一块（一串点数翻牌合成一次传），并了以后多出来的空白不超过三成才并
+function mergeRects(rects: FlapRect[]): FlapRect[] {
+  const out = rects.map((r) => ({ ...r }));
+  const area = (r: FlapRect) => r.w * r.h;
+  for (let merged = true; merged; ) {
+    merged = false;
+    for (let i = 0; i < out.length && !merged; i++) {
+      for (let j = i + 1; j < out.length; j++) {
+        const a = out[i];
+        const b = out[j];
+        const x = Math.min(a.x, b.x);
+        const y = Math.min(a.y, b.y);
+        const u = { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+        if (area(u) > (area(a) + area(b)) * 1.3) continue;
+        out[i] = u;
+        out.splice(j, 1);
+        merged = true;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 interface TileObj {
   group: THREE.Group;
   body: THREE.Mesh;
@@ -635,6 +659,8 @@ export class Table3D {
   private handEdges: number[] = [];
   private frozen = new Map<number, { hand: TileId[]; drawn: TileId | null; until: number }>();
   private consoleKey = '';
+  // 仪表盘上次重画时除了翻牌翻到哪以外的内容（翻牌屏只有翻牌在翻时，只传翻动的那几块）
+  private consoleBase = '';
   // 鼠标指着仪表盘（手机上点一下仪表盘，之后 3 秒）：其他三家的点数换成自己比他多几点
   private consoleParts: THREE.Object3D[] = [];
   private consoleHover = false;
@@ -4016,11 +4042,29 @@ export class Table3D {
     return [d.getHours(), d.getMinutes()];
   }
 
+  // 翻牌屏的翻牌在翻：只把画布上翻动的那几块贴进仪表盘贴图（整张 2048×2048 每秒重传 30 次太重，翻牌屏的帧数会掉），
+  // 贴完最后一块再重做一遍 mipmap。贴图是 flipY 的：画布先上下翻过来再取那一块，所以 y 从画布底边往上数
+  private uploadConsoleRects(rects: FlapRect[]): void {
+    const list = mergeRects(rects.filter((r) => r.w > 0 && r.h > 0));
+    if (!list.length) return;
+    // 之前整张重画、还没传的先整张传上去（连 mipmap）
+    this.renderer.initTexture(this.consoleTex);
+    const H = this.consoleCanvas.height;
+    const gl = this.renderer.getContext();
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.BROWSER_DEFAULT_WEBGL);
+    list.forEach((r, i) => {
+      const y = H - r.y - r.h;
+      this.consoleTex.generateMipmaps = i === list.length - 1;
+      this.renderer.copyTextureToTexture(this.consoleTex, this.consoleTex, new THREE.Box2(new THREE.Vector2(r.x, y), new THREE.Vector2(r.x + r.w, y + r.h)), new THREE.Vector2(r.x, y));
+    });
+    this.consoleTex.generateMipmaps = true;
+  }
+
   // 仪表盘：中间一块方屏写局数、本场、余牌、宝牌和供托；四边各家的风位和点数朝着自己，轮到谁谁那边亮一条。
   // 颜色和局数的字体跟皮肤走（theme.ts 的 console）
   private drawConsole(g: Game, view: SyncView): void {
     // 发牌时每帧都会 sync，内容没变就不重画
-    const key = JSON.stringify([
+    const base = JSON.stringify([
       g.roundWind,
       g.roundNumber,
       g.honba,
@@ -4036,13 +4080,16 @@ export class Table3D {
       this.consoleHover,
       this.backSet,
       this.colors.seals ? this.shownSeals(g, view) : null,
-      // 翻牌屏翻着的时候一秒重画 30 次
-      this.flaps?.busy ? Math.floor(this.now * 30) : null,
       // 深夜的表盘：分钟变了重画
       this.clockTime(),
     ]);
+    // 翻牌屏翻着的时候一秒重画 30 次
+    const key = `${base}|${this.flaps?.busy ? Math.floor(this.now * 30) : ''}`;
     if (key === this.consoleKey) return;
+    // 只是翻牌又翻了一点、别的都没变：画布照样整张重画，传给显卡时只传翻动的那几块（见 uploadConsoleRects）
+    const onlyFlaps = this.consoleKey !== '' && base === this.consoleBase;
     this.consoleKey = key;
+    this.consoleBase = base;
     const k = this.colors.console;
     // 点差：指着仪表盘时，其他三家写自己比他多几点（自己那边照常写点数）
     const mine = g.shownScore(view.me, view.me);
@@ -4085,7 +4132,9 @@ export class Table3D {
         (cx, face, x, y, w, h) => this.atlas.drawFace(cx, face, x, y, w, h),
         flaps ?? undefined,
       );
-      this.consoleTex.needsUpdate = true;
+      const dirty = flaps?.takeDirty() ?? [];
+      if (onlyFlaps && flaps) this.uploadConsoleRects(dirty);
+      else this.consoleTex.needsUpdate = true;
       const flips = flaps?.takeFlips() ?? 0;
       if (flips) this.onFlaps?.(flips);
       return;

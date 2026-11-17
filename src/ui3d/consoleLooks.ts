@@ -1,5 +1,5 @@
 import type { TableColors } from '../ui/theme';
-import { FLAP_DOWN, FLAP_UP, FLAP_WINDS, type FlapBoard } from './flapBoard';
+import { FLAP_DOWN, FLAP_UP, FLAP_WINDS, type FlapBoard, type FlapRect } from './flapBoard';
 import { CONSOLE_HALF } from './tableLayout';
 
 // 牌桌风格的中央仪表盘（theme.ts 里牌桌风格的 look）：自动麻将机的数码管、原木的木牌、深夜的纯色、翻牌屏、沙滩的海水、草甸的亚麻布。
@@ -725,6 +725,8 @@ function flapHalf(c: CanvasRenderingContext2D, x: number, y: number, w: number, 
 // 一块翻牌：上下两半颜色差一点，中间一道缝。给了 key 就照翻牌板翻：字变了一页页翻到新字（cycle 是这块上的字的顺序，见 flapBoard.ts）
 function flapTile(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, ch: string, font: string, ink: string, key?: string, cycle = '', order = 0, quiet = false): void {
   const f = key && board ? board.face(key, ch, cycle, order, quiet) : null;
+  // 记下这一块画成什么样、在画布上占哪一块：只有翻牌在翻的时候，table3d.ts 只把画得不一样的几块传给显卡
+  if (f && key && board) board.touch(key, `${f.cur}|${f.next}|${f.p.toFixed(3)}|${font}|${ink}|${x},${y},${w},${h}`, canvasRect(c, x, y, w, h));
   if (!f || f.next === null) flapFace(c, x, y, w, h, f ? f.cur : ch, font, ink);
   else {
     // 后面露出来的：上半页已经是下一页的字，下半页还是这一页的；翻下来的那一页前一半是这一页的上半页往前倒（越倒越扁、越暗），
@@ -737,6 +739,23 @@ function flapTile(c: CanvasRenderingContext2D, x: number, y: number, w: number, 
   }
   c.fillStyle = 'rgba(0,0,0,0.55)';
   c.fillRect(x, y + h / 2 - 1, w, 2);
+}
+
+// 一块翻牌（往外多留一点，翻的时候半页会出边一点）在画布上实际占的像素框：照现在的缩放、转向算四个角
+function canvasRect(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): FlapRect {
+  const m = c.getTransform();
+  const pad = 2;
+  const pts = [
+    [x - pad, y - pad],
+    [x + w + pad, y - pad],
+    [x - pad, y + h + pad],
+    [x + w + pad, y + h + pad],
+  ].map(([px, py]) => m.transformPoint({ x: px, y: py }));
+  const x0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.x))));
+  const y0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.y))));
+  const x1 = Math.min(c.canvas.width, Math.ceil(Math.max(...pts.map((p) => p.x))));
+  const y1 = Math.min(c.canvas.height, Math.ceil(Math.max(...pts.map((p) => p.y))));
+  return { x: x0, y: y0, w: Math.max(0, x1 - x0), h: Math.max(0, y1 - y0) };
 }
 
 // 一串翻牌靠右排（key 给了就照翻牌板翻，位数变了的那一串直接换成新字）
