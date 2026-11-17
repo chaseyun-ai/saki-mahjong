@@ -9546,6 +9546,140 @@ canvas.rii-sky {
   15% { opacity: 1; }
   100% { translate: var(--dx, 200px) var(--dy, 80px); opacity: 0; }
 }
+/* 高维领域（2D）：桌面压暗，两层发光的网格慢慢扭动，桌心一个转着的八角阵。按下时从她那边（--x、--y）铺开 */
+.awai2d-field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(46, 20, 104, 0.24) 0%, rgba(18, 8, 54, 0.44) 60%, rgba(6, 2, 24, 0.62) 100%);
+  clip-path: circle(0% at var(--x, 50%) var(--y, 50%));
+  transition: opacity 0.9s ease;
+}
+.awai2d-field.on {
+  opacity: 1;
+  clip-path: circle(150% at var(--x, 50%) var(--y, 50%));
+  transition: clip-path 1.4s cubic-bezier(0.2, 0.7, 0.3, 1), opacity 0.3s ease;
+}
+.awai2d-field.on.instant {
+  transition: opacity 0.8s ease;
+}
+.awai2d-field i {
+  position: absolute;
+  inset: -30%;
+  background:
+    repeating-linear-gradient(0deg, rgba(160, 120, 255, 0.5) 0 1.5px, transparent 1.5px 56px),
+    repeating-linear-gradient(90deg, rgba(160, 120, 255, 0.5) 0 1.5px, transparent 1.5px 56px);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 50%, #000 20%, transparent 62%);
+  mask-image: radial-gradient(ellipse at 50% 50%, #000 20%, transparent 62%);
+  animation: awai2d-grid-a 23s ease-in-out infinite alternate;
+}
+.awai2d-field i + i {
+  background:
+    repeating-linear-gradient(0deg, rgba(110, 200, 255, 0.3) 0 1px, transparent 1px 84px),
+    repeating-linear-gradient(90deg, rgba(110, 200, 255, 0.3) 0 1px, transparent 1px 84px);
+  animation: awai2d-grid-b 31s ease-in-out infinite alternate;
+}
+@keyframes awai2d-grid-a {
+  from { transform: rotate(-7deg) skew(7deg, -3deg) scale(1.02); }
+  50% { transform: rotate(3deg) skew(-5deg, 5deg) scale(1.12); }
+  to { transform: rotate(9deg) skew(4deg, -6deg) scale(1.04); }
+}
+@keyframes awai2d-grid-b {
+  from { transform: rotate(18deg) skew(-8deg, 4deg) scale(1.1); }
+  50% { transform: rotate(8deg) skew(6deg, -4deg) scale(1); }
+  to { transform: rotate(-4deg) skew(-3deg, 7deg) scale(1.14); }
+}
+.awai2d-field b,
+.awai2d-field b::before,
+.awai2d-field b::after {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid rgba(190, 160, 255, 0.5);
+  box-shadow: 0 0 14px rgba(140, 100, 255, 0.45), inset 0 0 14px rgba(140, 100, 255, 0.3);
+}
+.awai2d-field b {
+  left: 50%;
+  top: 50%;
+  width: 430px;
+  height: 430px;
+  margin: -215px 0 0 -215px;
+  animation: awai2d-cube 48s linear infinite;
+}
+.awai2d-field b::before,
+.awai2d-field b::after {
+  content: '';
+  inset: -1.5px;
+}
+.awai2d-field b::before {
+  transform: rotate(45deg);
+}
+.awai2d-field b::after {
+  inset: 62px;
+  border-color: rgba(120, 210, 255, 0.4);
+  animation: awai2d-cube 19s linear infinite reverse;
+}
+@keyframes awai2d-cube {
+  to { transform: rotate(360deg); }
+}
+/* 加速驱动（2D）：另外三家头像上转着的粉紫色准星 */
+.awai2d-reticle {
+  position: absolute;
+  width: 118px;
+  height: 118px;
+  margin: -59px 0 0 -59px;
+  border-radius: 50%;
+  border: 2px dashed rgba(255, 138, 216, 0.85);
+  box-shadow: 0 0 12px rgba(255, 110, 210, 0.55), inset 0 0 12px rgba(190, 130, 255, 0.4);
+  animation: awai2d-lock 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) both, awai2d-cube 9s linear 0.7s infinite;
+}
+.awai2d-reticle::before,
+.awai2d-reticle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: linear-gradient(90deg, rgba(255, 190, 235, 0.95) 0 16px, transparent 16px calc(100% - 16px), rgba(255, 190, 235, 0.95) calc(100% - 16px));
+  width: 150px;
+  height: 2px;
+  margin: -1px 0 0 -75px;
+}
+.awai2d-reticle::after {
+  transform: rotate(90deg);
+}
+@keyframes awai2d-lock {
+  from { opacity: 0; transform: scale(2.6) rotate(-120deg); }
+  to { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+/* 封印（2D）：往头像上盖一下 */
+.awai2d-seal {
+  position: absolute;
+  width: 84px;
+  height: 84px;
+  margin: -42px 0 0 -42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 3px double #c9a8ff;
+  background: radial-gradient(circle, rgba(60, 20, 140, 0.75) 0%, rgba(40, 10, 100, 0.5) 60%, rgba(40, 10, 100, 0) 72%);
+  color: #f1e6ff;
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 0 10px #a070ff, 0 0 3px #fff;
+  box-shadow: 0 0 22px rgba(140, 90, 255, 0.85);
+  animation: awai2d-seal 1.15s ease-out both;
+}
+@keyframes awai2d-seal {
+  0% { opacity: 0; transform: scale(2.6) rotate(-25deg); }
+  16% { opacity: 1; transform: scale(0.92) rotate(0deg); }
+  24% { transform: scale(1.05); }
+  32% { transform: scale(1); }
+  72% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.25); }
+}
 /* 盖在牌桌上面的一层：流星、闪光、光圈（canvas）和转角的星 */
 .stars2d-fx {
   position: absolute;
@@ -9649,7 +9783,13 @@ canvas.rii-sky {
   .stars2d-sky i.glint::after,
   .stars2d-neb,
   .stars2d-layer,
-  .stars2d-beacon .star {
+  .stars2d-beacon .star,
+  .awai2d-field i,
+  .awai2d-field b,
+  .awai2d-field b::after {
     animation: none;
+  }
+  .awai2d-reticle {
+    animation: awai2d-lock 0.7s both;
   }
 }

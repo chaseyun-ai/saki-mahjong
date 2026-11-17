@@ -6,7 +6,9 @@ import * as THREE from 'three';
 //   圆的位置、大小和以前那张黑色的圆一样（和四边牌山的外沿相切），罩住哪几墩照样看得出来
 // - 平行宇宙（shift）：画面先裂成错开的几重影子、横着撕开，一道白光以后换到左右颠倒、泛着紫的“另一边”，
 //   晃一会儿再合回来
-// 只在这两个技能开着的时候才多画这一遍
+// - 引力波（ripple）：一圈圈波从桌面上一点荡开，波经过的地方桌面上的东西跟着往外、往里晃一下，波峰泛紫
+// - 加速驱动（rush）：整幅画面朝她那边拉成一条条线，像一下子加到曲速
+// 只在这些技能放着的时候才多画这一遍
 
 const VERT = /* glsl */ `
 varying vec2 vUv;
@@ -124,6 +126,78 @@ void main() {
 }
 `;
 
+const RIPPLE_FRAG = /* glsl */ `
+uniform sampler2D uTex;
+uniform mat4 uInv;
+uniform mat4 uVP;
+uniform vec3 uOrigin;
+uniform float uFront; // 最前面那一圈现在的半径
+uniform float uGap; // 后面几圈各落后多少
+uniform float uWidth;
+uniform float uA;
+varying vec2 vUv;
+void main() {
+  vec4 base = texture2D(uTex, vUv);
+  gl_FragColor = base;
+  vec2 ndc = vUv * 2.0 - 1.0;
+  vec4 a = uInv * vec4(ndc, -1.0, 1.0);
+  vec4 b = uInv * vec4(ndc, 1.0, 1.0);
+  vec3 ro = a.xyz / a.w;
+  vec3 rd = b.xyz / b.w - ro;
+  if (rd.y > -1e-5) return;
+  vec3 hit = ro + rd * ((uOrigin.y - ro.y) / rd.y);
+  vec2 e = hit.xz - uOrigin.xz;
+  float d = length(e);
+  vec2 dir = d > 1e-4 ? e / d : vec2(1.0, 0.0);
+  // 三圈波：每一圈是一小段正弦，前沿往外推、后沿往回拉
+  float push = 0.0;
+  float crest = 0.0;
+  for (int i = 0; i < 3; i++) {
+    float ph = (d - (uFront - float(i) * uGap)) / uWidth;
+    float env = exp(-ph * ph) * (1.0 - 0.25 * float(i));
+    push += sin(ph * 2.6) * env;
+    crest += env * env;
+  }
+  // 波走远了就散开、变弱
+  float fade = uA / (1.0 + d * 0.03);
+  if (abs(push) * fade < 1e-4 && crest * fade < 1e-3) return;
+  float dr = push * uWidth * 0.42 * fade;
+  vec4 p0 = uVP * vec4(hit.x - dir.x * dr, uOrigin.y, hit.z - dir.y * dr, 1.0);
+  vec4 p1 = uVP * vec4(hit.x - dir.x * dr * 1.25, uOrigin.y, hit.z - dir.y * dr * 1.25, 1.0);
+  vec2 u0 = p0.xy / p0.w * 0.5 + 0.5;
+  vec2 u1 = p1.xy / p1.w * 0.5 + 0.5;
+  vec3 col = vec3(texture2D(uTex, u0).rg, texture2D(uTex, u1).b);
+  col += vec3(0.5, 0.32, 1.0) * crest * fade * 0.22 + vec3(0.85, 0.75, 1.0) * pow(crest, 3.0) * fade * 0.1;
+  gl_FragColor = vec4(col, base.a);
+}
+`;
+
+const RUSH_FRAG = /* glsl */ `
+uniform sampler2D uTex;
+uniform vec2 uAt; // 她在画面上的位置（0–1）
+uniform float uK; // 拉多长（0–1）
+varying vec2 vUv;
+void main() {
+  vec2 d = vUv - uAt;
+  float far = length(d);
+  // 离她越远拉得越长；她脚边不动
+  float amt = uK * 0.18 * smoothstep(0.1, 0.8, far);
+  vec3 col = vec3(0.0);
+  float sum = 0.0;
+  for (int i = 0; i < 12; i++) {
+    float t = float(i) / 11.0;
+    float w = 1.0 - 0.6 * t;
+    vec2 uv = vUv - d * amt * t;
+    // 尾巴上红蓝错开一点
+    col += vec3(texture2D(uTex, uv - d * amt * 0.06).r, texture2D(uTex, uv).g, texture2D(uTex, uv + d * amt * 0.06).b) * w;
+    sum += w;
+  }
+  col /= sum;
+  col += vec3(1.0, 0.55, 0.9) * uK * 0.1 * smoothstep(0.2, 0.9, far);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
 export class SpaceWarp {
   private tex: THREE.FramebufferTexture | null = null;
   private size = new THREE.Vector2();
@@ -141,13 +215,28 @@ export class SpaceWarp {
     uKick: { value: 0 },
   };
   private shiftU = { uTex: { value: null as THREE.Texture | null }, uK: { value: 0 }, uTime: { value: 0 } };
+  private rippleU = {
+    uTex: { value: null as THREE.Texture | null },
+    uInv: { value: new THREE.Matrix4() },
+    uVP: { value: new THREE.Matrix4() },
+    uOrigin: { value: new THREE.Vector3() },
+    uFront: { value: 0 },
+    uGap: { value: 2 },
+    uWidth: { value: 1 },
+    uA: { value: 1 },
+  };
+  private rushU = { uTex: { value: null as THREE.Texture | null }, uAt: { value: new THREE.Vector2(0.5, 0) }, uK: { value: 0 } };
   private lensMat: THREE.ShaderMaterial;
   private shiftMat: THREE.ShaderMaterial;
+  private rippleMat: THREE.ShaderMaterial;
+  private rushMat: THREE.ShaderMaterial;
 
   constructor() {
     const mat = (uniforms: Record<string, THREE.IUniform>, frag: string) => new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: frag, depthTest: false, depthWrite: false, toneMapped: false });
     this.lensMat = mat(this.lensU, LENS_FRAG);
     this.shiftMat = mat(this.shiftU, SHIFT_FRAG);
+    this.rippleMat = mat(this.rippleU, RIPPLE_FRAG);
+    this.rushMat = mat(this.rushU, RUSH_FRAG);
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.lensMat);
     this.quad.frustumCulled = false;
     this.scene.add(this.quad);
@@ -201,7 +290,33 @@ export class SpaceWarp {
     this.blit(r, this.shiftMat);
   }
 
+  // 引力波：从桌面上的 origin（y 是折算用的高度）荡开的三圈波，最前面一圈现在半径 front，后面两圈各落后 gap；
+  // width 是一圈波有多宽，a 是强弱
+  ripple(r: THREE.WebGLRenderer, camera: THREE.Camera, origin: THREE.Vector3, front: number, gap: number, width: number, a: number): void {
+    const u = this.rippleU;
+    u.uTex.value = this.grab(r);
+    u.uVP.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    u.uInv.value.copy(u.uVP.value).invert();
+    u.uOrigin.value.copy(origin);
+    u.uFront.value = front;
+    u.uGap.value = gap;
+    u.uWidth.value = width;
+    u.uA.value = a;
+    this.blit(r, this.rippleMat);
+  }
+
+  // 加速驱动：整幅画面朝画面上的 (x, y)（0–1，左下是原点）拉成线，k 是拉多长（0–1）
+  rush(r: THREE.WebGLRenderer, x: number, y: number, k: number): void {
+    const u = this.rushU;
+    u.uTex.value = this.grab(r);
+    u.uAt.value.set(x, y);
+    u.uK.value = k;
+    this.blit(r, this.rushMat);
+  }
+
   dispose(): void {
+    this.rippleMat.dispose();
+    this.rushMat.dispose();
     this.tex?.dispose();
     this.quad.geometry.dispose();
     this.lensMat.dispose();

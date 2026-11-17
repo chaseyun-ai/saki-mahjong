@@ -60,7 +60,10 @@ function rgb(hex: string): [number, number, number] {
 
 export class Stars2D {
   readonly sky: HTMLDivElement;
+  // 高维领域的网格：铺在牌底下（夜空上面）的一层
+  readonly field: HTMLDivElement;
   readonly fx: HTMLDivElement;
+  private reticles: HTMLDivElement[] = [];
   private beacon: HTMLDivElement;
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -79,6 +82,9 @@ export class Stars2D {
     this.sky = document.createElement('div');
     this.sky.className = 'stars2d-sky';
     this.reseed();
+    this.field = document.createElement('div');
+    this.field.className = 'awai2d-field';
+    this.field.innerHTML = '<i></i><i></i><b></b>';
     this.fx = document.createElement('div');
     this.fx.className = 'stars2d-fx';
     this.beacon = document.createElement('div');
@@ -168,6 +174,49 @@ export class Stars2D {
     this.meteor();
   }
 
+  // 高维领域：桌面压暗，浮出两层慢慢扭动的发光网格。at：刚按下，从这一点（她那边）铺开；不给就直接铺着
+  setField(on: boolean, at?: Pt): void {
+    if (at) {
+      const w = this.fx.offsetWidth || 1;
+      const h = this.fx.offsetHeight || 1;
+      this.field.style.setProperty('--x', `${((at.x / w) * 100).toFixed(1)}%`);
+      this.field.style.setProperty('--y', `${((at.y / h) * 100).toFixed(1)}%`);
+      this.field.classList.remove('on', 'instant');
+      void this.field.offsetWidth;
+    } else if (on && !this.field.classList.contains('on')) this.field.classList.add('instant');
+    this.field.classList.toggle('on', on);
+    if (!on) this.field.classList.remove('instant');
+  }
+
+  // 加速驱动的准星：挂在这几个点上（另外三家的头像）；null 收起来
+  setReticles(points: Pt[] | null): void {
+    const n = points?.length ?? 0;
+    while (this.reticles.length < n) {
+      const el = document.createElement('div');
+      el.className = 'awai2d-reticle';
+      this.reticles.push(el);
+      this.fx.append(el);
+    }
+    this.reticles.forEach((el, i) => {
+      el.hidden = i >= n;
+      if (i >= n) return;
+      el.style.left = `${points![i].x.toFixed(1)}px`;
+      el.style.top = `${points![i].y.toFixed(1)}px`;
+    });
+  }
+
+  // 封印：在 at 盖一下
+  seal(at: Pt): void {
+    const el = document.createElement('div');
+    el.className = 'awai2d-seal';
+    el.textContent = '封';
+    el.style.left = `${at.x.toFixed(1)}px`;
+    el.style.top = `${at.y.toFixed(1)}px`;
+    el.addEventListener('animationend', () => el.remove());
+    this.fx.append(el);
+    this.ring(at, 60, 0.5, '#8a5cff');
+  }
+
   // 双立直宣言：金色的光圈从 at 扫过整张桌子，扫过的地方变成夜空
   declare(at: Pt): void {
     this.on = true;
@@ -235,6 +284,8 @@ export class Stars2D {
   }
 
   clear(): void {
+    this.setField(false);
+    this.setReticles(null);
     this.setOn(false);
     this.reseed();
     this.beaconLast = null;

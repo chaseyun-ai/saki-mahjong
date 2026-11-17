@@ -48,7 +48,8 @@ import { teruTwister } from '../abilities/teru';
 import type { WinResult } from '../engine/score';
 import { StarSky } from './starFx';
 import { SpaceWarp } from './warpFx';
-import { type AwaiStarView, awaiCornerKan, awaiKanUra } from '../abilities/awai';
+import { type AwaiFieldView, type AwaiStarView, awaiCornerKan, awaiKanUra } from '../abilities/awai';
+import { AwaiFx } from './awaiFx';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -274,6 +275,11 @@ const FX_RED = '#ff5a4f';
 const STAR_URA_TIME = 2.1;
 // 平行宇宙：整幅画面换到“另一边”再换回来要多久
 const PARALLEL_TIME = 2.8;
+// 淡的引力波：一道波从放出来到荡出桌外多久；开着的时候每隔多久再荡一道淡的
+const WAVE_LIFE = 3;
+const WAVE_EVERY = 6;
+// 淡的加速驱动：按下以后画面拉成线多久
+const RUSH_TIME = 1.1;
 interface Character {
   seat: number;
   seatRoot: THREE.Group;
@@ -410,6 +416,7 @@ export interface SyncView {
   rinshanSeen?: Set<TileId>; // 鼠标移到岭上牌上时，岭上牌也这样
   gravity?: boolean; // 淡的巨引力源：黑色的引力圆罩住整个牌山
   stars?: AwaiStarView | null; // 淡双立直的星空：桌布变成夜空，转角上悬着一颗星（starFx.ts）
+  awai?: AwaiFieldView | null; // 淡开着的高维领域、引力波、加速驱动（awaiFx.ts）
   handOrder?: TileId[]; // 自己手牌（不含刚摸的那张）从左到右的摆法；不给就照顺序排
   openHands?: boolean; // 公开手牌：别人的手牌摊开亮着
   drawPath?: 'on' | 'off' | 'self'; // 摸牌路径：on 都沿弧线飞，off 都是淡出淡入，self 只有自己飞
@@ -457,6 +464,18 @@ export class Table3D {
   private gravityA = 0;
   private gravityKick = 0;
   private shiftAt = -1;
+  // 淡的高维领域、加速驱动挂在桌上的东西（用到时才建）
+  private awaiFx: AwaiFx | null = null;
+  // 引力波：正在荡的几道波（at 是放出来的时刻，a 是强弱）；牌山里的和了牌各在什么时刻被波扫到、亮起来；下一道淡淡的波什么时候放
+  private waves: { at: number; origin: THREE.Vector3; a: number }[] = [];
+  private waveSeen = new Map<TileId, number>();
+  private waveLit = new Set<TileId>();
+  private waveDue = 0;
+  private waveNext = 0;
+  // 加速驱动：按下那一下整幅画面朝她那边拉成线（rushAt 是按下的时刻）；留给她的最后一张上那颗星下一次什么时候闪
+  private rushAt = -1;
+  private rushFrom = new THREE.Vector3();
+  private accelStarAt = 0;
   // 淡双立直的星空（用到时才建）；宣言的光圈扫出来之前先不铺（starHold 之前）
   private stars: StarSky | null = null;
   private starHold = 0;
@@ -725,6 +744,7 @@ export class Table3D {
     this.warp?.dispose();
     this.shift?.dispose();
     this.stamps?.dispose();
+    this.awaiFx?.dispose();
     this.moonLift?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -1210,6 +1230,12 @@ export class Table3D {
       this.stars?.clear();
       this.starHold = 0;
       this.starUraWin = false;
+      this.awaiFx?.clear();
+      this.waves.length = 0;
+      this.waveSeen.clear();
+      this.waveLit.clear();
+      this.waveDue = 0;
+      this.rushAt = -1;
       // 牌河里每张牌歪多少换一套：同一张牌这一局一直歪成一样，下一局换个样子
       this.pondSalt = Math.floor(vary.next() * 2 ** 31);
     }
@@ -1224,6 +1250,9 @@ export class Table3D {
           this.heldDraw = { seat: e.seat, tile: drawn, at: this.now + wait, from };
         } else this.startFlight(drawn, e.seat);
         if (this.lilyDraw === e.seat && g.rinshanDraw && obj.shown) this.lilySprout(drawn);
+        // 淡的加速驱动：另外三家摸的牌一路拖着粉色的尾迹
+        const accel = this.lastSync?.view.awai?.accel;
+        if (accel !== null && accel !== undefined && accel !== e.seat && obj.shown) this.accelTrail(drawn, wait);
       }
       this.lilyDraw = null;
       const ch = this.characterAt(e.seat);
@@ -1274,7 +1303,8 @@ export class Table3D {
       if (e.ability === 'koromo' && e.text === '海底自摸') this.startScoop(g, e.seat);
       // 咲开杠、岭上那张正好和：记下来，等她摸这张岭上牌时牌上先亮一下
       if (e.ability === 'saki' && e.text === '岭上开花') this.lilyDraw = e.seat;
-      if (e.ability === 'awai') this.awaiSkillFx(g, e.seat, e.text);
+      // 带 target 的是她的规矩挡掉了那一家的一张摸牌，不是按技能
+      if (e.ability === 'awai') e.target === undefined ? this.awaiSkillFx(g, e.seat, e.text) : this.awaiDenyFx(g, e.text, e.target);
       for (const ch of all) {
         if (ch.seat === e.seat) ch.avatar?.setMood('relaxed', 2);
         else ch.avatar?.setMood('surprised', 1.2);
@@ -1894,7 +1924,7 @@ export class Table3D {
       const target = targets.get(id) ?? null;
       t.target = target;
       const moon = this.scoop?.tile === id ? this.moonGlow() : null;
-      const back = moon ? moon.back : view.waveBacks?.has(id) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
+      const back = moon ? moon.back : view.waveBacks?.has(id) && this.waveReached(id, target) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
       if (back && t.back.material !== back) t.back.material = back;
       const body = moon ? moon.body : view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
@@ -1927,6 +1957,7 @@ export class Table3D {
     this.syncMist(g, view);
     this.syncGale(view);
     this.syncStars(view);
+    this.syncAwai(g, view);
     this.syncWater(view);
   }
 
@@ -2504,6 +2535,15 @@ export class Table3D {
       this.effects.ring(home, '#6a3cff', half * 2.4, 1.3, 0.9);
       this.effects.later(0.2, () => this.effects.ring(home, '#2a1466', half * 2.4, 1.5, 0.8));
       this.shake = Math.max(this.shake, 0.4);
+      // 穹顶和网格从她那边罩过去；罩到谁、谁控牌山的能力被压住了，他面前闪一个封印
+      const fx = this.awai3();
+      fx.domainSweep(home);
+      for (const s of others) {
+        const a = g.active(s);
+        if (!a || !(a.beforeAnyDraw || a.dealRules) || !g.quelled(s)) continue;
+        const at = this.seatPoint(s, 0, 1.6, this.style === '25d' ? d.pondZ + 2.6 : d.handZ);
+        fx.seal(at, 2.6, 0.35 + home.distanceTo(at) / (half * 1.7));
+      }
     } else if (text === '退相干' || text === '退相干·自摸') {
       const tsumo = text !== '退相干';
       const drawn = g.players[seat].drawn;
@@ -2521,8 +2561,12 @@ export class Table3D {
         } : undefined, c, c);
       });
     } else if (text === '引力波') {
-      for (let i = 0; i < 3; i++) this.effects.later(i * 0.28, () => this.effects.ring(home, i === 1 ? '#d9b8ff' : '#9b6bff', half * (1.5 + i * 0.45), 1.5, 0.75 - i * 0.12));
+      // 三圈波从她那边荡过整张桌子，画面跟着起伏（warpFx 的 ripple）；扫到牌山里的和了牌，那张牌亮起来（waveReached）
+      this.waves.push({ at: this.now, origin: home.clone().setY(TILE_T / 2), a: 1 });
+      this.waveNext = this.now + WAVE_EVERY;
+      this.effects.ring(home, '#9b6bff', half * 1.2, 1.1, 0.6);
       sky.flare(home.clone().setY(1.4), 6, 0.9, '#b58cff', 0.8, 0.6);
+      this.shake = Math.max(this.shake, 0.25);
     } else if (text === '平行宇宙') {
       // 整幅画面裂开、换到另一边再合回来（warpFx 的 shift），这段时间牌局等着
       this.shiftAt = this.now;
@@ -2553,6 +2597,24 @@ export class Table3D {
     } else if (text === '加速驱动') {
       const from = home.clone().setY(1.2);
       sky.flare(from, 6, 0.6, '#ff8ad8', 0.8, 0.5);
+      // 整幅画面朝她那边拉成线（warpFx 的 rush），一把光线从她那边冲向另外三家
+      this.rushAt = this.now;
+      this.rushFrom.copy(home);
+      this.shake = Math.max(this.shake, 0.35);
+      for (const s of others) {
+        const dir = this.seatPoint(s, 0, 0.9, d.handZ).sub(from).normalize();
+        this.effects.sparks(from, s % 2 ? '#ff9ae0' : '#c9a0ff', {
+          count: 46,
+          life: [0.35, 0.8],
+          vel: (v) => v.copy(dir).multiplyScalar(half * (1.6 + Math.random() * 2.2)).add(new THREE.Vector3((Math.random() - 0.5) * 5, (Math.random() - 0.3) * 2.2, (Math.random() - 0.5) * 5)),
+          gravity: 0,
+          drag: 0.05,
+          size: [0.03, 0.07],
+          stretch: 0.28,
+          jitter: 0.6,
+          hot: '#ffffff',
+        });
+      }
       others.forEach((s, i) => {
         this.effects.later(0.1 + i * 0.12, () => {
           const to = this.seatPoint(s, 0, 0.8, d.handZ);
@@ -2573,6 +2635,121 @@ export class Table3D {
       this.effects.later(0.75, () => this.effects.ring(new THREE.Vector3(0, 0.1, 0), '#7a4dff', half * 0.8, 0.8, 0.8));
       this.gravityKick = 1;
       this.shake = Math.max(this.shake, 0.5);
+    }
+  }
+
+  private awai3(): AwaiFx {
+    if (!this.awaiFx) {
+      this.awaiFx = new AwaiFx(this.dim.tableHalf, this.style === '25d' ? 1 : 0.8);
+      this.scene.add(this.awaiFx.group);
+    }
+    return this.awaiFx;
+  }
+
+  // 淡的规矩挡掉了 target 的一张摸牌（这时那张牌已经换好、还在牌山上等他摸）：
+  // 高维领域——那张牌上闪一个紫色的封印；加速驱动——那张牌亮一下粉光（接着拖着尾迹飞进他手里，见 accelTrail）
+  private awaiDenyFx(g: Game, text: string, target: number): void {
+    const next = g.drawing?.rinshan ? g.wall.rinshan[0] : g.wall.live[0];
+    const tile = next !== undefined ? this.tiles[next] : null;
+    const d = this.dim;
+    const at = tile && tile.shown ? tile.group.position.clone() : this.seatPoint(target, 0, 0.6, this.style === '25d' ? d.pondZ + 1.5 : d.handZ);
+    if (text === '高维领域') {
+      this.awai3().seal(at.clone().setY(at.y + 0.9), 2.1);
+      this.effects.ring(at.clone().setY(0.06), '#8a5cff', 2.6, 0.5, 0.7);
+    } else if (text === '加速驱动') {
+      this.starSky().flare(at.clone().setY(at.y + 0.6), 2.6, 0.5, '#ff8ad8', 0.8, 0.4);
+    }
+  }
+
+  // 加速驱动：这张摸牌飞进手里的一路上撒粉色的星屑（wait：还要等上家的牌落桌多久才起飞）
+  private accelTrail(tile: TileId, wait: number): void {
+    const t = this.tiles[tile];
+    const sky = this.starSky();
+    let last: THREE.Vector3 | null = null;
+    for (let i = 0; i < 16; i++) {
+      this.effects.later(Math.max(0, wait) + i * 0.035, () => {
+        if (!t.shown) return;
+        const p = t.group.position.clone();
+        // 停着不动时不撒
+        if (last && last.distanceToSquared(p) < 1e-4) return;
+        last = p;
+        sky.flare(p, 1.5, 0.4, i % 3 ? '#ff8ad8' : '#d9b0ff', 0.7, 0.2);
+        this.effects.sparks(p, '#ffb0e4', { count: 2, life: [0.3, 0.6], vel: (v) => v.set((Math.random() - 0.5) * 0.8, 0.3 + Math.random() * 0.5, (Math.random() - 0.5) * 0.8), gravity: 2, drag: 0.4, size: [0.03, 0.06], stretch: 0.03, jitter: 0.1, hot: '#ffffff' });
+      });
+    }
+  }
+
+  // 引力波：牌山里的这张和了牌被波扫到了没有。按下的那一下由近到远依次亮；波早就过去了（中途重画、听的牌变了）就直接亮
+  private waveReached(id: TileId, target: Placement | null): boolean {
+    let at = this.waveSeen.get(id);
+    if (at === undefined) {
+      const w = this.waves.find((x) => x.a >= 1 && this.now - x.at < WAVE_LIFE);
+      at = w && target ? w.at + Math.hypot(target.pos.x - w.origin.x, target.pos.z - w.origin.z) / this.waveSpeed() : this.now;
+      this.waveSeen.set(id, at);
+    }
+    if (this.now < at) {
+      this.waveDue = this.waveDue > this.now ? Math.min(this.waveDue, at) : at;
+      return false;
+    }
+    if (!this.waveLit.has(id)) {
+      this.waveLit.add(id);
+      if (target) {
+        const p = target.pos.clone();
+        this.starSky().flare(p.clone().setY(p.y + 0.5), 3, 0.8, '#c9a0ff', 0.9, 0.5);
+        this.effects.ring(p.clone().setY(0.06), '#9b6bff', 1.8, 0.5, 0.7);
+      }
+    }
+    return true;
+  }
+
+  private waveSpeed(): number {
+    return this.dim.tableHalf * 1.25;
+  }
+
+  // 高维领域的网格和四维立方体、加速驱动的准星：开着就挂上
+  private syncAwai(g: Game, view: SyncView): void {
+    const v = view.awai;
+    const playing = g.phase === 'turn' || g.phase === 'calls';
+    if (!v || !playing || (v.domain === null && v.accel === null)) {
+      this.awaiFx?.setDomain(false);
+      this.awaiFx?.setReticles(null);
+      return;
+    }
+    const fx = this.awai3();
+    fx.setDomain(v.domain !== null);
+    const accel = v.accel;
+    fx.setReticles(accel === null ? null : [0, 1, 2, 3].filter((s) => s !== accel).map((s) => this.seatPoint(s, 0, 0.7, this.dim.pondZ + 2.6)));
+  }
+
+  // 每帧：引力波隔一阵再荡一道淡的，亮着的和了牌跟着闪；波扫到下一张和了牌时重摆一次；加速驱动留的那张牌上的星一闪一闪
+  private updateAwai(dt: number): void {
+    this.awaiFx?.update(dt, this.renderer);
+    this.waves = this.waves.filter((w) => this.now - w.at < WAVE_LIFE);
+    const sync = this.lastSync;
+    if (!sync) return;
+    const v = sync.view.awai;
+    const playing = sync.g.phase === 'turn' || sync.g.phase === 'calls';
+    if (this.waveDue > 0 && this.now >= this.waveDue) {
+      this.waveDue = 0;
+      this.sync(sync.g, sync.view);
+    }
+    if (v && playing && v.wave !== null && this.now >= this.waveNext) {
+      this.waveNext = this.now + WAVE_EVERY;
+      const d = this.dim;
+      const origin = this.seatPoint(v.wave, 0, TILE_T / 2, d.handZ - 1.5);
+      this.waves.push({ at: this.now, origin, a: 0.45 });
+      for (const id of sync.view.waveBacks ?? []) {
+        const t = this.tiles[id];
+        if (!t.shown || !this.waveLit.has(id)) continue;
+        const p = t.group.position.clone();
+        this.effects.later(Math.hypot(p.x - origin.x, p.z - origin.z) / this.waveSpeed(), () => this.starSky().flare(p.clone().setY(p.y + 0.5), 2.2, 0.7, '#c9a0ff', 0.8, 0.4));
+      }
+    }
+    if (this.waveMat) (this.waveMat as THREE.MeshStandardMaterial).emissiveIntensity = 0.8 + 0.3 * Math.sin(this.now * 2.4);
+    if (v && playing && v.accelLast !== null && this.now >= this.accelStarAt) {
+      this.accelStarAt = this.now + 1.3;
+      const t = this.tiles[v.accelLast];
+      if (t.shown) this.starSky().flare(t.group.position.clone().setY(t.group.position.y + 0.7), 2, 1.2, '#ff9ae0', 0.85, 0.25);
     }
   }
 
@@ -4619,6 +4796,16 @@ export class Table3D {
       if (k >= 1) this.shiftAt = -1;
       else (this.warp ??= new SpaceWarp()).shift(this.renderer, k, this.now);
     }
+    // 加速驱动：一下子拉成线，再慢慢收回来
+    if (this.rushAt >= 0) {
+      const t = this.now - this.rushAt;
+      if (t >= RUSH_TIME) this.rushAt = -1;
+      else {
+        const k = Math.min(1, t / 0.16) * (1 - THREE.MathUtils.smoothstep(t, 0.3, RUSH_TIME));
+        const at = this.rushFrom.clone().project(this.camera);
+        (this.warp ??= new SpaceWarp()).rush(this.renderer, at.x * 0.5 + 0.5, at.y * 0.5 + 0.5, k);
+      }
+    }
   }
 
   // 用主镜头画桌子。巨引力源开着时接着把引力圆那一块扭一遍。
@@ -4626,7 +4813,7 @@ export class Table3D {
   // 先不画它们，扭完再用同一个镜头补画上去（深度留着，前后遮挡照旧）。改良布局单独一层的手牌本来就在这之后画
   private renderMain(): void {
     const r = this.renderer;
-    if (this.gravityA <= 0) {
+    if (this.gravityA <= 0 && !this.waves.length) {
       r.render(this.scene, this.camera);
       return;
     }
@@ -4639,8 +4826,14 @@ export class Table3D {
       });
     }
     r.render(this.scene, this.camera);
-    const { center, rx, rz } = this.gravityShape();
-    (this.warp ??= new SpaceWarp()).lens(r, this.camera, center, rx, rz, this.now, this.gravityA, this.gravityKick);
+    const warp = (this.warp ??= new SpaceWarp());
+    if (this.gravityA > 0) {
+      const { center, rx, rz } = this.gravityShape();
+      warp.lens(r, this.camera, center, rx, rz, this.now, this.gravityA, this.gravityKick);
+    }
+    // 引力波：一道波三圈，各落后 0.3 秒
+    const speed = this.waveSpeed();
+    for (const w of this.waves) warp.ripple(r, this.camera, w.origin, (this.now - w.at) * speed, speed * 0.3, this.dim.tableHalf * 0.085, w.a);
     if (!front.length) return;
     const auto = r.autoClear;
     const shadows = r.shadowMap.autoUpdate;
@@ -4955,6 +5148,7 @@ export class Table3D {
     if (!this.gravityOn && this.gravityA < 0.004) this.gravityA = 0;
     this.gravityKick *= Math.exp(-dt * 2.4);
     if (this.gravityKick < 0.003) this.gravityKick = 0;
+    this.updateAwai(dt);
     this.updateCamera(dt);
     // 全自动麻将机：升降板、仪表盘抬起落下、收牌的替身牌；机器动着的时候牌山上的牌跟着升降板走（新牌山还没放上去就先藏着）
     const mach = this.machine;

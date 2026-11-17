@@ -343,6 +343,24 @@ export function awaiSourceOn(g: Game): boolean {
   return [0, 1, 2, 3].some((s) => g.abilities[s]?.id === 'awai' && !!g.active(s) && on(g, s, 'source'));
 }
 
+// 这一局谁开着哪个技能（画面用：高维领域的网格、引力波的波纹、加速驱动的准星，谁都看得见）。没人开是 null
+export interface AwaiFieldView {
+  domain: number | null;
+  wave: number | null;
+  accel: number | null;
+  accelLast: TileId | null; // 加速驱动留给她最后摸的那张和了牌（还在牌山里时）
+}
+export function awaiFields(g: Game, viewer: number): AwaiFieldView {
+  const who = (id: AwaiSkillId) => {
+    const s = [0, 1, 2, 3].find((x) => g.abilities[x]?.id === 'awai' && !!g.active(x) && on(g, x, id));
+    return s === undefined ? null : s;
+  };
+  const accel = who('accel');
+  const last = accel !== null ? stateOf(g, accel).last : undefined;
+  // 留的那张只有她自己看得见
+  return { domain: who('domain'), wave: who('wave'), accel, accelLast: accel === viewer && last !== undefined && g.wall.live.includes(last) ? last : null };
+}
+
 // 引力波：牌山里她的和了牌（只有她自己看得到）
 export function awaiWaveTiles(g: Game, seat: number): Set<TileId> {
   if (g.abilities[seat]?.id !== 'awai' || !g.active(seat) || !on(g, seat, 'wave')) return new Set();

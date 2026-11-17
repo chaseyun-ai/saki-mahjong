@@ -7,7 +7,7 @@ import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruN
 import { teruMirrors } from './teruFx';
 import { tornado2d } from './tornado2d';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
-import { awaiCornerKan, awaiDomainOn, awaiKanUra, awaiSourceOn, awaiStars, awaiWaveTiles } from '../abilities/awai';
+import { awaiCornerKan, awaiDomainOn, awaiFields, awaiKanUra, awaiSourceOn, awaiStars, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
@@ -231,6 +231,7 @@ export class App {
   private stars2dFx: Stars2D | null = null; // 2D 牌桌上大星淡的星空
   private starHold2d = 0; // 双立直宣言的光圈放出来之前，夜空先不铺
   private fxHold2d = 0; // 2D：平行宇宙的动画放完之前牌局先等着（performance.now 的时刻）
+  private wave2dTimer = 0; // 2D：引力波开着时，隔几秒再荡一圈淡的
   private starUraShown = false; // 这一局杠里的流星放过了
   // 2D 沙滩、草甸、原木换局：上一次画的是哪一局（换了局就一个浪打过来、一阵风刮过来、手搓洗牌，见 shift2d）
   private shiftRound: { g: Game; round: number } | null = null;
@@ -1206,7 +1207,11 @@ export class App {
       // 玄的宝牌聚集、怜的一巡先见像被动一样一直开着（原作里大家都知道），不放切入也不出字；
       // 玄打出宝牌、能力失效时出一行小字。咲的杠的气息、岭上开花：这一局第一次放切入，之后只出小字
       // 控场能力换掉别人要摸的牌：悄悄换，结算时能力痕迹里再讲
-      if (e.target !== undefined && e.target !== e.seat) return;
+      // （淡的高维领域、加速驱动例外：2D 牌桌上那一家的头像闪一下封印 / 粉光；3D、2.5D 在牌桌里放）
+      if (e.target !== undefined && e.target !== e.seat) {
+        if (e.ability === 'awai' && !this.table3d) this.awaiDeny2d(e.text, e.target);
+        return;
+      }
       // 姬子破碎的钥匙那一局换走自己摸到的宝牌：悄悄换
       if (e.ability === 'himeko' && e.text === '没有宝牌') return;
       // 爱丽丝自己的手绘板：画好、重画时放重组特效，碎了放破碎特效
@@ -2617,6 +2622,7 @@ export class App {
     table.dataset.mist = String(this.mistLevel());
     this.gale2d(this.galeView()?.level ?? 0);
     this.stars2d();
+    this.awaiField2d();
     this.water2d(this.waterOn());
     this.syncChains2d();
     setSketchTiles(false);
@@ -2663,6 +2669,7 @@ export class App {
       rinshanSeen: this.sakiSees() && new Set(sakiRinshan(this.game!, this.me)),
       waveBacks: this.vision || (g.phase !== 'turn' && g.phase !== 'calls') ? undefined : awaiWaveTiles(g, this.me),
       gravity: (g.phase === 'turn' || g.phase === 'calls') && awaiSourceOn(g),
+      awai: awaiFields(g, this.me),
       stars: g.phase === 'turn' || g.phase === 'calls' || g.phase === 'roundEnd' ? awaiStars(g) : null,
       handOrder: this.myHand(),
       openHands: this.openHands(),
@@ -3239,6 +3246,7 @@ export class App {
     if (!this.stars2dFx || !this.stars2dFx.fx.isConnected) {
       this.stars2dFx = new Stars2D();
       host.prepend(this.stars2dFx.sky);
+      this.stars2dFx.sky.after(this.stars2dFx.field);
       host.append(this.stars2dFx.fx);
     }
     return this.stars2dFx;
@@ -3269,6 +3277,48 @@ export class App {
       const i = g.roundResult?.wins.findIndex((w) => w.seat === v.seat && w.melds.some((m) => m.type === 'ankan')) ?? -1;
       const k = awaiKanUra(g, v.seat);
       if (i >= 0 && k !== undefined) window.setTimeout(() => this.game === g && this.starUra2d(i, k), 650);
+    }
+  }
+
+  // 每次重画：高维领域的网格铺着没有，加速驱动的准星挂在另外三家头像上没有；引力波开着时隔几秒再荡一圈淡的
+  private awaiField2d(): void {
+    const g = this.game;
+    if (!g || this.table3d) return;
+    const v = g.phase === 'turn' || g.phase === 'calls' ? awaiFields(g, this.me) : null;
+    const wave = v?.wave ?? null;
+    if (wave === null && this.wave2dTimer) {
+      window.clearInterval(this.wave2dTimer);
+      this.wave2dTimer = 0;
+    }
+    // 这一局没人开过这几个技能、也没铺过星空：不用为它建这一层
+    if (!this.stars2dFx && (!v || (v.domain === null && v.accel === null && wave === null))) return;
+    const fx = this.stars2dLayer();
+    if (!fx) return;
+    fx.setField(!!v && v.domain !== null);
+    const accel = v?.accel ?? null;
+    fx.setReticles(accel === null ? null : [0, 1, 2, 3].filter((s) => s !== accel).map((s) => this.starSeat2d(fx, s)));
+    if (wave !== null && !this.wave2dTimer) {
+      this.wave2dTimer = window.setInterval(() => {
+        const layer = this.game === g && !this.table3d ? this.stars2dFx : null;
+        if (!layer?.fx.isConnected || document.hidden) return;
+        const far = Math.hypot(layer.fx.offsetWidth, layer.fx.offsetHeight);
+        const home = this.starSeat2d(layer, wave);
+        layer.ring(home, far * 0.7, 2, '#5d3fb0');
+        layer.ring(home, far * 0.7, 2, '#4a3390', 0.3);
+      }, 6000);
+    }
+  }
+
+  // 淡的规矩挡掉了 target 的一张摸牌：高维领域——他头像上盖一个紫色的封印；加速驱动——准星那里闪一下粉光
+  private awaiDeny2d(text: string, target: number): void {
+    if (text !== '高维领域' && text !== '加速驱动') return;
+    const fx = this.stars2dLayer();
+    if (!fx) return;
+    const at = this.starSeat2d(fx, target);
+    if (text === '高维领域') fx.seal(at);
+    else {
+      fx.flare(at, 100, 0.6, '#ff8ad8', 0.8, 0.4);
+      fx.ring(at, 56, 0.45, '#ff7ad0');
     }
   }
 
@@ -3324,8 +3374,9 @@ export class App {
   // 大星淡的技能发动那一下，只管 2D 牌桌（3D、2.5D 在牌桌里放，见 Table3D.awaiSkillFx）：
   // 平行宇宙——整张桌子晃着错开、白光一闪翻到左右颠倒的另一边，再翻回来（style.css 的 awai-parallel），这段时间牌局等着；
   // 时间迟滞——另外三家头像上落一圈冷蓝的光；星符汇聚——桌子上方北斗七星一颗颗亮起来，挂到这一局结束；
-  // 高维领域——暗紫的波从她那边推过整张桌子；退相干——三团错开的光合成一颗；引力波——一圈圈涟漪从她那边荡开；
-  // 加速驱动——三颗流星扎到另外三家；巨引力源——整张桌子往中间拧一下（awai-kick），一圈圈光往桌心收
+  // 高维领域——暗紫的波从她那边推过整张桌子，桌面压暗、浮出两层慢慢扭动的网格（awaiField2d），被压住的人头像上盖封印；
+  // 退相干——三团错开的光合成一颗；引力波——一圈圈涟漪从她那边荡开，之后隔几秒再荡一圈淡的；
+  // 加速驱动——三颗流星扎到另外三家，之后他们头像上各挂一个转着的准星；巨引力源——整张桌子往中间拧一下（awai-kick），一圈圈光往桌心收
   private awaiSkillFx2d(seat: number, text: string): void {
     const fx = this.stars2dLayer();
     if (!fx) return;
@@ -3358,6 +3409,14 @@ export class App {
       fx.flare(home, span * 0.3, 1, '#8a5cff', 0.8, 0.8);
       fx.ring(home, far, 1.3, '#6a3cff');
       fx.ring(home, far, 1.5, '#3a1e8a', 0.2);
+      // 网格从她那边铺开；管牌山的能力被压住的人，头像上各盖一个封印
+      fx.setField(true, home);
+      const g = this.game!;
+      others.forEach((s, i) => {
+        const a = g.abilities[s];
+        if (!a || !(a.beforeAnyDraw || a.dealRules) || !g.quelled(s)) return;
+        window.setTimeout(() => this.game === g && fx.fx.isConnected && fx.seal(this.starSeat2d(fx, s)), 700 + i * 160);
+      });
     } else if (text === '退相干' || text === '退相干·自摸') {
       const tsumo = text !== '退相干';
       ['#7fe6ff', '#b58cff', '#ffffff'].forEach((c, i) => {
