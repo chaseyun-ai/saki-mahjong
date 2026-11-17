@@ -56,6 +56,8 @@ import { type AwaiStarView, awaiCornerKan, awaiKanUra } from '../abilities/awai'
 export { TILE_H, TILE_T, TILE_W };
 
 const GAP = 0.04;
+// 鼠标指着能打的那张手牌时抬起来多高
+const HOVER_LIFT = 0.4;
 const MY_HAND_SCALE = 1.25;
 
 // 牌桌的两种样子：3d 有坐着的人物；25d 不请人物，镜头从高处往下看，牌桌占满画面（像雀魂）
@@ -556,6 +558,10 @@ export class Table3D {
   beforeRender: (() => void) | null = null;
   // 鼠标移到能打的牌上、或者移开（null）时通知外面，用来显示打这张以后听什么
   onHover: ((id: TileId | null) => void) | null = null;
+  // 自己手牌上沿离画面底边多少像素（算上指着时抬起来的那一截，没有牌时 null），变了就通知外面：
+  // HUD 上贴着手牌上方摆的东西（爱丽丝的手绘板）照这个往上让。每帧量一次，配牌、理牌、换画面大小都跟得上
+  onHandClear: ((px: number | null) => void) | null = null;
+  private handClearSent: number | null = null;
   // 标记用的小三角，按需要的个数建，多出来的藏起来
   private marks: THREE.Mesh[] = [];
   // 迷途之家的水波纹：几圈白环贴着桌面往外扩（用到时才建）
@@ -3210,6 +3216,10 @@ export class Table3D {
         const e = new THREE.LineSegments(edgeGeom, edgeMat);
         e.position.z = TILE_T * 0.02;
         e.visible = false;
+        // 描边只是画出来看的，点牌、指牌的射线不要碰它：three.js 的线默认离射线 1 个单位（差不多一张牌宽）以内都算打中，
+        // 而且藏起来（手绘板碎了以后）也照样算。不关掉的话每张手牌能点到的范围往四周胀出一张牌，
+        // 指着这张常常抬起来、打出去的是旁边那张，画过一次手绘板以后整场都这样
+        e.raycast = () => {};
         t.group.add(e);
         return e;
       });
@@ -3439,7 +3449,7 @@ export class Table3D {
     const cover = mine && !tilting && !!this.lastSync?.view.riiCover;
     if (mine) this.ghostAt.clear();
     const place = (t: TileId | null) => {
-      const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? 0.4 : 0;
+      const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? HOVER_LIFT : 0;
       const yaw = (fan ? (-fan * (x + shift)) / (width / 2) : 0) + (facing ? Math.PI : 0);
       // 改良布局：自己的手牌每张转过来正对镜头
       const [r, k] = mine && this.v2 && !tilting && !this.view25.ortho ? this.faceOn(s, me, x, y, hz, rot) : [rot, 1];
@@ -4716,6 +4726,43 @@ export class Table3D {
     return { x: ((p.x + 1) / 2) * this.container.clientWidth, y: ((1 - p.y) / 2) * this.container.clientHeight };
   }
 
+  // 自己手牌的上沿离画面底边多少像素（相对牌桌容器），按每张牌停在手牌那一排的位置算（正在飞、还在牌山上的按落点，
+  // 落点不在手牌那一排的不算），再加上鼠标指着时抬起来的那一截；没有牌时 null。
+  // 立直后停在空中的那张不算（它本来就悬在手牌上方）
+  handClear(): number | null {
+    const sync = this.lastSync;
+    const h = this.container.clientHeight;
+    const row = sync && this.handRows[sync.view.me];
+    if (!sync || !row || !h) return null;
+    const hand = sync.g.players[sync.view.me].hand.filter((id) => {
+      const at = this.tiles[id].target;
+      return id !== sync.view.airDraw && !!at && Math.abs(at.pos.z - row.z) < 0.6;
+    });
+    if (!hand.length) return null;
+    // 改良布局（ortho）：停在手牌那一排上的牌都用没有透视的那层镜头画
+    const ortho = this.orthoOn();
+    if (ortho) this.syncOrtho();
+    const cam = ortho ? this.orthoCam : this.camera;
+    const m = new THREE.Matrix4();
+    const s = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    let top = Infinity;
+    for (const id of hand) {
+      // 指着的那张：target 里已经抬起来了，用它原本的位置
+      const at = id === this.hovered && this.hoverRest?.id === id ? this.hoverRest.at : this.tiles[id].target!;
+      m.compose(at.pos, at.quat, s.setScalar(at.scale));
+      for (const x of [-1, 1])
+        for (const y of [-1, 1])
+          for (const z of [-1, 1]) {
+            p.set((x * TILE_W) / 2, (y * TILE_H) / 2, (z * TILE_T) / 2).applyMatrix4(m);
+            p.y += HOVER_LIFT;
+            p.project(cam);
+            top = Math.min(top, ((1 - p.y) / 2) * h);
+          }
+    }
+    return Number.isFinite(top) ? h - top : null;
+  }
+
   // 改良布局里自己倒牌前先回到桌上立起来（手牌平时放大、挪到眼前）
   private fallsBack(s: number): boolean {
     return this.v2 && s === (this.lastSync?.view.me ?? 0);
@@ -4779,6 +4826,14 @@ export class Table3D {
   }
 
   private tick(dt: number): void {
+    if (this.onHandClear) {
+      const px = this.handClear();
+      const was = this.handClearSent;
+      if ((px === null) !== (was === null) || (px !== null && was !== null && Math.abs(px - was) > 0.5)) {
+        this.handClearSent = px;
+        this.onHandClear(px);
+      }
+    }
     this.now += dt;
     this.checkWallHover();
     this.checkConsoleHover();

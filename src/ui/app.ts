@@ -833,6 +833,12 @@ export class App {
       const handStyle = HAND_STYLES_V2[new URLSearchParams(location.search).get('hand')?.toUpperCase() ?? ''] ?? HAND_STYLES_V2[this.settings.hand];
       if (v2 && handStyle) this.table3d.setView25(handStyle);
       this.table3d.onHover = (id) => this.hoverTile(id);
+      // 爱丽丝的手绘板摆在手牌上方：照手牌在画面上实际的上沿往上让（见 style.css 的 --hand-clear）
+      this.table3d.onHandClear = (px) => {
+        const hud = document.getElementById('hud');
+        if (px === null) hud?.style.removeProperty('--hand-clear');
+        else hud?.style.setProperty('--hand-clear', `${Math.round(px + 8)}px`);
+      };
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
       if (this.mode === '25d') {
         this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel')].map((el) => el.getBoundingClientRect());
@@ -1870,7 +1876,7 @@ export class App {
     const key = `${plan.final.join(',')}|${plan.win}`;
     const fresh = key !== this.sketchPlanKey;
     this.sketchPlanKey = key;
-    return `<div class="sketch-plan${fresh ? ' fresh' : ''}" title="${plan.yaku.join('、')}"><div class="sp-head"><b>手绘板</b><span>${when} · ${han}</span></div><div class="sp-tiles">${tiles}${melds}<span class="sp-win">${tileHtml(plan.win, { size: 'pond', sketch: true })}</span></div></div>`;
+    return `<div class="sketch-plan${fresh ? ' fresh' : ''}"><div class="sp-head" title="${plan.yaku.join('、')}"><b>手绘板</b><span>${when} · ${han}</span></div><div class="sp-tiles">${tiles}${melds}<span class="sp-win">${tileHtml(plan.win, { size: 'pond', sketch: true })}</span></div></div>`;
   }
 
   // ---------- 辻垣内智叶的居合 ----------
