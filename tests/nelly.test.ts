@@ -159,6 +159,8 @@ describe('涅莉·薇萨拉兹', () => {
             if (e.type === 'roundEnd') {
               for (const w of e.result.wins) {
                 if (!nellyBlocked(g, me).includes(w.seat)) continue;
+                // 岭上牌咲锁着、谁也换不了：被封的人照样可能岭上开花
+                if (w.result.yaku.some((y) => y.name === '岭上开花')) continue;
                 expect(w.from).not.toBeNull();
                 rons++;
               }

@@ -8,7 +8,7 @@ import { isHonor, isYaochu, kindOf, parseTiles, suitOf, toCounts } from '../src/
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 // 没有 3 费以上的对手：她整场都在睡
-const WEAK = ['komaki', 'mako', 'ako', 'izumi'];
+const WEAK = ['komaki', 'mako', 'kirame', 'izumi'];
 
 function newGame(seed: number, ids: string[], format: 'east' | 'south' = 'south') {
   return new Game({ seed, format, players: ids.map((id) => ({ name: id, ability: byId(id).ability })) });

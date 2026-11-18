@@ -130,7 +130,9 @@ describe('能力痕迹', () => {
               expect(isRed(x.expected) || dora.includes(kindOf(x.expected))).toBe(true);
             } else {
               expect(x.text).toBeNull();
-              expect(isDora).toBe(false);
+              // 换走的是宝牌；换来的不是开局就翻开的宝牌（之后开杠翻出的新宝牌可能正好是换来的那张）
+              expect(isRed(x.expected) || dora.includes(kindOf(x.expected))).toBe(true);
+              expect(isRed(x.got) || dora[0] === kindOf(x.got)).toBe(false);
             }
           }
           // 岭上牌咲都看着、锁着：谁也换不了

@@ -66,7 +66,7 @@ describe('竹井久', () => {
     let lure = 0;
     let self = 0;
     let badWins = 0;
-    for (let seed = 1; seed <= 12; seed++) {
+    for (let seed = 1; seed <= 16; seed++) {
       play(seed, ['hisa', 'nodoka', 'hiroe', 'mihoko'], (g) => {
         g.onEvent((e) => {
           if (e.type === 'ability' && e.ability === 'hisa') {

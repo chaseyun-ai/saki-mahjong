@@ -48,8 +48,8 @@ describe('原村和', () => {
     expect(byId('nodoka').cost).toBe(2);
     const cases: [string[], number][] = [
       [['nodoka', 'awai', 'teru', 'koromo'], 3], // 三个强者：过完 3 局（本场也算）起
-      [['nodoka', 'saki', 'awai', 'kuro'], 2], // 两个：过完 5 局起
-      [['nodoka', 'kuro', 'mako', 'ako'], 0], // 没有比她强的：一直不变
+      [['nodoka', 'saki', 'awai', 'kirame'], 2], // 两个：过完 5 局起
+      [['nodoka', 'kirame', 'mako', 'izumi'], 0], // 没有比她强的：一直不变
     ];
     for (const [ids, strong] of cases) {
       for (let seed = 1; seed <= 3; seed++) {

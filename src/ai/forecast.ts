@@ -84,7 +84,8 @@ export function forecastIppatsu(g: Game, seat: number, discard: TileId): 'ron' |
       if (c.phase === 'calls') {
         const waiting = c.waitingSeats();
         // 她打的那张（立直宣言牌）不算：轮到别人打的牌她能荣和才算
-        if (waiting.includes(seat) && c.lastDiscard?.seat !== seat && c.legalActions(seat).some((a) => a.type === 'ron')) return 'ron';
+        // 能荣和还要电脑真的会和（最后一局和了也不上位时它会放过，等自摸）
+        if (waiting.includes(seat) && c.lastDiscard?.seat !== seat && c.legalActions(seat).some((a) => a.type === 'ron') && chooseAction(c, seat, styleOf(c, seat)).type === 'ron') return 'ron';
         for (const s of waiting) c.act(s, { type: 'pass' });
         continue;
       }
