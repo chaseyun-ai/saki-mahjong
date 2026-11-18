@@ -14,18 +14,27 @@ import type { Ability } from './types';
 // - 立直就是刀已出鞘：藏不住，也没有后发先至、拔刀
 // - 斩连庄：别人连庄的局，庄家少算一步（一向听就当听牌）。她和牌结束别人的连庄时出「斬」
 // - 看破：第 SATOHA.scoutRound 局起对能力者的打法有数（电脑照浩子的资料本打，玩家看得到“资”）
+// - 亲番：她坐庄的局，配牌顺、后发先至、拔刀的概率全换成 SATOHA.dealer 那一组（大得多）
 // 封印、高维领域、深山管得到的只有动牌山的两条（后发先至、拔刀）；间合、鞘、看破是技术，照旧
 export const SATOHA = {
-  // 5 费的强度（对随机对手 400 场平均顺位 1.46，和衣差不多）；4 费时是 0.08、0.1、0.15、0.35、0.05、0.25，平均顺位 2.21
-  deal: 0.3, // 配牌顺
-  fast: 0.35, // 没听牌时的进张：最快的一家两向听以上
-  near1: 0.5, // 最快的一家一向听
-  near0: 0.7, // 有人听牌
-  sheath: 0.25, // 鞘里听牌、没人在间合内：摸到和了牌
-  strike: 0.6, // 鞘里听牌、有人在间合内
+  // 平时（4 费时是 0.08、0.1、0.15、0.35、0.05、0.25，平均顺位 2.21）
+  deal: 0.12, // 配牌顺
+  fast: 0.15, // 没听牌时的进张：最快的一家两向听以上
+  near1: 0.22, // 最快的一家一向听
+  near0: 0.45, // 有人听牌
+  sheath: 0.1, // 鞘里听牌、没人在间合内：摸到和了牌
+  strike: 0.35, // 鞘里听牌、有人在间合内
+  // 坐庄的局（亲番）：上面六项换成这一组。对随机对手 400 场平均顺位 1.80
+  dealer: { deal: 0.3, fast: 0.3, near1: 0.45, near0: 0.65, sheath: 0.25, strike: 0.55 } as Record<SatohaRate, number>,
   renchanReach: 1, // 别人连庄的局，庄家少算这么多步
   scoutRound: 3, // 第几局起看破
 };
+
+type SatohaRate = 'deal' | 'fast' | 'near1' | 'near0' | 'sheath' | 'strike';
+// 这一局用的概率：她坐庄时换成 SATOHA.dealer 那一组
+export function satohaRate(g: Game, seat: number, k: SatohaRate): number {
+  return g.dealer === seat ? SATOHA.dealer[k] : SATOHA[k];
+}
 
 interface SatohaGameState {
   // 上一局打完时谁坐庄（下一局还是他坐庄就是连庄）
@@ -119,7 +128,8 @@ export function satohaBlade(g: Game, seat: number): SatohaBlade {
   const stage = gap <= 0 ? 2 : gap === 1 ? 1 : 0;
   const tenpai = satohaSheathed(g, seat);
   const ready = tenpai && satohaCanStrike(g, seat);
-  const chance = off ? 0 : tenpai ? (ready ? (gap <= 0 ? SATOHA.strike : SATOHA.sheath) : 0) : gap <= 0 ? SATOHA.near0 : gap === 1 ? SATOHA.near1 : SATOHA.fast;
+  const r = (k: SatohaRate) => satohaRate(g, seat, k);
+  const chance = off ? 0 : tenpai ? (ready ? (gap <= 0 ? r('strike') : r('sheath')) : 0) : gap <= 0 ? r('near0') : gap === 1 ? r('near1') : r('fast');
   return { stage, ready, chance, gap, off };
 }
 
@@ -141,10 +151,10 @@ const GAP_TEXT = ['有人听牌', '有人一向听', '还没人逼近'];
 export const satohaAbility: Ability = {
   id: 'satoha',
   name: '居合',
-  description: `被动。间合：看得出每家离听牌还差几步，听牌的人牌有多大。后发先至：没听牌时进张更顺，别人离听牌越近越顺（平时 ${pct(SATOHA.fast)}，有人一向听 ${pct(SATOHA.near1)}，有人听牌 ${pct(SATOHA.near0)}）。鞘：没立直的听牌，感知类的能力察觉不到。拔刀：没立直听着牌、又有人听牌时，每次摸牌有 ${pct(SATOHA.strike)} 的概率摸到和了牌（没人听牌时 ${pct(SATOHA.sheath)}，和了要成立）。别人连庄的局，庄家少算一步。立直以后刀已出鞘，这些都没有了。第 ${SATOHA.scoutRound} 局起看得到对手的资料。`,
+  description: `被动。间合：看得出每家离听牌还差几步，听牌的人牌有多大。后发先至：没听牌时进张更顺，别人离听牌越近越顺（平时 ${pct(SATOHA.fast)}，有人一向听 ${pct(SATOHA.near1)}，有人听牌 ${pct(SATOHA.near0)}）。鞘：没立直的听牌，感知类的能力察觉不到。拔刀：没立直听着牌、又有人听牌时，每次摸牌有 ${pct(SATOHA.strike)} 的概率摸到和了牌（没人听牌时 ${pct(SATOHA.sheath)}，和了要成立）。别人连庄的局，庄家少算一步。立直以后刀已出鞘，这些都没有了。第 ${SATOHA.scoutRound} 局起看得到对手的资料。坐庄的局（亲番）全面加强：配牌顺 ${pct(SATOHA.dealer.deal)}，进张 ${pct(SATOHA.dealer.fast)}、${pct(SATOHA.dealer.near1)}、${pct(SATOHA.dealer.near0)}，拔刀 ${pct(SATOHA.dealer.strike)}（没人听牌时 ${pct(SATOHA.dealer.sheath)}）。`,
 
   beforeDeal(g, seat) {
-    luckyDeal(g, seat, SATOHA.deal);
+    luckyDeal(g, seat, satohaRate(g, seat, 'deal'));
   },
 
   beforeDraw(g, seat, rinshan) {
@@ -154,7 +164,7 @@ export const satohaAbility: Ability = {
     const waits = waitingKinds(toCounts(p.hand), p.melds.length);
     // 没听牌：后发先至
     if (!waits.length) {
-      luckyDraw(g, seat, rinshan, gap <= 0 ? SATOHA.near0 : gap === 1 ? SATOHA.near1 : SATOHA.fast);
+      luckyDraw(g, seat, rinshan, satohaRate(g, seat, gap <= 0 ? 'near0' : gap === 1 ? 'near1' : 'fast'));
       return;
     }
     // 鞘里听着牌：拔刀
@@ -170,7 +180,7 @@ export const satohaAbility: Ability = {
     const w = g.wall;
     const next = rinshan ? w.rinshan[0] : w.live[0];
     // 本来就摸得到，或者这次没轮到
-    if (next === undefined || wins(next) || !g.rng.chance(gap <= 0 ? SATOHA.strike : SATOHA.sheath)) return;
+    if (next === undefined || wins(next) || !g.rng.chance(satohaRate(g, seat, gap <= 0 ? 'strike' : 'sheath'))) return;
     const ok = rinshan ? w.bringToRinshan(wins, g.rng) : w.bringToLive(0, wins, g.rng);
     // 悄悄换：画面上不出字（见 src/ui/app.ts），结算时能力痕迹里再讲
     if (ok) g.emit({ type: 'ability', seat, ability: 'satoha', text: '拔刀' });
@@ -211,6 +221,7 @@ export const satohaAbility: Ability = {
     else if (b.off) note = `间合：${near}${cut}。被封住了：进张、拔刀不起作用`;
     else if (satohaSheathed(g, seat)) note = b.ready ? `鞘里听牌，${near}：每次摸牌 ${pct(b.chance)} 是和了牌${cut}` : `鞘里听牌，但没有役：拔不了刀${cut}`;
     else note = `间合：${near}，进张 +${pct(b.chance)}${cut}`;
+    if (g.dealer === seat && b.stage !== 3) note = `亲番　${note}`;
     return { label: '', note, enabled: false, active: b.ready && b.stage === 2 && !b.off };
   },
 

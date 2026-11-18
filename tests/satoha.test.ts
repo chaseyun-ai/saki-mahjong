@@ -196,6 +196,30 @@ describe('辻垣内智叶：鞘与拔刀', () => {
   });
 });
 
+describe('辻垣内智叶：亲番', () => {
+  it('坐庄的局，后发先至、拔刀的概率换成亲番那一组；不坐庄照平时', () => {
+    const hands = (me: string) => ({ me, others: [TENPAI, FAR, FAR] });
+    const dealer = table(1, hands(MY_TENPAI), { seat: 0 });
+    expect(dealer.g.dealer).toBe(0);
+    expect(satohaBlade(dealer.g, 0)).toMatchObject({ stage: 2, ready: true, chance: SATOHA.dealer.strike });
+    const child = table(1, hands(MY_TENPAI), { seat: 1 });
+    expect(satohaBlade(child.g, 1)).toMatchObject({ stage: 2, ready: true, chance: SATOHA.strike });
+    const far = table(1, hands(MY_FAR2), { seat: 0 });
+    expect(satohaBlade(far.g, 0).chance).toBe(SATOHA.dealer.near0);
+    expect(SATOHA.dealer.strike).toBeGreaterThan(SATOHA.strike);
+    // 坐庄的局真的摸得到：有人听牌时拔刀的命中率接近亲番的概率
+    let hits = 0;
+    const games = 300;
+    for (let seed = 1; seed <= games; seed++) {
+      const { g } = table(seed, hands(MY_TENPAI), { seat: 0 });
+      const waits = waitingKinds(toCounts(g.players[0].hand), 0);
+      satohaAbility.beforeDraw!(g, 0, false);
+      if (waits.includes(kindOf(g.wall.live[0]))) hits++;
+    }
+    expect(hits / games).toBeGreaterThan(SATOHA.dealer.strike - 0.1);
+  });
+});
+
 describe('辻垣内智叶：整场', () => {
   it('电脑的智叶打得完整场；「斬」只出在她和牌结束别人连庄的局', async () => {
     let zan = 0;
