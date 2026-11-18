@@ -1,14 +1,17 @@
 import type { Game } from '../engine/game';
+import { luckyDraw } from './luck';
 import type { Ability } from './types';
 
 // 末原恭子（姬松）：凡人的抗争。她自己说自己是凡人，没有超能力，靠研究对手和鸣牌搅乱牌的流向来对抗怪物。
 // - 打乱流向：她每吃、碰、明杠一次，从那一刻起到她下一次摸牌之前，场上别人的能力都不起作用（和被封印一样）。
 //   作者钦定的（玄）和别人动不了的（照）不受影响
-// - 没有控场，牌山一张都不动
-// 电脑的恭子：桌上有能力起作用的人时，能鸣就鸣（不退向听也鸣），用鸣牌打断他们
+// - 抢流向：鸣过牌以后，她自己每次摸牌有 KYOUKO.flow 的概率换成进张（被封印、被高维领域压住时不起作用）
+// 电脑的恭子：桌上有能力起作用的人时，能鸣就鸣（不退向听也鸣），用鸣牌打断他们；看过对手的牌谱，照浩子的资料本防守
 export const KYOUKO = {
   // 电脑：牌山剩这么多以上才为了打断而鸣（太晚了鸣也没意义）
   aiMinWall: 8,
+  // 抢流向：鸣过牌以后，她自己每次摸牌有这么大的概率换成进张（打乱的流向流到她这边）
+  flow: 0.3,
 };
 
 interface KyoukoState {
@@ -39,7 +42,7 @@ export function kyoukoTargets(g: Game, seat: number): number[] {
 export const kyoukoAbility: Ability = {
   id: 'kyouko',
   name: '凡人的抗争',
-  description: '没有超能力，靠研究对手和鸣牌搅乱牌的流向。她每吃、碰、明杠一次，到她下一次摸牌之前，场上别人的能力都不起作用（玄和照除外）。',
+  description: `没有超能力，靠研究对手和鸣牌搅乱牌的流向。她每吃、碰、明杠一次，到她下一次摸牌之前，场上别人的能力都不起作用（玄和照除外）。抢流向：鸣过牌以后，她每次摸牌有 ${Math.round(KYOUKO.flow * 100)}% 的概率换成进张。`,
 
   onRoundStart(g, seat) {
     stateOf(g, seat).melds = 0;
@@ -63,6 +66,8 @@ export const kyoukoAbility: Ability = {
       st.breaking = false;
       st.melds = calls(g, seat);
     }
+    // 抢流向：鸣过牌就摸得顺（被封印、被高维领域压住时不起作用）
+    if (calls(g, seat) > 0 && g.active(seat)?.id === 'kyouko' && !g.quelled(seat)) luckyDraw(g, seat, rinshan, KYOUKO.flow);
   },
 
   // 打乱流向时，这一局别人的能力都不起作用
@@ -72,7 +77,7 @@ export const kyoukoAbility: Ability = {
 
   skill(g, seat) {
     const on = kyoukoBreaking(g, seat);
-    return { label: '', note: on ? '打乱流向中：到下一次摸牌之前，别人的能力不起作用' : '吃、碰、明杠以后打乱流向', enabled: false, active: on };
+    return { label: '', note: on ? '打乱流向中：到下一次摸牌之前，别人的能力不起作用' : '吃、碰、明杠以后打乱流向，之后摸牌更顺', enabled: false, active: on };
   },
 
   badge(g, seat) {

@@ -37,7 +37,7 @@ export const HIROKO_NOTES: Record<string, string> = {
   seiko: '鸣满三次以后两巡内自摸：鸣到两次就防',
   mako: '记得住没有能力的人的打牌习惯',
   hisa: '专听烂听牌，筋、现物旁边也危险',
-  kyouko: '凡人，靠鸣牌打乱流向',
+  kyouko: '凡人，靠鸣牌打乱流向；鸣过牌以后她摸得顺，别让她轻松鸣',
   takami: '第一巡打的字牌，最后一局会收回来',
   sumire: '瞄准领先的人，只和目标打的牌',
   sera: '火力型，宝牌、役牌多，不到满贯不和',

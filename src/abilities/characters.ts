@@ -408,7 +408,7 @@ export const CHARACTERS: Character[] = [
     school: '姬松高中',
     color: '#5f6fa8',
     ability: kyoukoAbility,
-    ai: { ...baseAi, mistakeRate: 0.02, disrupt: true, defensive: true },
+    ai: { ...baseAi, mistakeRate: 0.02, disrupt: true, defensive: true, scout: true },
   },
   {
     id: 'takami',

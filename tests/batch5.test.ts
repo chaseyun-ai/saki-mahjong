@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
 import { hisaBadWait } from '../src/abilities/hisa';
-import { kyoukoBreaking } from '../src/abilities/kyouko';
+import { KYOUKO, kyoukoBreaking } from '../src/abilities/kyouko';
 import { makoDanger, makoKnows, makoSuit } from '../src/abilities/mako';
 import { nodokaAngel } from '../src/abilities/nodoka';
 import { takamiSeeds } from '../src/abilities/takami';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
-import { kindOf } from '../src/engine/tiles';
+import { shanten } from '../src/engine/shanten';
+import { kindOf, toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
@@ -106,6 +107,46 @@ describe('末原恭子', () => {
       });
     }
     expect(broke).toBeGreaterThan(5);
+  }, 120000);
+
+  it('抢流向：鸣过牌以后摸牌换成进张；没鸣过不管', () => {
+    const saved = KYOUKO.flow;
+    KYOUKO.flow = 1;
+    let open = 0, good = 0, closed = 0, closedGood = 0;
+    try {
+      for (let seed = 1; seed <= 24; seed++) {
+        play(seed, ['kyouko', 'izumi', 'izumi', 'izumi'], (g) => {
+          g.onEvent((e) => {
+            if (e.type !== 'draw' || e.seat !== 0 || g.rinshanDraw) return;
+            const p = g.players[0];
+            const before = p.hand.filter((t) => t !== p.drawn);
+            const counts = toCounts(before);
+            const sh = shanten(counts, p.melds.length);
+            if (sh <= 0) return;
+            const useful = (t: number) => {
+              counts[kindOf(t)]++;
+              const ok = shanten(counts, p.melds.length) < sh;
+              counts[kindOf(t)]--;
+              return ok;
+            };
+            // 牌山里已经没有进张可换的不算
+            if (!useful(p.drawn!) && !g.wall.live.some(useful)) return;
+            if (p.melds.some((m) => m.type !== 'ankan')) {
+              open++;
+              if (useful(p.drawn!)) good++;
+            } else {
+              closed++;
+              if (useful(p.drawn!)) closedGood++;
+            }
+          });
+        });
+      }
+    } finally {
+      KYOUKO.flow = saved;
+    }
+    expect(open).toBeGreaterThan(15);
+    expect(good / open).toBeGreaterThan(0.95);
+    expect(closedGood / closed).toBeLessThan(0.6);
   }, 120000);
 });
 
