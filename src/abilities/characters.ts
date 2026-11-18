@@ -247,7 +247,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'satoha',
-    cost: 4,
+    cost: 5,
     name: '辻垣内智叶',
     school: '临海女子',
     color: '#3d4a78',
