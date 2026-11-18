@@ -19,8 +19,8 @@ import { MYEONGHWA, myeonghwaCut, myeonghwaSecondSong, myeonghwaSinging, myeongh
 import { cutTagHtml, fuujinBreeze, fuujinCut, fuujinGust, songHtml } from './fuujin';
 import { MEGAN, MEGAN_BULLET, MEGAN_STAND, duelledBy, meganBlind, meganDuel, meganDuelEnd, meganDuelTarget, meganSenses } from '../abilities/megan';
 import { duelEscape, duelMarkHtml, duelShot, duelStart, hatHtml } from './duel';
-import { YUKIKO_VERSE, YUKIKO_VERSE_REF, yukikoLeft } from '../abilities/yukiko';
-import { leftHandCross, leftHandWin } from './leftHand';
+import { yukikoLeft } from '../abilities/yukiko';
+import { HE_SVG, leftHandSign, leftHandWin } from './leftHand';
 import { Gale2D } from './gale2d';
 import { Stars2D } from './stars2d';
 import { Lily2D } from './lily2d';
@@ -58,7 +58,7 @@ import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playBreeze, playDuelMiss, playDuelStart, playDuelStep, playGunshot, playHymn, playIaiDraw, playIaiPush, playIaiSheath, playSong, playLamp, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin } from './sound';
+import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playBreeze, playDuelMiss, playDuelStart, playDuelStep, playGunshot, playIaiDraw, playIaiPush, playIaiSheath, playSong, playLamp, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin, playWindow } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
@@ -1274,15 +1274,16 @@ export class App {
       }
       // 明华：起风每局都有，不出字，她座位上吹一阵风；场风悄悄摸来（只有操作她的人听得到一声风）；
       // 开嗓、升段时哼一句（越往后越长）；断风时那一家座位上的风被截断
-      // 由晖子换左手：她身后亮起十字，飘出一句经文，一个风琴和弦
+      // 由晖子换左手：她座位上亮起腓尼基字母 𐤄（「窗」），一声开窗似的清响。
+      // 电脑最后一局开局就按，那时第一局的牌桌可能还没建好，所以等一下再找画特效的那一层
       if (e.ability === 'yukiko' && e.text === '左手') {
         const g = this.game!;
         const seat = e.seat;
         window.setTimeout(() => {
           const host = this.game === g ? this.fxHost() : null;
-          if (host) leftHandCross(host, POS[seat], YUKIKO_VERSE, YUKIKO_VERSE_REF);
-        }, 400);
-        playHymn();
+          if (host) leftHandSign(host, POS[seat]);
+        }, 150);
+        playWindow();
       }
       if (e.ability === 'myeonghwa') {
         const g = this.game!;
@@ -1379,7 +1380,7 @@ export class App {
         if (this.fuujinWinFx(w)) continue;
         // 梅根决斗打中了：一声枪响
         if (this.duelWinFx(w)) continue;
-        // 由晖子左手的局和牌：十字再亮一次，光铺满整张桌子
+        // 由晖子左手的局和牌：𐤄 再亮一次，光铺满整张桌子
         if (this.leftWinFx(w)) continue;
         // 第二形态（天使和）在素材页换了和牌动画：放这一段（三种视角都放）
         const c = this.chars[w.seat];
@@ -2372,14 +2373,14 @@ export class App {
     return false;
   }
 
-  // 由晖子左手的局和牌：她座位上的十字再亮一次，光铺满整张桌子（素材页“左手·和牌”那格有动画就放那段），然后照一般的和牌放
+  // 由晖子左手的局和牌：她座位上的 𐤄 再亮一次，光铺满整张桌子（素材页“左手·和牌”那格有动画就放那段），然后照一般的和牌放
   private leftWinFx(w: WinInfo): boolean {
     const g = this.game!;
     const c = this.chars[w.seat];
     if (c?.id !== 'yukiko' || !yukikoLeft(g, w.seat)) return false;
     const host = this.fxHost();
     if (host) leftHandWin(host, POS[w.seat]);
-    playHymn(true);
+    playWindow(true);
     const word = w.from === null ? '自摸' : '荣和';
     const art = skillArt(c.id, 'left-win');
     if (art && this.cutins?.show({ pos: POS[w.seat], id: c.id, color: c.color, word, kind: 'win', art, glyph: c.name.slice(-1) })) return true;
@@ -4182,6 +4183,8 @@ export class App {
       ? `<div class="fs-note skill-state">${b.note}</div><div class="skill-choices${b.choices.length > 4 ? ' many' : ''}">${b.choices
           .map((c) => `<button class="deep-btn" data-ui="skill" data-choice="${c.id}" ${c.enabled ? '' : 'disabled'}>${c.label}</button>`)
           .join('')}</div>`
+      : ab!.pressSkill && b.glyph === 'he'
+        ? `<button class="deep-btn glyph-btn${b.active ? ' active' : ''}" data-ui="skill" title="${b.label}" aria-label="${b.label}" ${b.enabled ? '' : 'disabled'}>${HE_SVG}<small>${b.note}</small></button>`
       : ab!.pressSkill
         ? `<button class="deep-btn${b.active ? ' active' : ''}" data-ui="skill" ${b.enabled ? '' : 'disabled'}>${b.label}<small>${b.note}</small></button>`
         : `<div class="fs-note skill-state">${b.note}</div>`;

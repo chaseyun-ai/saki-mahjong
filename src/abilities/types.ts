@@ -189,6 +189,8 @@ export interface SkillButton {
   label: string;
   note: string;
   enabled: boolean;
+  // 按钮画成一个符号、不写字（由晖子左手的腓尼基字母 𐤄）：界面上的符号 id，label 当提示
+  glyph?: string;
   // 能量条（没有就不画）
   meter?: { value: number; max: number; label?: string };
   // 开启中（按钮高亮）

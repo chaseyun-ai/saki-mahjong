@@ -179,35 +179,37 @@ export function playSong(level: number): void {
   }
 }
 
-// 由晖子的左手：教堂风琴的一个和弦（慢慢起来、慢慢散），上面一声小钟。big 是左手的局和牌时（和弦往上走一步，更亮）
-export function playHymn(big = false): void {
+// 由晖子的左手：像推开一扇窗——一阵很轻的气流声，跟着几声往上走的玻璃似的清响。big 是左手的局和牌时（多走一步，更亮、更长）
+export function playWindow(big = false): void {
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
-  const chords = big ? [[261.63, 329.63, 392, 523.25], [293.66, 349.23, 440, 587.33], [329.63, 392, 493.88, 659.25]] : [[261.63, 329.63, 392, 523.25]];
-  chords.forEach((chord, ci) => {
-    const t = now + ci * 0.42;
-    const len = ci === chords.length - 1 ? 2.2 : 0.6;
-    for (const f of chord) {
-      for (const detune of [-4, 4]) {
-        const osc = a.createOscillator();
-        const gain = a.createGain();
-        osc.type = 'triangle';
-        osc.frequency.value = f;
-        osc.detune.value = detune;
-        gain.gain.setValueAtTime(0.0001, t);
-        gain.gain.exponentialRampToValueAtTime(0.035, t + 0.25);
-        gain.gain.setValueAtTime(0.035, t + len * 0.5);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + len);
-        osc.connect(gain).connect(bus('sfx', a));
-        osc.start(t);
-        osc.stop(t + len + 0.05);
-      }
-    }
+  // 气流：带通滤过的噪声，慢慢起来再散
+  const len = big ? 1.6 : 1.1;
+  const buf = a.createBuffer(1, Math.ceil(a.sampleRate * len), a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const band = a.createBiquadFilter();
+  band.type = 'bandpass';
+  band.Q.value = 0.8;
+  band.frequency.setValueAtTime(700, now);
+  band.frequency.exponentialRampToValueAtTime(2600, now + len * 0.7);
+  const air = a.createGain();
+  air.gain.setValueAtTime(0.0001, now);
+  air.gain.exponentialRampToValueAtTime(0.05, now + 0.25);
+  air.gain.exponentialRampToValueAtTime(0.0001, now + len);
+  src.connect(band).connect(air).connect(bus('sfx', a));
+  src.start(now);
+  src.stop(now + len + 0.05);
+  // 清响：E6 G#6 B6（和牌时再加 E7），一声比一声晚一点
+  const notes = big ? [1318.51, 1661.22, 1975.53, 2637.02] : [1318.51, 1661.22, 1975.53];
+  notes.forEach((f, i) => {
+    const t = now + 0.18 + i * 0.11;
+    tone(a, f, t, big ? 1.6 : 1.1, 0.05, 'sine');
+    tone(a, f * 2.01, t, 0.5, 0.012, 'sine');
   });
-  const bell = now + (chords.length - 1) * 0.42 + 0.3;
-  tone(a, 1567.98, bell, 1.4, 0.06, 'sine');
-  tone(a, 3135.96, bell, 0.8, 0.015, 'sine');
 }
 
 // 明华的风：一阵风吹过去的“呼”（带通的噪声，音高先升后降）。vol 0–1

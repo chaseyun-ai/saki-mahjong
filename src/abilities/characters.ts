@@ -341,7 +341,7 @@ export const CHARACTERS: Character[] = [
     color: '#a9bfe6',
     ability: yukikoAbility,
     skillArts: [
-      { id: 'left', name: '左手', hint: '她换左手摸牌、身后亮起十字的那一局开头放' },
+      { id: 'left', name: '左手', hint: '她换左手摸牌、手上亮起 𐤄 的时候放' },
       { id: 'left-win', name: '左手和牌', label: '左手·和牌', hint: '左手的那一局她和牌时放' },
     ],
     // 不用左手时也很强，很少失误；左手的局门清、留宝牌，等自摸

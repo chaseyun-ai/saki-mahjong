@@ -886,6 +886,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     }
     // 胡桃：从不立直，默听才有能力
     if (style.dama && !sealed) return best.a;
+    // 由晖子左手的局：听牌就立直（几次摸牌之内自摸，里宝牌补到满贯）
+    if (style.leftHand && yukikoLeftActive(g, seat)) return riichi;
     // 梅根：伏牌的局不立直（立直了加成就没了）。感知到的听牌对手正好一家：立直决斗。两家以上听牌：默听。
     // 只有自己听：有役、牌山还多就默听等人听牌再拔枪；没役的照常立直
     if (style.duel && !sealed) {

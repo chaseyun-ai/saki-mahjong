@@ -10475,8 +10475,9 @@ canvas.rii-sky {
 }
 
 /* 2D 的能力面板限高 200：说明文字长的时候，要按的选项（决斗、伏牌）会被挤到面板外面要滚动才看得见。
-   有选项时改成说明文字自己滚，选项一直露着 */
-.stage .ability-panel:has(.skill-choices) .ab-desc {
+   有选项时改成说明文字自己滚，选项一直露着（由晖子画成 𐤄 的左手按钮也一样） */
+.stage .ability-panel:has(.skill-choices) .ab-desc,
+.stage .ability-panel:has(.glyph-btn) .ab-desc {
   max-height: 66px;
   overflow-y: auto;
 }
@@ -10486,8 +10487,8 @@ canvas.rii-sky {
   opacity: 0.45;
 }
 
-/* ---------- 真屋由晖子「左手」：身后的光十字、经文、和牌时铺满桌子的光 ---------- */
-.lh-cross {
+/* ---------- 真屋由晖子「左手」：座位上亮起的腓尼基字母 𐤄、和牌时铺满桌子的光、画成 𐤄 的技能按钮 ---------- */
+.lh-sign {
   position: absolute;
   z-index: 58;
   width: min(30vmin, 260px);
@@ -10499,48 +10500,64 @@ canvas.rii-sky {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: min(22vmin, 190px);
+  width: min(20vmin, 170px);
   aspect-ratio: 60 / 90;
   translate: -50% -50%;
 }
-.lh-glow svg {
+.lh-glow .he-glyph {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   overflow: visible;
 }
-.lh-glow path {
-  fill: #fffbe8;
-  stroke: #ffe7a3;
-  stroke-width: 1.2;
+.lh-glow .he-glyph path {
+  fill: none;
+  stroke: #fffbe8;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   filter: drop-shadow(0 0 6px rgba(255, 236, 170, 0.95)) drop-shadow(0 0 18px rgba(255, 214, 120, 0.7));
-  animation: lh-cross 3.6s ease-out both;
+  animation: lh-sign 3.2s ease-out both;
 }
-@keyframes lh-cross {
+/* 先一笔一笔亮出来（stroke-dashoffset），再整个发光、慢慢散 */
+.lh-sign .he-glyph path {
+  stroke-dasharray: 220;
+  animation:
+    lh-write 0.9s ease-out both,
+    lh-sign 3.2s ease-out both;
+}
+@keyframes lh-write {
+  0% {
+    stroke-dashoffset: 220;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes lh-sign {
   0% {
     opacity: 0;
-    transform: scale(0.6) translateY(12%);
+    transform: scale(0.85);
   }
-  18% {
+  12% {
     opacity: 1;
-    transform: scale(1.05) translateY(0);
   }
   30% {
     transform: scale(1);
   }
-  80% {
+  78% {
     opacity: 0.95;
   }
   100% {
     opacity: 0;
-    transform: scale(1.02) translateY(-4%);
+    transform: scale(1.04);
   }
 }
 .lh-glow u {
   position: absolute;
   left: 50%;
-  top: 38%;
+  top: 45%;
   width: 3px;
   height: 120%;
   margin-left: -1.5px;
@@ -10548,7 +10565,7 @@ canvas.rii-sky {
   rotate: var(--r);
   background: linear-gradient(to bottom, rgba(255, 244, 200, 0.75), rgba(255, 230, 160, 0));
   opacity: 0;
-  animation: lh-ray 3.2s ease-out both;
+  animation: lh-ray 3s 0.5s ease-out both;
 }
 @keyframes lh-ray {
   0% {
@@ -10562,52 +10579,6 @@ canvas.rii-sky {
   100% {
     opacity: 0;
     scale: 1 1.3;
-  }
-}
-.lh-verse {
-  position: absolute;
-  left: 50%;
-  top: 100%;
-  width: min(46vmin, 400px);
-  margin: 0;
-  padding: 0.5em 1.2em;
-  border-radius: 999px;
-  translate: -50% -30%;
-  text-align: center;
-  background: radial-gradient(ellipse at center, rgba(12, 16, 34, 0.62) 30%, rgba(12, 16, 34, 0) 72%);
-  font-family: 'LXGW WenKai TC', 'Kaiti SC', KaiTi, STKaiti, serif;
-  font-size: min(2.6vmin, 18px);
-  line-height: 1.5;
-  color: #fff8de;
-  text-shadow:
-    0 0 6px rgba(255, 220, 140, 0.9),
-    0 1px 3px rgba(40, 24, 0, 0.8);
-}
-.lh-verse span {
-  opacity: 0;
-  animation: lh-char 3.4s ease-out both;
-}
-.lh-verse cite {
-  display: block;
-  font-style: normal;
-  font-size: 0.75em;
-  opacity: 0;
-  animation: lh-char 2.6s 1.4s ease-out both;
-}
-@keyframes lh-char {
-  0% {
-    opacity: 0;
-    filter: blur(3px);
-  }
-  15% {
-    opacity: 1;
-    filter: blur(0);
-  }
-  80% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
   }
 }
 .lh-word {
@@ -10624,16 +10595,23 @@ canvas.rii-sky {
     0 0 10px rgba(255, 220, 130, 0.95),
     0 2px 6px rgba(40, 24, 0, 0.7);
   opacity: 0;
-  animation: lh-char 3s 0.25s ease-out both;
+  animation: lh-word 3s 0.4s ease-out both;
 }
-/* 自己的座位在下面：经文放到十字上面，免得压到手牌 */
-.lh-cross.at-bottom .lh-verse {
-  top: auto;
-  bottom: 100%;
-  translate: -50% 10%;
-}
-.lh-cross.at-bottom .lh-word {
-  top: 96%;
+@keyframes lh-word {
+  0% {
+    opacity: 0;
+    filter: blur(3px);
+  }
+  15% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 .lh-win {
   position: absolute;
@@ -10644,7 +10622,7 @@ canvas.rii-sky {
   animation: lh-flood 2.3s ease-out both;
 }
 .lh-win .lh-glow {
-  width: min(28vmin, 240px);
+  width: min(26vmin, 220px);
 }
 @keyframes lh-flood {
   0% {
@@ -10656,4 +10634,36 @@ canvas.rii-sky {
   100% {
     opacity: 0;
   }
+}
+/* 技能按钮画成 𐤄：能按时亮，按了以后一直发光，用过了是暗的 */
+.foresight.skill .deep-btn.glyph-btn {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  white-space: normal;
+  text-align: left;
+}
+.glyph-btn .he-glyph {
+  flex: none;
+  width: 30px;
+  height: 45px;
+}
+.glyph-btn .he-glyph path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.glyph-btn:not(:disabled) .he-glyph path {
+  stroke: #ffe7a3;
+  filter: drop-shadow(0 0 4px rgba(255, 220, 140, 0.8));
+}
+.glyph-btn.active .he-glyph path {
+  stroke: #fffbe8;
+  filter: drop-shadow(0 0 5px rgba(255, 236, 170, 0.95)) drop-shadow(0 0 12px rgba(255, 214, 120, 0.7));
+}
+.glyph-btn small {
+  margin: 0;
 }
