@@ -13,7 +13,7 @@ import { KOROMO, KOROMO_READERS, koromoDisruptor, koromoHaiteiOn, koromoHaiteiRe
 import { mihokoEyeOpen, mihokoLikelySafe, mihokoSafeKinds } from '../abilities/mihoko';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { satohaCutsDealer, satohaDistance, satohaScouts } from '../abilities/satoha';
-import { myeonghwaSinging, myeonghwaWinds, myeonghwaYaku } from '../abilities/myeonghwa';
+import { MYEONGHWA, myeonghwaComing, myeonghwaGrowing, myeonghwaSinging, myeonghwaWinds, myeonghwaYaku } from '../abilities/myeonghwa';
 import { meganBlindRound, meganDuelTarget, meganSenses } from '../abilities/megan';
 import { yukikoLeftActive, yukikoRonOk } from '../abilities/yukiko';
 import { USUZAN_AI, wonThisGame } from './usuzan';
@@ -435,6 +435,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     std: number; // 咲：打这张以后一般型的向听数
     trip: number; // 咲：打这张会拆掉暗刻（杠材）
     dry: number; // 衣：海底路线上，打这张以后听的牌牌山里已经没有了（海底变不成她的和了牌）
+    real: number; // 明华：不算要来的场风时的向听（算上它一样快时，先挑现在就快的）
   };
   // 被爽的蛇神威封印时读不了牌
   const sealed = g.isSealed(seat);
@@ -487,7 +488,28 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const shBase = style.streak && teruMirrored(g, seat) && TERU.mode === 'ladder' && teruLadder(g, seat).next === 1 ? standardShanten : shanten;
   // 初美：东北鸣出来以后，能力会把还差的西南送来。当它们已经在手里算向听（往小四喜做），要留的西南不打（多出来的才打）
   const kimonGoal = kimonPlan(g, seat, style);
-  const shOf = kimonGoal ? (c: number[], m: number) => shBase(withWinds(c, kimonGoal), m) : shBase;
+  // 明华：场风的第二张还会来（能力送来，外面还有剩的）：手里的单张场风当对子算向听、进张
+  const coming = fuujinComing(g, seat, style, visible);
+  const virt = kimonGoal ? (c: number[]) => withWinds(c, kimonGoal) : coming !== null ? (c: number[]) => withComing(c, coming) : null;
+  const shOf = virt ? (c: number[], m: number) => shBase(virt(c), m) : shBase;
+  // 进张：初美要来的西南、明华要来的场风已经算在手里；补来的场风就是牌山里的一张，进张里不再数它
+  const ukeOf = (c: number[]) => {
+    if (!virt) return ukeire(c, p.melds.length, visible);
+    const seen = visible.slice();
+    if (coming !== null && c[coming] < 2) seen[coming]++;
+    return ukeire(virt(c), p.melds.length, seen);
+  };
+  // 明华：南场成对的场风、客风每次摸牌有 MYEONGHWA.windDraw 的机会摸成暗刻，进张里按相当的张数算
+  const grow = style.fuujin ? myeonghwaGrowing(g, seat) : [];
+  const growUke = grow.length ? Math.round(MYEONGHWA.windDraw * (136 - visible.reduce((a, b) => a + b, 0))) : 0;
+  const grows = (c: number[], sh: number) =>
+    grow.some((k) => {
+      if (c[k] !== 2 || visible[k] >= 4) return false;
+      c[k]++;
+      const better = shOf(c, p.melds.length) < sh;
+      c[k]--;
+      return better;
+    });
   const goalTile = (t: TileId) => !!kimonGoal?.has(kindOf(t)) && counts[kindOf(t)] <= kimonGoal.get(kindOf(t))!;
   const keepsWinds = kimonGoal !== null && discards.some((a) => !goalTile(a.tile));
   // 初美坐北家、西南还留给她：别人手里没有西南（她自己知道），打西南不会放铳（管不到的人除外）
@@ -587,15 +609,25 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       sh = 1;
       std = Math.max(std, 1);
     }
+    // 明华：听的就是要来的场风（一定摸得到）：算听牌，进张多算 FUUJIN_AI.sure 张
+    let fuujinUke = -1;
+    if (coming !== null && sh < 0) {
+      sh = 0;
+      fuujinUke = ukeire(c, p.melds.length, visible) + FUUJIN_AI.sure;
+    }
+    // 南场成对的风摸成第三张能往前走：进张加上能力送来的那份（一次摸牌只送一张，只加一次）
+    if (growUke > 0 && fuujinUke < 0 && grows(c, sh)) fuujinUke = ukeOf(c) + growUke;
+    const real = coming !== null ? shBase(c, p.melds.length) : sh;
     const sh2 = sh;
     // 衣看得到海底：海底归她时，听的牌牌山和没翻开的王牌里一张都没有，海底就变不成她的和了牌
     const dry = onHaitei && sh === 0 && !koromoHaiteiReach(g, seat, waitingKinds(c, p.melds.length)) ? 1 : 0;
-    cands.push({ a, sh, sh2, uke: harvestUke >= 0 ? harvestUke : bloomUke >= 0 ? bloomUke : kimonGoal ? ukeire(withWinds(c, kimonGoal), p.melds.length, visible) : sh <= cur || (style.gods && sh <= 1) ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, gen, bad, bowl, feed, std, trip, dry });
+    cands.push({ a, sh, sh2, uke: fuujinUke >= 0 ? fuujinUke : harvestUke >= 0 ? harvestUke : bloomUke >= 0 ? bloomUke : virt ? ukeOf(c) : sh <= cur || (style.gods && sh <= 1) ? ukeire(c, p.melds.length, visible) : 0, val, risk, hit, aim, fit, trap, gen, bad, bowl, feed, std, trip, dry, real });
   }
 
   // 霞：请神后同样向听时，先打别的花色，留下绝掉的那门和字牌；涅莉的宣言局也一样，留下做的那门花色
   // 真子：留下染手的那门花色和字牌
-  const suit = style.suitFocus ? kasumiSuit(g, seat) : style.waves ? nellySuit(g, seat) : style.memory && !sealed ? makoSuit(g, seat) : null;
+  // 明华：风牌多、数牌集中在一门时留下那一门和字牌（混一色）
+  const suit = style.suitFocus ? kasumiSuit(g, seat) : style.waves ? nellySuit(g, seat) : style.memory && !sealed ? makoSuit(g, seat) : style.fuujin ? fuujinSuit(g, seat) : null;
   // 宥：同样向听时留暖色牌
   // 灼：同样向听时留筒子
   // 尧深：收获的局留着种下的牌
@@ -608,10 +640,12 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const flush = style.waves && !sealed ? nellyFlush(g, seat) : null;
   const inFlush = (k: Kind) =>
     flush ? (k >= 27 ? flush.honors : Math.floor(k / 9) === flush.suit) : harvest !== null ? (k >= 27 ? counts[k] >= 2 : Math.floor(k / 9) === harvest) : false;
-  // 明华：手里的自风暗刻（要留着的役），成对的场风、客风
+  // 明华：手里的自风暗刻（要留着的役），成对的场风、客风，第二张还会来的单张场风
   const fuujinWinds = style.fuujin ? myeonghwaWinds(g, seat) : null;
   const fuujinTrip = fuujinWinds && counts[fuujinWinds.seat] === 3 ? fuujinWinds.seat : null;
-  const fuujinPairs = new Set<Kind>(fuujinWinds ? [fuujinWinds.round, fuujinWinds.guest].filter((k): k is Kind => k !== null && counts[k] === 2) : []);
+  const fuujinPairs = new Set<Kind>(
+    fuujinWinds ? [fuujinWinds.round, fuujinWinds.guest].filter((k): k is Kind => k !== null && (counts[k] === 2 || (k === coming && counts[k] === 1))) : [],
+  );
   const keep = (c: Cand) =>
     (flush || harvest !== null ? inFlush(kindOf(c.a.tile)) : suit !== null && (kindOf(c.a.tile) >= 27 || Math.floor(kindOf(c.a.tile) / 9) === suit)) ||
     (style.warm && warmKind(kindOf(c.a.tile))) ||
@@ -619,7 +653,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     (style.pin1 && !sealed && kindOf(c.a.tile) === 9) ||
     // 由晖子左手的局：同样向听时留宝牌
     (leftHand && isDoraTile(g, c.a.tile)) ||
-    // 明华：成对的场风、南场收的客风留着（摸成暗刻就是役、是一组面子）
+    // 明华：成对的场风、南场收的客风留着（摸成暗刻就是役、是一组面子）；第二张还会来的单张场风也留着
     (style.fuujin && fuujinPairs.has(kindOf(c.a.tile))) ||
     (style.winds && !sealed && hatsumiNorth(g, seat) && isWind(kindOf(c.a.tile))) ||
     seeds?.has(kindOf(c.a.tile)) ||
@@ -642,7 +676,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 照要做大牌的局：染手以外的牌先打，宁可退向听（见下面的 teruBuild）
   let teruStrict = false;
   const attackOrder = (x: Cand, y: Cand) =>
-    x.hit - y.hit || (flush || teruStrict ? keep(x) - keep(y) : 0) || x.sh - y.sh || x.dry - y.dry || (y.plan ?? 0) - (x.plan ?? 0) || richOrder(x, y) || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || genOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || x.std - y.std || x.trip - y.trip || y.uke - x.uke || x.feed - y.feed || x.val - y.val;
+    x.hit - y.hit || (flush || teruStrict ? keep(x) - keep(y) : 0) || x.sh - y.sh || x.real - y.real || x.dry - y.dry || (y.plan ?? 0) - (x.plan ?? 0) || richOrder(x, y) || bowlOrder(x, y) || keep(x) - keep(y) || trapOrder(x, y) || genOrder(x, y) || aimOrder(x, y) || y.bad - x.bad || x.sh2 - y.sh2 || x.std - y.std || x.trip - y.trip || y.uke - x.uke || x.feed - y.feed || x.val - y.val;
   // 照（打点递增的试验版）：向听最少的打法里，听牌的按和出来怎么样分档，一向听的按“摸到哪些牌能听成什么样”算分
   if (style.streak && !sealed && TERU.mode === 'points' && TERU.plan && teruMirrored(g, seat)) {
     const min = Math.min(...cands.map((x) => x.sh));
@@ -793,8 +827,10 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 听牌了但听得很窄（能和的牌没几张）、要打的又是很危险的牌，对立直也不硬拼
   const riichiOn = threats(g, seat).some((t) => g.seesRiichi(t, seat));
   // 久听烂听牌是她的能力，不因为听得窄就收
-  const thinTenpai = best.sh === 0 && riichiOn && best.risk >= 8 && best.uke <= 4 && !(style.badWait && !sealed && best.bad);
-  if (!declared && threats(g, seat).length && (best.sh >= 1 || !g.canWin(seat) || (careful && best.risk >= 6) || thinTenpai)) {
+  // 明华：要不要弃和看现在真的差几张（要来的场风还没到手）
+  const foldSh = best.real;
+  const thinTenpai = foldSh === 0 && riichiOn && best.risk >= 8 && best.uke <= 4 && !(style.badWait && !sealed && best.bad);
+  if (!declared && threats(g, seat).length && (foldSh >= 1 || !g.canWin(seat) || (careful && best.risk >= 6) || thinTenpai)) {
     // 玄弃和也不打宝牌（还有别的牌可打时）
     const dora = (x: Cand) => (style.keepDora && isDoraTile(g, x.a.tile) ? 1 : 0);
     const safest = [...cands].sort((x, y) => dora(x) - dora(y) || x.hit - y.hit || x.risk - y.risk || attackOrder(x, y));
@@ -804,10 +840,10 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const yuukiFold = style.eastWind && !yuukiActive(g, seat);
     // 有人立直时一向听只打很安全的牌（现物、壁、见了三张的字牌），否则弃和
     // 成香：一向听时对立直也照样推不太危险的牌
-    const push = best.sh >= 1 ? best.risk < (riichiOn && !style.pushTenpai ? 3 : 6) : !thinTenpai;
+    const push = foldSh >= 1 ? best.risk < (riichiOn && !style.pushTenpai ? 3 : 6) : !thinTenpai;
     // 霞请神以后就不再以防守为主
     const defensive = style.defensive && !(style.suitFocus && kasumiSuit(g, seat) !== null);
-    if (!yuukiPush && (best.sh >= 2 || !push || defensive || yuukiFold || !g.canWin(seat) || careful)) {
+    if (!yuukiPush && (foldSh >= 2 || !push || defensive || yuukiFold || !g.canWin(seat) || careful)) {
       best = safest[0];
       folded = safest;
     }
@@ -820,7 +856,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 弃和时失误也只会在一样安全的牌里挑错
   if (folded) {
     if (slipped && folded.length > 1 && folded[1].risk <= best.risk && folded[1].hit <= best.hit && !doraSlip) best = folded[1];
-  } else if (slipped && cands[1].sh === best.sh && cands[1].hit <= best.hit && !doraSlip) best = cands[1];
+  } else if (slipped && cands[1].sh === best.sh && cands[1].real === best.real && cands[1].hit <= best.hit && !doraSlip) best = cands[1];
 
   // 涅莉押了运势的局：看得见被七姐妹封住的人在等什么，打牌避开（不点炮给她们）。同向听里挑，没有就退一向听，再没有就挑最安全的
   if (style.waves && !sealed && nellyTier(g, seat) > 0 && NELLY.dodge) {
@@ -1305,6 +1341,47 @@ function withWinds(c: number[], goal: Map<number, number>): number[] {
   return x;
 }
 
+// ---------- 雀明华 ----------
+// 她的牌是风给的：自风暗刻每局都在手里（到手的役），场风的第二张开局几巡之内一定来，南场成对的场风、客风还会长成暗刻。
+// 所以和一般人算牌不一样：
+// - 单张场风当对子算（第二张一定来），不打。算上它一样快时，先挑现在就快的打法
+// - 听的就是要来的场风：一定摸得到，当最好的听牌
+// - 南场成对的风：进张里算上能力送来的那份，不拆
+// - 风牌多、数牌集中在一门时往混一色做（役牌加染手），鸣牌也不鸣别的花色
+// - 自风暗刻不拆（弃和时照样拿它当安全牌）；不唱的局门前为主，唱着歌鸣牌进攻
+// - 要不要弃和看现在真的差几张（要来的场风还没到手不算）
+export const FUUJIN_AI = {
+  sure: 20, // 听的就是要来的场风：进张多算这么多张
+  flushMain: 5, // 数牌里最多的那一门有这么多张以上、
+  flushOff: 3, // 别的花色只剩这么多张以内：往混一色做
+};
+
+// 场风的第二张这一局还会来、外面还有剩的：返回场风
+function fuujinComing(g: Game, seat: number, style: AiStyle, visible: number[]): Kind | null {
+  if (!style.fuujin) return null;
+  const k = myeonghwaComing(g, seat);
+  return k !== null && visible[k] < 4 ? k : null;
+}
+
+// 手里的计数加上要来的场风（手里不到两张时补一张；算向听用，张数可以超过 14 张）
+function withComing(c: number[], k: Kind): number[] {
+  if (c[k] >= 2) return c;
+  const x = c.slice();
+  x[k]++;
+  return x;
+}
+
+// 往混一色做的那一门：数牌集中在一门、别的花色只剩几张。鸣过别的花色就做不成了
+function fuujinSuit(g: Game, seat: number): number | null {
+  const p = g.players[seat];
+  const per = [0, 0, 0];
+  for (const t of [...p.hand, ...p.melds.flatMap((m) => m.tiles)]) if (kindOf(t) < 27) per[Math.floor(kindOf(t) / 9)]++;
+  const main = per.indexOf(Math.max(...per));
+  if (p.melds.some((m) => m.tiles.some((t) => kindOf(t) < 27 && Math.floor(kindOf(t) / 9) !== main))) return null;
+  const off = per[0] + per[1] + per[2] - per[main];
+  return per[main] >= FUUJIN_AI.flushMain && off <= FUUJIN_AI.flushOff ? main : null;
+}
+
 // 初美：东北鸣出来、西南还没凑齐（能力接下来会送来）时，不是役满的和先不和，等小四喜。
 // 牌山快摸完了、鸣满四副（留不下西南）时有什么和什么
 function hatsumiHolds(g: Game, seat: number, style: AiStyle, tsumo: boolean): boolean {
@@ -1455,13 +1532,20 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 鸣满四副就留不下西南，第四副不鸣
   const kimonGoal = kimonPlan(g, seat, style);
   const kimon = !!style.winds && !g.isSealed(seat) && hatsumiOpen(g, seat);
-  const callSh = kimonGoal ? (c: number[], m: number) => shanten(withWinds(c, kimonGoal), m) : shanten;
-  const callCur = kimonGoal ? callSh(counts, p.melds.length) : cur;
+  // 明华：场风的第二张还会来，单张场风当对子算
+  const comingCall = style.fuujin ? fuujinComing(g, seat, style, visibleCounts(g, seat)) : null;
+  const callVirt = kimonGoal ? (c: number[]) => withWinds(c, kimonGoal) : comingCall !== null ? (c: number[]) => withComing(c, comingCall) : null;
+  const callSh = callVirt ? (c: number[], m: number) => shanten(callVirt(c), m) : shanten;
+  const callCur = callVirt ? callSh(counts, p.melds.length) : cur;
   // 坐北家、东北还没鸣齐：东北还碰得到时，别的牌最多鸣到还留得下东北和西南（副露一共三副，手里留西刻、南对）
   const enSlots = style.winds && !g.isSealed(seat) && !kimon ? hatsumiSlotsNeeded(g, seat) : 0;
   // 明华：自风暗刻在手里，役已经有了。唱着歌的局不退向听就鸣（进攻）；
   // 不唱的局门前为主，鸣过了、或者一向听以内（鸣了就听牌）才鸣
-  const fuujinOpen = !!style.fuujin && myeonghwaYaku(g, seat) && (myeonghwaSinging(g, seat) > 0 || p.melds.length > 0 || cur <= 1);
+  const fuujinOpen = !!style.fuujin && myeonghwaYaku(g, seat) && (myeonghwaSinging(g, seat) > 0 || p.melds.length > 0 || callCur <= 1);
+  // 能力起作用的局不唱时：还没鸣过、离听牌两向听以上就不鸣（场风也不碰，门前留着立直、染手的番）
+  const fuujinClosed = !!style.fuujin && g.active(seat)?.id === 'myeonghwa' && myeonghwaYaku(g, seat) && !fuujinOpen;
+  // 往混一色做时不鸣别的花色
+  const fuujinFlush = style.fuujin ? fuujinSuit(g, seat) : null;
   const yakuSecured = hasYakuhaiMeld(g, seat) || kimon || fuujinOpen;
   // 真子：手里别的花色只剩两张以内，染手那门和字牌能鸣（混一色）；爽开了红云、白云、黑云、海神威，霞请神后，宥也一样
   // 霞请神后做绝掉的那门，宥做万子
@@ -1538,11 +1622,13 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       if (shanten(c, p.melds.length + 1) === 0) return a;
     }
   }
+  if (fuujinClosed) return pass;
   let best: Action = pass;
   let bestSh = callCur;
   for (const a of legal) {
     if (a.type !== 'pon' && a.type !== 'chi') continue;
     if (kimonGoal && p.melds.length >= 3) continue;
+    if (fuujinFlush !== null && k < 27 && Math.floor(k / 9) !== fuujinFlush) continue;
     if (enSlots && p.melds.length + 1 + enSlots > 3) continue;
     if (a.type === 'pon' && !(yakuhai || tanyaoOk || yakuSecured || toitoi || disruptAny || honitsuOk)) continue;
     if (a.type === 'chi' && !(tanyaoOk || yakuSecured || disruptAny || honitsuOk)) continue;

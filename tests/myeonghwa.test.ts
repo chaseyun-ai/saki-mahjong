@@ -1,16 +1,61 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
 import { HIROKO_NOTES } from '../src/abilities/hiroko';
-import { MYEONGHWA, myeonghwaAbility, myeonghwaCut, myeonghwaSinging, myeonghwaSong, myeonghwaWinds } from '../src/abilities/myeonghwa';
+import { MYEONGHWA, myeonghwaAbility, myeonghwaComing, myeonghwaCut, myeonghwaSinging, myeonghwaSong, myeonghwaWinds } from '../src/abilities/myeonghwa';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { shanten } from '../src/engine/shanten';
-import { EAST, NORTH, kindOf } from '../src/engine/tiles';
+import { EAST, NORTH, SOUTH, WEST, kindOf, parseKinds, type TileId } from '../src/engine/tiles';
 import { SCHOOLS } from '../src/ui/schools';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 const isWind = (t: number) => kindOf(t) >= EAST && kindOf(t) <= NORTH;
 const newGame = (seed: number, ids: string[]) => new Game({ seed, format: 'south', players: ids.map((id) => ({ name: id, ability: byId(id).ability })) });
+
+// 把这一家的手牌换成指定的牌：缺的从牌山、王牌、还没摆过牌的人手里换（不凭空造牌），张数要和现在的手牌一样
+const fixed = new WeakMap<Game, Set<number>>();
+function setHand(g: Game, seat: number, s: string): boolean {
+  const want = parseKinds(s);
+  const p = g.players[seat];
+  expect(want.length).toBe(p.hand.length);
+  const done = fixed.get(g) ?? new Set<number>();
+  fixed.set(g, done);
+  done.add(seat);
+  const rest = [...p.hand];
+  const keep: TileId[] = [];
+  const need: number[] = [];
+  for (const k of want) {
+    const i = rest.findIndex((t) => kindOf(t) === k);
+    if (i >= 0) keep.push(rest.splice(i, 1)[0]);
+    else need.push(k);
+  }
+  const sources = [g.wall.live, g.wall.rinshan, g.wall.uraIndicators, ...g.players.filter((q) => !done.has(q.seat)).map((q) => q.hand)];
+  for (const k of need) {
+    const src = sources.find((a) => a.some((t) => kindOf(t) === k));
+    if (!src) return false;
+    const j = src.findIndex((t) => kindOf(t) === k);
+    keep.push(src[j]);
+    src[j] = rest.pop()!;
+  }
+  p.hand = keep;
+  if (p.drawn !== null) p.drawn = keep[keep.length - 1];
+  return true;
+}
+
+// 电脑打到轮到 seat 出牌（摸完牌）为止。这一局先结束了返回 false
+function until(g: Game, ids: string[], seat: number): boolean {
+  let n = 0;
+  while (!(g.phase === 'turn' && g.turn === seat && g.players[seat].drawn !== null)) {
+    if (g.phase === 'roundEnd' || g.phase === 'gameEnd' || ++n > 400) return false;
+    if (g.phase === 'predeal') {
+      g.deal();
+      continue;
+    }
+    const s = g.waitingSeats()[0];
+    g.act(s, chooseAction(g, s, byId(ids[s]).ai));
+  }
+  return true;
+}
 
 // 电脑把一场打完。each：每一步之前调（停在发牌前时返回 true 表示自己处理了）
 function play(g: Game, ids: string[], onPreDeal?: () => void): void {
@@ -203,7 +248,9 @@ describe('雀明华：断风', () => {
           expect(g.players[1].hand.filter((t) => kindOf(t) === g.seatWind(1)).length, `${label} 自风`).toBeGreaterThanOrEqual(3);
           cuts++;
         }
-        if (e.type === 'draw' && e.seat === 3 && cutting && g.players[3].melds.every((m) => !m.type.includes('kan'))) expect(isWind(g.players[3].drawn!), `种子 ${seed} 摸牌`).toBe(false);
+        // 岭上牌、牌山最后一张（没有别的牌可换）除外
+        if (e.type === 'draw' && e.seat === 3 && cutting && g.wall.live.length > 0 && g.players[3].melds.every((m) => !m.type.includes('kan')))
+          expect(isWind(g.players[3].drawn!), `种子 ${seed} 摸牌`).toBe(false);
       });
       play(g, ids, () => {
         asked++;
@@ -291,6 +338,150 @@ describe('雀明华：电脑的打法', () => {
       await new Promise((r) => setTimeout(r, 0));
     }
     expect(held).toBeGreaterThan(200);
+  }, 120000);
+
+  // 东一局，明华坐南家（自风南、场风东），轮到她第一次出牌。场风的第二张还没来（第 6 次摸牌来）
+  const TABLE = ['izumi', 'myeonghwa', 'izumi', 'izumi'];
+  function myTurn(seed: number, hand: string, prep?: (g: Game) => void): Game | null {
+    const g = newGame(seed, TABLE);
+    if (!until(g, TABLE, 1)) return null;
+    const st = g.abilityState[1] as { roundCame?: boolean; roundAt?: number };
+    st.roundCame = false;
+    st.roundAt = 6;
+    prep?.(g);
+    return setHand(g, 1, hand) ? g : null;
+  }
+  // 不失误时打哪张
+  const discarded = (g: Game, id: string) => {
+    const a = chooseAction(g, 1, { ...byId(id).ai, mistakeRate: 0 });
+    expect(a.type).toBe('discard');
+    return a.type === 'discard' ? kindOf(a.tile) : -1;
+  };
+
+  it('场风的第二张还没来：单张场风当对子算，不打（一般的打法会打掉）；听的就是要来的场风时听它', () => {
+    let n = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      // 23m 67m 34p 89s 55s、南南南、单张东：一般的打法多半打孤张的东；她留着东（摸来就是一对役牌），先打 89s 的边张
+      const g = myTurn(seed, '2367m34p89s55s2221z');
+      if (!g) continue;
+      n++;
+      expect(myeonghwaComing(g, 1)).toBe(EAST);
+      expect(discarded(g, 'myeonghwa')).not.toBe(EAST);
+      // 234m 567m 3456p、南南南、单张东：一般的打法多半打东听 3p、6p；她打 3p 或 6p 单骑东（东一定会来），立直
+      const h = myTurn(seed, '234m567m3456p2221z');
+      if (!h) continue;
+      expect(discarded(h, 'myeonghwa')).not.toBe(EAST);
+      const riichi = chooseAction(h, 1, { ...byId('myeonghwa').ai, mistakeRate: 0 });
+      expect(riichi.type === 'discard' && riichi.riichi).toBe(true);
+    }
+    expect(n).toBeGreaterThanOrEqual(4);
+    // 东已经来过了：不再当对子算
+    const g = myTurn(1, '2367m34p89s55s2221z', (x) => ((x.abilityState[1] as { roundCame?: boolean }).roundCame = true))!;
+    expect(myeonghwaComing(g, 1)).toBeNull();
+  });
+
+  it('南场：成对的客风会摸成第三张，听这一对和数牌的对碰（一般的打法听两面）', () => {
+    let n = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      // 南一局（她坐南家，自风南就是场风），收的客风是西：55m 6m 234p 678s 西西 南南南
+      const g = myTurn(seed, '56m5m234p678s33z222z', (x) => {
+        x.roundWind = 1;
+        const st = x.abilityState[1] as { roundCame?: boolean; guest?: number };
+        st.guest = WEST;
+        st.roundCame = true;
+      });
+      if (!g) continue;
+      n++;
+      expect(myeonghwaWinds(g, 1)).toEqual({ seat: SOUTH, round: null, guest: WEST });
+      // 一般的打法打 5m 听 4m、7m（西西做雀头）；她打 6m 听西、5m 的对碰
+      expect(discarded(g, 'izumi')).toBe(4);
+      expect(discarded(g, 'myeonghwa')).toBe(5);
+    }
+    expect(n).toBeGreaterThanOrEqual(4);
+  });
+
+  it('风牌多、数牌集中在万子：同样向听先打别的花色（往混一色做）', () => {
+    let n = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const g = myTurn(seed, '1256789m34p11222z');
+      if (!g) continue;
+      n++;
+      // 一般的打法拆 12m 的边张留 34p 的两面；她拆 34p
+      expect(discarded(g, 'izumi')).toBeLessThan(9);
+      expect(Math.floor(discarded(g, 'myeonghwa') / 9)).toBe(1);
+    }
+    expect(n).toBeGreaterThanOrEqual(4);
+  });
+
+  it('不唱的局门前为主：离听牌还远时庄家打的东风不碰；唱着歌就碰', () => {
+    let n = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      for (const song of [0, 1]) {
+        const g = newGame(seed, TABLE);
+        if (!until(g, TABLE, 0)) continue;
+        const st = g.abilityState[1] as { roundCame?: boolean; song?: number };
+        st.roundCame = true;
+        st.song = song;
+        // 她：23m 67m 1p 5p 3s 9s 东东 南南南（三向听，碰了东两向听）；庄家打东
+        if (!setHand(g, 1, '23m67m15p39s11222z') || !setHand(g, 0, '19m19p19s12345677z')) continue;
+        const east = g.players[0].hand.find((t) => kindOf(t) === EAST)!;
+        g.act(0, g.legalActions(0).find((a) => a.type === 'discard' && !a.riichi && a.tile === east)!);
+        expect(g.phase).toBe('calls');
+        n++;
+        expect(myeonghwaSinging(g, 1)).toBe(song);
+        expect(chooseAction(g, 1, byId('izumi').ai).type).toBe('pon');
+        expect(chooseAction(g, 1, byId('myeonghwa').ai).type).toBe(song ? 'pon' : 'pass');
+      }
+    }
+    expect(n).toBeGreaterThanOrEqual(8);
+  });
+
+  it('整场打下来：没人立直时，第二张场风还没来就不打单张场风（打了以后真的更快的除外）', async () => {
+    let held = 0;
+    let cut = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const ids = ['izumi', 'izumi', 'izumi', 'izumi'];
+      const me = seed % 4;
+      ids[me] = 'myeonghwa';
+      const g = newGame(seed, ids);
+      let steps = 0;
+      while (g.phase !== 'gameEnd' && ++steps < 60000) {
+        if (g.phase === 'roundEnd') {
+          g.nextRound();
+          continue;
+        }
+        if ((g.phase as string) === 'predeal') {
+          g.deal();
+          continue;
+        }
+        const s = g.waitingSeats()[0];
+        const a = chooseAction(g, s, byId(ids[s]).ai);
+        const round = s === me ? myeonghwaComing(g, me) : null;
+        if (round !== null && g.phase === 'turn' && a.type === 'discard' && !g.players.some((q) => q.riichi)) {
+          const p = g.players[me];
+          const c = new Array(34).fill(0);
+          p.hand.forEach((t) => c[kindOf(t)]++);
+          if (c[round] === 1) {
+            held++;
+            if (kindOf(a.tile) === round) {
+              cut++;
+              const sh = (k: number) => {
+                c[k]--;
+                const v = shanten(c, p.melds.length);
+                c[k]++;
+                return v;
+              };
+              const other = Math.min(...[...new Set(p.hand.map(kindOf))].filter((k) => k !== round).map(sh));
+              expect(sh(round), `种子 ${seed} ${g.roundLabel()} 打了单张场风`).toBeLessThan(other);
+            }
+          }
+        }
+        g.act(s, a);
+      }
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(held).toBeGreaterThan(150);
+    expect(cut).toBeLessThan(held / 10);
   }, 120000);
 });
 

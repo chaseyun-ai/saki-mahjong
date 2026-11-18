@@ -15,7 +15,8 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 //   代价是她分出了精力，这一局歌不起作用；自己的风牌照收（原作：决赛后半场每一局都对尧深用，只和了一次满贯）。
 //   没了风牌的人手牌反而更快，所以只对靠风牌吃饭的人（初美）划算。原作只写了配牌，摸不到是为了对初美有用加的
 // 电脑的明华：坐庄的局、东四局、进了南场开嗓，歌停了进了南场再开一次；唱着时不退向听就鸣（进攻），
-// 不唱时门前为主（一向听以内才鸣）；初美坐北家的局对她断风
+// 不唱时门前为主（一向听以内才鸣）；初美坐北家的局对她断风。
+// 打牌照她的风算（src/ai/ai.ts 的「雀明华」一节）：单张场风当对子、南场的风对子会长成暗刻、风牌多就做混一色
 export const MYEONGHWA = {
   seatWind: 3, // 配牌里自风几张
   roundWind: 1, // 配牌里场风几张（自风就是场风时不另算）
@@ -95,6 +96,22 @@ export function myeonghwaYaku(g: Game, seat: number): boolean {
   const k = g.seatWind(seat);
   const p = g.players[seat];
   return p.hand.filter((t) => kindOf(t) === k).length >= 3 || p.melds.some((m) => m.type !== 'chi' && kindOf(m.tiles[0]) === k);
+}
+
+// 电脑的她算牌用：场风的第二张这一局还会来（还没来、能力这一局起作用）就返回场风，不会来是 null。
+// 来的时候手里不到两张就补一张（打掉了就只剩一张），手里已经成对就不来了
+export function myeonghwaComing(g: Game, seat: number): number | null {
+  if (g.active(seat)?.id !== 'myeonghwa' || g.quelled(seat)) return null;
+  const st = stateOf(g, seat);
+  if (!st.winds || st.roundCame) return null;
+  return myeonghwaWinds(g, seat).round;
+}
+
+// 电脑的她算牌用：南场在手里成对时会摸成暗刻的风（场风、收的那种客风）。东场、能力这一局不起作用时没有
+export function myeonghwaGrowing(g: Game, seat: number): number[] {
+  if (g.roundWind < 1 || g.active(seat)?.id !== 'myeonghwa' || g.quelled(seat) || !stateOf(g, seat).winds) return [];
+  const { guest } = myeonghwaWinds(g, seat);
+  return [EAST + g.roundWind, guest].filter((k): k is number => k !== null);
 }
 
 // 电脑：初美坐北家的局对她断风
