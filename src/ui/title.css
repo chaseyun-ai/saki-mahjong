@@ -1,0 +1,322 @@
+/* 主页封面（ui/title.ts）：整页是一张 3D 牌桌的画布，上面盖着看不见的按钮、提示、开场的「点一下开始」 */
+
+.title-screen {
+  position: relative;
+  height: 100%;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #b9ae78;
+  color: #fff;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+.title-screen[data-tod='dusk'] { background: #a89a68; }
+.title-screen[data-tod='night'] { background: #6f6746; }
+
+.tt-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.tt-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  animation: tt-fade 0.5s ease-out both;
+}
+@keyframes tt-fade {
+  from { opacity: 0; }
+}
+
+/* 四角压暗一点，像头顶一盏灯照着桌子 */
+.tt-vig {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 78% 78% at 50% 48%, rgba(30, 14, 4, 0) 58%, rgba(30, 14, 4, 0.34) 100%);
+}
+.title-screen[data-tod='dusk'] .tt-vig {
+  background: radial-gradient(ellipse 78% 78% at 50% 48%, rgba(60, 20, 0, 0) 52%, rgba(70, 24, 4, 0.42) 100%), linear-gradient(200deg, rgba(255, 150, 60, 0.14), rgba(255, 150, 60, 0) 55%);
+}
+.title-screen[data-tod='night'] .tt-vig {
+  background: radial-gradient(ellipse 70% 70% at 50% 48%, rgba(8, 10, 30, 0) 46%, rgba(8, 10, 30, 0.6) 100%);
+}
+/* 开场时再盖一层暗的，只亮着中间的 logo；点了开始就淡掉 */
+.tt-vig::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 62% 62% at 50% 46%, rgba(14, 8, 2, 0) 40%, rgba(14, 8, 2, 0.6) 100%);
+  opacity: 0;
+  transition: opacity 0.9s;
+}
+.title-screen.gated .tt-vig::after { opacity: 1; }
+
+/* 盖在画面上的按钮：看不见，位置由牌桌每一帧给 */
+.tt-hots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.tt-hot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.tt-hot:focus { outline: none; }
+.tt-hot:focus-visible {
+  outline: 3px solid #ffe27a;
+  outline-offset: 5px;
+  box-shadow: 0 0 0 7px rgba(40, 20, 4, 0.35);
+}
+.tt-hot-t {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.title-screen.gated .tt-hots,
+.title-screen.leaving .tt-hots {
+  visibility: hidden;
+}
+
+/* 指着某一块时冒出来的说明 */
+.tt-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 16px 9px;
+  border-radius: 999px;
+  background: rgba(38, 20, 8, 0.9);
+  border: 1.5px solid rgba(255, 220, 140, 0.7);
+  box-shadow: 0 6px 18px rgba(20, 8, 0, 0.35);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -100%) translateY(6px);
+  transition: opacity 0.14s, transform 0.14s;
+}
+.tt-tip.below { transform: translate(-50%, 0) translateY(-6px); }
+.tt-tip.show { opacity: 1; transform: translate(-50%, -100%); }
+.tt-tip.show.below { transform: translate(-50%, 0); }
+.tt-tip b {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #ffe9a8;
+}
+.tt-tip small {
+  font-size: 13px;
+  color: rgba(255, 246, 224, 0.86);
+}
+.tt-tip.lock b { color: #d9d2c2; }
+.title-screen.gated .tt-tip,
+.title-screen.leaving .tt-tip { display: none; }
+
+/* 点了贴着封条的那排：说明抖一下 */
+.tt-tip.nudge { animation: tt-nudge 0.4s ease; }
+@keyframes tt-nudge {
+  20% { margin-left: -7px; }
+  45% { margin-left: 6px; }
+  70% { margin-left: -4px; }
+  90% { margin-left: 2px; }
+}
+
+/* 开场：整页都能点，下面一行字 */
+.tt-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: clamp(48px, 13vh, 130px);
+  cursor: pointer;
+  outline: none;
+  transition: opacity 0.45s;
+}
+.tt-gate.gone { opacity: 0; pointer-events: none; }
+.tt-start {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 260px;
+  font-family: 'ZCOOL KuaiLe', 'Noto Sans SC', sans-serif;
+}
+.tt-start > span {
+  grid-area: 1 / 1;
+  transition: opacity 0.35s, transform 0.35s;
+}
+.tt-loading {
+  font-size: clamp(16px, 2.2vh, 20px);
+  letter-spacing: 0.3em;
+  color: rgba(255, 244, 214, 0.86);
+  text-shadow: 0 2px 0 rgba(50, 22, 4, 0.75), 0 0 18px rgba(40, 16, 0, 0.6);
+}
+.tt-go {
+  padding: 12px 34px 13px;
+  border-radius: 999px;
+  background: linear-gradient(#ffd866, #f2a52a);
+  border: 3px solid #5a2a12;
+  box-shadow: 0 6px 0 #8a4a12, 0 14px 26px rgba(30, 12, 0, 0.45);
+  color: #5a2a12;
+  font-size: clamp(22px, 3.4vh, 32px);
+  letter-spacing: 0.16em;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+  opacity: 0;
+  transform: translateY(10px) scale(0.92);
+}
+.tt-gate.ready .tt-loading { opacity: 0; transform: translateY(-8px); }
+.tt-gate.ready .tt-go {
+  opacity: 1;
+  transform: none;
+  animation: tt-pulse 1.5s ease-in-out 0.4s infinite;
+}
+.tt-gate:focus-visible .tt-go { outline: 3px solid #fff; outline-offset: 4px; }
+@keyframes tt-pulse {
+  50% { transform: translateY(-4px) scale(1.04); }
+}
+
+.tt-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: rgba(255, 248, 228, 0.6);
+  text-shadow: 0 1px 2px rgba(30, 14, 0, 0.6);
+  pointer-events: none;
+}
+
+/* 手机竖屏：点棒太细不好点，底下另外放三个看得见的设置按钮（点棒上的按钮关掉） */
+.tt-chips { display: none; }
+@media (max-aspect-ratio: 4/5) {
+  .title-screen:not(.no3d) .tt-chips {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 34px;
+    z-index: 2;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    transition: opacity 0.4s;
+  }
+  .tt-chips button {
+    padding: 9px 14px;
+    border-radius: 999px;
+    border: 2px solid #5a2a12;
+    background: #fffbe9;
+    box-shadow: 0 4px 0 rgba(60, 26, 6, 0.4);
+    color: #5a2a12;
+    font: 700 14px/1 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    cursor: pointer;
+  }
+  .title-screen.gated .tt-chips { opacity: 0; pointer-events: none; }
+  .title-screen:not(.no3d) .tt-hot[data-hot='match'],
+  .title-screen:not(.no3d) .tt-hot[data-hot='visual'],
+  .title-screen:not(.no3d) .tt-hot[data-hot='sound'] { display: none; }
+  .tt-tip { flex-direction: column; align-items: center; gap: 2px; border-radius: 14px; }
+}
+
+/* 选人页左上角回主页的按钮里的小房子 */
+.sel-home svg {
+  width: 1.05em;
+  height: 1.05em;
+  flex: none;
+}
+
+/* 画不了 3D 的浏览器：按钮排成一列 */
+.title-screen.no3d {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #46ad7c, #1b6642);
+}
+.title-screen.no3d .tt-canvas,
+.title-screen.no3d .tt-vig,
+.title-screen.no3d .tt-tip { display: none; }
+.title-screen.no3d h1.tt-sr {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0 0 18px;
+  clip-path: none;
+  font-family: 'Ma Shan Zheng', 'Noto Serif SC', serif;
+  font-size: clamp(40px, 9vw, 76px);
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-shadow: 0 4px 0 rgba(10, 50, 28, 0.6);
+}
+.title-screen.no3d .tt-hots {
+  position: static;
+  display: grid;
+  gap: 10px;
+  width: min(86vw, 380px);
+  pointer-events: auto;
+}
+.title-screen.no3d .tt-hot {
+  position: static;
+  padding: 12px 18px;
+  background: #f7f1e1;
+  color: #3b2a1c;
+  border: 2px solid #3b2a1c;
+  box-shadow: 0 5px 0 #e2a03a;
+  text-align: left;
+}
+.title-screen.no3d .tt-hot[data-hot='dice'] { display: none; }
+.title-screen.no3d .tt-hot.lock { opacity: 0.6; }
+.title-screen.no3d .tt-hot-t {
+  position: static;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: auto;
+  height: auto;
+  clip-path: none;
+}
+.title-screen.no3d .tt-say {
+  position: static;
+  width: auto;
+  height: 1.5em;
+  margin: 14px 0 0;
+  clip-path: none;
+  font-size: 14px;
+}
+.title-screen.no3d .tt-hot-t b { font-size: 18px; }
+.title-screen.no3d .tt-hot-t small { font-size: 13px; opacity: 0.75; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tt-canvas,
+  .tt-gate.ready .tt-go { animation: none; }
+}

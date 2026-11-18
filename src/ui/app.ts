@@ -63,6 +63,7 @@ import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { soundButtonHtml, soundEntryHtml } from './soundPanel';
 import { Scene, gameMusic, menuMusic, promptCue, resultMusic, soundtrackEvent, tallyCue } from './soundtrack';
+import { mountTitle, titleGo, titleHtml } from './title';
 import { paceOf, vary } from './vary';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
@@ -144,6 +145,7 @@ const SLIDERS_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden
 const PALETTE_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3a9 9 0 0 0 0 18c1.4 0 2-1 2-2 0-1.4-1.2-1.6-1.2-2.8 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.4 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.4" fill="currentColor"/><circle cx="10" cy="7" r="1.4" fill="currentColor"/><circle cx="15" cy="7" r="1.4" fill="currentColor"/></svg>`;
 const GEAR_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M10.3 3h3.4l.5 2.4 1.7.9 2.3-.9 1.7 2.9-1.8 1.6v2.2l1.8 1.6-1.7 2.9-2.3-.9-1.7.9-.5 2.4h-3.4l-.5-2.4-1.7-.9-2.3.9-1.7-2.9 1.8-1.6v-2.2L4.1 8.3l1.7-2.9 2.3.9 1.7-.9z"/><circle cx="12" cy="12" r="3"/></g></svg>`;
 const MORE_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg>`;
+const HOME_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M3.5 11.5 12 4l8.5 7.5M6 9.6V20h4.5v-5.5h3V20H18V9.6"/></svg>`;
 const DICE_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/><circle cx="16" cy="8" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="8" cy="16" r="1.6" fill="currentColor"/><circle cx="16" cy="16" r="1.6" fill="currentColor"/></svg>`;
 
 // 洋榎的灯：颜色从白到紫，光芒条数就是档位
@@ -336,7 +338,8 @@ export class App {
     window.addEventListener('resize', () => this.fit());
     // 大字特效用的书法字体先下好，免得第一次立直时字还没出来
     document.fonts?.load('1em "Ma Shan Zheng"', '立直碰吃杠荣和自摸暗加宝牌聚集岭上开花一巡先见的气息').catch(() => {});
-    this.renderSelect();
+    // 一打开先到主页封面（第一次盖着配牌，点一下开始）
+    this.renderTitle(true);
     // 素材页里换了图：牌局里重画头像框，选人页重画一遍
     onSkinsChange(() => {
       if (this.game) this.render();
@@ -362,6 +365,23 @@ export class App {
     this.root.classList.remove('mihoko-eye', 'awai-dark', 'awai-source');
   }
 
+  // 主页封面（title.ts）：牌山上四块大牌是菜单。gate：盖着开场的配牌，点一下才开始（只有刚打开游戏时）
+  private renderTitle(gate = false): void {
+    this.teardown();
+    menuMusic();
+    this.team = null;
+    this.teamFlow = null;
+    this.auto = false;
+    this.root.innerHTML = titleHtml({ gate });
+    const screen = this.root.querySelector<HTMLElement>('.title-screen');
+    if (screen) mountTitle(screen);
+    // 换皮肤会重画整页：开着的设置面板照样开着
+    this.renderPanel();
+  }
+
+  // 团体赛是从哪儿进的：退出时回到那里
+  private teamFrom: 'title' | 'select' = 'select';
+
   private renderSelect(): void {
     this.teardown();
     menuMusic();
@@ -377,6 +397,7 @@ export class App {
       <div class="select-screen">
         <div class="sel-main">
         <header class="sel-top">
+          <button class="sel-set sel-home" data-ui="home" title="回到主页">${HOME_SVG}<span>主页</span></button>
           <h1>超能力麻将</h1>
           <div class="sel-tools">
             <button class="sel-set" data-ui="open-match" aria-haspopup="dialog">${SLIDERS_SVG}<span>对局设置</span></button>
@@ -764,6 +785,15 @@ export class App {
   }
 
   // 团体赛的一场：玩家的队坐 0 号位，每人带着自己队伍现在的点数上场
+  // 团体赛布阵：from 记下是从主页还是选人页进的，退出时回去
+  private openTeam(from: 'title' | 'select'): void {
+    this.teamFrom = from;
+    this.teamFlow = new TeamFlow(this.root, {
+      play: (run, seats, auto) => this.startTeamMatch(run, seats, auto),
+      exit: () => (this.teamFrom === 'title' ? this.renderTitle() : this.renderSelect()),
+    });
+  }
+
   private startTeamMatch(run: TeamRun, seats: number[], auto: boolean): void {
     const chars = seats.map((t) => run.teams[t].lineup[run.pos]);
     const start = seats.map((t) => run.teams[t].points);
@@ -2650,6 +2680,21 @@ export class App {
       this.quickStart(el.dataset.id);
       return;
     }
+    // 主页上的四块大牌：个人对局进选人页，团体赛进布阵，随机出场直接开局，全国大赛还锁着
+    if (el.dataset.ui === 'title-go') {
+      const v = el.dataset.v;
+      titleGo(el, () => {
+        if (v === 'single') this.renderSelect();
+        else if (v === 'team') this.openTeam('title');
+        else if (v === 'random') this.quickStart(CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)].id);
+      });
+      return;
+    }
+    if (el.dataset.ui === 'home') {
+      this.panel = null;
+      this.renderTitle();
+      return;
+    }
     if (el.dataset.ui === 'open-match' || el.dataset.ui === 'open-visual') {
       this.openPanel(el.dataset.ui === 'open-match' ? 'match' : 'visual');
       return;
@@ -2693,7 +2738,8 @@ export class App {
     }
     if (el.dataset.ui === 'vis-theme' && THEMES.some((t) => t.id === el.dataset.v)) {
       setTheme(el.dataset.v as ThemeId);
-      this.renderSelect();
+      if (this.root.querySelector('.title-screen')) this.renderTitle();
+      else this.renderSelect();
       return;
     }
     // 牌桌风格：下一局建牌桌时用（2D 牌桌马上换）
@@ -2781,10 +2827,7 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'team') {
-      this.teamFlow = new TeamFlow(this.root, {
-        play: (run, seats, auto) => this.startTeamMatch(run, seats, auto),
-        exit: () => this.renderSelect(),
-      });
+      this.openTeam('select');
       return;
     }
     if (el.dataset.ui === 'team-next' && this.team && this.game) {
