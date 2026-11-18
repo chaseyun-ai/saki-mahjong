@@ -8,7 +8,7 @@ import { suzuBurst } from './suzu';
 import { teruLadder } from './teru';
 import { PRIORITY, type Ability } from './types';
 
-// 大星淡（白糸台）：星空能量，开局 AWAI.energyMax 点，用掉不回复（AWAI.regen 是每过一局回复几点，现在是 0）。
+// 大星淡（白糸台）：星空能量，开局在 AWAI.energyStart 之间随机一个整十（上限 AWAI.energyMax），用掉不回复（AWAI.regen 是每过一局回复几点，现在是 0）。
 // 两个被动一直起作用，七个主动技能在牌局里随时按（各扣能量，每样一局一次）。
 //
 // 被动
@@ -43,6 +43,8 @@ import { PRIORITY, type Ability } from './types';
 // 强度参数（测试和平衡脚本会临时改它们）
 export const AWAI = {
   energyMax: 100,
+  // 开局能量：这两个数之间（含两头）随机一个 10 的倍数，每场掷一次
+  energyStart: [50, 100] as [number, number],
   regen: 0,
   // 星符汇聚：玩家的淡每一局有多大概率拿到字牌手（能量不够按一次时不发）。0 是从来不发，1 是每局都发
   starsDeal: 0.05,
@@ -103,10 +105,17 @@ const stateOf = (g: Game, seat: number) => g.abilityState[seat] as AwaiState;
 export function awaiKanUra(g: Game, seat: number): number | undefined {
   return stateOf(g, seat).kanUra;
 }
+// 开局能量：用开局种子另起一个随机数掷（不动 g.rng，牌山不跟着变）
+function startEnergy(g: Game, seat: number): number {
+  const [lo, hi] = AWAI.energyStart;
+  const steps = Math.floor((hi - lo) / 10) + 1;
+  return Math.min(AWAI.energyMax, lo + 10 * new Rng((g.seed * 7919 + seat * 131 + 17) >>> 0).int(steps));
+}
+
 const gameStateOf = (g: Game, seat: number) => {
   const gs = g.abilityGameState[seat] as AwaiGameState;
   if (gs.energy === undefined) {
-    gs.energy = AWAI.energyMax;
+    gs.energy = startEnergy(g, seat);
     gs.at = Math.max(1, g.round);
   }
   // 每过一局回复一次
@@ -670,7 +679,7 @@ function aiPress(g: Game, seat: number): void {
 export const awaiAbility: Ability = {
   id: 'awai',
   name: '星空',
-  description: `星空能量开局 ${AWAI.energyMax} 点，${AWAI.regen ? `每局回复 ${AWAI.regen} 点` : '用掉不回复'}。被动：时间迟滞（别人配牌 5–6 向听，挡得住或会支配牌山的人减弱）、命运支配（天听但永远不天和；双立直的话在第 2 个转角前暗杠，杠里四张都是里宝牌，下一张自摸）。主动：星符汇聚 30（打出第一张牌前按，之后摸牌凑大七星；约四成的局配牌偏字牌，字牌越多越快）、高维领域 20、退相干 10、引力波 10、平行宇宙 50、加速驱动 10、巨引力源 10（罩住每边牌山中间 7 墩）。`,
+  description: `星空能量开局 ${AWAI.energyStart[0]}–${AWAI.energyStart[1]} 点（随机整十），${AWAI.regen ? `每局回复 ${AWAI.regen} 点` : '用掉不回复'}。被动：时间迟滞（别人配牌 5–6 向听，挡得住或会支配牌山的人减弱）、命运支配（天听但永远不天和；双立直的话在第 2 个转角前暗杠，杠里四张都是里宝牌，下一张自摸）。主动：星符汇聚 30（打出第一张牌前按，之后摸牌凑大七星；约四成的局配牌偏字牌，字牌越多越快）、高维领域 20、退相干 10、引力波 10、平行宇宙 50、加速驱动 10、巨引力源 10（罩住每边牌山中间 7 墩）。`,
   priority: PRIORITY.awai,
 
   // 时间迟滞定规矩：另外三家的配牌至少 5–6 向听（减弱的人 3 向听）

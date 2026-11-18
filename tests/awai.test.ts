@@ -17,8 +17,10 @@ const saved = { ...AWAI };
 const HONOR_KINDS = [27, 28, 29, 30, 31, 32, 33];
 afterEach(() => Object.assign(AWAI, saved));
 // 字牌手默认不发（各条测试查的是天听的局）；查星符汇聚的测试自己打开
+// 开局能量默认固定 100（算扣能量的测试要整数）；查随机开局能量的测试自己改回来
 beforeEach(() => {
   AWAI.starsDeal = 0;
+  AWAI.energyStart = [100, 100];
 });
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
@@ -200,6 +202,26 @@ describe('大星淡：星空能量', () => {
     (g.abilityGameState[0] as { energy: number }).energy = 45;
     expect(awaiCanUse(g, 0, 'parallel')).toBe(false);
     expect(awaiCanUse(g, 0, 'decohere')).toBe(true);
+  });
+
+  it('开局能量在 50–100 之间随机一个整十，每场掷一次，同一个种子总是一样', () => {
+    AWAI.energyStart = [50, 100];
+    const seen = new Set<number>();
+    for (let seed = 1; seed <= 60; seed++) {
+      const e = awaiEnergy(manualGame(['saki', 'nodoka', 'mako'], seed).g, 0);
+      expect(e % 10).toBe(0);
+      expect(e).toBeGreaterThanOrEqual(50);
+      expect(e).toBeLessThanOrEqual(100);
+      expect(awaiEnergy(manualGame(['saki', 'nodoka', 'mako'], seed).g, 0)).toBe(e);
+      seen.add(e);
+    }
+    expect([...seen].sort((a, b) => a - b)).toEqual([50, 60, 70, 80, 90, 100]);
+    // 一局一局打下去不重掷
+    const { g } = manualGame(['saki', 'nodoka', 'mako'], 3);
+    const e = awaiEnergy(g, 0);
+    restart(g);
+    restart(g);
+    expect(awaiEnergy(g, 0)).toBe(e);
   });
 
   it('AWAI.regen 调回去的话每过一局回复，不超过上限', () => {

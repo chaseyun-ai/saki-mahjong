@@ -19,6 +19,7 @@ const restart = (g: Game) => (g as unknown as { startRound(): void }).startRound
 
 describe('大星淡：技能栏', () => {
   it('玩家操作时不停在发牌前；技能栏是能量条加七个主动技能', () => {
+    AWAI.energyStart = [100, 100];
     const g = newGame(['awai', 'saki', 'nodoka', 'kuro'], 0);
     expect(g.phase).not.toBe('predeal');
     expect(awaiEnergy(g, 0)).toBe(100);
