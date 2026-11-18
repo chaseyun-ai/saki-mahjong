@@ -70,8 +70,8 @@ function usefulRate(others: string[], games = 1200) {
 }
 
 describe('辻垣内智叶：登记', () => {
-  it('5 费，临海女子，资料本里有她', () => {
-    expect(byId('satoha').cost).toBe(5);
+  it('4 费，临海女子，资料本里有她', () => {
+    expect(byId('satoha').cost).toBe(4);
     expect(byId('satoha').school).toBe('临海女子');
     expect(byId('satoha').ability).toBe(satohaAbility);
     expect(HIROKO_NOTES.satoha).toBeTruthy();

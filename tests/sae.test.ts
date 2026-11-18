@@ -44,8 +44,8 @@ function playRound(g: Game, seats: ReturnType<typeof setup>['seats'], after?: (g
 }
 
 describe('臼泽塞', () => {
-  it('3 费，宫守', () => {
-    expect(byId('sae').cost).toBe(3);
+  it('2 费，宫守', () => {
+    expect(byId('sae').cost).toBe(2);
     expect(byId('sae').school).toBe('宫守女子');
   });
 

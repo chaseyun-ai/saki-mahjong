@@ -27,11 +27,29 @@ const AI_BEST = 0.6;
 const SUB_NAMES = ['替补·甲', '替补·乙', '替补·丙', '替补·丁', '替补·戊', '替补·己', '替补·庚', '替补·辛'];
 export const isSub = (c: Character) => c.id.startsWith('sub-');
 
+// 选人时每一档里的排列：按全体强度测试的平均顺位从强到弱（南风战、三家随机对手、各 400 场）。
+// 1 费先排有能力的姬子、煌、佳织、胡桃、浩子（照 MingZhi 给的顺序），再排没有能力的人（也按顺位）。
+// 没写进来的新角色排在这一档最后
+export const TIER_ORDER = [
+  // 5 费
+  'awai', 'teru', 'nelly', 'koromo', 'saki', 'komaki', 'sawaya',
+  // 4 费
+  'yuuki', 'satoha', 'myeonghwa', 'aislinn', 'hatsumi', 'toyone', 'shizuno', 'toki',
+  // 3 费
+  'ryuuka', 'rii', 'arata', 'momo', 'yu', 'kuro', 'megan', 'toka', 'yumi', 'yukiko', 'hiroe', 'ako', 'hisa', 'mihoko',
+  // 2 费
+  'mako', 'sera', 'suzu', 'kyouko', 'huiyu', 'kasumi', 'haru', 'takami', 'kana', 'sae', 'jun', 'sumire', 'shiromi', 'seiko', 'kinue', 'nodoka',
+  // 1 费
+  'himeko', 'kirame', 'kaori', 'kurumi', 'hiroko',
+  'izumi', 'sumiyo', 'naruka', 'hajime', 'seika', 'miharu', 'mutsuki', 'mieko', 'hitomi', 'yuuko', 'chikako', 'satomi', 'yuan', 'tomoe', 'tomoki',
+];
+const tierRank = (c: Character) => (TIER_ORDER.includes(c.id) ? TIER_ORDER.indexOf(c.id) : TIER_ORDER.length);
+
 export function draftPool(): Map<number, Character[]> {
   const pool = new Map<number, Character[]>();
   let n = 0;
   for (const tier of TIERS) {
-    const list = CHARACTERS.filter((c) => c.cost === tier);
+    const list = CHARACTERS.filter((c) => c.cost === tier).sort((a, b) => tierRank(a) - tierRank(b));
     while (list.length < TEAMS.length) {
       const name = SUB_NAMES[n++ % SUB_NAMES.length];
       list.push({ id: `sub-${tier}-${list.length}`, name, school: '替补', cost: tier, color: '#8a8f99', ability: null, ai: { ...baseAi } });

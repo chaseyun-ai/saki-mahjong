@@ -3,7 +3,7 @@ import { CHARACTERS } from '../src/abilities/characters';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { Rng } from '../src/engine/rng';
-import { POSITIONS, TEAM_START, TIERS, TeamRun, aiPick, draftPool, snakeOrder } from '../src/team/team';
+import { POSITIONS, TEAM_START, TIERS, TIER_ORDER, TeamRun, aiPick, draftPool, snakeOrder } from '../src/team/team';
 
 // 一整场团体赛，全部电脑打。返回每场打了几局
 function runTeam(seed: number) {
@@ -51,6 +51,16 @@ describe('团体赛', () => {
       for (const c of pool.get(tier)!) expect(c.cost).toBe(tier);
     }
     for (const c of CHARACTERS) expect(TIERS).toContain(c.cost);
+  });
+
+  it('每一档按排好的顺序列出（强到弱），排序表里每个角色正好一次、按档排在一起', () => {
+    expect(new Set(TIER_ORDER).size).toBe(TIER_ORDER.length);
+    expect([...TIER_ORDER].sort()).toEqual(CHARACTERS.map((c) => c.id).sort());
+    const costs = TIER_ORDER.map((id) => CHARACTERS.find((c) => c.id === id)!.cost);
+    expect(costs).toEqual([...costs].sort((a, b) => b - a));
+    const pool = draftPool();
+    for (const tier of TIERS) expect(pool.get(tier)!.map((c) => c.id)).toEqual(TIER_ORDER.filter((id) => CHARACTERS.find((c) => c.id === id)!.cost === tier));
+    expect(pool.get(1)!.slice(0, 5).map((c) => c.id)).toEqual(['himeko', 'kirame', 'kaori', 'kurumi', 'hiroko']);
   });
 
   it('蛇形选人：5 费按开局顺序，4 费倒过来，3 费再正过来', () => {

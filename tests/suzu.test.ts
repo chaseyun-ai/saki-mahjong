@@ -56,8 +56,8 @@ function run(g: Game, ids: string[], me: number, draws?: { burst: boolean; high:
 }
 
 describe('上重漫', () => {
-  it('3 费；每一局（连庄不算）加上强敌数，超过 9 爆发并清零；爆发过以后到 5 就再触发', () => {
-    expect(byId('suzu').cost).toBe(3);
+  it('2 费；每一局（连庄不算）加上强敌数，超过 9 爆发并清零；爆发过以后到 5 就再触发', () => {
+    expect(byId('suzu').cost).toBe(2);
     for (let seed = 1; seed <= 6; seed++) {
       const snaps = run(newGame(seed, STRONG), STRONG, 0);
       // 自己按规则重算一遍
@@ -88,7 +88,7 @@ describe('上重漫', () => {
   }, 60000);
 
   it('没有强敌就一直不爆发', () => {
-    const ids = ['suzu', 'mako', 'ako', 'izumi'];
+    const ids = ['suzu', 'mako', 'kirame', 'izumi'];
     const snaps = run(newGame(3, ids), ids, 0);
     expect(snaps.every((s) => s.burst === null && s.counter === 0)).toBe(true);
   });

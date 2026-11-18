@@ -61,8 +61,8 @@ function hitRate(kinds: number[], on: boolean) {
 const BASE = [M(1), M(2), M(3), M(5), M(6), M(7), S(1), S(2), S(3), 27, 27];
 
 describe('鹭森灼', () => {
-  it('2 费，阿知贺', () => {
-    expect(byId('arata').cost).toBe(2);
+  it('3 费，阿知贺', () => {
+    expect(byId('arata').cost).toBe(3);
     expect(byId('arata').school).toBe('阿知贺女子学院');
   });
 

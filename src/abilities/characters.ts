@@ -135,7 +135,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'kuro',
-    cost: 2,
+    cost: 3,
     name: '松实玄',
     school: '阿知贺女子学院',
     color: '#c9873a',
@@ -144,7 +144,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'toki',
-    cost: 3,
+    cost: 4,
     name: '园城寺怜',
     school: '千里山女子',
     color: '#6f8fc9',
@@ -178,7 +178,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'kasumi',
-    cost: 3,
+    cost: 2,
     name: '石户霞',
     school: '永水女子',
     color: '#5a8f7b',
@@ -196,7 +196,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'hiroe',
-    cost: 2,
+    cost: 3,
     name: '爱宕洋榎',
     school: '姬松高中',
     color: '#d9733f',
@@ -247,7 +247,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'satoha',
-    cost: 5,
+    cost: 4,
     name: '辻垣内智叶',
     school: '临海女子',
     color: '#3d4a78',
@@ -294,7 +294,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'sawaya',
-    cost: 4,
+    cost: 5,
     name: '狮子原爽',
     school: '有珠山高中',
     color: '#7a8fa6',
@@ -349,7 +349,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'yuuki',
-    cost: 3,
+    cost: 4,
     name: '片冈优希',
     school: '清澄高中',
     color: '#f0a020',
@@ -358,7 +358,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'yu',
-    cost: 2,
+    cost: 3,
     name: '松实宥',
     school: '阿知贺女子学院',
     color: '#e0603a',
@@ -367,7 +367,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'ako',
-    cost: 1,
+    cost: 3,
     name: '新子憧',
     school: '阿知贺女子学院',
     color: '#e86aa6',
@@ -385,7 +385,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'mako',
-    cost: 1,
+    cost: 2,
     name: '染谷真子',
     school: '清澄高中',
     color: '#3f8a5a',
@@ -403,7 +403,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'kyouko',
-    cost: 1,
+    cost: 2,
     name: '末原恭子',
     school: '姬松高中',
     color: '#5f6fa8',
@@ -440,7 +440,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'sera',
-    cost: 3,
+    cost: 2,
     name: '江口夕',
     school: '千里山女子',
     color: '#c2552e',
@@ -483,7 +483,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'shiromi',
-    cost: 3,
+    cost: 2,
     name: '小濑川白望',
     school: '宫守女子',
     color: '#9aa6b8',
@@ -515,7 +515,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'suzu',
-    cost: 3,
+    cost: 2,
     name: '上重漫',
     school: '姬松高中',
     color: '#e0892f',
@@ -565,7 +565,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'arata',
-    cost: 2,
+    cost: 3,
     name: '鹭森灼',
     school: '阿知贺女子学院',
     color: '#5a7fb8',
@@ -583,7 +583,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'sae',
-    cost: 3,
+    cost: 2,
     name: '臼泽塞',
     school: '宫守女子',
     color: '#7a6a9a',
@@ -611,7 +611,7 @@ export const CHARACTERS: Character[] = [
   },
   {
     id: 'hatsumi',
-    cost: 3,
+    cost: 4,
     name: '薄墨初美',
     school: '永水女子',
     color: '#8a4fc8',
@@ -749,7 +749,7 @@ export const CHARACTERS: Character[] = [
   // 千里山女子：数据分析担当
   {
     id: 'hiroko',
-    cost: 2,
+    cost: 1,
     name: '船久保浩子',
     school: '千里山女子',
     color: '#7a5aa8',

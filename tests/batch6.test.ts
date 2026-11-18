@@ -30,10 +30,10 @@ function play(seed: number, ids: string[], setup: (g: Game) => void, opts: { for
 }
 
 describe('新角色', () => {
-  it('费用和学校：泉 1 费没有能力，堇 2 费，夕、龙华 3 费', () => {
+  it('费用和学校：泉 1 费没有能力，堇、夕 2 费，龙华 3 费', () => {
     expect(byId('izumi')).toMatchObject({ cost: 1, ability: null, school: '千里山女子' });
     expect(byId('sumire')).toMatchObject({ cost: 2, school: '白糸台高中' });
-    expect(byId('sera')).toMatchObject({ cost: 3, school: '千里山女子' });
+    expect(byId('sera')).toMatchObject({ cost: 2, school: '千里山女子' });
     expect(byId('ryuuka')).toMatchObject({ cost: 3, school: '千里山女子' });
   });
 });

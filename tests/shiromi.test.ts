@@ -31,9 +31,9 @@ const kinds = (s: string) => {
 };
 
 describe('小濑川白望', () => {
-  it('宫守女子，3 费', () => {
+  it('宫守女子，2 费', () => {
     expect(byId('shiromi').school).toBe('宫守女子');
-    expect(byId('shiromi').cost).toBe(3);
+    expect(byId('shiromi').cost).toBe(2);
   });
 
   it('凑得出的和牌型都用到和了牌', () => {
