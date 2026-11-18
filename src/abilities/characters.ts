@@ -47,6 +47,7 @@ import { huiyuAbility } from './huiyu';
 import { satohaAbility } from './satoha';
 import { myeonghwaAbility } from './myeonghwa';
 import { meganAbility } from './megan';
+import { yukikoAbility } from './yukiko';
 import type { Ability } from './types';
 
 export interface AiStyle {
@@ -97,6 +98,10 @@ export interface AiStyle {
   iai?: boolean; // 辻垣内智叶：靠间合防守（只防真的听牌的人）；听牌时挑听立直家现物的听法；别人连庄的局，碰了能跳过庄家摸牌的就碰；第 3 局起照浩子的资料本打（scout）
   fuujin?: boolean; // 雀明华：自风暗刻在手就算有役；唱着歌的局不退向听就鸣，不唱的局门前为主（鸣过了、一向听以内才鸣）
   duel?: boolean; // 梅根：自己听牌时看得出谁听牌。正好一家听牌就立直决斗；只有自己听、两家以上听时默听（没役、牌山不多了才立直）；伏着牌不立直
+  leftHand?: boolean; // 真屋由晖子：左手的局门清、留宝牌、不鸣牌，一向听以内不弃和；荣和不到满贯不和，等自摸
+  pushTenpai?: boolean; // 本内成香：听牌就推，有人立直也不收
+  formalTenpai?: boolean; // 桧森誓子：牌山快摸完还没听牌，一鸣就听牌的就鸣（没役也鸣），凑形式听牌
+  yakitori?: boolean; // 岩馆摇杏：一场还没和过，进了南场就鸣牌求快和
   gb?: boolean; // 郝慧宇：照国标番种打，先打番种用不到的牌，听牌挑国标番多的；不立直，只在鸣了日麻还有役时鸣，一向听以内照样推
 }
 
@@ -296,6 +301,51 @@ export const CHARACTERS: Character[] = [
     ability: sawayaAbility,
     skillArts: SAWAYA_SKILLS.map(({ id, name }) => ({ id, name })),
     ai: { ...baseAi, clouds: true },
+  },
+  // 有珠山高中：爽以外的四人（先锋成香、次锋誓子、中坚摇杏、副将由晖子、大将爽）
+  {
+    id: 'naruka',
+    cost: 1,
+    name: '本内成香',
+    school: '有珠山高中',
+    color: '#d895a8',
+    ability: null,
+    note: '没有能力。学麻将还不到一年，听牌快，可听了牌就冲，常常被人荣和。电脑的成香听了牌就推，有人立直也不收。',
+    ai: { ...baseAi, mistakeRate: 0.06, pushTenpai: true },
+  },
+  {
+    id: 'chikako',
+    cost: 1,
+    name: '桧森誓子',
+    school: '有珠山高中',
+    color: '#c9a64a',
+    ability: null,
+    note: '没有能力。三年级，在麻将部待得最久，家里是教会。是初学者，但最努力，三人里丢分最少。电脑的誓子别人立直就弃和；牌山快摸完还没听牌时，一鸣就听牌的就鸣（没役也鸣），凑个形式听牌躲流局罚符。',
+    ai: { ...baseAi, mistakeRate: 0.06, defensive: true, formalTenpai: true },
+  },
+  {
+    id: 'yuan',
+    cost: 1,
+    name: '岩馆摇杏',
+    school: '有珠山高中',
+    color: '#8f6fb8',
+    ability: null,
+    note: '没有能力。会做衣服（由晖子的偶像服就是她做的），运气差，但心态最稳。电脑的摇杏一场还没和过的话，进了南场就鸣牌求快和，小牌也和，不想一局都和不了。',
+    ai: { ...baseAi, mistakeRate: 0.06, yakitori: true },
+  },
+  {
+    id: 'yukiko',
+    cost: 3,
+    name: '真屋由晖子',
+    school: '有珠山高中',
+    color: '#a9bfe6',
+    ability: yukikoAbility,
+    skillArts: [
+      { id: 'left', name: '左手', hint: '她换左手摸牌、身后亮起十字的那一局开头放' },
+      { id: 'left-win', name: '左手和牌', label: '左手·和牌', hint: '左手的那一局她和牌时放' },
+    ],
+    // 不用左手时也很强，很少失误；左手的局门清、留宝牌，等自摸
+    ai: { ...baseAi, mistakeRate: 0.02, leftHand: true },
   },
   {
     id: 'yuuki',

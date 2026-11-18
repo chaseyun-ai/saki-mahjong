@@ -109,6 +109,7 @@ const ABILITY_LINES: Record<string, VoiceLine[]> = {
     { key: 'luck', label: '运势', hint: '「波、来てる」', texts: ['运势'] },
     { key: 'sisters', label: '七姐妹', hint: '「星よ…」', texts: ['七姐妹'] },
   ],
+  yukiko: [{ key: 'left', label: '左手', hint: '换左手摸牌、念一句经文时（原作：「左手を使います」）', texts: ['左手'] }],
   megan: [
     { key: 'duel', label: '决斗', hint: '她立直向一家决斗时', texts: ['决斗'] },
     { key: 'blind', label: '伏牌', hint: '她把牌伏下时', texts: ['伏牌'] },

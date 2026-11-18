@@ -147,6 +147,15 @@ export const LOOKS: Record<string, Look> = {
   myeonghwa: { model: 'models/vroid-g.v2.glb', hair: '#cfc4a8', eyes: '#b23a48', hairContrast: 0.6, reveal: 'wave', pose: 'lap', borrowed: true },
   // 梅根·达文：先占位，借霞的长发模型换成黑色头发、深棕色眼睛（肤色、牛仔帽占位模型做不出来）
   megan: { model: 'models/vroid-shino.v2.glb', hair: '#17151a', eyes: '#3a2a22', hairContrast: 0.5, reveal: 'slam', pose: 'crossed', borrowed: true },
+  // 有珠山的四人：先占位
+  // 本内成香：借咲的短发模型换成栗色头发、棕色眼睛
+  naruka: { model: 'models/vroid-e.v2.glb', hair: '#7a4a32', eyes: '#7a5034', hairContrast: 0.6, reveal: 'wave', pose: 'lap', borrowed: true },
+  // 桧森誓子：借和的长发模型换成金色头发、蓝灰色眼睛（个子高、金发）
+  chikako: { model: 'models/vroid-g.v2.glb', hair: '#e2c46e', eyes: '#5a6a8a', hairContrast: 0.7, reveal: 'wave', pose: 'edge', borrowed: true },
+  // 岩馆摇杏：借怜的短发模型换成深紫色头发、紫色眼睛
+  yuan: { model: 'models/vroid-f.v2.glb', hair: '#3e2e4e', eyes: '#7a5a9a', hairContrast: 0.5, reveal: 'slam', pose: 'crossed', borrowed: true },
+  // 真屋由晖子：借和的长发模型换成浅金色长发、蓝色眼睛
+  yukiko: { model: 'models/vroid-g.v2.glb', hair: '#efe2c0', eyes: '#4a6ab0', hairContrast: 0.6, reveal: 'wave', pose: 'lap', borrowed: true },
   // 臼泽塞：先占位，借咲的短发模型换成深棕色头发、棕色眼睛
   sae: { model: 'models/vroid-e.v2.glb', hair: '#4a3226', eyes: '#6a4a36', hairContrast: 0.6, reveal: 'wave', pose: 'crossed', borrowed: true },
 };

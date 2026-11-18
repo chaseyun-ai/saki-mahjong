@@ -27,7 +27,7 @@ const KNOWN: School[] = [
   { name: '宫守女子', short: '宫守', region: '岩手', color: '#8a8fc8', lineup: ['shiromi', 'aislinn', 'kurumi', 'sae', 'toyone'] },
   { name: '姬松高中', short: '姬松', region: '南大阪', color: '#d96aa8', lineup: ['suzu', 'yuuko', 'hiroe', 'kinue', 'kyouko'] },
   { name: '临海女子', short: '临海', region: '东东京', color: '#4fc0c0', lineup: ['satoha', 'huiyu', 'myeonghwa', 'megan', 'nelly'] },
-  { name: '有珠山高中', short: '有珠山', region: '北海道', color: '#9fc4e8', lineup: ['sawaya'] },
+  { name: '有珠山高中', short: '有珠山', region: '北海道', color: '#9fc4e8', lineup: ['naruka', 'chikako', 'yuan', 'yukiko', 'sawaya'] },
 ];
 
 // 有角色的学校；新角色的学校还没登记时排在最后，简称用全名

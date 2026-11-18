@@ -111,6 +111,10 @@ const PACES: Record<string, Partial<Pace>> = {
   satoha: { speed: 0.92, spread: 0.6 }, // 不犹豫，每一手都一样稳
   myeonghwa: { speed: 1.05, spread: 0.9 }, // 不紧不慢
   megan: { speed: 0.95, spread: 0.8 }, // 出手快
+  naruka: { speed: 1.1, spread: 1.1 }, // 学了不到一年，有点怯
+  chikako: { speed: 1.1, spread: 0.9 }, // 认真，每一手都想一下
+  yuan: { speed: 0.95, spread: 1.1 },
+  yukiko: { speed: 1, spread: 0.5 }, // 数字派，每次都差不多
   mieko: { speed: 1.05 },
   hitomi: { speed: 0.95 },
   yuuko: { speed: 1 },

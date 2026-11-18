@@ -30,7 +30,7 @@ for (let seed = from; seed < from + games; seed++) {
   const mine = order.indexOf(me);
   const g = new Game({ seed, format: 'south', players: order.map((c) => ({ name: c.name, ability: c.ability })) });
   g.onEvent((e) => {
-    if (e.type === 'ability' && e.seat === mine && (e.text === '新手运' || e.text === '背水')) special++;
+    if (e.type === 'ability' && e.seat === mine && (e.text === '新手运' || e.text === '背水' || e.text === '左手')) special++;
     if (e.type === 'ability' && e.seat === mine && e.text === '新手运') kaoriDeals++;
     if (e.type === 'roundEnd' && id === 'kaori' && e.result.wins.some((w) => w.seat === mine) && g.events.some((x) => x.type === 'ability' && x.seat === mine && x.text === '新手运' && g.events.indexOf(x) > g.events.map((y) => y.type).lastIndexOf('roundStart'))) kaoriWins++;
     if (e.type !== 'roundEnd') return;

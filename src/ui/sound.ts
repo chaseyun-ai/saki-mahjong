@@ -179,6 +179,37 @@ export function playSong(level: number): void {
   }
 }
 
+// 由晖子的左手：教堂风琴的一个和弦（慢慢起来、慢慢散），上面一声小钟。big 是左手的局和牌时（和弦往上走一步，更亮）
+export function playHymn(big = false): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  const chords = big ? [[261.63, 329.63, 392, 523.25], [293.66, 349.23, 440, 587.33], [329.63, 392, 493.88, 659.25]] : [[261.63, 329.63, 392, 523.25]];
+  chords.forEach((chord, ci) => {
+    const t = now + ci * 0.42;
+    const len = ci === chords.length - 1 ? 2.2 : 0.6;
+    for (const f of chord) {
+      for (const detune of [-4, 4]) {
+        const osc = a.createOscillator();
+        const gain = a.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = f;
+        osc.detune.value = detune;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.035, t + 0.25);
+        gain.gain.setValueAtTime(0.035, t + len * 0.5);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + len);
+        osc.connect(gain).connect(bus('sfx', a));
+        osc.start(t);
+        osc.stop(t + len + 0.05);
+      }
+    }
+  });
+  const bell = now + (chords.length - 1) * 0.42 + 0.3;
+  tone(a, 1567.98, bell, 1.4, 0.06, 'sine');
+  tone(a, 3135.96, bell, 0.8, 0.015, 'sine');
+}
+
 // 明华的风：一阵风吹过去的“呼”（带通的噪声，音高先升后降）。vol 0–1
 export function playBreeze(vol = 1): void {
   const a = audio();

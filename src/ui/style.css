@@ -10485,3 +10485,175 @@ canvas.rii-sky {
 .skill-choices .deep-btn:disabled {
   opacity: 0.45;
 }
+
+/* ---------- 真屋由晖子「左手」：身后的光十字、经文、和牌时铺满桌子的光 ---------- */
+.lh-cross {
+  position: absolute;
+  z-index: 58;
+  width: min(30vmin, 260px);
+  height: min(36vmin, 320px);
+  translate: -50% -58%;
+  pointer-events: none;
+}
+.lh-glow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(22vmin, 190px);
+  aspect-ratio: 60 / 90;
+  translate: -50% -50%;
+}
+.lh-glow svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.lh-glow path {
+  fill: #fffbe8;
+  stroke: #ffe7a3;
+  stroke-width: 1.2;
+  filter: drop-shadow(0 0 6px rgba(255, 236, 170, 0.95)) drop-shadow(0 0 18px rgba(255, 214, 120, 0.7));
+  animation: lh-cross 3.6s ease-out both;
+}
+@keyframes lh-cross {
+  0% {
+    opacity: 0;
+    transform: scale(0.6) translateY(12%);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1.05) translateY(0);
+  }
+  30% {
+    transform: scale(1);
+  }
+  80% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.02) translateY(-4%);
+  }
+}
+.lh-glow u {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  width: 3px;
+  height: 120%;
+  margin-left: -1.5px;
+  transform-origin: 50% 0;
+  rotate: var(--r);
+  background: linear-gradient(to bottom, rgba(255, 244, 200, 0.75), rgba(255, 230, 160, 0));
+  opacity: 0;
+  animation: lh-ray 3.2s ease-out both;
+}
+@keyframes lh-ray {
+  0% {
+    opacity: 0;
+    scale: 1 0.2;
+  }
+  25% {
+    opacity: 0.8;
+    scale: 1 1;
+  }
+  100% {
+    opacity: 0;
+    scale: 1 1.3;
+  }
+}
+.lh-verse {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: min(46vmin, 400px);
+  margin: 0;
+  padding: 0.5em 1.2em;
+  border-radius: 999px;
+  translate: -50% -30%;
+  text-align: center;
+  background: radial-gradient(ellipse at center, rgba(12, 16, 34, 0.62) 30%, rgba(12, 16, 34, 0) 72%);
+  font-family: 'LXGW WenKai TC', 'Kaiti SC', KaiTi, STKaiti, serif;
+  font-size: min(2.6vmin, 18px);
+  line-height: 1.5;
+  color: #fff8de;
+  text-shadow:
+    0 0 6px rgba(255, 220, 140, 0.9),
+    0 1px 3px rgba(40, 24, 0, 0.8);
+}
+.lh-verse span {
+  opacity: 0;
+  animation: lh-char 3.4s ease-out both;
+}
+.lh-verse cite {
+  display: block;
+  font-style: normal;
+  font-size: 0.75em;
+  opacity: 0;
+  animation: lh-char 2.6s 1.4s ease-out both;
+}
+@keyframes lh-char {
+  0% {
+    opacity: 0;
+    filter: blur(3px);
+  }
+  15% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.lh-word {
+  position: absolute;
+  left: 50%;
+  top: 4%;
+  translate: -50% -50%;
+  font-family: 'LXGW WenKai TC', 'Kaiti SC', KaiTi, STKaiti, serif;
+  font-size: min(6vmin, 46px);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #fffdf2;
+  text-shadow:
+    0 0 10px rgba(255, 220, 130, 0.95),
+    0 2px 6px rgba(40, 24, 0, 0.7);
+  opacity: 0;
+  animation: lh-char 3s 0.25s ease-out both;
+}
+/* 自己的座位在下面：经文放到十字上面，免得压到手牌 */
+.lh-cross.at-bottom .lh-verse {
+  top: auto;
+  bottom: 100%;
+  translate: -50% 10%;
+}
+.lh-cross.at-bottom .lh-word {
+  top: 96%;
+}
+.lh-win {
+  position: absolute;
+  inset: 0;
+  z-index: 58;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--x) var(--y), rgba(255, 246, 210, 0.55), rgba(255, 230, 160, 0.18) 40%, rgba(255, 230, 160, 0) 75%);
+  animation: lh-flood 2.3s ease-out both;
+}
+.lh-win .lh-glow {
+  width: min(28vmin, 240px);
+}
+@keyframes lh-flood {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

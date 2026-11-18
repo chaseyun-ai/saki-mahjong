@@ -15,6 +15,8 @@ import { akoDistance, akoSense } from '../abilities/ako';
 import { satohaCutsDealer, satohaDistance, satohaScouts } from '../abilities/satoha';
 import { myeonghwaSinging, myeonghwaWinds, myeonghwaYaku } from '../abilities/myeonghwa';
 import { meganBlindRound, meganDuelTarget, meganSenses } from '../abilities/megan';
+import { yukikoLeftActive, yukikoRonOk } from '../abilities/yukiko';
+import { USUZAN_AI, wonThisGame } from './usuzan';
 import { seikoFish } from '../abilities/seiko';
 import { warmKind } from '../abilities/yu';
 import { yuukiActive } from '../abilities/yuuki';
@@ -480,6 +482,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const riichiRivers = style.iai ? [0, 1, 2, 3].filter((s) => s !== seat && g.seesRiichi(s, seat)).map((s) => new Set(seenDiscards(g, seat, s).map((d) => kindOf(d.tile)))) : [];
   const sakiFeed = style.rinshan ? sakiAwaiFeed(g, seat) : null;
   // 照要和 1 番起胡：七对子一和就是 2 番，不往七对子做
+  // 由晖子的左手：门清，留宝牌（满贯靠宝牌和立直）
+  const leftHand = !!style.leftHand && yukikoLeftActive(g, seat);
   const shBase = style.streak && teruMirrored(g, seat) && TERU.mode === 'ladder' && teruLadder(g, seat).next === 1 ? standardShanten : shanten;
   // 初美：东北鸣出来以后，能力会把还差的西南送来。当它们已经在手里算向听（往小四喜做），要留的西南不打（多出来的才打）
   const kimonGoal = kimonPlan(g, seat, style);
@@ -522,7 +526,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       sh = Math.min(sh, bloom.sh - SAKI.lineLead);
     }
     let val = tileValue(g, seat, kindOf(a.tile), counts);
-    if (style.keepDora && isDoraTile(g, a.tile)) val += 20;
+    if ((style.keepDora || leftHand) && isDoraTile(g, a.tile)) val += 20;
     // 咲：留着还没开的杠（第四张）和淡要送来的岭上牌的对子、刻子
     if (style.rinshan && !sealed) {
       const k = kindOf(a.tile);
@@ -613,6 +617,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     (style.warm && warmKind(kindOf(c.a.tile))) ||
     (style.bowling && !sealed && isPin(kindOf(c.a.tile))) ||
     (style.pin1 && !sealed && kindOf(c.a.tile) === 9) ||
+    // 由晖子左手的局：同样向听时留宝牌
+    (leftHand && isDoraTile(g, c.a.tile)) ||
     // 明华：成对的场风、南场收的客风留着（摸成暗刻就是役、是一组面子）
     (style.fuujin && fuujinPairs.has(kindOf(c.a.tile))) ||
     (style.winds && !sealed && hatsumiNorth(g, seat) && isWind(kindOf(c.a.tile))) ||
@@ -779,6 +785,10 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       (kimonGoal !== null && best.sh <= HATSUMI_AI.push));
   // 姬子坐庄、钥匙记在这一局后面的本场：先和小牌连庄去够那一局，一向听以内不弃和（流局时也要听着牌）
   if (!declared && g.canWin(seat) && best.sh <= 1 && himekoChase(g, seat, style)) declared = true;
+  // 由晖子左手的局：几次摸牌之内就自摸，一向听以内不弃和
+  if (!declared && leftHand && g.canWin(seat) && best.sh <= 1) declared = true;
+  // 成香：听了牌就推，有人立直也不收（原作里她常听牌，但常被荣和）；一向听时不太危险的牌也照推（见下面的 push）
+  if (!declared && style.pushTenpai && g.canWin(seat) && best.sh === 0) declared = true;
   let folded: Cand[] | null = null;
   // 听牌了但听得很窄（能和的牌没几张）、要打的又是很危险的牌，对立直也不硬拼
   const riichiOn = threats(g, seat).some((t) => g.seesRiichi(t, seat));
@@ -793,7 +803,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const yuukiPush = style.eastWind && yuukiActive(g, seat) && best.sh <= 1 && g.canWin(seat);
     const yuukiFold = style.eastWind && !yuukiActive(g, seat);
     // 有人立直时一向听只打很安全的牌（现物、壁、见了三张的字牌），否则弃和
-    const push = best.sh >= 1 ? best.risk < (riichiOn ? 3 : 6) : !thinTenpai;
+    // 成香：一向听时对立直也照样推不太危险的牌
+    const push = best.sh >= 1 ? best.risk < (riichiOn && !style.pushTenpai ? 3 : 6) : !thinTenpai;
     // 霞请神以后就不再以防守为主
     const defensive = style.defensive && !(style.suitFocus && kasumiSuit(g, seat) !== null);
     if (!yuukiPush && (best.sh >= 2 || !push || defensive || yuukiFold || !g.canWin(seat) || careful)) {
@@ -1349,6 +1360,11 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (style.beginner && kaoriYakuman(g, seat)) return legal.find((a) => a.type === 'ron') ?? pass;
   // 爱丽丝画着手绘板：不鸣牌（一鸣就碎），能荣和照样和
   if (aislinnPlan(g, seat)) return legal.find((a) => a.type === 'ron') ?? pass;
+  // 由晖子左手的局：门清立直才保证满贯，不鸣牌；荣和不到满贯不和，等自摸
+  if (style.leftHand && yukikoLeftActive(g, seat)) {
+    const ron = legal.find((a) => a.type === 'ron');
+    return ron && yukikoRonOk(g, seat, g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile) ? ron : pass;
+  }
   // 淡的星符汇聚：门清做大七星，不鸣牌
   if (style.cornerKan && awaiStarPlan(g, seat)) return legal.find((a) => a.type === 'ron') ?? pass;
   const ron = legal.find((a) => a.type === 'ron');
@@ -1502,7 +1518,9 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     // 照连和起来了：另外三家抢和小牌
     teruRising(g, seat) !== null ||
     // 姬子坐庄去够后面本场的钥匙：先和小牌连庄
-    himekoChase(g, seat, style);
+    himekoChase(g, seat, style) ||
+    // 摇杏：一场还没和过，进了南场就鸣牌求快和（不想一局都没和）
+    (!!style.yakitori && g.roundWind >= 1 && !wonThisGame(g, seat));
 
   // 照没起胡：役牌能碰就碰（不退向听），先和一个 1000 点
   const teruStart = style.streak && TERU.mode === 'points' && TERU.cheapStart && !sealedMe && teruMirrored(g, seat) && teruLadder(g, seat).level === 0;
@@ -1511,6 +1529,15 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const toitoi = style.fish && p.melds.every((m) => m.type !== 'chi') && pairs + p.melds.length >= 4;
   // 丰音：副露两次以上、有役就奔友引（四副露单骑，开着哪一种六曜都会自摸），不退向听就鸣
   const tomobiki = style.rokuyou && !sealedMe && yakuSecured && p.melds.length >= 2;
+  // 誓子：牌山快摸完、还没听牌，一鸣就听牌的就鸣（没役也鸣，凑形式听牌躲流局罚符）
+  if (style.formalTenpai && cur >= 1 && g.wall.remaining <= USUZAN_AI.formalWall) {
+    for (const a of legal) {
+      if (a.type !== 'pon' && a.type !== 'chi') continue;
+      const c = counts.slice();
+      for (const t of a.tiles) c[kindOf(t)]--;
+      if (shanten(c, p.melds.length + 1) === 0) return a;
+    }
+  }
   let best: Action = pass;
   let bestSh = callCur;
   for (const a of legal) {
