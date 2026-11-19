@@ -13,17 +13,28 @@ export class BracketPreview {
     private exit: () => void,
   ) {
     this.b = createBracket(Date.now() >>> 0);
-    root.addEventListener('click', (e) => {
-      const act = (e.target as HTMLElement).closest<HTMLElement>('[data-story]')?.dataset.story;
-      if (act) this.act(act);
-    });
+    root.addEventListener('click', this.onClick);
     this.render();
   }
+
+  // 点击接在 root 上（主页进来时 root 是整个游戏的根）：退出时要摘掉，不然下次再进来两份一起响
+  private onClick = (e: Event): void => {
+    // 页面已经换掉（不在晋级表上了）：摘掉自己
+    if (!this.root.querySelector('.bracket-screen')) {
+      this.root.removeEventListener('click', this.onClick);
+      return;
+    }
+    const act = (e.target as HTMLElement).closest<HTMLElement>('[data-story]')?.dataset.story;
+    if (act) this.act(act);
+  };
 
   private act(a: string): void {
     const b = this.b;
     this.fresh.clear();
-    if (a === 'exit') return this.exit();
+    if (a === 'exit') {
+      this.root.removeEventListener('click', this.onClick);
+      return this.exit();
+    }
     if (a === 'draw') this.b = createBracket((Math.random() * 2 ** 32) >>> 0);
     if (a === 'play') {
       for (const t of b.tables) if (t.round === b.round && !t.result) this.fresh.add(t.name);

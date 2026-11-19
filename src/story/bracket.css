@@ -50,3 +50,5 @@
   .bk-gap { flex-basis: 6px; }
   .bk-bar { flex-direction: column; align-items: stretch; }
 }
+/* 行上的 wait / out 这些状态名和牌局里的 class 撞名（style.css 的 .wait 是竖排）：这里压回横排 */
+.bracket-screen .bk-row { flex-direction: row; align-items: center; gap: 7px; font-size: 13px; line-height: normal; }

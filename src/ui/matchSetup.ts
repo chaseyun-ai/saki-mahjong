@@ -1,3 +1,4 @@
+import './setPaper.css';
 import { CHARACTERS, type Character } from '../abilities/characters';
 import type { Rules } from '../engine/game';
 import type { Rng } from '../engine/rng';
@@ -302,11 +303,23 @@ export function settingRows(s: MatchSettings, keys: (keyof MatchSettings)[]): st
     .join('');
 }
 
-export function panelHtml(kind: string, title: string, sub: string, body: string, actions: string): string {
+// 设置的三页（对局、视觉、声音）共用一个外壳：标题「设置」，顶上三个分页，纸张的样子（主页便签上的齿轮打开）。
+// 声音那页是 soundPanel.ts 自己的面板，点分页时两边互相换（data-ui="set-tab"）
+export const SETTING_TABS = [
+  { id: 'match', name: '对局' },
+  { id: 'visual', name: '视觉' },
+  { id: 'sound', name: '声音' },
+];
+
+export function panelHtml(kind: string, title: string, sub: string, body: string, actions: string, tabs = kind === 'match' || kind === 'visual'): string {
+  const nav = tabs
+    ? `<nav class="set-tabs" role="tablist" aria-label="设置分页">${SETTING_TABS.map((t) => `<button role="tab" aria-selected="${t.id === kind}" class="${t.id === kind ? 'on' : ''}" data-ui="set-tab" data-v="${t.id}">${t.name}</button>`).join('')}</nav>`
+    : '';
   return `
-    <div class="modal setup-modal set-modal" role="dialog" aria-modal="true" aria-label="${title}">
-      <div class="setup set-panel set-${kind}">
-        <h2>${title}<small>${sub}</small><button class="set-x" data-ui="panel-close" aria-label="关闭">×</button></h2>
+    <div class="modal setup-modal set-modal" role="dialog" aria-modal="true" aria-label="${tabs ? `设置：${title}` : title}">
+      <div class="setup set-panel set-${kind}${tabs ? ' set-paper' : ''}">
+        <h2>${tabs ? '设置' : title}<small>${sub}</small><button class="set-x" data-ui="panel-close" aria-label="关闭">×</button></h2>
+        ${nav}
         ${body}
         <div class="setup-actions">${actions}<button class="primary" data-ui="panel-close">完成</button></div>
       </div>

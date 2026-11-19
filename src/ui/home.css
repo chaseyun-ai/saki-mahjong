@@ -1,0 +1,493 @@
+/* 主页：麻将部的部室（ui/home.ts）。整张图在 .hr-stage 上按原图像素排，再整体缩放 */
+
+.home-room {
+  position: relative;
+  height: 100%;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #2b1d26;
+  color: #fff;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+.home-room[data-tod='day'] { background: #8f8a86; }
+.home-room[data-tod='night'] { background: #14131f; }
+
+.hr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.hr-view {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.home-room.pan .hr-view {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  cursor: grab;
+}
+.home-room.pan .hr-view::-webkit-scrollbar {
+  display: none;
+}
+.hr-sizer {
+  position: absolute;
+}
+.hr-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+.home-room.no-img .hr-stage {
+  background: #3a2a30;
+}
+
+.hr-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  -webkit-user-drag: none;
+  animation: hr-fade 0.5s ease-out both;
+}
+.hr-bg.in {
+  animation: hr-fade 0.6s ease-out both;
+}
+@keyframes hr-fade {
+  from { opacity: 0; }
+}
+
+/* ---------- 会动的小东西：光里的灰尘、茶的热气、桌面的光、夜里收音机的灯 ---------- */
+.hr-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hr-motes i {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 238, 196, 0.9);
+  box-shadow: 0 0 8px rgba(255, 226, 160, 0.9);
+  opacity: 0;
+  scale: var(--s);
+  animation: hr-mote var(--d) ease-in-out var(--o) infinite;
+}
+.home-room[data-tod='day'] .hr-motes i {
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+.home-room[data-tod='night'] .hr-motes {
+  display: none;
+}
+@keyframes hr-mote {
+  0% { opacity: 0; translate: 0 0; }
+  25% { opacity: 0.75; }
+  70% { opacity: 0.5; }
+  100% { opacity: 0; translate: 46px -70px; }
+}
+
+.hr-steam {
+  position: absolute;
+  width: 80px;
+  height: 140px;
+  transform: translate(-50%, -100%);
+}
+.hr-steam i {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 26px;
+  height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0));
+  filter: blur(5px);
+  opacity: 0;
+  animation: hr-steam 3.4s ease-in infinite;
+}
+.hr-steam i:nth-child(2) {
+  left: 38%;
+  animation-delay: 1.15s;
+}
+.hr-steam i:nth-child(3) {
+  left: 60%;
+  animation-delay: 2.3s;
+}
+@keyframes hr-steam {
+  0% { transform: translate(-50%, 0) scale(0.6); opacity: 0; }
+  25% { opacity: 0.75; }
+  100% { transform: translate(calc(-50% + 18px), -100px) scale(1.5) rotate(14deg); opacity: 0; }
+}
+
+.hr-felt {
+  position: absolute;
+  width: 980px;
+  height: 250px;
+  margin: -125px 0 0 -490px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 246, 200, 0.85), rgba(255, 240, 180, 0.35) 55%, rgba(255, 240, 180, 0));
+  mix-blend-mode: screen;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.hr-felt.on { opacity: 1; }
+.hr-felt.flash { animation: hr-flash 0.5s ease-out; }
+@keyframes hr-flash {
+  30% { opacity: 1; filter: brightness(2); }
+}
+
+.hr-dial {
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  margin: -45px 0 0 -45px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 186, 90, 0.75), rgba(255, 186, 90, 0));
+  mix-blend-mode: screen;
+  opacity: 0;
+}
+.home-room[data-tod='night'] .hr-dial {
+  opacity: 0.85;
+  animation: hr-flicker 3.2s ease-in-out infinite;
+}
+@keyframes hr-flicker {
+  50% { opacity: 0.6; }
+}
+
+/* ---------- 能点的地方 ---------- */
+.hr-hot {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.hr-hot:focus-visible {
+  outline: none;
+}
+.hr-window {
+  inset: auto;
+}
+.home-room.leaving .hr-hot,
+.home-room.leaving .hr-entry,
+.home-room.leaving .hr-note {
+  pointer-events: none;
+}
+
+/* 收音机、便签：悬停时从图里浮起来，带一圈暖光 */
+.hr-pop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+.hr-pop > i {
+  position: absolute;
+  inset: 0;
+  background: var(--bg) 0 0 / 2752px 1536px no-repeat;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+.hr-pop.on > i {
+  opacity: 1;
+}
+.hr-pop.on {
+  transform: translateY(-10px) scale(1.06);
+  filter: drop-shadow(0 0 12px rgba(255, 214, 120, 0.95)) drop-shadow(0 16px 18px rgba(0, 0, 0, 0.4)) brightness(1.08);
+}
+
+/* ---------- 白板上的纸：三种玩法 ---------- */
+.hr-paper {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  transform-origin: 0 0;
+  display: flex;
+  flex-direction: column;
+  padding: 58px 40px 24px;
+  font-family: 'Long Cang', 'Ma Shan Zheng', 'KaiTi', cursive;
+  color: #23263a;
+}
+.hr-paper-head {
+  text-align: center;
+  line-height: 1;
+}
+.hr-paper-head b {
+  display: block;
+  font-size: 58px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.hr-paper-head small {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 0 14px 6px;
+  font-size: 34px;
+  color: #b3262c;
+  background: linear-gradient(transparent 86%, rgba(179, 38, 44, 0.7) 86%, rgba(179, 38, 44, 0.7) 92%, transparent 92%) no-repeat;
+}
+.hr-entry {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 36px;
+  padding: 4px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.hr-entry-t b::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: -8px;
+  right: -10px;
+  top: 10px;
+  bottom: -2px;
+  border-radius: 8px;
+  background: rgba(255, 222, 70, 0.55);
+  transform: skewX(-10deg) scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.22s ease-out;
+}
+.hr-entry:hover .hr-entry-t b::before,
+.hr-entry:focus-visible .hr-entry-t b::before {
+  transform: skewX(-10deg) scaleX(1);
+}
+.hr-entry:focus-visible {
+  outline: none;
+}
+.hr-no {
+  flex: none;
+  width: 44px;
+  font-size: 46px;
+  color: #c0272d;
+  text-align: center;
+}
+.hr-entry-t {
+  position: relative;
+  z-index: 0;
+}
+.hr-entry-t b {
+  position: relative;
+  display: inline-block;
+  font-size: 72px;
+  font-weight: 400;
+  line-height: 1;
+}
+.hr-entry-t small {
+  display: block;
+  margin-top: 8px;
+  font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
+  font-size: 26px;
+  letter-spacing: 1px;
+  color: #4d4639;
+}
+.hr-entry.picked b {
+  color: #a8161c;
+}
+.hr-ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.hr-ink path {
+  fill: none;
+  stroke: #d2232b;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.92;
+}
+.hr-ink path.draw {
+  transition: stroke-dashoffset 0.4s cubic-bezier(0.45, 0.1, 0.35, 1);
+}
+
+/* ---------- 便签：设置 ---------- */
+.hr-note {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  transform-origin: 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0;
+  padding: 40px 8px 8px;
+  border: 0;
+  background: none;
+  color: #3b2f1b;
+  font-family: 'Long Cang', 'Ma Shan Zheng', 'KaiTi', cursive;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.hr-note:focus-visible {
+  outline: none;
+}
+.hr-note-t {
+  font-size: 46px;
+  line-height: 1;
+}
+.hr-gear {
+  width: 56px;
+  height: 56px;
+  margin-top: 4px;
+  fill: none;
+  stroke: #3b2f1b;
+  stroke-width: 2.6;
+  stroke-linejoin: round;
+}
+.hr-note:hover .hr-gear,
+.hr-note:focus-visible .hr-gear {
+  animation: hr-spin 4s linear infinite;
+}
+.hr-gear.spin,
+.hr-note:hover .hr-gear.spin {
+  animation: hr-spin 0.7s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+@keyframes hr-spin {
+  to { transform: rotate(360deg); }
+}
+.hr-note small {
+  margin-top: 4px;
+  font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
+  font-size: 15px;
+  color: #5c4a2a;
+}
+
+/* ---------- 提示、开场、页脚 ---------- */
+.hr-tip {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, -100%) translateY(4px);
+  padding: 6px 14px 7px;
+  border-radius: 4px;
+  background: #fffaf0;
+  color: #2b2620;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.hr-tip.show {
+  opacity: 1;
+  transform: translate(-50%, -100%);
+}
+
+.hr-pan {
+  display: none;
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 0.4s;
+}
+.home-room.pan .hr-pan { display: block; }
+.home-room.panned .hr-pan,
+.home-room.gated .hr-pan { opacity: 0; }
+
+.hr-foot {
+  position: absolute;
+  z-index: 3;
+  left: 12px;
+  bottom: 6px;
+  margin: 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+.hr-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 13vh;
+  background: linear-gradient(to top, rgba(22, 10, 24, 0.78), rgba(22, 10, 24, 0.2) 55%, rgba(22, 10, 24, 0.05));
+  cursor: pointer;
+  transition: opacity 0.6s;
+}
+.hr-gate:focus-visible {
+  outline: none;
+}
+.hr-gate.gone {
+  opacity: 0;
+  pointer-events: none;
+}
+.hr-logo {
+  font-family: 'Ma Shan Zheng', 'KaiTi', serif;
+  font-size: clamp(52px, 9vw, 124px);
+  line-height: 1.1;
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-shadow: 0 4px 22px rgba(0, 0, 0, 0.55), 0 0 2px rgba(0, 0, 0, 0.8);
+  animation: hr-rise 0.9s ease-out both;
+}
+@keyframes hr-rise {
+  from { opacity: 0; transform: translateY(14px); }
+}
+.hr-start {
+  margin-top: 18px;
+  font-size: 17px;
+  letter-spacing: 6px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+.hr-go { display: none; }
+.hr-gate.ready .hr-go {
+  display: inline;
+  animation: hr-blink 1.6s ease-in-out infinite;
+}
+.hr-gate.ready .hr-loading { display: none; }
+@keyframes hr-blink {
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-motes,
+  .hr-steam { display: none; }
+  .hr-pop,
+  .hr-entry-t b::before { transition: none; }
+}

@@ -61,9 +61,11 @@ import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles
 import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playBreeze, playDuelMiss, playDuelStart, playDuelStep, playGunshot, playIaiDraw, playIaiPush, playIaiSheath, playSong, playLamp, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin, playWindow } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
-import { soundButtonHtml, soundEntryHtml } from './soundPanel';
+import { closeSoundPanel, onSoundTab, openSoundPanel, soundButtonHtml, soundEntryHtml, soundPanelOpen } from './soundPanel';
 import { Scene, gameMusic, menuMusic, promptCue, resultMusic, soundtrackEvent, tallyCue } from './soundtrack';
-import { mountTitle, titleGo, titleHtml } from './title';
+import { homeGo, homeHtml, mountHome } from './home';
+import { mountCodex } from './codex';
+import { BracketPreview } from '../story/bracketPreview';
 import { paceOf, vary } from './vary';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
@@ -339,8 +341,10 @@ export class App {
     window.addEventListener('resize', () => this.fit());
     // 大字特效用的书法字体先下好，免得第一次立直时字还没出来
     document.fonts?.load('1em "Ma Shan Zheng"', '立直碰吃杠荣和自摸暗加宝牌聚集岭上开花一巡先见的气息').catch(() => {});
-    // 一打开先到主页封面（第一次盖着配牌，点一下开始）
+    // 一打开先到主页（第一次盖着「点一下开始」）
     this.renderTitle(true);
+    // 声音设置那页顶上点「对局」「视觉」：换回这边的面板
+    onSoundTab((v) => this.openPanel(v));
     // 素材页里换了图：牌局里重画头像框，选人页重画一遍
     onSkinsChange(() => {
       if (this.game) this.render();
@@ -366,19 +370,42 @@ export class App {
     this.root.classList.remove('mihoko-eye', 'awai-dark', 'awai-source');
   }
 
-  // 主页封面（title.ts）：牌山上四块大牌是菜单。gate：盖着开场的配牌，点一下才开始（只有刚打开游戏时）
+  // 主页（home.ts）：麻将部的部室，白板上的纸、便签、收音机、麻将桌是入口。gate：盖着「点一下开始」（只有刚打开游戏时）
   private renderTitle(gate = false): void {
     this.teardown();
     menuMusic();
     this.team = null;
     this.teamFlow = null;
     this.auto = false;
-    this.root.innerHTML = titleHtml({ gate });
-    const screen = this.root.querySelector<HTMLElement>('.title-screen');
-    if (screen) mountTitle(screen);
+    this.root.innerHTML = homeHtml({ gate });
+    const room = this.root.querySelector<HTMLElement>('.home-room');
+    if (room) mountHome(room);
     // 换皮肤会重画整页：开着的设置面板照样开着
     this.renderPanel();
   }
+
+  // 全国大赛：先接上之前做好的晋级表（我校的比赛暂时是模拟的），返回回到主页
+  private openBracket(): void {
+    this.teardown();
+    menuMusic();
+    this.team = null;
+    this.teamFlow = null;
+    this.panel = null;
+    new BracketPreview(this.root, () => transition('pin', () => this.renderTitle()));
+  }
+
+  // 角色图鉴（codex.ts）：主页的收音机进来，返回回到主页
+  private renderCodex(): void {
+    this.teardown();
+    menuMusic();
+    this.team = null;
+    this.teamFlow = null;
+    this.panel = null;
+    mountCodex(this.root, () => transition('pin', () => this.renderTitle()));
+  }
+
+  // 设置面板上次停在哪一页（便签打开时回到那一页）
+  private settingsTab: 'match' | 'visual' = 'match';
 
   // 团体赛是从哪儿进的：退出时回到那里
   private teamFrom: 'title' | 'select' = 'select';
@@ -473,6 +500,9 @@ export class App {
   // 右上角的两个设置面板
   private openPanel(kind: 'match' | 'visual' | 'rii' | 'riiTest' | 'sakiTest' | 'slamTest'): void {
     this.root.querySelector('details.sel-more[open]')?.removeAttribute('open');
+    // 从声音那页换过来：先把声音面板关了
+    if (soundPanelOpen()) closeSoundPanel();
+    if (kind === 'match' || kind === 'visual') this.settingsTab = kind;
     this.panel = kind;
     // 番缚设置、测试窗口各改各的那一份
     useRiiLook(kind === 'riiTest' ? 'test' : 'main');
@@ -480,7 +510,8 @@ export class App {
     this.root.querySelector<HTMLElement>('.set-x')?.focus();
   }
 
-  private closePanel(): void {
+  // refocus：关了以后焦点回到打开它的按钮（换到声音那页时不用）
+  private closePanel(refocus = true): void {
     if (this.panel === 'match') {
       this.readTarget();
       saveSettings(this.settings);
@@ -490,7 +521,7 @@ export class App {
     useRiiLook('main');
     this.renderPanel();
     this.refreshRuleSummary();
-    this.root.querySelector<HTMLElement>(`[data-ui="open-${kind}"]`)?.focus();
+    if (refocus) (this.root.querySelector<HTMLElement>(`[data-ui="open-${kind}"]`) ?? this.root.querySelector<HTMLElement>('[data-ui="open-settings"]'))?.focus();
   }
 
   // 面板重画：滚动位置、键盘焦点留在原处（手机上面板会滚动，点一个选项不要跳回顶上）
@@ -2685,14 +2716,33 @@ export class App {
       this.quickStart(el.dataset.id);
       return;
     }
-    // 主页上的四块大牌：个人对局进选人页，团体赛进布阵，随机出场直接开局，全国大赛还锁着
-    if (el.dataset.ui === 'title-go') {
+    // 主页：白板纸上三行（个人对局进选人页，团体赛进布阵，全国大赛进晋级表），麻将桌是随机出场
+    if (el.dataset.ui === 'home-go') {
       const v = el.dataset.v;
-      titleGo(el, () => {
+      homeGo(el, v === 'random' ? 'tiles' : 'pin', () => {
         if (v === 'single') this.renderSelect();
         else if (v === 'team') this.openTeam('title');
+        else if (v === 'story') this.openBracket();
         else if (v === 'random') this.quickStart(CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)].id);
       });
+      return;
+    }
+    if (el.dataset.ui === 'codex') {
+      transition('pin', () => this.renderCodex());
+      return;
+    }
+    // 便签上的齿轮：设置面板（对局、视觉、声音三页），回到上次看的那一页
+    if (el.dataset.ui === 'open-settings') {
+      this.openPanel(this.settingsTab);
+      return;
+    }
+    // 设置面板顶上的三页：声音那页是另一个面板（挂在 body 上，见 soundPanel.ts），换过去时把这边的关掉
+    if (el.dataset.ui === 'set-tab') {
+      const v = el.dataset.v;
+      if (v === 'sound') {
+        this.closePanel(false);
+        openSoundPanel();
+      } else if (v === 'match' || v === 'visual') this.openPanel(v);
       return;
     }
     if (el.dataset.ui === 'home') {
@@ -2745,7 +2795,7 @@ export class App {
     }
     if (el.dataset.ui === 'vis-theme' && THEMES.some((t) => t.id === el.dataset.v)) {
       setTheme(el.dataset.v as ThemeId);
-      if (this.root.querySelector('.title-screen')) this.renderTitle();
+      if (this.root.querySelector('.home-room')) this.renderTitle();
       else this.renderSelect();
       return;
     }

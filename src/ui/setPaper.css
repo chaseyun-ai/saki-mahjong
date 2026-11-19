@@ -1,0 +1,231 @@
+/* 设置面板（对局、视觉、声音三页，matchSetup.ts 的 panelHtml 带 set-paper 时）：
+   跟主页部室一个味道：一张米色的便签纸，钢笔字，选中的用红笔圈出来。不跟皮肤换
+   选择器都带 :root .set-modal .setup.set-paper，压过各个皮肤自己的设置面板样式 */
+
+:root .set-modal .setup.set-paper {
+  --ink: #2a2620;
+  --ink2: #6b604c;
+  --red: #c8282e;
+  --paper: #f7f0de;
+  --line: rgba(90, 66, 30, 0.16);
+  --gold: var(--red);
+  --set-quiet: var(--ink2);
+  --set-name: var(--ink);
+  --set-line: var(--line);
+  --set-row: var(--line);
+  --set-btn: rgba(255, 255, 255, 0.4);
+  --set-btn-line: rgba(70, 52, 28, 0.32);
+  --set-field: #fffdf6;
+  position: relative;
+  width: min(640px, 100%);
+  height: min(760px, calc(100dvh - 32px));
+  padding: 0 30px;
+  border: none;
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: inset 0 0 60px rgba(160, 120, 60, 0.12), 0 1px 0 #e3d8bf, 0 3px 0 #efe6d2, 0 26px 60px rgba(0, 0, 0, 0.55);
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* 标题和分页贴在顶上，往下滚也看得到 */
+:root .set-modal .setup.set-paper h2 {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 18px 0 2px;
+  background: transparent;
+  background: linear-gradient(var(--paper) 70%, rgba(247, 240, 222, 0.96));
+  color: var(--ink);
+  font-family: 'Long Cang', 'Ma Shan Zheng', 'KaiTi', cursive;
+  font-size: 40px;
+  font-weight: 400;
+  letter-spacing: 2px;
+  transform: none;
+}
+:root .set-modal .setup.set-paper h2 small {
+  font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--ink2);
+}
+:root .set-modal .setup.set-paper .set-x {
+  color: var(--ink);
+  font-size: 30px;
+  font-family: 'Noto Sans SC', sans-serif;
+}
+:root .set-modal .setup.set-paper .set-x:hover {
+  background: rgba(90, 66, 30, 0.08);
+  color: var(--red);
+}
+
+.set-tabs {
+  position: sticky;
+  top: 66px;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 0 0 2px;
+  border-bottom: 2px solid var(--ink);
+  background: var(--paper);
+}
+.set-tabs button {
+  position: relative;
+  padding: 2px 18px 6px;
+  border: 0;
+  background: none;
+  color: var(--ink2);
+  font-family: 'Long Cang', 'Ma Shan Zheng', 'KaiTi', cursive;
+  font-size: 30px;
+  cursor: pointer;
+}
+.set-tabs button:hover {
+  color: var(--ink);
+}
+.set-tabs button.on {
+  color: var(--red);
+}
+/* 选中那一页：红笔在字底下划一道 */
+.set-tabs button.on::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 2px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--red);
+  transform: rotate(-1.5deg);
+}
+.set-tabs button:focus-visible {
+  outline: 2px dashed var(--red);
+  outline-offset: -2px;
+}
+
+/* 分组小标题：荧光笔划一道 */
+:root .set-modal .setup.set-paper .set-sec {
+  display: table;
+  margin: 18px 0 2px;
+  padding: 0 8px;
+  border: 0;
+  background: linear-gradient(transparent 52%, rgba(255, 220, 70, 0.75) 52%, rgba(255, 220, 70, 0.75) 92%, transparent 92%);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  transform: none;
+}
+:root .set-modal .setup.set-paper .setup-row {
+  border-bottom: 1px dashed var(--line);
+}
+:root .set-modal .setup.set-paper .setup-name {
+  color: var(--ink);
+  font-weight: 700;
+}
+:root .set-modal .setup.set-paper .setup-name small {
+  color: var(--ink2);
+  font-weight: 400;
+}
+:root .set-modal .setup.set-paper .setup-opts button {
+  min-width: 64px;
+  padding: 5px 14px;
+  border: 1.5px solid var(--set-btn-line);
+  border-radius: 999px;
+  background: var(--set-btn);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 400;
+  box-shadow: none;
+  transform: none;
+  clip-path: none;
+}
+:root .set-modal .setup.set-paper .setup-opts button:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+/* 选中的：红笔圈起来 */
+:root .set-modal .setup.set-paper .setup-opts button.on {
+  border: 2px solid var(--red);
+  background: rgba(200, 40, 46, 0.07);
+  color: var(--red);
+  font-weight: 700;
+}
+:root .set-modal .setup.set-paper .setup-opts .set-link {
+  color: var(--red);
+  border-style: dashed;
+}
+:root .set-modal .setup.set-paper .setup-select,
+:root .set-modal .setup.set-paper .setup-input {
+  border: 1.5px solid var(--set-btn-line);
+  border-radius: 6px;
+  background: var(--set-field);
+  color: var(--ink);
+}
+:root .set-modal .setup.set-paper .setup-select:focus,
+:root .set-modal .setup.set-paper .setup-input:focus {
+  border-color: var(--red);
+}
+:root .set-modal .setup.set-paper .setup-seat,
+:root .set-modal .setup.set-paper .setup-unit {
+  color: var(--ink2);
+}
+
+/* 底下的按钮贴在底边 */
+:root .set-modal .setup.set-paper .setup-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: 14px 0 0;
+  padding: 10px 0 16px;
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+}
+:root .set-modal .setup.set-paper .setup-actions button {
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  transform: none;
+  clip-path: none;
+}
+:root .set-modal .setup.set-paper .setup-actions .primary {
+  border: none;
+  background: var(--red);
+  color: #fff;
+}
+
+@media (max-width: 480px) {
+  :root .set-modal .setup.set-paper {
+    height: calc(100dvh - 20px);
+    padding: 0 16px;
+  }
+  :root .set-modal .setup.set-paper h2 {
+    font-size: 32px;
+    padding-top: 12px;
+  }
+  .set-tabs {
+    top: 52px;
+  }
+  .set-tabs button {
+    flex: 1;
+    padding: 2px 6px 6px;
+    font-size: 26px;
+  }
+}
+@media (max-height: 500px) {
+  :root .set-modal .setup.set-paper {
+    height: calc(100dvh - 16px);
+  }
+  :root .set-modal .setup.set-paper h2 {
+    font-size: 26px;
+    padding-top: 6px;
+  }
+  .set-tabs {
+    top: 38px;
+  }
+  .set-tabs button {
+    font-size: 22px;
+  }
+}

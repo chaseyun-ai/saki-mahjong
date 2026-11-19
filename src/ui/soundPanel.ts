@@ -64,11 +64,18 @@ export function soundPanelHtml(): string {
   const duck = rowHtml('演出时压低音乐', optsHtml('snd-opt', 'duck', ON_OFF, String(audioSettings.duck)), '能力演出、和牌、语音响的时候音乐自动小下去');
   const voice = rowHtml('角色语音', optsHtml('snd-opt', 'voiceMode', VOICE_MODES, audioSettings.voiceMode), '「只喊牌」只留立直、吃碰杠、荣和、自摸，不说能力台词');
   const body = section('音量') + sliders + section('语音') + voice + section('音乐') + duck + musicRowsHtml();
-  return panelHtml('sound', '声音设置', '改了马上生效', body, '<button data-ui="snd-reset">恢复默认</button>');
+  // 在主页、选人页（有设置面板的地方）打开时，顶上带「对局 / 视觉 / 声音」三个分页；牌局里的喇叭打开时不带
+  const tabs = typeof document !== 'undefined' && !!document.getElementById('setup');
+  return panelHtml('sound', '声音设置', '改了马上生效', body, '<button data-ui="snd-reset">恢复默认</button>', tabs);
 }
 
 let host: HTMLElement | null = null;
 let opener: HTMLElement | null = null;
+// 点了「对局」「视觉」分页：App 接过去开它那边的面板
+let tabHandler: ((v: 'match' | 'visual') => void) | null = null;
+export function onSoundTab(fn: (v: 'match' | 'visual') => void): void {
+  tabHandler = fn;
+}
 
 export const soundPanelOpen = () => !!host;
 
@@ -135,6 +142,11 @@ export function installSoundPanel(): void {
     if (!el) return;
     const ui = el.dataset.ui;
     if (ui === 'panel-close') closeSoundPanel();
+    else if (ui === 'set-tab' && (el.dataset.v === 'match' || el.dataset.v === 'visual')) {
+      const v = el.dataset.v;
+      closeSoundPanel();
+      tabHandler?.(v);
+    }
     else if (ui === 'snd-mute') setAudioSetting('mute', !audioSettings.mute);
     else if (ui === 'snd-opt' && el.dataset.k === 'duck') setAudioSetting('duck', el.dataset.v === 'true');
     else if (ui === 'snd-opt' && el.dataset.k === 'voiceMode') setAudioSetting('voiceMode', el.dataset.v as AudioSettings['voiceMode']);

@@ -1,0 +1,369 @@
+/* 角色图鉴（ui/codex.ts）：部室的图糊在后面，前面摊开一本笔记本 */
+
+.codex {
+  --ink: #2a2620;
+  --ink2: #6b604c;
+  --red: #c8282e;
+  --paper: #f7f0de;
+  position: relative;
+  min-height: 100dvh;
+  padding: 0 20px 28px;
+  box-sizing: border-box;
+  color: var(--ink);
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #2b1d26;
+  overflow-x: hidden;
+}
+.cx-backdrop {
+  position: fixed;
+  inset: -30px;
+  background: var(--bg) center / cover no-repeat;
+  filter: blur(10px) brightness(0.55) saturate(0.9);
+}
+.codex[data-tod='night'] .cx-backdrop {
+  filter: blur(10px) brightness(0.7);
+}
+
+.cx-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 18px 0 14px;
+  color: #fff;
+}
+.cx-top h1 {
+  margin: 0;
+  font-family: 'Long Cang', 'Ma Shan Zheng', 'KaiTi', cursive;
+  font-size: 44px;
+  font-weight: 400;
+  letter-spacing: 4px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.cx-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.cx-back {
+  padding: 7px 16px;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+.cx-back:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* 摊开的本子：两页，中间一道折缝 */
+.cx-book {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.08fr 1fr;
+  max-width: 1180px;
+  margin: 0 auto;
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow: 0 2px 0 #e2d6bb, 0 5px 0 #ece2cb, 0 30px 70px rgba(0, 0, 0, 0.55);
+  animation: cx-open 0.4s ease-out both;
+}
+@keyframes cx-open {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+}
+.cx-book::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 51.9%;
+  width: 40px;
+  margin-left: -20px;
+  background: linear-gradient(90deg, transparent, rgba(90, 66, 30, 0.16) 45%, rgba(90, 66, 30, 0.22) 50%, rgba(90, 66, 30, 0.12) 55%, transparent);
+  pointer-events: none;
+}
+.cx-page {
+  min-width: 0;
+  padding: 26px 32px 30px;
+  background: repeating-linear-gradient(transparent 0 31px, rgba(80, 120, 180, 0.1) 31px 32px) 0 58px / 100% calc(100% - 58px) no-repeat;
+}
+
+/* 左页：学校的索引签 + 小照片 */
+.cx-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cx-tabs button {
+  position: relative;
+  padding: 4px 10px 5px 16px;
+  border: 1px solid rgba(70, 52, 28, 0.25);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+}
+.cx-tabs button::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: 50%;
+  background: var(--s);
+}
+.cx-tabs button:hover {
+  border-color: var(--red);
+}
+.cx-tabs button.on {
+  border: 2px solid var(--red);
+  color: var(--red);
+  font-weight: 700;
+  background: rgba(200, 40, 46, 0.06);
+}
+.cx-school-name {
+  margin: 22px 0 6px;
+  font-family: 'Long Cang', 'Ma Shan Zheng', 'KaiTi', cursive;
+  font-size: 40px;
+  font-weight: 400;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.cx-school-name small {
+  margin-left: 14px;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  color: var(--ink2);
+}
+.cx-school-name::after {
+  content: '';
+  display: block;
+  width: 120px;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: var(--s);
+}
+.cx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 20px 16px;
+  margin-top: 18px;
+}
+.cx-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px 8px 10px;
+  border: 0;
+  background: #fffdf8;
+  color: var(--ink);
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  transform: rotate(var(--r));
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+.cx-card:hover,
+.cx-card:focus-visible {
+  transform: rotate(0deg) translateY(-4px) scale(1.04);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.22);
+  outline: none;
+}
+.cx-card.on {
+  transform: rotate(0deg) scale(1.04);
+  box-shadow: 0 0 0 3px var(--red), 0 10px 18px rgba(0, 0, 0, 0.22);
+}
+.cx-card b {
+  margin-top: 8px;
+  font-size: 15px;
+}
+.cx-card small {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink2);
+}
+
+/* 照片：有立绘放立绘，没有就是一个大字 */
+.cx-photo {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--c) 75%, #fff), var(--c));
+}
+.cx-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cx-initial {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-family: 'Ma Shan Zheng', 'KaiTi', serif;
+  font-size: 54px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* 右页：点开的那一位 */
+.cx-right.flip .cx-detail {
+  animation: cx-flip 0.28s ease-out both;
+}
+@keyframes cx-flip {
+  from { opacity: 0; transform: translateX(10px); }
+}
+.cx-detail {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-areas: 'photo info' 'ability ability' 'desc desc';
+  gap: 6px 26px;
+  align-items: end;
+}
+.cx-polaroid {
+  grid-area: photo;
+  position: relative;
+  padding: 10px 10px 34px;
+  background: #fffdf8;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+  transform: rotate(-3deg);
+}
+.cx-polaroid .cx-initial {
+  font-size: 96px;
+}
+.cx-tape {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  width: 90px;
+  height: 24px;
+  margin-left: -45px;
+  background: rgba(245, 228, 160, 0.8);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  transform: rotate(4deg);
+}
+.cx-info {
+  grid-area: info;
+  position: relative;
+  padding-bottom: 8px;
+}
+.cx-school {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink2);
+}
+.cx-name {
+  margin: 4px 0 0;
+  font-family: 'Long Cang', 'Ma Shan Zheng', 'KaiTi', cursive;
+  font-size: 60px;
+  font-weight: 400;
+  line-height: 1.05;
+}
+/* 费用：红印章 */
+.cx-cost {
+  position: absolute;
+  right: -20px;
+  bottom: -14px;
+  background: rgba(255, 253, 248, 0.6);
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border: 3px solid var(--red);
+  border-radius: 50%;
+  color: var(--red);
+  font-family: 'Barlow Condensed', 'Noto Sans SC', sans-serif;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 0.9;
+  transform: rotate(12deg);
+  opacity: 0.85;
+}
+.cx-cost small {
+  display: block;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 12px;
+}
+.cx-ability {
+  grid-area: ability;
+  justify-self: start;
+  margin: 22px 0 0;
+  padding: 0 10px;
+  font-family: 'Long Cang', 'Ma Shan Zheng', 'KaiTi', cursive;
+  font-size: 36px;
+  font-weight: 400;
+  background: linear-gradient(transparent 50%, rgba(255, 220, 70, 0.75) 50%, rgba(255, 220, 70, 0.75) 92%, transparent 92%);
+}
+.cx-desc {
+  grid-area: desc;
+  margin: 8px 0 0;
+  font-size: 15px;
+  line-height: 32px;
+  color: var(--ink);
+  white-space: pre-line;
+}
+
+@media (max-width: 760px) {
+  .codex {
+    padding: 0 10px 20px;
+  }
+  .cx-top h1 {
+    font-size: 34px;
+  }
+  .cx-count {
+    display: none;
+  }
+  .cx-book {
+    grid-template-columns: 1fr;
+  }
+  .cx-book::after {
+    display: none;
+  }
+  .cx-page {
+    padding: 18px 16px 22px;
+  }
+  .cx-right {
+    border-top: 2px dashed rgba(90, 66, 30, 0.2);
+    scroll-margin-top: 10px;
+  }
+  .cx-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px 10px;
+  }
+  .cx-detail {
+    grid-template-columns: 130px 1fr;
+    gap: 6px 16px;
+  }
+  .cx-polaroid .cx-initial {
+    font-size: 64px;
+  }
+  .cx-name {
+    font-size: 42px;
+  }
+  .cx-cost {
+    width: 50px;
+    height: 50px;
+    font-size: 24px;
+  }
+}
+
+/* 五个字以上的名字（辻垣内智叶、涅莉·薇萨拉兹）缩小一点，一行放得下 */
+.cx-name.long {
+  font-size: 44px;
+}
+@media (max-width: 760px) {
+  .cx-name.long {
+    font-size: 32px;
+  }
+}
