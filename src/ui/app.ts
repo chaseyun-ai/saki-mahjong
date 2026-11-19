@@ -487,14 +487,14 @@ export class App {
   }
 
   // 出场、随机出场、点头像：照对局设置开局（记在浏览器里，第一次是默认规则）。
-  // 上牌桌用牌背的过场（transition.ts），主页的随机出场已经在过场里了，直接开
+  // 从选人页上牌桌用扔立直棒的过场（transition.ts）；主页的随机出场已经在牌背的过场里了，直接开
   private quickStart(id: string): void {
     const go = (): void => {
       this.panel = null;
       this.startGame(id);
     };
     if (inTransition()) go();
-    else transition('tiles', go);
+    else transition('stick', go);
   }
 
   // 右上角的两个设置面板

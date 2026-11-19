@@ -1,3 +1,6 @@
+import { playClick } from './sound';
+import { STICK_TIMES, StickToss } from './stickToss';
+
 // 页面之间的过场，照用户给的两段动画参考做的：
 //
 // pin（一筒）：一枚一筒从画面上方掉下来，在中间弹一下；然后一下切到一枚很大的一筒，盖在已经换好的新页面上，
@@ -10,7 +13,9 @@
 // 换页可能很重（建 3D 牌桌、读模型），所以换完以后的那一半从下一帧重新计时，卡一下也不会跳掉。
 // 系统开了「减少动态效果」、或者画不了 canvas（测试环境），直接换页。
 
-export type TransitionKind = 'pin' | 'tiles';
+// stick（立直棒）：贴着桌面的低机位，一根立直棒飞进来、磕桌竖起、翻过去拍在牌河前面躺平（stickToss.ts 画），
+//   然后从落点泛白盖满画面，换页，白色退掉。
+export type TransitionKind = 'pin' | 'tiles' | 'stick';
 
 interface Look {
   // 前一半（盖住旧页面）多长，秒
@@ -19,6 +24,8 @@ interface Look {
   drawCover(ctx: CanvasRenderingContext2D, t: number, w: number, h: number, dpr: number): void;
   // 后一半第 t 秒（换完页以后重新计时）；画完了返回 true
   drawReveal(ctx: CanvasRenderingContext2D, t: number, w: number, h: number, dpr: number): boolean;
+  // 过场结束：收拾自己占的东西（立直棒那个有一个 WebGL 画面）
+  dispose?(): void;
 }
 
 let running = false;
@@ -43,7 +50,7 @@ export function transition(kind: TransitionKind, swap: () => void): void {
   canvas.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483000;pointer-events:auto;touch-action:none;';
   document.body.appendChild(canvas);
 
-  const look: Look = kind === 'pin' ? pinLook() : tilesLook();
+  const look: Look = kind === 'pin' ? pinLook() : kind === 'stick' ? (stickLook() ?? pinLook()) : tilesLook();
   let w = 0;
   let h = 0;
   let dpr = 1;
@@ -61,6 +68,7 @@ export function transition(kind: TransitionKind, swap: () => void): void {
   const finish = (): void => {
     running = false;
     canvas.remove();
+    look.dispose?.();
   };
 
   let phase: 'cover' | 'reveal' = 'cover';
@@ -522,6 +530,84 @@ function tilesLook(): Look {
         }
       }
       return left === 0;
+    },
+  };
+}
+
+// ---------------- 立直棒 ----------------
+
+function stickLook(): Look | null {
+  let scene: StickToss;
+  try {
+    scene = new StickToss();
+  } catch {
+    // 画不了 WebGL：换成一筒
+    return null;
+  }
+  const T = STICK_TIMES;
+  const FADE_IN = 0.12; // 牌桌盖上来
+  const GLOW = 1.12; // 开始泛白
+  const COVER = 1.6; // 全白，换页
+  const CLEAR = 0.45; // 白色退掉
+  // 磕桌、落地、弹第二下各响一声
+  const hits = [
+    { at: T.hit, vol: 0.7 },
+    { at: T.land, vol: 1 },
+    { at: T.land + 0.17, vol: 0.5 },
+  ];
+  let fired = 0;
+  let land = { x: 0.45, y: 0.62 };
+  // 泛白：从落点一圈圈亮开，最后整片白
+  const glow = (ctx: CanvasRenderingContext2D, k: number, w: number, h: number): void => {
+    if (k <= 0) return;
+    const cx = land.x * w;
+    const cy = land.y * h;
+    const R = Math.hypot(w, h);
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * (0.25 + k * 0.9));
+    g.addColorStop(0, `rgba(255,255,255,${Math.min(1, k * 1.6)})`);
+    g.addColorStop(0.55, `rgba(255,255,255,${Math.min(1, k * 1.1)})`);
+    g.addColorStop(1, `rgba(255,255,255,${k ** 2})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  };
+  // 四角压暗一点（低机位，像镜头的暗角）
+  const vignette = (ctx: CanvasRenderingContext2D, w: number, h: number): void => {
+    const g = ctx.createRadialGradient(w * 0.48, h * 0.5, Math.min(w, h) * 0.35, w * 0.5, h * 0.5, Math.hypot(w, h) * 0.62);
+    g.addColorStop(0, 'rgba(0,10,6,0)');
+    g.addColorStop(1, 'rgba(0,10,6,0.55)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  };
+  return {
+    cover: COVER,
+    drawCover(ctx, t, w, h, dpr) {
+      const W = Math.round(w * dpr);
+      const H = Math.round(h * dpr);
+      scene.render(Math.min(t, T.settle + 0.3), W, H);
+      if (fired === 0) land = scene.landingOnScreen();
+      while (fired < hits.length && t >= hits[fired].at) {
+        playClick({ varied: true });
+        fired++;
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      ctx.globalAlpha = clamp01(t / FADE_IN);
+      ctx.drawImage(scene.canvas, 0, 0, W, H);
+      ctx.globalAlpha = 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      vignette(ctx, w, h);
+      glow(ctx, clamp01((t - GLOW) / (COVER - GLOW)) ** 1.2, w, h);
+    },
+    drawReveal(ctx, t, w, h, dpr) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      const u = clamp01(t / CLEAR);
+      ctx.fillStyle = `rgba(255,255,255,${1 - easeOut(u)})`;
+      ctx.fillRect(0, 0, w, h);
+      return u >= 1;
+    },
+    dispose() {
+      scene.dispose();
     },
   };
 }
