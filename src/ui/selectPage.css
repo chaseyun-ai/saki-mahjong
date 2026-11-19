@@ -550,26 +550,26 @@
   box-shadow: 0 2px 4px rgba(120, 20, 15, 0.35);
 }
 
-/* 白板下沿的笔槽和两支马克笔 */
+/* 白板下沿的笔槽和两支马克笔：缩在纸下面那一条空里，不压字 */
 .sb-tray {
   position: absolute;
   left: 25%;
   right: 25%;
   bottom: 12px;
-  height: 14px;
-  border-radius: 4px 4px 0 0;
+  height: 7px;
+  border-radius: 3px 3px 0 0;
   background: #b3b8bb;
   pointer-events: none;
 }
 .sb-tray i {
   position: absolute;
-  bottom: 9px;
-  width: 112px;
-  height: 15px;
-  border-radius: 8px;
+  bottom: 5px;
+  width: 96px;
+  height: 10px;
+  border-radius: 5px;
 }
 .sb-tray i:first-child { left: 22%; background: #c8403a; transform: rotate(-2deg); }
-.sb-tray i:last-child { left: calc(22% + 132px); background: #2c2d31; transform: rotate(1deg); }
+.sb-tray i:last-child { left: calc(22% + 112px); background: #2c2d31; transform: rotate(1deg); }
 
 /* 矮屏：报名表省掉大标题、说明少露一行，印章不用往下滚 */
 @media (min-width: 861px) and (max-height: 820px) {
