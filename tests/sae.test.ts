@@ -151,7 +151,9 @@ describe('臼泽塞', () => {
           const shot = shots.find((s) => s.round === g.round);
           if (shot) {
             expect(g.players[shot.target].riichi).toBe(true);
-            for (const w of e.result.wins) if (w.seat === shot.target) expect(w.from).not.toBe(null);
+            // 天使和挡得住一半（每次摸牌掷一次），被盯上也可能自摸，不查
+            const shrugs = (g.active(shot.target)?.resist?.(g, shot.target, 0) ?? 0) > 0;
+            for (const w of e.result.wins) if (w.seat === shot.target && !shrugs) expect(w.from).not.toBe(null);
           }
         }
       });

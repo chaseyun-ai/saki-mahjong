@@ -1,5 +1,5 @@
 import type { Game } from '../engine/game';
-import { doraFromIndicator, isRed, kindOf } from '../engine/tiles';
+import { type TileId, doraFromIndicator, isRed, kindOf } from '../engine/tiles';
 import { PRIORITY, type Ability } from './types';
 
 // 松实玄：宝牌会聚集到她手里。一旦打出宝牌，这一整场（半庄）宝牌都不再来了：能力失效，摸牌也摸不到宝牌。
@@ -55,12 +55,16 @@ export const kuroAbility: Ability = {
   },
 
   beforeDraw(g, seat, rinshan) {
-    if (rinshan) return;
-    // 失效以后：下一张是宝牌就换走
+    const w = g.wall;
+    // 失效以后：下一张（岭上牌也算）是宝牌就换走；牌山快摸完了换不出来，就从还没翻开的王牌里换
     if (kuroLost(g, seat)) {
-      if (isDoraTile(g, g.wall.live[0])) g.wall.bringToLive(0, (t) => !isDoraTile(g, t), g.rng);
+      const next = rinshan ? w.rinshan[0] : w.live[0];
+      if (next === undefined || !isDoraTile(g, next)) return;
+      const plain = (t: TileId) => !isDoraTile(g, t);
+      if (!(rinshan ? w.bringToRinshan(plain, g.rng) : w.bringToLive(0, plain, g.rng))) w.bringFromDead(rinshan, (t) => plain(t) && !w.deny?.(t), g.rng);
       return;
     }
+    if (rinshan) return;
     if (!g.rng.chance(DRAW_CHANCE)) return;
     if (g.wall.bringToLive(0, (t) => isDoraTile(g, t), g.rng)) {
       g.emit({ type: 'ability', seat, ability: 'kuro', text: '宝牌聚集' });

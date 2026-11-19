@@ -22,7 +22,7 @@ export type TraceEntry =
       rinshan: boolean;
       expected: TileId;
       got: TileId;
-      source: 'live' | 'rinshan';
+      source: 'live' | 'rinshan' | 'dead'; // dead：从还没翻开的宝牌指示牌（里宝牌那一排）换来的
       depth: number;
       lostWin: boolean; // 换走的那张本来能让她自摸
       madeWin: boolean; // 换来的这张正好让她和了
@@ -138,11 +138,12 @@ export class AbilityTrace {
     }
     this.flush(abilities.slice(0, -1));
     const ability = abilities.at(-1) ?? null;
-    let source: 'live' | 'rinshan' = 'live';
+    let source: 'live' | 'rinshan' | 'dead' = 'live';
     let depth = this.live.indexOf(got);
     if (depth < 0) {
       source = 'rinshan';
       depth = this.rinshan.indexOf(got);
+      if (depth < 0) source = 'dead';
     }
     // 摸牌前的手牌听什么：就是“假设把刚摸的这张打掉”。岭上开花本身是役，摸到听的牌就能和
     const waits = waitInfo(g, seat, got).tiles;
@@ -253,7 +254,9 @@ export function traceLine(x: TraceEntry, name: (seat: number) => string, tile: (
     return { turn: x.turn, tag: '错位', cls: 'shift', html };
   }
   const from =
-    x.source === 'rinshan'
+    x.source === 'dead'
+      ? '这张原本在王牌里，压在还没翻开的宝牌指示牌那一排。'
+      : x.source === 'rinshan'
       ? `这张原本是第 ${x.depth + 1} 张岭上牌。`
       : `这张原本埋在牌山第 ${x.depth + 1} 张${x.depth >= 4 ? `，本来要 ${Math.floor(x.depth / 4)} 巡以后才露面` : ''}。`;
   let html: string;

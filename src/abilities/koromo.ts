@@ -137,7 +137,8 @@ export function koromoHaiteiReady(g: Game, seat: number): boolean {
 export function koromoHaiteiReach(g: Game, seat: number, kinds: number[]): boolean {
   const w = g.wall;
   const st = stateOf(g, seat);
-  const free = (t: TileId) => kinds.includes(kindOf(t)) && (t === st.haitei || !w.locked.has(t));
+  const banned = kuroDora(g, seat);
+  const free = (t: TileId) => kinds.includes(kindOf(t)) && !banned(t) && (t === st.haitei || !w.locked.has(t));
   return w.live.some(free) || w.rinshan.some(free) || w.uraIndicators.some(free);
 }
 
@@ -169,9 +170,14 @@ const kuroHoldsDora = (g: Game, seat: number) => [0, 1, 2, 3].some((s) => s !== 
 // 这张牌是不是她能要的宝牌
 const richTile = (g: Game, seat: number) => (kuroHoldsDora(g, seat) ? () => false : (t: TileId) => isDoraTile(g, t));
 
+// 玄的宝牌还在：海底不能定成宝牌（海底锁住以后玄的规矩换不动它，衣就会带着宝牌自摸）
+const kuroDora = (g: Game, seat: number) => (kuroHoldsDora(g, seat) ? (t: TileId) => isDoraTile(g, t) : () => false);
+
 // 把牌山最后一张换成 ok 的牌并锁住（已经是就留着）；能定成宝牌就定成宝牌（月下的海底）
-function placeHaitei(g: Game, seat: number, st: KoromoState, ok: (t: TileId) => boolean): boolean {
+function placeHaitei(g: Game, seat: number, st: KoromoState, want: (t: TileId) => boolean): boolean {
   const w = g.wall;
+  const banned = kuroDora(g, seat);
+  const ok = (t: TileId) => want(t) && !banned(t);
   const last = w.live.length - 1;
   if (last < 0) return false;
   if (st.haitei !== undefined && w.live[last] === st.haitei && ok(st.haitei)) return true;
@@ -205,7 +211,8 @@ function bestHaiteiKind(g: Game, seat: number): number | null {
   const p = g.players[seat];
   const counts = toCounts(p.hand);
   const w = g.wall;
-  const avail = toCounts([...w.live, ...w.rinshan, ...w.uraIndicators].filter((t) => !w.locked.has(t)));
+  const banned = kuroDora(g, seat);
+  const avail = toCounts([...w.live, ...w.rinshan, ...w.uraIndicators].filter((t) => !w.locked.has(t) && !banned(t)));
   const doraKinds = kuroHoldsDora(g, seat) ? [] : w.visibleDoraIndicators().map((i) => doraFromIndicator(kindOf(i)));
   let best: number | null = null;
   let bestScore = Infinity;
@@ -289,7 +296,7 @@ function haiteiWall(g: Game, seat: number, drawer: number, rinshan: boolean): Dr
 export const koromoAbility: Ability = {
   id: 'koromo',
   name: '海底捞月',
-  description: `海底捞月：配完牌时，如果没人鸣牌、牌山最后一张归她，海底就变成她不求人和得了的牌（只有她看得到），这一局走“海底”路线，配牌里还会混进一两张宝牌；最后两巡还没人鸣牌，她立直，下一巡一发自摸海底。海底挪移：海底不归她时，她一向听以内鸣一手就能听牌、最后一张又轮到她，鸣完海底就换成她的和了牌，同样走海底路线。一向听地狱：整场都在，别家一向听时摸不到进张，要靠鸣牌才听得了牌（海底路线上每次都摸不到，平时有 ${span(KOROMO.hell)}）。海底路线上，别家听了牌也摸不到和了牌；她听牌以后别家鸣不了牌（咲、久、真子、美穗子看得穿，照样能鸣），立直以后谁都鸣不了；有人鸣牌、开杠把海底错开，路线就停下来。海底牌能定成宝牌就定成宝牌。满潮：海底路线上，她没听牌时摸牌有 ${span(KOROMO.flood)} 换成进张，听牌以后同样的概率换成还听着牌的宝牌。潮起潮落：不在海底路线上时，她的进张效率上升 ${span(KOROMO.tide)}。换进张时先给宝牌（松实玄的宝牌还在时不给）。感知：看得出别家听没听牌、牌有多大（头像旁亮灯，不知道听哪几张）。月相：每个半庄随机一个月相，上面写成两个数的都是从新月到满月，月亮越圆她越强；越接近满月，别人的能力也越难干扰她（满月挡掉 ${KOROMO.resist * 100}%），霞和玄的能力照样管得到。`,
+  description: `海底捞月：配完牌时，如果没人鸣牌、牌山最后一张归她，海底就变成她不求人和得了的牌（只有她看得到），这一局走“海底”路线，配牌里还会混进一两张宝牌；最后两巡还没人鸣牌，她立直，下一巡一发自摸海底。海底挪移：海底不归她时，她一向听以内鸣一手就能听牌、最后一张又轮到她，鸣完海底就换成她的和了牌，同样走海底路线。一向听地狱：整场都在，别家一向听时摸不到进张，要靠鸣牌才听得了牌（海底路线上每次都摸不到，平时有 ${span(KOROMO.hell)}）。海底路线上，别家听了牌也摸不到和了牌；她听牌以后别家鸣不了牌（咲、久、真子、美穗子看得穿，照样能鸣），立直以后谁都鸣不了；有人鸣牌、开杠把海底错开，路线就停下来。海底牌能定成宝牌就定成宝牌（松实玄的宝牌还在时海底不会是宝牌）。满潮：海底路线上，她没听牌时摸牌有 ${span(KOROMO.flood)} 换成进张，听牌以后同样的概率换成还听着牌的宝牌。潮起潮落：不在海底路线上时，她的进张效率上升 ${span(KOROMO.tide)}。换进张时先给宝牌（松实玄的宝牌还在时不给）。感知：看得出别家听没听牌、牌有多大（头像旁亮灯，不知道听哪几张）。月相：每个半庄随机一个月相，上面写成两个数的都是从新月到满月，月亮越圆她越强；越接近满月，别人的能力也越难干扰她（满月挡掉 ${KOROMO.resist * 100}%），霞和玄的能力照样管得到。`,
   priority: PRIORITY.koromo,
 
   beforeDeal(g, seat) {

@@ -1096,17 +1096,17 @@ function waitsLeft(g: Game, target: number, visible: number[]): number {
   return waitingKinds(own, p.melds.length).reduce((n, k) => n + Math.max(0, 4 - visible[k] - own[k]), 0);
 }
 
-// 玄：立直以后只能摸切，宝牌聚集送来的宝牌全得打掉，能力当场失效。所以听牌了默听为主，非进攻不可时才立直：
-// 能力已经没了（打出过宝牌）；默听荣和不到 3900 点（没役只能自摸，或者太便宜，靠立直加番）；最后一局不是第一、默听和了也追不上。
-// hand 是打掉这张以后的 13 张
-const KURO_DAMA_MIN = 3900;
+// 玄：立直以后只能摸切，宝牌聚集送来的宝牌全得打掉，能力当场失效（原作里她不能打宝牌，立直对她很危险）。
+// 所以能力还在时一直默听（没役也默听，门清照样能自摸），只有最后一局不是第一、默听和了也追不上时才立直。
+// 能力已经没了（打出过宝牌）就照常立直。hand 是打掉这张以后的 13 张
 // 手里宝牌到这么多张就不再等改良，有什么和什么（再来宝牌就拿不住了）
 const KURO_RUSH = 6;
+// 能力还在时最多鸣几副露：再鸣下去手里只剩几张、多半全是宝牌，摸到宝牌就只能打宝牌
+const KURO_MAX_MELDS = 2;
 function kuroMustRiichi(g: Game, seat: number, hand: TileId[]): boolean {
   if (kuroLost(g, seat)) return true;
   const p = g.players[seat];
   const best = damaRon(g, seat, hand);
-  if (best < KURO_DAMA_MIN) return true;
   if (g.isLastRounds(1)) {
     const top = Math.max(...g.players.filter((q) => q.seat !== seat).map((q) => q.score));
     const gain = best + g.honba * 300 + g.riichiSticks * 1000;
@@ -1451,6 +1451,8 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false)) && !growHolds(g, seat, style, false) && !seraHolds(g, seat, style, false) && !koromoHolds(g, seat, style, false) && !hatsumiHolds(g, seat, style, false) && !sumireSkips(g, seat, style) && !allLastHold(g, seat, false)) return ron;
   // 涅莉押了运势的局不鸣牌，门清做大
   if (style.waves && nellyTier(g, seat) > 0) return pass;
+  // 玄的宝牌还在：最多鸣两副露（手里牌太少就拿不住送来的宝牌）
+  if (style.keepDora && !kuroLost(g, seat) && g.players[seat].melds.length >= KURO_MAX_MELDS) return pass;
   // 小莳的建御雷神：门清立直才有威压，不鸣牌。稻荷神：进张几乎张张有用，门清立直多半一发自摸，也不鸣
   const god = style.gods ? komakiActiveGod(g, seat) : null;
   if (god === 'take' || god === 'inari') return pass;

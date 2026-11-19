@@ -93,7 +93,8 @@ describe('天江衣', () => {
       play(seed, (g, me) => {
         fullMoon(g, me);
         g.onEvent((e) => {
-          if (e.type === 'ability' && e.seat === me && e.text === '海底捞月') {
+          // 写了 target 的是海底路线上挡住别人摸和了牌，不是配牌时发动
+          if (e.type === 'ability' && e.seat === me && e.text === '海底捞月' && e.target === undefined) {
             deals++;
             // 没人鸣牌的话最后一张归她，牌山最后一张就是那张海底牌
             expect((g.dealer + g.wall.live.length - 1) % 4).toBe(me);
