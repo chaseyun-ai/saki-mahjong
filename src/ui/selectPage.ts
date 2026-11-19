@@ -5,8 +5,9 @@ import { SCHOOLS, membersOf } from './schools';
 
 // 个人对局页：部室白板上的「白板报名表」（用户 2026-11-19 选的方案 A）。
 // 左边一大张名册纸：上沿一排胶带写着学校，一校一页、每人一张拍立得（没立绘的写名字最后一个字），
-//   下面是全员速查，点名字直接翻过去选她。
-// 右边一张报名表：本人（照片、名字、费用、能力）、三个对手（下拉，空着是随机）、规则一行、红印章「出场」、随机出场。
+// 右边一张报名表：本人（照片、名字、费用、能力）、三个对手（上排家位、下排下拉，空着是随机）、
+//   规则（点「规则」两个字改，下面只写选好的）、红印章「出场」、随机出场。
+// 电脑上整页按屏幕高度摆，不用滚轮（用户 2026-11-19：速查不要、改规则并到「规则」上）。
 // 点照片 = 红笔圈她当本人；再点一下圈着的那张、或者盖章，就出场。手机上报名表贴在屏幕底下。
 // 这里只拼 HTML，点了以后做什么在 app.ts。
 
@@ -40,6 +41,7 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const RING = `<svg class="sr-ring" viewBox="0 0 100 130" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M20 12 C 60 -2, 98 18, 98 64 C 98 112, 70 130, 44 127 C 12 124, 2 96, 4 64 C 6 32, 20 14, 54 8"/></svg>`;
 
 const GEAR = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></g></svg>`;
+const PEN = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 20l4.2-1 10.6-10.6a2 2 0 0 0-3.2-3.2L5 15.8 4 20zM14 7l3 3"/></svg>`;
 const DICE = `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="9" r="1.3" fill="currentColor"/><circle cx="15" cy="9" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="9" cy="15" r="1.3" fill="currentColor"/><circle cx="15" cy="15" r="1.3" fill="currentColor"/></svg>`;
 
 export interface SelectParts {
@@ -71,7 +73,6 @@ export function selectBoardHtml(p: SelectParts): string {
         <span class="sb-magnet m1" aria-hidden="true"></span><span class="sb-magnet m2" aria-hidden="true"></span>
         <nav class="sr-tabs" role="tablist" aria-label="学校">${rosterTabsHtml(p.school)}</nav>
         <div class="sr-page">${rosterPageHtml(p)}</div>
-        <section class="sr-index" aria-label="全员速查">${rosterIndexHtml(p.picked.id)}</section>
         <p class="sb-foot">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品 · 3D 人物由 VRoid 官方 CC0 示例模型改色</p>
       </main>
       <aside class="sf" aria-label="个人对局报名表">${entryFormHtml(p)}</aside>
@@ -116,17 +117,6 @@ export function rosterPageHtml(p: Pick<SelectParts, 'school' | 'picked' | 'photo
     <p class="sr-hint">点照片选人，再点一下圈着的那张（或者盖章）就出场。手机上左右滑换学校。</p>`;
 }
 
-// 全员速查：一校一行，点名字翻到那一页并选她
-export function rosterIndexHtml(picked: string): string {
-  const rows = SCHOOLS.map(
-    (s) =>
-      `<div class="sr-row" style="--s:${s.color}"><b>${s.short}</b>${membersOf(s.name)
-        .map((c) => `<button class="${c.id === picked ? 'on' : ''}" data-ui="sr-jump" data-id="${c.id}">${c.name}</button>`)
-        .join('')}</div>`,
-  ).join('');
-  return `<h3>全员速查<small>点名字直接翻到她那一页</small></h3><div class="sr-rows">${rows}</div>`;
-}
-
 // 规则一行
 export function rulesText(s: MatchSettings): string {
   const parts = [{ one: '一局', east: '东风', south: '半庄' }[s.length], `起始 ${s.start}`, `一位 ${s.target}`, s.red === 0 ? '无赤' : s.red === 3 ? '三赤' : '四赤', s.kuitan ? '食断' : '无食断'];
@@ -168,8 +158,10 @@ export function entryFormHtml(p: Pick<SelectParts, 'picked' | 'settings' | 'phot
     <div class="sf-desc-wrap"><p class="sf-desc">${esc(desc)}</p><button class="sf-more" data-ui="desc-more" hidden>全文</button></div>
     <div class="sf-sec">对手<small>空着的随机抽</small></div>
     <div class="sf-opps">${[0, 1, 2].map((i) => opponentSelect(p.settings, i)).join('')}</div>
-    <div class="sf-sec">规则</div>
-    <div class="sf-rules"><span>${rulesText(p.settings)}</span><button data-ui="open-match">改 ›</button></div>
+    <div class="sf-rulebox">
+      <button class="sf-sec sf-sec-btn" data-ui="open-match" title="改规则（打开对局设置）">规则${PEN}</button>
+      <div class="sf-rules">${rulesText(p.settings)}</div>
+    </div>
     <div class="sf-acts">
       <button class="sf-dice" data-ui="random" aria-label="随机出场" title="随便抽一位，照这张表直接开局"><span class="sf-magnet">${DICE}</span><span class="sf-dice-t">随机出场</span></button>
       <button class="sf-stamp" data-ui="go" data-id="${c.id}">出场</button>

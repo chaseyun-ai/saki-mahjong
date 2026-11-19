@@ -62,7 +62,7 @@ import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, p
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { closeSoundPanel, onSoundTab, openSoundPanel, soundButtonHtml, soundPanelOpen } from './soundPanel';
-import { entryFormHtml, rosterIndexHtml, rosterPageHtml, rosterTabsHtml, savePick, savedPick, selectBoardHtml } from './selectPage';
+import { entryFormHtml, rosterPageHtml, rosterTabsHtml, savePick, savedPick, selectBoardHtml } from './selectPage';
 import { Scene, gameMusic, menuMusic, promptCue, resultMusic, soundtrackEvent, tallyCue } from './soundtrack';
 import { homeGo, homeHtml, mountHome } from './home';
 import { mountCodex } from './codex';
@@ -452,8 +452,6 @@ export class App {
     if (!page) return;
     const parts = this.selectParts();
     page.innerHTML = rosterPageHtml(parts);
-    const index = this.root.querySelector('.sr-index');
-    if (index) index.innerHTML = rosterIndexHtml(parts.picked.id);
     const form = this.root.querySelector<HTMLElement>('.sf');
     if (form) {
       form.classList.remove('open');
@@ -597,20 +595,6 @@ export class App {
   private stepSchool(d: number): void {
     const i = SCHOOLS.findIndex((s) => s.name === this.school);
     this.showSchool(SCHOOLS[(i + d + SCHOOLS.length) % SCHOOLS.length].name);
-  }
-
-  // 全员速查里点名字：翻到她那一页，圈上她
-  private jumpTo(id: string): void {
-    const c = CHARACTERS.find((x) => x.id === id);
-    if (!c) return;
-    this.showSchool(c.school);
-    if (c.id !== this.pickedChar().id) {
-      this.picked = c.id;
-      savePick(c.id);
-      this.refreshSelect(true);
-      playClick({ varied: true });
-    }
-    this.root.querySelector('.sr-page')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   private lastPointer = 'mouse';
@@ -2589,10 +2573,6 @@ export class App {
     // 个人对局页的照片：第一下红笔圈上（当本人），再点圈着的那张就出场
     if (el.dataset.pick) {
       this.pickOrStart(el.dataset.pick);
-      return;
-    }
-    if (el.dataset.ui === 'sr-jump' && el.dataset.id) {
-      this.jumpTo(el.dataset.id);
       return;
     }
     if (el.dataset.ui === 'go' && el.dataset.id) {

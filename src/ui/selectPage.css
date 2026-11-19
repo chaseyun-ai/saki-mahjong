@@ -10,13 +10,13 @@
   box-sizing: border-box;
   height: 100%;
   overflow-y: auto;
-  padding: 18px 30px 46px;
+  padding: 18px 30px 30px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto minmax(560px, 1fr);
   grid-template-areas: 'top top' 'roster form';
   gap: 18px 36px;
-  align-items: start;
+  align-items: stretch;
   background: #e5e9e6;
   box-shadow: inset 0 0 0 12px #c3c8ca;
   color: var(--ink-d);
@@ -97,6 +97,8 @@
 .sr {
   grid-area: roster;
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: 14px 26px 22px;
   background: var(--paper);
@@ -196,7 +198,7 @@
   position: relative;
   display: grid;
   place-items: center;
-  aspect-ratio: 128 / 140;
+  aspect-ratio: 3 / 4;
   overflow: hidden;
   background: var(--c);
 }
@@ -284,60 +286,22 @@
   color: var(--ink-l);
 }
 
-.sr-index {
-  margin-top: 18px;
-  padding-top: 12px;
-  border-top: 2px dashed #d9cfbd;
-}
-.sr-index h3 {
-  margin: 0;
-  font-family: 'Long Cang', cursive;
-  font-weight: 400;
-  font-size: 27px;
-}
-.sr-index h3 small {
-  margin-left: 12px;
-  font-family: 'Noto Sans SC', sans-serif;
-  font-size: 13px;
-  color: var(--ink-l);
-}
-.sr-rows {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 26px;
-  margin-top: 6px;
-}
-.sr-row {
+.sr-page {
+  flex: 1;
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 2px;
-  font-size: 14px;
-  line-height: 30px;
+  flex-direction: column;
+  min-height: 0;
 }
-.sr-row b {
-  flex: none;
-  width: 56px;
-  color: color-mix(in srgb, var(--s) 62%, #1d1416);
-}
-.sr-row button {
-  padding: 0 5px;
-  color: #3b342d;
-}
-.sr-row button:hover { color: var(--red); text-decoration: underline; }
-.sr-row button.on {
-  color: var(--red);
-  font-weight: 700;
-  text-decoration: underline 2px;
-}
+.sr-page .sr-grid { margin-block: auto; }
 
 /* ---------- 右边：报名表 ---------- */
 .sf {
   grid-area: form;
-  position: sticky;
-  top: 12px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
-  max-height: calc(100dvh - 40px);
+  min-height: 0;
   overflow-y: auto;
   padding: 30px 26px 22px;
   background-color: #fffdf6;
@@ -490,13 +454,14 @@
 }
 .sf-opps {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 14px;
 }
 .sf-opp {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  font-size: 15px;
+  font-size: 13px;
   color: var(--ink-l);
 }
 .sf-opp-sel {
@@ -508,7 +473,7 @@
   background: transparent;
   color: var(--ink-d);
   font-family: 'Long Cang', cursive;
-  font-size: 23px;
+  font-size: 21px;
   cursor: pointer;
 }
 .sf-opp.rand .sf-opp-sel { color: #8b8178; }
@@ -518,24 +483,29 @@
   font-size: 14px;
   color: #222;
 }
-.sf-rules {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-  font-size: 15px;
+/* 「规则」两个字就是按钮：点了打开对局设置；下面只写选好的规则 */
+.sf-sec-btn {
+  display: block;
+  min-height: 32px;
+  padding: 0 !important;
+  color: var(--red) !important;
+  font-family: 'Long Cang', cursive !important;
+  font-size: 23px !important;
+  text-align: left;
 }
-.sf-rules button {
-  min-height: 36px;
-  color: #a8322c !important;
-  font-size: 14px !important;
+.sf-sec-btn svg { margin-left: 4px; vertical-align: -2px; }
+.sf-sec-btn:hover { text-decoration: underline 2px; text-underline-offset: 4px; }
+.sf-rules {
+  font-size: 15px;
+  line-height: 1.6;
 }
 .sf-acts {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 14px;
+  margin-top: auto;
+  padding-top: 14px;
 }
 .sf-dice {
   display: flex;
@@ -607,8 +577,14 @@
   .sf-desc { -webkit-line-clamp: 3; }
 }
 
-@media (max-width: 1180px) {
-  .sr-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* 再矮（1280×720 这种）：本人照片、说明、印章都收一点 */
+@media (min-width: 861px) and (max-height: 760px) {
+  .sf { padding-top: 22px; }
+  .sf-photo { width: 84px; height: 98px; }
+  .sf-photo span { font-size: 52px; }
+  .sf-name b { font-size: 32px; }
+  .sf-desc { -webkit-line-clamp: 2; }
+  .sf-stamp { width: 100px; height: 100px; font-size: 40px !important; }
 }
 
 /* ---------- 窄屏：名册在上面滚，报名表贴在屏幕底下 ---------- */
@@ -616,6 +592,8 @@
   .sel-board {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: 'top' 'roster';
+    grid-template-rows: auto auto;
+    align-items: start;
     gap: 12px;
     padding: 10px 10px 350px;
     box-shadow: none;
@@ -639,15 +617,15 @@
   .sr-head h2 { font-size: 30px; }
   .sr-region { font-size: 17px; }
   .sr-pager button { font-size: 18px; }
-  .sr-grid { gap: 18px 12px; padding: 0; }
+  .sr-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 12px; padding: 0; }
   .sr-card { padding: 6px 6px 5px !important; }
+  .sr-photo { aspect-ratio: 128 / 140; }
   .sr-glyph { font-size: 56px; }
   .sr-name { font-size: 19px; }
   .sr-name.long { font-size: 16px; }
   .sr-name.xlong { font-size: 13px; }
   .sr-ab { font-size: 11px; }
   .sr-cost { width: 30px; height: 30px; right: -7px; top: -7px; font-size: 12px; }
-  .sr-rows { grid-template-columns: minmax(0, 1fr); }
 
   .sf {
     position: fixed;
@@ -677,7 +655,7 @@
   .sf-me { grid-area: me; gap: 12px; align-items: center; }
   .sf-desc-wrap { grid-area: desc; }
   .sf-opps { grid-area: opps; margin-top: 8px; }
-  .sf-rules { grid-area: rules; }
+  .sf-rulebox { grid-area: rules; }
   .sf-acts { display: contents; }
   .sf-dice { grid-area: dice; }
   .sf-stamp { grid-area: stamp; margin-top: 8px; }
@@ -692,10 +670,10 @@
   .sf.open .sf-more { position: static; }
   .sf-desc { -webkit-line-clamp: 2; font-size: 12.5px; line-height: 1.55; }
   .sf-opps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-  .sf-opp { grid-template-columns: minmax(0, 1fr); font-size: 11px; }
+  .sf-opp { font-size: 11px; }
   .sf-opp-sel { min-height: 36px; font-size: 19px; }
-  .sf-rules { font-size: 11.5px; line-height: 1.45; gap: 0 6px; }
-  .sf-rules button { min-height: 32px; }
+  .sf-rules { font-size: 11.5px; line-height: 1.45; }
+  .sf .sf-sec-btn { display: block; min-height: 28px; font-size: 18px !important; }
   .sf-magnet { width: 46px; height: 46px; }
   .sf-stamp { width: 84px; height: 84px; font-size: 36px !important; border-width: 4px !important; outline-width: 3px; }
 }
