@@ -2,7 +2,7 @@ import './codex.css';
 import { CHARACTERS, type Character } from '../abilities/characters';
 import { POSITIONS } from '../team/team';
 import { portraitUrl } from '../ui3d/looks';
-import { type HomeTod, timeOfDay } from './home';
+import { type HomeTod, TODS, timeOfDay } from './home';
 import { SCHOOLS, membersOf } from './schools';
 import { playFlip } from './sound';
 
@@ -15,7 +15,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 function todNow(): HomeTod {
   try {
     const v = sessionStorage.getItem('saki-home-tod') as HomeTod | null;
-    if (v === 'day' || v === 'dusk' || v === 'night') return v;
+    if (v && TODS.includes(v)) return v;
   } catch {
     // 照时间
   }

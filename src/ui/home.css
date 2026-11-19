@@ -11,7 +11,8 @@
   -webkit-user-select: none;
   font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
-.home-room[data-tod='day'] { background: #8f8a86; }
+.home-room[data-tod='day'],
+.home-room[data-tod='dawn'] { background: #8f8a96; }
 .home-room[data-tod='night'] { background: #14131f; }
 
 .hr-sr {
@@ -85,7 +86,8 @@
   scale: var(--s);
   animation: hr-mote var(--d) ease-in-out var(--o) infinite;
 }
-.home-room[data-tod='day'] .hr-motes i {
+.home-room[data-tod='day'] .hr-motes i,
+.home-room[data-tod='dawn'] .hr-motes i {
   background: rgba(255, 255, 255, 0.85);
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
 }
@@ -99,6 +101,10 @@
   100% { opacity: 0; translate: 46px -70px; }
 }
 
+/* 只有黄昏那张桌上有茶杯 */
+.home-room:not([data-tod='dusk']) .hr-steam {
+  display: none;
+}
 .hr-steam {
   position: absolute;
   width: 80px;

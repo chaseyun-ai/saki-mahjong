@@ -2,26 +2,28 @@ import './home.css';
 import { playClick, playFlip, playLily } from './sound';
 import { type TransitionKind, transition } from './transition';
 
-// 主页：麻将部的部室（用户用 Gemini 画的一张图，public/home/ 下白天、黄昏、夜晚各一张）。
+// 主页：麻将部的部室（用户用 Gemini 画的图，public/home/ 下清晨、白天、黄昏、夜晚各一张，构图一样）。
+// 黄昏那张原来桌上摆着画错的牌，换成了清晨那张的空桌面（只留茶杯），所以茶的热气只有黄昏有。
 // 图上的东西就是入口：
 // - 白板上那张纸写着三种玩法（个人对局、团体赛、全国大赛），点一行，红笔圈一下再进去
 // - 便签上画一个小齿轮：设置（对局、视觉、声音三页在一个面板里）
-// - 收音机：角色图鉴；中间的麻将桌：随机出场（坐下就打）；窗户：换个时间（白天 → 黄昏 → 夜晚）
+// - 收音机：角色图鉴；中间的麻将桌：随机出场（坐下就打）；窗户：换个时间（清晨 → 白天 → 黄昏 → 夜晚）
 //
 // 整张图按原图像素排在一个 2752×1536 的舞台上，再整体缩放铺满屏幕；纸和便签上的字用 matrix3d 贴到图里纸的四个角上，
 // 所以斜着、近大远小都对得上。屏幕比图窄很多（手机竖屏、平板）时不硬裁，改成左右拖着看，一开始停在白板那边。
 // 点击走 App.onClick（data-ui：home-go、open-settings、codex），换时间在这里自己处理。
 
-export type HomeTod = 'day' | 'dusk' | 'night';
-const TODS: HomeTod[] = ['day', 'dusk', 'night'];
-const TOD_NAME: Record<HomeTod, string> = { day: '白天', dusk: '黄昏', night: '夜晚' };
+export type HomeTod = 'dawn' | 'day' | 'dusk' | 'night';
+export const TODS: HomeTod[] = ['dawn', 'day', 'dusk', 'night'];
+const TOD_NAME: Record<HomeTod, string> = { dawn: '清晨', day: '白天', dusk: '黄昏', night: '夜晚' };
 
 export const IMG_W = 2752;
 export const IMG_H = 1536;
 
-// 灯光跟着本地时间：5 点到 16 点白天，16 点到 19 点黄昏，其余是夜里。点窗户换过的这一次打开里一直照换过的
+// 跟着本地时间：5 点到 9 点清晨，9 点到 16 点白天，16 点到 19 点黄昏，其余是夜里。点窗户换过的这一次打开里一直照换过的
 export function timeOfDay(hour = new Date().getHours()): HomeTod {
-  if (hour >= 5 && hour < 16) return 'day';
+  if (hour >= 5 && hour < 9) return 'dawn';
+  if (hour >= 9 && hour < 16) return 'day';
   if (hour >= 16 && hour < 19) return 'dusk';
   return 'night';
 }
@@ -303,7 +305,7 @@ export function mountHome(room: HTMLElement): void {
     el.addEventListener('blur', () => showTip(null));
   }
 
-  // 窗户：白天 → 黄昏 → 夜晚，新图淡进来
+  // 窗户：清晨 → 白天 → 黄昏 → 夜晚，新图淡进来
   room.querySelector<HTMLElement>('.hr-window')?.addEventListener('click', (e) => {
     const btn = e.currentTarget as HTMLElement;
     const now = room.dataset.tod as HomeTod;
