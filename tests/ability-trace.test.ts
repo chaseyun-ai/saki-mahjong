@@ -14,6 +14,7 @@ type Swap = { wall: Wall; before: TileId; after: TileId };
 const swaps: Swap[] = [];
 const origLive = Wall.prototype.bringToLive;
 const origRinshan = Wall.prototype.bringToRinshan;
+const origDead = Wall.prototype.bringFromDead;
 
 beforeAll(() => {
   Wall.prototype.bringToLive = function (this: Wall, ...args: Parameters<Wall['bringToLive']>) {
@@ -30,11 +31,20 @@ beforeAll(() => {
     if (this.rinshan[0] !== before && !this.guard) swaps.push({ wall: this, before, after: this.rinshan[0] });
     return ok;
   };
+  // 牌山快摸完了换不出来时，规矩从还没翻开的王牌里换
+  Wall.prototype.bringFromDead = function (this: Wall, ...args: Parameters<Wall['bringFromDead']>) {
+    const front = () => (args[0] ? this.rinshan[0] : this.live[0]);
+    const before = front();
+    const ok = origDead.apply(this, args);
+    if (front() !== before && !this.guard) swaps.push({ wall: this, before, after: front() });
+    return ok;
+  };
 });
 
 afterAll(() => {
   Wall.prototype.bringToLive = origLive;
   Wall.prototype.bringToRinshan = origRinshan;
+  Wall.prototype.bringFromDead = origDead;
 });
 
 const withAbilities: PlayerConfig[] = CHARACTERS.map((c) => ({ name: c.name, ability: c.ability }));

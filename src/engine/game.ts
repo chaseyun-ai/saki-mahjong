@@ -849,6 +849,9 @@ export class Game {
       if (!deny(before)) return;
       const ok = rinshan ? w.bringToRinshan((t) => !deny(t), this.rng) : w.bringToLive(0, (t) => !deny(t), this.rng);
       if (ok) break;
+      // 牌山快摸完了（最后几张、海底锁着）换不出来：先从还没翻开的王牌（岭上牌、里宝牌指示牌）里换，再考虑丢掉后定的规矩。
+      // 不然牌山尾部所有的规矩都会失灵（玄把宝牌推到牌山后面，最后几张别人照样摸到宝牌）
+      if (w.bringFromDead(rinshan, (t) => !deny(t), this.rng)) break;
       // 这一张是这一次摸牌里被强行换上来的（涅莉的七姐妹换掉被封的人锁好的和了牌）：锁跟着位置转到了它身上，
       // 一般的换法动不了它。强行换的人只看了自己的规矩，别人的规矩不许摸它时，照强行的换法再换一次
       if (w.forced === before && w.forceNext(rinshan, (t) => !deny(t), this.rng)) break;

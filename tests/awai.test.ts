@@ -69,7 +69,8 @@ describe('大星淡：被动', () => {
     let deals = 0;
     let unmet = 0;
     let noPlan = 0;
-    for (let seed = 1; seed <= 12; seed++) {
+    // 排不出天听配牌的比例在 1.5% 上下，只打 12 场时差一局就会越过 2% 那条线
+    for (let seed = 1; seed <= 36; seed++) {
       play(seed, (g) => {
         const awai = g.players.findIndex((p) => p.name === 'awai');
         const check = () => {

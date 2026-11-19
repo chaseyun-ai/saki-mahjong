@@ -63,7 +63,8 @@ describe('松实玄：打出宝牌以后整场失效', () => {
   it('打出宝牌以后，之后每一局都摸不到宝牌（牌山里还有别的牌时）', () => {
     let lostGames = 0;
     let checked = 0;
-    for (let seed = 1; seed <= 12; seed++) {
+    // 电脑的玄能力还在时不立直、最多两副露，很少打出宝牌：多打几场才够查
+    for (let seed = 1; seed <= 30; seed++) {
       const seats = ['kuro', 'saki', 'nodoka', 'toki'].map(byId);
       const g = new Game({ seed, players: seats.map((c) => ({ name: c.id, ability: c.ability })) });
       let lostAt: number | null = null;

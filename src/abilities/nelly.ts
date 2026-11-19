@@ -888,7 +888,8 @@ export const nellyAbility: Ability = {
     const st = stateOf(g, seat);
     st.suit = per.indexOf(Math.max(...per));
     // 宝牌能动（没有玄这样的人在）就做混一色、宝牌指示牌指向手里那门花色或字牌里最多的；动不了就做清一色
-    const free = ![0, 1, 2, 3].some((s) => s !== seat && g.isAbsolute(s));
+    // 玄打出过宝牌、能力没了，宝牌就又能动了
+    const free = ![0, 1, 2, 3].some((s) => s !== seat && g.isAbsolute(s) && !(g.abilities[s]?.id === 'kuro' && kuroLost(g, s)));
     if (NELLY.flush[v]) st.honors = free;
     if (!NELLY.dora[v] || !free) return;
     const n = (k: number) => hand.filter((x) => x === k).length;
