@@ -89,6 +89,7 @@ import { himekoKeySeat } from '../abilities/himeko';
 import type { BindKey } from '../abilities/types';
 import { Himeko2D } from './himeko2d';
 import { beatSeed } from './himekoBeat';
+import { inTransition, transition } from './transition';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -458,10 +459,15 @@ export class App {
     return this.picked ? this.root.querySelector<HTMLElement>(`.char-card[data-pick="${this.picked}"]`) : null;
   }
 
-  // 出场、随机出场、点头像：照对局设置开局（记在浏览器里，第一次是默认规则）
+  // 出场、随机出场、点头像：照对局设置开局（记在浏览器里，第一次是默认规则）。
+  // 上牌桌用牌背的过场（transition.ts），主页的随机出场已经在过场里了，直接开
   private quickStart(id: string): void {
-    this.panel = null;
-    this.startGame(id);
+    const go = (): void => {
+      this.panel = null;
+      this.startGame(id);
+    };
+    if (inTransition()) go();
+    else transition('tiles', go);
   }
 
   // 右上角的两个设置面板
@@ -789,8 +795,8 @@ export class App {
   private openTeam(from: 'title' | 'select'): void {
     this.teamFrom = from;
     this.teamFlow = new TeamFlow(this.root, {
-      play: (run, seats, auto) => this.startTeamMatch(run, seats, auto),
-      exit: () => (this.teamFrom === 'title' ? this.renderTitle() : this.renderSelect()),
+      play: (run, seats, auto) => transition('tiles', () => this.startTeamMatch(run, seats, auto)),
+      exit: () => transition('pin', () => (this.teamFrom === 'title' ? this.renderTitle() : this.renderSelect())),
     });
   }
 
@@ -2690,8 +2696,10 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'home') {
-      this.panel = null;
-      this.renderTitle();
+      transition('pin', () => {
+        this.panel = null;
+        this.renderTitle();
+      });
       return;
     }
     if (el.dataset.ui === 'open-match' || el.dataset.ui === 'open-visual') {
@@ -2826,7 +2834,7 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'team') {
-      this.openTeam('select');
+      transition('pin', () => this.openTeam('select'));
       return;
     }
     if (el.dataset.ui === 'team-next' && this.team && this.game) {
@@ -2853,7 +2861,7 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'restart') {
-      this.renderSelect();
+      transition('pin', () => this.renderSelect());
       return;
     }
     if (el.dataset.ui === 'auto') {

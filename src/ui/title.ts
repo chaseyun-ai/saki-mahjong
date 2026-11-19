@@ -12,6 +12,7 @@
 
 import { playClick, playFlip, playLily } from './sound';
 import { TitleScene, type TitleHotId, type TitleTod } from '../ui3d/titleScene';
+import { transition } from './transition';
 
 // 灯光跟着本地时间：5 点到 16 点白天，16 点到 19 点黄昏，其余是夜里
 export function timeOfDay(hour = new Date().getHours()): TitleTod {
@@ -223,11 +224,8 @@ export function titleGo(btn: HTMLElement, go: () => void): void {
   screen.classList.add('leaving');
   scene?.press(id);
   playClick({ varied: true });
-  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  setTimeout(
-    () => {
-      if (btn.isConnected) go();
-    },
-    reduce || !scene ? 0 : 520,
-  );
+  // 牌跳起来的同时开始过场（transition.ts）：随机出场直接开局，用牌背；其余换页用一筒
+  transition(id === 'random' ? 'tiles' : 'pin', () => {
+    if (btn.isConnected) go();
+  });
 }
