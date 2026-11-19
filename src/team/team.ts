@@ -113,6 +113,14 @@ export class TeamRun {
     this.first = this.rng.shuffle([0, 1, 2, 3]);
   }
 
+  // 不用选人、阵容已经定好的一场（全国大赛：四所学校各带自己的五个人）。直接从布阵开始
+  static preset(seed: number, teams: { name: string; color: string; lineup: Character[] }[], human: number): TeamRun {
+    const run = new TeamRun(seed, human);
+    run.teams = teams.map((t, i) => ({ id: `school-${i}`, name: t.name, color: t.color, human: i === human, picks: [...t.lineup], lineup: [...t.lineup], points: TEAM_START }));
+    run.tierIdx = TIERS.length;
+    return run;
+  }
+
   // ---------- 选人 ----------
 
   get tier(): number {

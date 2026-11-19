@@ -4,7 +4,7 @@ import './ui/themes2.css';
 import './ui/tableStyles.css';
 import { App } from './ui/app';
 import { DiscardLab } from './lab/discardLab';
-import { BracketPreview } from './story/bracketPreview';
+import { NationalFlow } from './story/national';
 import { applyTheme } from './ui/theme';
 import { installSoundPanel } from './ui/soundPanel';
 import { installSoundtrack, stopMusic } from './ui/soundtrack';
@@ -35,8 +35,8 @@ function show(page: Page): void {
   // 调试场景、晋级表不放音乐（回到游戏时选人页自己会放）
   if (page !== 'game') stopMusic();
   if (page === 'lab') new DiscardLab(root, () => show('game'));
-  // 晋级表预览：剧情模式接上之前，网址加 #bracket 单独看
-  else if (page === 'bracket') new BracketPreview(root, () => show('game'));
+  // 全国大赛单独看（网址加 #bracket）：没有牌桌，玩家那桌只能交给电脑打
+  else if (page === 'bracket') new NationalFlow(root, { exit: () => show('game') });
   else new App(root, () => show('lab'));
 }
 

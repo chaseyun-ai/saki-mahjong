@@ -119,7 +119,7 @@ interface Entry {
 const ENTRIES: Entry[] = [
   { v: 'single', no: '一', label: '个人对局', sub: '选一位，和三个电脑打' },
   { v: 'team', no: '二', label: '团体赛', sub: '四队蛇形选人，五人接力' },
-  { v: 'story', no: '三', label: '全国大赛', sub: '十六校，三轮打到决赛' },
+  { v: 'story', no: '三', label: '全国大赛', sub: '选一所学校，东西两区打到总决赛' },
 ];
 
 // 便签上手画的小齿轮：八个梯形齿，中间一个孔

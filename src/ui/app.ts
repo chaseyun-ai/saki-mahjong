@@ -66,7 +66,7 @@ import { entryFormHtml, rosterPageHtml, rosterTabsHtml, savePick, savedPick, sel
 import { Scene, gameMusic, menuMusic, promptCue, resultMusic, soundtrackEvent, tallyCue } from './soundtrack';
 import { homeGo, homeHtml, mountHome } from './home';
 import { mountCodex } from './codex';
-import { BracketPreview } from '../story/bracketPreview';
+import { NationalFlow } from '../story/national';
 import { paceOf, vary } from './vary';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
@@ -368,14 +368,52 @@ export class App {
     this.renderPanel();
   }
 
-  // 全国大赛：先接上之前做好的晋级表（我校的比赛暂时是模拟的），返回回到主页
+  // 全国大赛（story/national.ts）：报名、东西半区晋级表；玩家那桌用团体赛画面打，别桌在后台真打。返回回到主页
+  private national: NationalFlow | null = null;
+
   private openBracket(): void {
     this.teardown();
     menuMusic();
     this.team = null;
     this.teamFlow = null;
     this.panel = null;
-    new BracketPreview(this.root, () => transition(() => this.renderTitle()));
+    this.national?.dispose();
+    this.national = new NationalFlow(this.root, {
+      playTable: (run, done) => transition(() => this.openNationalTable(run, done)),
+      exit: () =>
+        transition(() => {
+          this.national?.dispose();
+          this.national = null;
+          this.renderTitle();
+        }),
+    });
+  }
+
+  // 全国大赛里玩家那一桌：团体赛的布阵、点数板、上场 / 托管；打完把四校点数交回晋级表，中途退出就不算
+  private openNationalTable(run: TeamRun, done: (points: number[]) => void): void {
+    const back = (): void => {
+      this.teardown();
+      menuMusic();
+      this.team = null;
+      this.teamFlow = null;
+      this.national?.show();
+    };
+    this.teardown();
+    menuMusic();
+    this.teamFlow = new TeamFlow(
+      this.root,
+      {
+        play: (r, seats, auto) => transition(() => this.startTeamMatch(r, seats, auto)),
+        exit: () => transition(back),
+        finish: (r) => {
+          done(r.teams.map((t) => t.points));
+          transition(back);
+        },
+        finishLabel: '回到晋级表',
+      },
+      undefined,
+      run,
+    );
   }
 
   // 角色图鉴（codex.ts）：主页的收音机进来，返回回到主页

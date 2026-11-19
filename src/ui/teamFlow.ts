@@ -12,6 +12,9 @@ const AI_PICK_MS = 900; // 电脑选人前停一下，看得清谁拿了谁
 export interface TeamHooks {
   play(run: TeamRun, seats: number[], auto: boolean): void;
   exit(): void;
+  // 全国大赛：整场打完，最终结果画面上的按钮交回结果（没有就是「回到主界面」= exit）
+  finish?(run: TeamRun): void;
+  finishLabel?: string;
 }
 
 export class TeamFlow {
@@ -29,8 +32,10 @@ export class TeamFlow {
     private root: HTMLElement,
     private hooks: TeamHooks,
     seed = Math.floor(Math.random() * 2 ** 31),
+    // 全国大赛：阵容已经定好的一场（TeamRun.preset），跳过选人直接布阵
+    run?: TeamRun,
   ) {
-    this.run = new TeamRun(seed, 0);
+    this.run = run ?? new TeamRun(seed, 0);
     root.addEventListener('click', this.onClick);
     this.draft();
   }
@@ -328,7 +333,7 @@ export class TeamFlow {
         <h1>${place === 1 ? '优胜！' : `第 ${place} 名`}</h1>
         <p class="subtitle">${bust ? `${bust.name}被打飞，比赛在${POSITIONS[run.history.at(-1)!.pos]}战结束。` : '大将战结束，按队伍点数排名。'}</p>
         <div class="tm-board">${head}${rows}</div>
-        <button class="primary" data-team="exit">回到主界面</button>
+        <button class="primary" data-team="${this.hooks.finish ? 'finish' : 'exit'}">${this.hooks.finishLabel ?? '回到主界面'}</button>
       </div>`;
   }
 
@@ -375,6 +380,10 @@ export class TeamFlow {
       case 'exit':
         this.close();
         this.hooks.exit();
+        return;
+      case 'finish':
+        this.close();
+        this.hooks.finish?.(run);
         return;
       case 'pick':
         if (this.screen === 'draft') this.pickFocus();
