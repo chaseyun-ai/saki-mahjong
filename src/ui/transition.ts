@@ -141,6 +141,7 @@ const PIN_ORANGE = '#f7a01b';
 const PIN_WHITE = '#fffefb';
 const GEM = '#a69fe4';
 const GEM_EDGE = '#8a82d4';
+const PIN_BACK = '#0f5f9e'; // 切镜后大一筒身后那一片（比蓝圈深一点，圈的边还看得出来）
 
 const TAU = Math.PI * 2;
 const easeOut = (u: number) => 1 - (1 - u) ** 3;
@@ -377,6 +378,12 @@ function pinLook(): Look {
           t,
           true,
         );
+      // 切镜以后、圆窗打开以前，大一筒四周铺满深一点的蓝：不然那几帧会露出刚换好的新页面
+      // （白板、还没画出来的黑色牌桌），换页卡一下的时候露得更久，看着像闪了一下
+      if (t < OPEN) {
+        ctx.fillStyle = PIN_BACK;
+        ctx.fillRect(0, 0, w, h);
+      }
       ctx.translate(w / 2, cy);
       // 接着小一筒切镜时的角度；推进轮毂的时候再顺手转一点，像参考里那样格子边退边歪
       ctx.rotate(spin(CUT) + (t < OPEN ? 0 : (t - OPEN) * 0.5));
