@@ -1,8 +1,8 @@
 // 页面之间的过场，照用户给的两段动画参考做的：
 //
 // pin（一筒）：一枚一筒从画面上方掉下来，在中间弹一下；然后一下切到一枚很大的一筒，盖在已经换好的新页面上，
-//   镜头往一筒的中心冲进去（绿圈、花瓣、红圈、蓝点一层层飞出画面），最后满屏是花心的白；
-//   白里开一个圆窗，越开越大，露出新页面。
+//   停一下看整朵花，再一下推进花心的轮毂，正中的宝石变成圆窗；
+//   轮毂的橙格子往外退出画面，圆窗跟着越开越大，露出新页面。
 // tiles（牌背）：一整面扣着的牌（牌背朝上排满屏幕）一边转一边缩小，慢慢盖住旧页面；摆正以后在下面换页面，
 //   停一下，再从右上角往左下角一斜排一斜排地抽掉，露出新页面。
 //
@@ -103,108 +103,191 @@ export function transition(kind: TransitionKind, swap: () => void): void {
 }
 
 // ---------------- 一筒 ----------------
+// 照参考动画里那枚一筒画：外圈蓝底，一圈粗白笔画的花纹；里面一道白环、橙底上一朵白菊（花瓣中间一道橙线）；
+// 花心是白轮毂：一圈白环，里面五块圆角的橙色格子、五根白辐条，正中一颗淡紫色的宝石。全是平涂，没有渐变。
+// 尺寸都按外圈半径 R 的比例。
 
-const GREEN = '#17734a';
-const GREEN_DARK = '#0b4429';
-const RED = '#c4212c';
-const RED_DARK = '#7d1119';
-const BLUE = '#1c4c8f';
-const BLUE_DARK = '#0f2c57';
-const IVORY = '#fbf8ef';
+const PIN_BLUE = '#1b93e6';
+const PIN_ORANGE = '#f7a01b';
+const PIN_WHITE = '#fffefb';
+const GEM = '#a69fe4';
+const GEM_EDGE = '#8a82d4';
 
 const TAU = Math.PI * 2;
+const easeOut = (u: number) => 1 - (1 - u) ** 3;
+const clamp01 = (u: number) => Math.max(0, Math.min(1, u));
 
-function disc(ctx: CanvasRenderingContext2D, r: number, fill: string | CanvasGradient): void {
+const RING_IN = 0.575; // 蓝圈的内边
+const ORANGE_R = 0.52; // 橙底的外边（和蓝圈之间是白环）
+const PETAL_IN = 0.222;
+const PETAL_OUT = 0.475;
+const HUB_R = 0.195; // 白轮毂外边
+const CELL_OUT = 0.168; // 橙格子外边
+const CELL_IN = 0.074; // 橙格子里边（再往里是白的花心）
+const SPOKE_W = 0.03; // 辐条宽
+const GEM_R = 0.044; // 宝石：参考里放大以后就是它变成圆窗
+const SPOKE0 = (-86 * Math.PI) / 180;
+
+// 蓝圈里的白笔画：几种钩、弯的形状轮着用，正反交替，再各歪一点，像手画的。坐标：x 沿圆周，y 朝外
+type Stroke = [number, number][][]; // 每段是三次贝塞尔的 4 个点；第一段从第 1 个点开始
+const MARKS: Stroke[] = [
+  // つ
+  [[[-0.06, 0.025], [-0.045, -0.06], [0.06, -0.06], [0.06, 0.005]], [[0.06, 0.005], [0.06, 0.055], [0.015, 0.065], [-0.012, 0.055]]],
+  // し
+  [[[-0.032, -0.065], [-0.032, -0.02], [-0.034, 0.0], [-0.032, 0.015]], [[-0.032, 0.015], [-0.03, 0.06], [0.03, 0.065], [0.06, 0.03]]],
+  // 倒过来的钩
+  [[[-0.06, 0.045], [-0.07, -0.025], [-0.01, -0.065], [0.035, -0.048]], [[0.035, -0.048], [0.07, -0.035], [0.07, 0.012], [0.035, 0.022]]],
+  // へ
+  [[[-0.065, 0.035], [-0.045, 0.0], [-0.03, -0.035], [-0.01, -0.045]], [[-0.01, -0.045], [0.015, -0.055], [0.03, -0.02], [0.065, 0.04]]],
+];
+const MARK_COUNT = 22;
+
+function pinMarks(ctx: CanvasRenderingContext2D, R: number): void {
+  ctx.strokeStyle = PIN_WHITE;
+  ctx.lineWidth = R * 0.052;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let i = 0; i < MARK_COUNT; i++) {
+    const m = MARKS[(i * 3) % MARKS.length];
+    const jitter = Math.sin(i * 12.9898) * 0.35;
+    ctx.save();
+    ctx.rotate((i / MARK_COUNT) * TAU);
+    ctx.translate(0, -R * 0.79);
+    ctx.rotate(jitter);
+    ctx.scale((i % 2 ? -1 : 1) * R * 1.25, -R * 1.25);
+    ctx.beginPath();
+    ctx.moveTo(m[0][0][0], m[0][0][1]);
+    for (const seg of m) ctx.bezierCurveTo(seg[1][0], seg[1][1], seg[2][0], seg[2][1], seg[3][0], seg[3][1]);
+    ctx.restore();
+    ctx.stroke();
+  }
+}
+
+function pinPetals(ctx: CanvasRenderingContext2D, R: number): void {
+  const n = 24;
+  for (let i = 0; i < n; i++) {
+    ctx.save();
+    ctx.rotate((i / n) * TAU + Math.PI / n);
+    // 花瓣：根部窄、往外变宽、头是圆的；x 朝外
+    const a = R * PETAL_IN;
+    const b = R * PETAL_OUT;
+    const w = R * 0.037;
+    ctx.beginPath();
+    ctx.moveTo(a, 0);
+    ctx.bezierCurveTo(a + (b - a) * 0.28, -w * 0.95, b - w * 2.2, -w * 1.3, b - w * 0.9, -w * 1.1);
+    ctx.bezierCurveTo(b + w * 0.25, -w * 0.75, b + w * 0.25, w * 0.75, b - w * 0.9, w * 1.1);
+    ctx.bezierCurveTo(b - w * 2.2, w * 1.3, a + (b - a) * 0.28, w * 0.95, a, 0);
+    ctx.fillStyle = PIN_WHITE;
+    ctx.fill();
+    // 中间一道橙线（像花瓣的脉），从根部附近一直到快到头
+    ctx.beginPath();
+    ctx.moveTo(a + (b - a) * 0.14, 0);
+    ctx.lineTo(b - w * 1.5, 0);
+    ctx.lineWidth = R * 0.019;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = PIN_ORANGE;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// 轮毂里五块橙格子：两根辐条之间的扇形，四个角都是圆的
+function pinCells(ctx: CanvasRenderingContext2D, R: number): void {
+  const ri = R * CELL_IN;
+  const ro = R * CELL_OUT;
+  const half = (R * SPOKE_W) / 2;
+  const rr = R * 0.026;
+  ctx.fillStyle = PIN_ORANGE;
+  for (let k = 0; k < 5; k++) {
+    const a0 = SPOKE0 + (k * TAU) / 5;
+    const a1 = a0 + TAU / 5;
+    const di = Math.asin(Math.min(1, half / ri));
+    const dout = Math.asin(Math.min(1, half / ro));
+    const p = (r: number, a: number): [number, number] => [Math.cos(a) * r, Math.sin(a) * r];
+    const pts = [p(ri, a0 + di), p(ro, a0 + dout), p(ro, (a0 + a1) / 2), p(ro, a1 - dout), p(ri, a1 - di)];
+    ctx.beginPath();
+    const mid = (u: [number, number], v: [number, number]): [number, number] => [(u[0] + v[0]) / 2, (u[1] + v[1]) / 2];
+    const start = mid(pts[4], pts[0]);
+    ctx.moveTo(start[0], start[1]);
+    for (let i = 0; i < pts.length; i++) {
+      const cur = pts[i];
+      const next = pts[(i + 1) % pts.length];
+      // 外边中间那个点不倒角（外边是两段几乎连成一条的弧）
+      ctx.arcTo(cur[0], cur[1], next[0], next[1], i === 2 ? R * 0.2 : rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function pinGem(ctx: CanvasRenderingContext2D, R: number): void {
+  const r = R * GEM_R;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, TAU);
+  ctx.fillStyle = GEM;
+  ctx.fill();
+  ctx.lineWidth = r * 0.12;
+  ctx.strokeStyle = GEM_EDGE;
+  ctx.stroke();
+  // 斜着一道亮光
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.94, 0, TAU);
+  ctx.clip();
+  ctx.rotate(-Math.PI / 4);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillRect(-r, -r * 0.62, r * 2, r * 0.3);
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(-r, -r * 0.22, r * 2, r * 0.12);
+  ctx.restore();
+}
+
+function disc(ctx: CanvasRenderingContext2D, r: number, fill: string): void {
   ctx.beginPath();
   ctx.arc(0, 0, r, 0, TAU);
   ctx.fillStyle = fill;
   ctx.fill();
 }
 
-// 一枚大一筒（和牌面上的一筒同一套颜色：绿外圈、绿花瓣、红圈、蓝点、蓝花心），画在原点，半径 R。
-// shadow：弹跳时底下一层影子；画面比它大很多的时候，只画还看得见的那几圈
-function drawPin(ctx: CanvasRenderingContext2D, R: number, view: number, shadow: boolean): void {
-  // view：从中心到画面最远角的距离。某一圈的内半径比它还大，就整圈看不见
+// 画在原点，半径 R。view：从中心到画面最远角的距离，整圈都在画面外的就不画。
+// gem：false 时不画宝石（宝石已经变成圆窗）；shadow：弹跳时底下一层影子
+function drawPin(ctx: CanvasRenderingContext2D, R: number, view: number, gem: boolean, shadow: boolean): void {
   const seen = (inner: number) => inner * R < view;
-  if (seen(0.9)) {
+  if (seen(RING_IN)) {
     ctx.save();
     if (shadow) {
-      ctx.shadowColor = 'rgba(20, 12, 0, 0.38)';
-      ctx.shadowBlur = R * 0.22;
-      ctx.shadowOffsetY = R * 0.09;
+      ctx.shadowColor = 'rgba(10, 20, 40, 0.35)';
+      ctx.shadowBlur = R * 0.2;
+      ctx.shadowOffsetY = R * 0.08;
     }
-    disc(ctx, R, GREEN);
+    disc(ctx, R, PIN_BLUE);
     ctx.restore();
-    ctx.beginPath();
-    ctx.arc(0, 0, R * 0.985, 0, TAU);
-    ctx.lineWidth = R * 0.03;
-    ctx.strokeStyle = GREEN_DARK;
-    ctx.stroke();
+    pinMarks(ctx, R);
+    disc(ctx, R * RING_IN, PIN_WHITE);
+  } else if (seen(ORANGE_R)) disc(ctx, R * RING_IN, PIN_WHITE);
+  if (seen(HUB_R)) {
+    disc(ctx, R * ORANGE_R, PIN_ORANGE);
+    pinPetals(ctx, R);
   }
-  if (seen(0.58)) {
-    // 象牙白的一圈，左上亮一点
-    const g = ctx.createRadialGradient(-R * 0.3, -R * 0.35, R * 0.1, 0, 0, R * 0.9);
-    g.addColorStop(0, '#fffdf6');
-    g.addColorStop(1, '#f1eadb');
-    disc(ctx, R * 0.9, g);
-    // 十六片花瓣：尖头的叶子形，从里往外
-    ctx.fillStyle = GREEN;
-    for (let i = 0; i < 16; i++) {
-      ctx.save();
-      ctx.rotate((i / 16) * TAU);
-      ctx.beginPath();
-      ctx.moveTo(R * 0.61, 0);
-      ctx.quadraticCurveTo(R * 0.72, -R * 0.105, R * 0.86, 0);
-      ctx.quadraticCurveTo(R * 0.72, R * 0.105, R * 0.61, 0);
-      ctx.fill();
-      ctx.restore();
-    }
+  if (seen(0)) {
+    disc(ctx, R * HUB_R, PIN_WHITE);
+    pinCells(ctx, R);
   }
-  if (seen(0.45)) {
-    disc(ctx, R * 0.58, RED);
-    ctx.beginPath();
-    ctx.arc(0, 0, R * 0.57, 0, TAU);
-    ctx.lineWidth = R * 0.022;
-    ctx.strokeStyle = RED_DARK;
-    ctx.stroke();
-  }
-  if (seen(0.194)) {
-    disc(ctx, R * 0.45, IVORY);
-    ctx.fillStyle = BLUE;
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * TAU + Math.PI / 8;
-      ctx.beginPath();
-      ctx.arc(Math.cos(a) * R * 0.315, Math.sin(a) * R * 0.315, R * 0.076, 0, TAU);
-      ctx.fill();
-    }
-  }
-  if (seen(0.085)) {
-    disc(ctx, R * 0.194, BLUE);
-    ctx.beginPath();
-    ctx.arc(0, 0, R * 0.188, 0, TAU);
-    ctx.lineWidth = R * 0.012;
-    ctx.strokeStyle = BLUE_DARK;
-    ctx.stroke();
-  }
-  disc(ctx, R * 0.085, IVORY);
-  // 整枚一筒左上角一道高光（像一枚有釉的牌面）
-  if (shadow) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(0, 0, R, 0, TAU);
-    ctx.clip();
-    const hl = ctx.createLinearGradient(-R, -R, R * 0.2, R * 0.2);
-    hl.addColorStop(0, 'rgba(255,255,255,0.32)');
-    hl.addColorStop(0.45, 'rgba(255,255,255,0.06)');
-    hl.addColorStop(0.46, 'rgba(255,255,255,0)');
-    ctx.fillStyle = hl;
-    ctx.fillRect(-R, -R, R * 2, R * 2);
-    ctx.restore();
-  }
+  if (gem) pinGem(ctx, R);
 }
 
-const easeOut = (u: number) => 1 - (1 - u) ** 3;
-const clamp01 = (u: number) => Math.max(0, Math.min(1, u));
+// 按关键帧插值（t 递增）；log：在对数上插（放大用，看起来匀速）
+function keyed(keys: [number, number][], t: number, log = false): number {
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) {
+    const [t1, v1] = keys[i];
+    if (t > t1) continue;
+    const [t0, v0] = keys[i - 1];
+    const u = (t - t0) / (t1 - t0);
+    return log ? v0 * (v1 / v0) ** u : v0 + (v1 - v0) * u;
+  }
+  return keys[keys.length - 1][1];
+}
 
 function pinLook(): Look {
   // 前一半：从上面掉下来（0.27 秒落到底），弹起来，往下落的半路上切镜
@@ -213,9 +296,10 @@ function pinLook(): Look {
   const LAND = 0.27;
   const HOP = 0.1; // 弹起来到最高点用的时间
   const CUT = 0.44;
-  // 后一半：冲进中心（ZOOM 秒）以后，白里开圆窗（OPEN 秒）
-  const ZOOM = 0.17;
-  const OPEN = 0.4;
+  // 后一半（照参考逐帧量的，秒）：切到大一筒停一下 → 推到整朵花停一下 → 一下推进轮毂，宝石变成圆窗 →
+  // 橙格子往外退出画面，圆窗跟着开大，最后冲出画面
+  const OPEN = 0.15; // 宝石变圆窗
+  const DONE = 0.5;
   return {
     cover: CUT,
     drawCover(ctx, t, w, h, dpr) {
@@ -234,29 +318,57 @@ function pinLook(): Look {
       ctx.translate(w / 2, y * h);
       ctx.scale(1 + squash * 0.6, 1 - squash);
       ctx.rotate(-0.35 + t * 1.1);
-      drawPin(ctx, R, Infinity, true);
+      drawPin(ctx, R, Infinity, true, true);
     },
     drawReveal(ctx, t, w, h, dpr) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
+      const u = Math.min(w, h);
       const view = Math.hypot(w, h) / 2;
-      const R0 = Math.min(w, h) * 0.47;
-      // 冲进去：花心的白（半径 0.085R）盖满画面时停
-      const Rend = (view / 0.085) * 1.05;
-      const R = R0 * (Rend / R0) ** clamp01(t / ZOOM);
+      // 白花心（橙格子的里边）盖过画面四角的时候，格子就都退出去了
+      const gone = (view * 1.05) / CELL_IN / u;
+      const R =
+        u *
+        keyed(
+          [
+            [0, 0.46],
+            [0.035, 0.46],
+            [0.065, 1.28],
+            [0.13, 1.4],
+            [OPEN, 3.9],
+            [0.33, gone],
+            [DONE, gone * 1.4],
+          ],
+          t,
+          true,
+        );
       ctx.translate(w / 2, h / 2);
-      drawPin(ctx, R, view, false);
-      if (t <= ZOOM) return false;
-      // 圆窗：先匀着开，最后一下冲出画面
-      const u = clamp01((t - ZOOM) / OPEN);
-      const r0 = Math.min(w, h) * 0.06;
-      const r = r0 + (view * 1.02 - r0) * (0.6 * u + 0.4 * u ** 6);
+      // 推进轮毂的时候顺手转一点，像参考里那样格子边退边歪
+      ctx.rotate(t < OPEN ? 0 : (t - OPEN) * 0.5);
+      drawPin(ctx, R, view, t < OPEN, false);
+      if (t < OPEN) return false;
+      // 圆窗：从宝石那么大开始，先停一下、再一段段开大，最后一下冲出画面
+      const r =
+        u *
+        keyed(
+          [
+            [OPEN, 0.17],
+            [0.19, 0.25],
+            [0.24, 0.42],
+            [0.3, 0.55],
+            [0.36, 0.65],
+            [0.43, 0.86],
+            [0.47, 1.0],
+            [DONE, (view / u) * 1.03],
+          ],
+          t,
+        );
       ctx.globalCompositeOperation = 'destination-out';
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, TAU);
       ctx.fill();
       ctx.globalCompositeOperation = 'source-over';
-      return u >= 1;
+      return t >= DONE;
     },
   };
 }
