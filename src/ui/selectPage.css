@@ -1,0 +1,715 @@
+/* 个人对局页：部室白板上的名册 + 报名表（selectPage.ts）。主题皮肤不管这一页，跟主页一样是纸和白板 */
+
+.sel-board {
+  --ink-d: #2b2622;
+  --ink-m: #5e554c;
+  --ink-l: #6d645a;
+  --red: #c3302b;
+  --paper: #fbf7ec;
+  position: relative;
+  box-sizing: border-box;
+  height: 100%;
+  overflow-y: auto;
+  padding: 18px 30px 46px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
+  grid-template-rows: auto 1fr;
+  grid-template-areas: 'top top' 'roster form';
+  gap: 18px 36px;
+  align-items: start;
+  background: #e5e9e6;
+  box-shadow: inset 0 0 0 12px #c3c8ca;
+  color: var(--ink-d);
+  color-scheme: light;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  user-select: none;
+}
+.sel-board button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.sel-board button:focus-visible,
+.sel-board select:focus-visible {
+  outline: 2px solid #3b6fb6;
+  outline-offset: 2px;
+}
+
+/* ---------- 顶上：便签「回部室」、标题、便签齿轮 ---------- */
+.sb-top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 70px;
+}
+.sb-note {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 52px;
+  padding: 0 16px;
+  background: #f4df72 !important;
+  box-shadow: 0 4px 8px rgba(40, 30, 10, 0.22);
+  color: #3a2f20 !important;
+  font-family: 'Long Cang', cursive !important;
+  font-size: 25px !important;
+  transition: transform 0.15s;
+}
+.sb-back { transform: rotate(-3deg); }
+.sb-set { transform: rotate(2.5deg); }
+.sb-note:hover { transform: rotate(0deg) translateY(-2px); }
+.sb-title {
+  margin: 0;
+  font-family: 'Ma Shan Zheng', serif;
+  font-weight: 400;
+  font-size: 48px;
+  line-height: 1;
+}
+.sb-sub {
+  margin: 10px 0 0;
+  font-family: 'Long Cang', cursive;
+  font-size: 23px;
+  color: var(--ink-m);
+}
+.sb-gap { flex: 1; }
+.sel-board .sb-more summary {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: #3b6fb6;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.28);
+  color: #fff;
+}
+.sel-board .sb-more[open] summary { color: #f4df72; }
+.sel-board .sb-more .sel-more-menu {
+  background: var(--paper);
+  border: 1px solid #d9cfbd;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+}
+.sel-board .sb-more .sel-more-menu button { color: var(--ink-d); }
+.sel-board .sb-more .sel-more-menu button:hover { background: #efe7d4; }
+
+/* ---------- 左边：名册纸 ---------- */
+.sr {
+  grid-area: roster;
+  position: relative;
+  min-width: 0;
+  padding: 14px 26px 22px;
+  background: var(--paper);
+  box-shadow: 0 8px 22px rgba(30, 30, 30, 0.18);
+  transform: rotate(-0.3deg);
+}
+.sb-magnet {
+  position: absolute;
+  top: -10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.3);
+}
+.sb-magnet.m1 { left: 16px; background: #c8403a; }
+.sb-magnet.m2 { right: 16px; background: #3b6fb6; }
+
+.sr-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 5px;
+  margin: 0 0 14px;
+}
+.sr-tabs button {
+  padding: 3px 8px 5px;
+  background: color-mix(in srgb, var(--s) 42%, transparent);
+  color: #3a2f28;
+  font-family: 'Long Cang', cursive;
+  font-size: 19px;
+  line-height: 1.2;
+  transition: transform 0.12s;
+}
+.sr-tabs button:hover { transform: translateY(-2px); }
+.sr-tabs button.on {
+  background: color-mix(in srgb, var(--s) 80%, white);
+  box-shadow: 0 2px 0 var(--red);
+  transform: rotate(-2deg) translateY(-3px);
+}
+
+.sr-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+.sr-head h2 {
+  margin: 0;
+  font-family: 'Ma Shan Zheng', serif;
+  font-weight: 400;
+  font-size: 40px;
+  color: color-mix(in srgb, var(--s) 62%, #1d1416);
+}
+.sr-region {
+  font-family: 'Long Cang', cursive;
+  font-size: 21px;
+  color: var(--ink-m);
+}
+.sr-pager {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+.sr-pager button {
+  min-height: 40px;
+  padding: 0 8px;
+  font-family: 'Long Cang', cursive;
+  font-size: 22px;
+  color: var(--ink-m);
+}
+.sr-pager button:hover { color: var(--red); }
+
+.sr-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 26px 22px;
+  margin-top: 18px;
+  padding: 0 4px;
+}
+.sr-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 9px 9px 8px !important;
+  background: #fff !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.16);
+  transform: rotate(var(--r));
+  text-align: center;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.sr-card:hover {
+  transform: rotate(0deg) translateY(-4px);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.2);
+}
+.sr-card.on { box-shadow: 0 7px 16px rgba(0, 0, 0, 0.24); }
+.sr-photo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 128 / 140;
+  overflow: hidden;
+  background: var(--c);
+}
+.sr-glyph {
+  font-family: 'Ma Shan Zheng', serif;
+  font-size: clamp(48px, 5.2vw, 84px);
+  line-height: 1;
+  color: #fff7ee;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+.sr-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 18%;
+  background: #f1e3e5;
+}
+.sr-name {
+  margin-top: 6px;
+  font-family: 'Long Cang', cursive;
+  font-size: 25px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.sr-name.long { font-size: 21px; }
+.sr-name.xlong { font-size: 17px; }
+.sr-ab {
+  font-size: 13px;
+  color: #9a3b2c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sr-cost {
+  position: absolute;
+  right: -10px;
+  top: -10px;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #f2c53d;
+  color: #3a2a06;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+.sr-cost small { font-size: 10px; }
+.sr-badge {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  padding: 1px 6px;
+  background: var(--red);
+  color: #fff;
+  font-size: 12px;
+}
+.sr-ring {
+  position: absolute;
+  left: -16%;
+  top: -10%;
+  width: 132%;
+  height: 120%;
+  overflow: visible;
+  pointer-events: none;
+}
+.sr-ring path {
+  fill: none;
+  stroke: #d0302f;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+.sr-card.draw .sr-ring path { animation: sr-draw 0.42s ease-out both; }
+@keyframes sr-draw {
+  from { stroke-dashoffset: 1; }
+}
+.sr-hint {
+  margin: 16px 0 0;
+  font-size: 13px;
+  color: var(--ink-l);
+}
+
+.sr-index {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 2px dashed #d9cfbd;
+}
+.sr-index h3 {
+  margin: 0;
+  font-family: 'Long Cang', cursive;
+  font-weight: 400;
+  font-size: 27px;
+}
+.sr-index h3 small {
+  margin-left: 12px;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 13px;
+  color: var(--ink-l);
+}
+.sr-rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 26px;
+  margin-top: 6px;
+}
+.sr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 2px;
+  font-size: 14px;
+  line-height: 30px;
+}
+.sr-row b {
+  flex: none;
+  width: 56px;
+  color: color-mix(in srgb, var(--s) 62%, #1d1416);
+}
+.sr-row button {
+  padding: 0 5px;
+  color: #3b342d;
+}
+.sr-row button:hover { color: var(--red); text-decoration: underline; }
+.sr-row button.on {
+  color: var(--red);
+  font-weight: 700;
+  text-decoration: underline 2px;
+}
+
+/* ---------- 右边：报名表 ---------- */
+.sf {
+  grid-area: form;
+  position: sticky;
+  top: 12px;
+  box-sizing: border-box;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  padding: 30px 26px 22px;
+  background-color: #fffdf6;
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 33px, #dfe6ef 33px, #dfe6ef 34px);
+  box-shadow: 0 8px 22px rgba(30, 30, 30, 0.18);
+  transform: rotate(0.5deg);
+}
+.sf-clip {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  width: 58px;
+  height: 18px;
+  margin-left: -29px;
+  border-radius: 3px;
+  background: #2e2f33;
+}
+.sf-title {
+  margin: 0;
+  font-family: 'Ma Shan Zheng', serif;
+  font-weight: 400;
+  font-size: 30px;
+  text-align: center;
+}
+.sf-sec {
+  margin: 10px 0 4px;
+  font-family: 'Long Cang', cursive;
+  font-size: 23px;
+  line-height: 1.1;
+  color: var(--red);
+}
+.sf-sec small {
+  margin-left: 10px;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 12px;
+  color: var(--ink-l);
+}
+.sf-me {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.sf-photo {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 120px;
+  overflow: hidden;
+  border: 7px solid #fff;
+  border-bottom-width: 18px;
+  background: var(--c);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+  transform: rotate(-3deg);
+}
+.sf-photo span {
+  font-family: 'Ma Shan Zheng', serif;
+  font-size: 64px;
+  color: #fff7ee;
+}
+.sf-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 18%;
+  background: #f1e3e5;
+}
+.sf-who { min-width: 0; }
+.sf-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.sf-name b {
+  font-family: 'Ma Shan Zheng', serif;
+  font-weight: 400;
+  font-size: 38px;
+  line-height: 1.05;
+}
+.sf-name b.long { font-size: 30px; }
+.sf-cost {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #f2c53d;
+  color: #3a2a06;
+  font-size: 13px;
+  font-weight: 700;
+}
+.sf-school {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--ink-l);
+}
+.sf-ability {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #a8322c;
+}
+/* 透华常态 / 治水、咲标准 / 加强：手写的两个字，选中的那个红笔圈起来 */
+.sf-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-family: 'Long Cang', cursive;
+  font-size: 21px;
+  color: var(--ink-m);
+}
+.sf-form button {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 2px solid transparent !important;
+  border-radius: 50%;
+}
+.sf-form button.on {
+  border-color: #d0302f !important;
+  color: var(--ink-d);
+}
+.sf-rii {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin-top: 6px;
+  color: #a8322c !important;
+  font-size: 14px !important;
+}
+.sf-desc-wrap { margin-top: 10px; }
+.sf-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.75;
+  color: #3b342d;
+  user-select: text;
+}
+.sf.open .sf-desc { display: block; }
+.sf-more {
+  margin-top: 2px;
+  color: #a8322c !important;
+  font-size: 14px !important;
+}
+.sf-opps {
+  display: grid;
+  gap: 4px;
+}
+.sf-opp {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  font-size: 15px;
+  color: var(--ink-l);
+}
+.sf-opp-sel {
+  min-height: 36px;
+  padding: 0 4px;
+  border: 0;
+  border-bottom: 1.5px solid #3b342d;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-d);
+  font-family: 'Long Cang', cursive;
+  font-size: 23px;
+  cursor: pointer;
+}
+.sf-opp.rand .sf-opp-sel { color: #8b8178; }
+.sf-opp-sel option,
+.sf-opp-sel optgroup {
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 14px;
+  color: #222;
+}
+.sf-rules {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 15px;
+}
+.sf-rules button {
+  min-height: 36px;
+  color: #a8322c !important;
+  font-size: 14px !important;
+}
+.sf-acts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+.sf-dice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Long Cang', cursive !important;
+  font-size: 24px !important;
+  color: #3b342d !important;
+}
+.sf-magnet {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #3b6fb6;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  color: #fff;
+  transition: transform 0.2s;
+}
+.sf-dice:hover .sf-magnet { transform: rotate(-20deg); }
+.sf-stamp {
+  flex: none;
+  width: 112px;
+  height: 112px;
+  padding: 0 !important;
+  white-space: nowrap;
+  border: 5px double #fbe9e4 !important;
+  outline: 4px solid var(--red);
+  background: var(--red) !important;
+  color: #fff8f2 !important;
+  font-family: 'Ma Shan Zheng', serif !important;
+  font-size: 44px !important;
+  line-height: 1;
+  transform: rotate(-6deg);
+  box-shadow: 0 6px 14px rgba(120, 20, 15, 0.35);
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.sf-stamp:hover { transform: rotate(-6deg) scale(1.04); }
+.sf-stamp:active {
+  transform: rotate(-6deg) scale(0.94);
+  box-shadow: 0 2px 4px rgba(120, 20, 15, 0.35);
+}
+
+/* 白板下沿的笔槽和两支马克笔 */
+.sb-tray {
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  bottom: 12px;
+  height: 14px;
+  border-radius: 4px 4px 0 0;
+  background: #b3b8bb;
+  pointer-events: none;
+}
+.sb-tray i {
+  position: absolute;
+  bottom: 9px;
+  width: 112px;
+  height: 15px;
+  border-radius: 8px;
+}
+.sb-tray i:first-child { left: 22%; background: #c8403a; transform: rotate(-2deg); }
+.sb-tray i:last-child { left: calc(22% + 132px); background: #2c2d31; transform: rotate(1deg); }
+
+/* 矮屏：报名表省掉大标题、说明少露一行，印章不用往下滚 */
+@media (min-width: 861px) and (max-height: 820px) {
+  .sf-title { display: none; }
+  .sf-desc { -webkit-line-clamp: 3; }
+}
+
+@media (max-width: 1180px) {
+  .sr-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* ---------- 窄屏：名册在上面滚，报名表贴在屏幕底下 ---------- */
+@media (max-width: 860px) {
+  .sel-board {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'top' 'roster';
+    gap: 12px;
+    padding: 10px 10px 350px;
+    box-shadow: none;
+  }
+  .sb-top { gap: 10px; min-height: 52px; }
+  .sb-note { min-height: 44px; padding: 0 10px; font-size: 21px !important; white-space: nowrap; }
+  .sb-magnet { display: none; }
+  .sb-set span { display: none; }
+  .sb-title { font-size: 30px; white-space: nowrap; }
+  .sb-sub,
+  .sb-tray { display: none; }
+  .sr { padding: 10px 12px 16px; transform: none; }
+  .sr-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 -12px 10px;
+    padding: 4px 12px;
+    scrollbar-width: none;
+  }
+  .sr-tabs button { flex: none; font-size: 18px; }
+  .sr-head h2 { font-size: 30px; }
+  .sr-region { font-size: 17px; }
+  .sr-pager button { font-size: 18px; }
+  .sr-grid { gap: 18px 12px; padding: 0; }
+  .sr-card { padding: 6px 6px 5px !important; }
+  .sr-glyph { font-size: 56px; }
+  .sr-name { font-size: 19px; }
+  .sr-name.long { font-size: 16px; }
+  .sr-name.xlong { font-size: 13px; }
+  .sr-ab { font-size: 11px; }
+  .sr-cost { width: 30px; height: 30px; right: -7px; top: -7px; font-size: 12px; }
+  .sr-rows { grid-template-columns: minmax(0, 1fr); }
+
+  .sf {
+    position: fixed;
+    z-index: 20;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    max-height: 62dvh;
+    padding: 20px 14px 12px;
+    background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 29px, #dfe6ef 29px, #dfe6ef 30px);
+    box-shadow: 0 -6px 18px rgba(30, 30, 30, 0.22);
+    transform: none;
+  }
+  .sf {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'me me me' 'desc desc desc' 'opps opps opps' 'dice rules stamp';
+    align-items: center;
+    column-gap: 10px;
+  }
+  .sf-clip { top: -8px; }
+  .sf-title,
+  .sf-sec,
+  .sf-school,
+  .sf-dice-t { display: none; }
+  .sf-me { grid-area: me; gap: 12px; align-items: center; }
+  .sf-desc-wrap { grid-area: desc; }
+  .sf-opps { grid-area: opps; margin-top: 8px; }
+  .sf-rules { grid-area: rules; }
+  .sf-acts { display: contents; }
+  .sf-dice { grid-area: dice; }
+  .sf-stamp { grid-area: stamp; margin-top: 8px; }
+  .sf-photo { width: 52px; height: 60px; border-width: 4px; border-bottom-width: 10px; }
+  .sf-photo span { font-size: 34px; }
+  .sf-name b { font-size: 28px; }
+  .sf-name b.long { font-size: 22px; }
+  .sf-ability { margin-top: 2px; font-size: 15px; }
+  .sf-form { font-size: 18px; margin-top: 0; }
+  .sf-desc-wrap { position: relative; margin-top: 6px; }
+  .sf-more { position: absolute; right: 0; bottom: 0; padding-left: 8px !important; background: #fffdf6 !important; }
+  .sf.open .sf-more { position: static; }
+  .sf-desc { -webkit-line-clamp: 2; font-size: 12.5px; line-height: 1.55; }
+  .sf-opps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .sf-opp { grid-template-columns: minmax(0, 1fr); font-size: 11px; }
+  .sf-opp-sel { min-height: 36px; font-size: 19px; }
+  .sf-rules { font-size: 11.5px; line-height: 1.45; gap: 0 6px; }
+  .sf-rules button { min-height: 32px; }
+  .sf-magnet { width: 46px; height: 46px; }
+  .sf-stamp { width: 84px; height: 84px; font-size: 36px !important; border-width: 4px !important; outline-width: 3px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sr-card.draw .sr-ring path { animation: none; }
+  .sr-card,
+  .sb-note,
+  .sf-stamp,
+  .sf-magnet { transition: none; }
+}
+
+.sb-foot {
+  margin: 18px 0 0;
+  font-size: 11px;
+  color: #6d645a;
+}
