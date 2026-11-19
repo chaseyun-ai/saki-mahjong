@@ -1,5 +1,5 @@
 import type { Game, RoundResult } from '../engine/game';
-import type { TileId } from '../engine/tiles';
+import type { Kind, TileId } from '../engine/tiles';
 
 // 能力插件：挂在规则引擎的固定时机上。
 // 规则：只能交换没公开的牌（通过 Wall 的方法），或者只给出信息，永远不凭空造牌。
@@ -95,6 +95,8 @@ export interface Ability {
   onRoundEnd?(g: Game, seat: number, result: RoundResult): void;
   // 头像框上的小标签（比如衣的月相、霞绝掉的花色），没有就是 null
   badge?(g: Game, seat: number): string | null;
+  // 鼠标指着头像框上的小标签时弹出来的说明：标题、一排牌（种类）、几行字（尧深种下的牌）。没写就不弹
+  badgeTip?(g: Game, seat: number): { title: string; kinds?: Kind[]; lines?: string[] } | null;
   // 能看到自己下一次摸到的牌（怜）。看到的是哪张由 src/ai/forecast.ts 在复制的牌局上演算
   foresight?: { title: string };
   // 先见只在某些局开着（龙华借怜的膝枕的那一局）；没写是一直开着
@@ -115,7 +117,7 @@ export interface Ability {
   canWin?(g: Game, seat: number, win?: { tile: TileId; tsumo: boolean }): boolean;
   // 不许 target 和牌（涅莉的七姐妹封住的人）
   forbidsWin?(g: Game, seat: number, target: number): boolean;
-  // 不许 target 自摸（衣的海底路线上，别人听了牌也不能自摸）。荣和照样可以
+  // 不许 target 自摸（摸到了和了牌也不许）。荣和照样可以。现在没有角色用（衣的海底路线是让别人摸不到和了牌）
   forbidsTsumo?(g: Game, seat: number, target: number): boolean;
   // 这一刻 caller 鸣不了别人打的牌（衣在海底路线上听牌、立直以后，海底一定轮到她）
   freezesCalls?(g: Game, seat: number, caller: number): boolean;

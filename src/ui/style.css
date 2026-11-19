@@ -1119,6 +1119,29 @@ button {
   outline: 2px solid var(--gold);
 }
 
+/* 被荣和的那张：留在牌河里，金框一明一暗 */
+.pond .tile.ron {
+  z-index: 1;
+  outline: 2px solid #ffd45a;
+  animation: ron-glow 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes ron-glow {
+  from {
+    box-shadow: 0 0 6px 2px rgba(255, 196, 60, 0.55);
+  }
+  to {
+    box-shadow: 0 0 16px 6px rgba(255, 210, 90, 0.95);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pond .tile.ron {
+    animation: none;
+    box-shadow: 0 0 12px 4px rgba(255, 205, 80, 0.85);
+  }
+}
+
 .pond .tile.fresh {
   animation: drop 0.25s ease-out;
 }
@@ -3631,6 +3654,81 @@ button {
     padding: 0 5px;
     bottom: 4px;
   }
+}
+
+/* 有说明的小标签（尧深的「种N」）：指着（手机上点）弹出种下的牌 */
+.badge.has-pop {
+  pointer-events: auto;
+  cursor: help;
+  z-index: 6;
+}
+
+.badge.has-pop:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(240, 195, 90, 0.6);
+}
+
+.badge-pop {
+  display: none;
+  position: absolute;
+  left: calc(100% + 6px);
+  bottom: -6px;
+  width: max-content;
+  max-width: 236px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--gold);
+  background: rgba(14, 22, 30, 0.95);
+  color: #e8eef2;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.badge-pop b {
+  display: block;
+  color: #f6e7b0;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+
+.badge-pop .bp-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 5px;
+}
+
+.badge-pop .bp-tiles .tile {
+  flex: none;
+}
+
+.badge-pop .bp-line {
+  display: block;
+  color: #c9d4da;
+}
+
+.badge.has-pop:hover .badge-pop,
+.badge.has-pop:focus .badge-pop {
+  display: block;
+}
+
+/* 右边、上边的头像贴着画面右边：往左弹 */
+.seat-frame.right .badge-pop,
+.seat-frame.top .badge-pop,
+.net-card.right .badge-pop,
+.net-card.top .badge-pop {
+  left: auto;
+  right: calc(100% + 6px);
+}
+
+/* 网麻的标签在头像左上角：往下弹 */
+.net-card .badge-pop {
+  bottom: auto;
+  top: -4px;
 }
 
 /* ---------- 憧：距离感 ---------- */
@@ -8671,11 +8769,24 @@ canvas.rii-sky {
 
 .stage3d.flat.v2 {
   --pw: clamp(72px, 18vh, 150px);
+  /* 团体赛名牌下面多一条队名牌（.tm-plate）的高度：自己的头像框跟着高，左边一列的按钮都要往上让 */
+  --tp: 0px;
+  /* 左边一列从下往上：自己的头像框、理和鸣切（--assist-b 是它的下沿离画面底边多远）、挂机（--auto-b）、上家的头像框 */
+  --assist-b: calc(14px + var(--pw) * 1.2 + 40px + var(--tp));
+  --auto-b: calc(var(--assist-b) + 4 * 35px + 6px);
+  /* 挂机按钮上沿离画面底边多远（按钮约 30px 高）：上家的头像框要在这上面再空 14px */
+  --auto-top: calc(var(--auto-b) + 30px + 14px);
 }
 
+.stage3d.flat.v2:has(.tm-plate) {
+  --tp: 24px;
+}
+
+/* 上家：平常在左边 26% 高的地方；画面矮的时候头像框（头像 + 名牌 + 队名牌）底下会压到挂机和理和鸣切，
+   就整个往上挪，下沿停在挂机上面 */
 .stage3d.flat.v2 .seat-frame.left {
   left: 16px;
-  top: 26%;
+  top: max(12px, min(26%, calc(100% - var(--auto-top) - var(--pw) * 1.2 - 28px - var(--tp))));
 }
 
 .stage3d.flat.v2 .seat-frame.right {
@@ -8708,7 +8819,7 @@ canvas.rii-sky {
   left: 12px;
   right: auto;
   top: auto;
-  bottom: calc(14px + var(--pw) * 1.2 + 40px);
+  bottom: var(--assist-b);
   grid-template-columns: 30px;
   gap: 5px;
 }
@@ -8723,9 +8834,21 @@ canvas.rii-sky {
   left: 6px;
   right: auto;
   top: auto;
-  bottom: calc(14px + var(--pw) * 1.2 + 40px + 4 * 35px + 6px);
+  bottom: var(--auto-b);
   padding: 4px 9px;
   font-size: 14px;
+}
+
+/* 矮一点的画面（笔记本）：挂机挪到「理」的右边，和它一排，不再占一行，上家的头像框可以少往上挪一点 */
+@media (max-height: 780px) and (min-height: 501px) {
+  .stage3d.flat.v2 {
+    --auto-b: calc(var(--assist-b) + 3 * 35px);
+    --auto-top: calc(var(--assist-b) + 4 * 35px + 14px);
+  }
+
+  .stage3d.flat.v2 .auto-btn {
+    left: 47px;
+  }
 }
 
 /* 怜的一巡先见、淡和霞的技能按钮：左上角空着，放那里 */

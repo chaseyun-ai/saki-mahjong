@@ -104,6 +104,18 @@ export const takamiAbility: Ability = {
     return takamiHarvest(g, seat) ? '收获' : n ? `种${n}` : null;
   },
 
+  // 指着头像上的「种N」：按种下的顺序摆出种下的牌
+  badgeTip(g, seat) {
+    const seeds = takamiSeeds(g, seat);
+    if (!seeds.length) return null;
+    const n = Math.min(HARVEST.max, [...seedCounts(seeds).values()].reduce((a, b) => a + b, 0));
+    return {
+      title: `种下的牌（${seeds.length} 张）`,
+      kinds: seeds,
+      lines: [takamiHarvest(g, seat) ? `最后一局：这 ${n} 张回到她的配牌里` : `最后一局这 ${n} 张会回到她的配牌里`],
+    };
+  },
+
   insight(g, seat) {
     const seeds = takamiSeeds(g, seat);
     return [seeds.length ? `种下了 ${seedText(seeds)}` : '还没种下牌', takamiHarvest(g, seat) ? '最后一局：种下的牌回到她的配牌里' : '最后一局收获'];

@@ -2248,14 +2248,13 @@ export class App {
     const c = this.chars[s];
     const mine = s === this.me;
     const active = g.phase === 'turn' && g.turn === s && !this.showResult ? ' active' : '';
-    const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·软封印' : c.ability?.badge?.(g, s);
     const face = mine
       ? `<img src="${powerPortraitUrl(c.id)}" alt="" onerror="this.remove()" /><span class="halo"></span>`
       : '<span class="sil"></span><span class="noimg">NO IMAGE</span>';
     return `
       <div class="net-card ${POS[s]}${active}${mine ? ' mine' : ''}" data-seat="${s}">
         <div class="net-name">${mine ? 'のどっち' : c.name}</div>
-        <div class="portrait">${face}${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.fjHtml(s)}${this.mgHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'net')}</div>
+        <div class="portrait">${face}${this.badgeHtml(s)}${this.bulbHtml(s)}${this.fjHtml(s)}${this.mgHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'net')}</div>
         ${this.towerHtml(s)}${mine ? this.bladeBarHtml() : ''}
       </div>`;
   }
@@ -3127,10 +3126,11 @@ export class App {
     hud.parentElement?.classList.toggle('sketch', this.sketchShown());
   }
 
-  // 高鸭稳乃的深山：牌山上的雾有几级（谁都看得见；被封印的那一局没有雾）
+  // 高鸭稳乃的深山：牌山上的雾有几级（谁都看得见；被封印的那一局没有雾）。
+  // 发牌前（选技能的时候）牌山还没摆出来，不起雾；3D 牌桌还要等牌山真的摆好（table3d 的 mistFill）
   private mistLevel(): number {
     const g = this.game;
-    if (!g) return 0;
+    if (!g || g.phase === 'predeal' || g.phase === 'postdeal') return 0;
     return Math.max(0, ...[0, 1, 2, 3].filter((s) => this.chars[s]?.id === 'shizuno' && g.active(s)).map((s) => shizunoMist(g, s)));
   }
 
@@ -3183,13 +3183,27 @@ export class App {
     // 智叶鞘里听着牌的样子只有操作她的玩家看得见，别人看到的始终是平常头像
     const powered = !!g.active(s)?.powered?.(g, s) && (c.id !== 'satoha' || s === this.me);
     const src = power || powered ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
-    const badge = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·软封印' : c.ability?.badge?.(g, s);
     return `
       <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
-        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${badge ? `<span class="badge">${badge}</span>` : ''}${this.bulbHtml(s)}${this.fjHtml(s)}${this.mgHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'seat')}</div>
+        <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${this.badgeHtml(s)}${this.bulbHtml(s)}${this.fjHtml(s)}${this.mgHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'seat')}</div>
         ${this.towerHtml(s)}
         <div class="seat-info">${c.name}</div>${this.teamPlateHtml(s)}${s === this.me ? this.bladeBarHtml() : ''}
       </div>`;
+  }
+
+  // 头像框上的能力小标签（衣的月相、尧深的「种N」……）。能力写了 badgeTip 的，指着（手机上点）弹出说明和一排牌
+  private badgeHtml(s: number): string {
+    const g = this.game!;
+    const c = this.chars[s];
+    const blocked = c.ability && g.isSealed(s) ? '封印' : this.sistersBlocked(s) ? '七姐妹·软封印' : null;
+    const badge = blocked ?? c.ability?.badge?.(g, s);
+    if (!badge) return '';
+    const tip = blocked ? null : c.ability?.badgeTip?.(g, s);
+    if (!tip) return `<span class="badge">${badge}</span>`;
+    // 种类换成那种牌的第四张：第四张从来不是赤宝牌
+    const tiles = tip.kinds?.length ? `<span class="bp-tiles">${tip.kinds.map((k) => tileHtml(k * 4 + 3, { size: 'mini' })).join('')}</span>` : '';
+    const lines = (tip.lines ?? []).map((l) => `<span class="bp-line">${l}</span>`).join('');
+    return `<span class="badge has-pop" tabindex="0" aria-label="${tip.title}">${badge}<span class="badge-pop"><b>${tip.title}</b>${tiles}${lines}</span></span>`;
   }
 
   // 团体赛：名牌下面一条队伍颜色的牌子写队名。头像上沿正中常挂着能力的标记（智叶的间合、哩的光锁、梅根的牛仔帽），
@@ -4020,6 +4034,7 @@ export class App {
     const vanish = this.vanishStyle(s);
     if (g.stealthed(s, this.me) && !vanish) return `<div class="pond ${POS[s]}"></div>`;
     const ghost = [0, 1, 2, 3].some((o) => o !== s && g.stealthed(s, o));
+    const ron = new Set(g.phase === 'roundEnd' ? (g.roundResult?.wins ?? []).filter((w) => w.from === s).map((w) => w.tile) : []);
     const tiles = p.discards
       .map((d, i) => {
         const classes: string[] = [];
@@ -4028,6 +4043,8 @@ export class App {
         if (d.tsumogiri) classes.push('tsumogiri');
         if (last && last.seat === s && i === p.discards.length - 1) classes.push('last');
         if (this.freshDiscard === `${s}-${i}`) classes.push('fresh');
+        // 被荣和的那张：留在牌河里发金光，到下一局
+        if (ron.has(d.tile)) classes.push('ron');
         // 淡掉的时候立直宣言牌也竖着：别人不该知道她立直了
         return tileHtml(d.tile, { size: 'pond', sideways: d.riichi && !vanish, classes });
       })
@@ -4188,11 +4205,13 @@ export class App {
     return extra ? `<div class="ability-panel foresight-only" style="--c:${c.color}">${extra}</div>` : '';
   }
 
-  // 谁封印了自己：末原恭子鸣牌打乱流向只到她下一次摸牌，狮子原爽的蛇神威是一整局
+  // 谁封印了自己：末原恭子鸣牌打乱流向只到她下一次摸牌，狮子原爽的蛇神威是一整局，神代小莳的天照是天照附在她身上的这几局
   private sealText(): string {
     const g = this.game!;
     const by = g.abilities.find((a, o) => o !== this.me && a?.seals?.(g, o, g.round));
-    return by?.id === 'kyouko' ? '末原恭子鸣牌打乱了流向，到她下一次摸牌之前能力不起作用' : '狮子原爽的蛇神威封印了别人的能力，这一局能力不起作用';
+    if (by?.id === 'kyouko') return '末原恭子鸣牌打乱了流向，到她下一次摸牌之前能力不起作用';
+    if (by?.id === 'komaki') return '神代小莳的天照·天岩户封印了别人的能力，天照附在她身上时能力不起作用';
+    return '狮子原爽的蛇神威封印了别人的能力，这一局能力不起作用';
   }
 
   // 主动开的技能：能量条和开关按钮（演算中不显示）

@@ -118,19 +118,20 @@ describe('天江衣', () => {
     expect(haitei).toBeGreaterThan(0);
   }, 120000);
 
-  it('一向听地狱（海底路线上）：别家一向听每次都摸不到进张（两向听照常），听了牌的不能自摸', () => {
-    const n = { one: 0, oneBetter: 0, two: 0, twoBetter: 0, tsumoChecks: 0 };
+  it('一向听地狱（海底路线上）：别家一向听每次都摸不到进张（两向听照常），听了牌的摸不到和了牌', () => {
+    const n = { one: 0, oneBetter: 0, two: 0, twoBetter: 0, tenpai: 0, tenpaiWin: 0 };
     for (let seed = 1; seed <= 16; seed++) {
       play(seed, (g, me) => {
         newMoon(g, me);
         g.onEvent((e) => {
           if (e.type !== 'draw' || e.seat === me || g.rinshanDraw || !koromoRouteOn(g, me)) return;
           const p = g.players[e.seat];
-          if (g.legalActions(e.seat).length) {
-            n.tsumoChecks++;
-            expect(g.legalActions(e.seat).some((a) => a.type === 'tsumo')).toBe(false);
-          }
           const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
+          // 听了牌的别家：摸到的不是和了牌（以前是摸得到、只是不许自摸）
+          if (before === 0) {
+            n.tenpai++;
+            if (shanten(toCounts(p.hand), p.melds.length) === -1) n.tenpaiWin++;
+          }
           const better = shanten(toCounts(p.hand), p.melds.length) < before;
           if (before === 1) {
             n.one++;
@@ -147,6 +148,8 @@ describe('天江衣', () => {
     // 牌山里只剩进张时拦不住，所以不是严格的 0
     expect(n.oneBetter).toBeLessThan(n.one * 0.05);
     expect(n.twoBetter).toBeGreaterThan(n.two * 0.08);
+    expect(n.tenpai).toBeGreaterThan(10);
+    expect(n.tenpaiWin).toBe(0);
   }, 120000);
 
   it('一向听地狱（不在海底路线上）：满月时别家一向听摸不到进张（两向听照常）；新月时拦得住一部分', () => {

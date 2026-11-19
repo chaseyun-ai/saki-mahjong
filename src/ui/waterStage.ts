@@ -168,7 +168,7 @@ function stageDraw(g: Game, seat: number, rinshan: boolean, me: number): void {
       counts[kindOf(t)]--;
       return sh <= 0;
     },
-    // 实在躲不开时宁可让人听牌（听了牌也不能自摸），也不能开杠
+    // 实在躲不开时宁可让人听牌（海底路线上听了牌也摸不到和了牌），也不能开杠
     (t) => isWait(t) || counts[kindOf(t)] >= 3,
     isWait,
   );

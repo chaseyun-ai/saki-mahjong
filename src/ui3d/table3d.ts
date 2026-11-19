@@ -181,6 +181,9 @@ const STAGE_LIGHT = 1000;
 const REVEAL_DELAY_25D = 1.4;
 const BOLT_LEAD = 0.2 + BOLT_LEADER;
 const TOPPLE_STAGGER_25D = 0.03;
+// 荣和那张牌底下的光晕：比牌每边宽出多少（牌宽是 1），画光晕的图每单位多少像素
+const RON_MARGIN = 0.75;
+const RON_PX = 100;
 // 初美鸣出来的东、北中间那张牌面上的紫色墨
 const KIMON_INK = '#8a3cf2';
 // 初美聚着风和牌：手牌倒完，和了牌举起来、停一下、往桌上砸（秒）。砸到桌面那一下从这张牌炸开
@@ -644,6 +647,9 @@ export class Table3D {
   private ghostAt = new Map<TileId, Placement>();
   // 初美鸣出来的东、北中间那张牌上的紫光（牌 id → 贴在牌面上的发光字和光柱）
   private glows = new Map<TileId, THREE.Group>();
+  // 荣和的那张：牌河里原地发金光（牌身、牌面换成会发光的一份，桌面上一圈光晕），见 syncRonMarks
+  private ronMarks = new Map<TileId, THREE.Mesh>();
+  private ronMats: { body: THREE.MeshStandardMaterial; face: THREE.MeshStandardMaterial; halo: THREE.MeshBasicMaterial } | null = null;
   private kimonFaceMat: THREE.MeshStandardMaterial | null = null;
   private overlayGroup: THREE.Group | null = null;
   private zoom = { t: -1, target: new THREE.Vector3() };
@@ -1558,8 +1564,8 @@ export class Table3D {
     const rows: SpotRow[] = [];
     for (const w of rv.wins) {
       if (rv.slams.has(w.tile)) continue;
+      // 荣和的那张留在牌河里，聚光灯只照手牌
       const ids = [...g.players[w.seat].hand];
-      if (!ids.includes(w.tile) && !this.fallsBack(w.seat)) ids.push(w.tile);
       const pts = ids.map((id) => this.tiles[id].target?.pos).filter((p): p is THREE.Vector3 => !!p);
       if (!pts.length) continue;
       const o = this.seatPoint(w.seat, 0, 0, 0);
@@ -1977,16 +1983,18 @@ export class Table3D {
     this.aimHimeko(g, targets);
     this.applyDeal(g, view.me, targets);
     this.placeRiichiSticks(g);
+    const rons = this.ronTiles(g);
     for (let id = 0; id < TILE_COUNT; id++) {
       const t = this.tiles[id];
       const target = targets.get(id) ?? null;
       t.target = target;
       const moon = this.scoop?.tile === id ? this.moonGlow() : null;
+      const ron = rons.has(id) ? this.ronMat() : null;
       const back = moon ? moon.back : view.waveBacks?.has(id) && this.waveReached(id, target) ? this.waveMat : view.akaBacks?.has(id) ? this.akaMat : view.tintBacks?.has(id) ? this.tintMats[Math.min(3, Math.floor(kindOf(id) / 9))] : this.backMat;
       if (back && t.back.material !== back) t.back.material = back;
-      const body = moon ? moon.body : view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
+      const body = moon ? moon.body : ron ? ron.body : view.deadly?.has(id) ? this.deadlyMat : this.bodyMat;
       if (body && t.body.material !== body) t.body.material = body;
-      const faceMat = view.glowTiles?.has(id) ? this.kimonFace() : this.faceMat;
+      const faceMat = ron ? ron.face : view.glowTiles?.has(id) ? this.kimonFace() : this.faceMat;
       if (faceMat && t.face.material !== faceMat) t.face.material = faceMat;
       if (t.body.customDepthMaterial) {
         t.body.customDepthMaterial = t.back.customDepthMaterial = undefined;
@@ -2008,11 +2016,12 @@ export class Table3D {
       }
     }
     this.syncProjections(seen, view.me);
+    this.syncRonMarks(rons);
     this.syncGhosts();
     this.syncChains(g, view);
     this.showGravity(!!view.gravity);
     this.drawConsole(g, view);
-    this.syncMist(g, view);
+    this.syncMist(view);
     this.syncGale(view);
     this.syncStars(view);
     this.syncAwai(g, view);
@@ -2833,6 +2842,94 @@ export class Table3D {
     }
   }
 
+  // 荣和的那张（一炮多响也是同一张）：一局结束到下一局发牌，留在放铳的人的牌河里发光。
+  // 初美聚着风荣和的那张要被拿去砸，不算
+  private ronTiles(g: Game): Set<TileId> {
+    const r = g.phase === 'roundEnd' ? g.roundResult : null;
+    return new Set(r ? r.wins.filter((w) => w.from !== null && !this.galeWin(w.seat)).map((w) => w.tile) : []);
+  }
+
+  // 发光的牌身、牌面（金色，亮度由 updateRonMarks 一明一暗），和桌面上那圈光晕的材质。用到时才建
+  private ronMat(): NonNullable<Table3D['ronMats']> {
+    if (this.ronMats) return this.ronMats;
+    const matte = this.style === '25d' ? 0.62 : 0;
+    const face = new THREE.MeshStandardMaterial({ map: this.faceMat?.map ?? null, transparent: true, roughness: this.faceMat?.roughness ?? 0.35, emissive: '#ffc94a', emissiveIntensity: 0 });
+    // 光晕的图：每单位 RON_PX 像素，中间是牌（被牌盖住），贴着牌边一圈亮边，往外一片柔光慢慢淡掉
+    const c = document.createElement('canvas');
+    c.width = Math.round((TILE_W + RON_MARGIN * 2) * RON_PX);
+    c.height = Math.round((TILE_H + RON_MARGIN * 2) * RON_PX);
+    const x = c.getContext('2d')!;
+    const m = RON_MARGIN * RON_PX;
+    const tw = TILE_W * RON_PX;
+    const th = TILE_H * RON_PX;
+    x.shadowColor = '#ffffff';
+    x.fillStyle = '#ffffff';
+    for (const [blur, n] of [[m * 0.75, 2], [m * 0.3, 2]] as const) {
+      x.shadowBlur = blur;
+      for (let i = 0; i < n; i++) {
+        x.beginPath();
+        x.roundRect(m, m, tw, th, 12);
+        x.fill();
+      }
+    }
+    x.shadowBlur = 6;
+    x.strokeStyle = '#ffffff';
+    x.lineWidth = 7;
+    x.beginPath();
+    x.roundRect(m - 9, m - 9, tw + 18, th + 18, 18);
+    x.stroke();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.ronMats = {
+      body: wet(new THREE.MeshStandardMaterial({ color: '#fff3cf', emissive: '#ffb02e', emissiveIntensity: 0, roughness: matte || 0.35 })),
+      face: wet(face),
+      // 普通混合（不是叠加）：盖在蓝色桌布上还是金色，不会变成发白的浅蓝
+      halo: new THREE.MeshBasicMaterial({ map: tex, color: '#ffc531', transparent: true, opacity: 0, depthWrite: false }),
+    };
+    return this.ronMats;
+  }
+
+  // 荣和那张牌底下的光晕：挂在牌上（牌在哪光晕在哪），贴着桌面、比牌大一圈，牌盖住中间、四周露出一圈金光
+  private syncRonMarks(rons: Set<TileId>): void {
+    for (const [id, m] of this.ronMarks) {
+      if (rons.has(id)) continue;
+      m.removeFromParent();
+      m.geometry.dispose();
+      this.ronMarks.delete(id);
+    }
+    for (const id of rons) {
+      if (this.ronMarks.has(id)) continue;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(TILE_W + RON_MARGIN * 2, TILE_H + RON_MARGIN * 2), this.ronMat().halo);
+      m.position.z = -TILE_T / 2 + 0.02;
+      m.renderOrder = 2;
+      this.tiles[id].group.add(m);
+      this.ronMarks.set(id, m);
+    }
+  }
+
+  // 闪电打到那张牌（2.5D；3D 是开始倒牌）时亮起来，之后一明一暗
+  private updateRonMarks(): void {
+    const mats = this.ronMats;
+    if (!mats) return;
+    if (!this.ronMarks.size) {
+      mats.body.emissiveIntensity = mats.face.emissiveIntensity = mats.halo.opacity = 0;
+      return;
+    }
+    // 手绘板换了牌面的图：跟着换
+    const map = this.faceMat?.map ?? null;
+    if (mats.face.map !== map) {
+      mats.face.map = map;
+      mats.face.needsUpdate = true;
+    }
+    const rv = this.reveal;
+    const on = rv ? THREE.MathUtils.clamp((this.now - (rv.at - (this.style === '25d' ? 0.2 : 0))) / 0.35, 0, 1) : 1;
+    const k = on * (0.78 + 0.22 * Math.sin(this.now * 3.2));
+    mats.body.emissiveIntensity = 0.9 * k;
+    // 牌面只暖一点点，字的颜色不变
+    mats.face.emissiveIntensity = 0.1 * k;
+    mats.halo.opacity = 0.95 * k;
+  }
+
   // 初美鸣出来的东、北中间那张：牌面本身就是紫色的字（换一套东南西北是紫字的牌面，见 kimonFace），
   // 牌上一道从牌面直直往上的紫色光柱（牌躺着时就是朝天，见 tileBeam.ts）
   private makeGlow(_id: TileId): THREE.Group {
@@ -3556,18 +3653,31 @@ export class Table3D {
     return this.renderer.domElement.toDataURL('image/jpeg', 0.85);
   }
 
-  // 深山的雾：每一墩牌山顶上一团，只罩在还有牌的墩上
-  private syncMist(g: Game, view: SyncView): void {
+  // 深山的雾：沿着四排牌山铺（mist.ts），只罩在真的摆好了、还有牌的墩上
+  private syncMist(view: SyncView): void {
     if (this.mistFor !== view.me) {
       this.mistFor = view.me;
       this.mistTops = [0, 1, 2, 3].map((wall) =>
         Array.from({ length: MIST_STACKS }, (_, i) => this.wallPlacement({ wall, stack: i + 1, level: 0, faceUp: false }, view.me).pos.clone().setY(TILE_T * 2)),
       );
     }
-    const level = view.mist ?? 0;
-    this.mist.setLevel(level);
+    this.mist.setLevel(view.mist ?? 0);
+    this.mistFill();
+  }
+
+  // 每一帧：哪几墩牌山真的摆好了（牌看得见、已经落到牌山上的位置）。新牌山还在升降板上升、牌还在飞、
+  // 发牌前牌已经收走的时候都不算，雾等牌山成形了才起；摸空的墩雾散掉
+  private mistFill(): void {
+    if (!this.mistTops.length) return;
     const filled = [0, 1, 2, 3].map(() => new Array<boolean>(MIST_STACKS).fill(false));
-    for (const slot of wallSlots(g).values()) filled[slot.wall][slot.stack - 1] = true;
+    if (this.mist.wanted()) {
+      for (const [id, slot] of this.wallSlotOf) {
+        const t = this.tiles[id];
+        const to = t?.target;
+        if (!t.group.visible || !to || t.group.position.distanceToSquared(to.pos) > 0.04) continue;
+        filled[slot.wall][slot.stack - 1] = true;
+      }
+    }
     this.mist.setStacks(this.mistTops.map((row, w) => row.map((pos, i) => ({ pos, filled: filled[w][i] }))));
   }
 
@@ -3807,8 +3917,8 @@ export class Table3D {
       if (win === null) continue;
       const tsumo = g.players[s].hand.includes(win);
       const slam = rv.slams.has(win);
-      // 自摸的那张跟着一起倒；荣和的那张等倒完再从牌河移过来（改良布局的自己荣和：留在牌河里，照雀魂）。要砸的那张由 animateReveal 搬过去
-      if (tsumo || slam || (this.now >= rv.fxAt && !back)) out.set(win, this.winLie(g, s, me, win).at);
+      // 自摸的那张跟着一起倒；荣和的那张一直留在放铳的人的牌河里发着光（照雀魂，见 ronMark）。要砸的那张（初美聚着风）由 animateReveal 搬过去
+      if (tsumo || slam) out.set(win, this.winLie(g, s, me, win).at);
       if (tsumo && !slam && !lying) topple(win, tiles.length);
     }
   }
@@ -5212,6 +5322,7 @@ export class Table3D {
     this.twister.update(dt, this.camera, this.renderer);
     this.effects.update(dt);
     this.updateSpots(dt);
+    this.mistFill();
     this.mist.update(dt);
     this.stars?.update(dt, this.camera, this.renderer.domElement.height);
     // 淡的星空铺开时四周也暗下来
@@ -5243,6 +5354,7 @@ export class Table3D {
     this.updateChains(dt);
     this.updateGhosts();
     this.updateGlows();
+    this.updateRonMarks();
     // 引力圆慢慢显出来、收回去；刚开那一下的猛缩一秒多弹回来
     this.gravityA += ((this.gravityOn ? 1 : 0) - this.gravityA) * Math.min(1, dt * (this.gravityOn ? 5 : 2.5));
     if (!this.gravityOn && this.gravityA < 0.004) this.gravityA = 0;

@@ -830,6 +830,13 @@ export const awaiAbility: Ability = {
         const waits = g.waits(seat);
         if (waits.length) return { seat, ability: 'awai', text: '命运支配', deny: (t: TileId) => waits.includes(kindOf(t)) };
       }
+      // 双立直以后、转角暗杠之前不提前和：也定成规矩。以前只在她自己摸牌前换一下，
+      // 别人的规矩（霞的绝一门、爽的云之类）对账换牌时会把和了牌又换回来，她就在转角之前自摸了。
+      // 按了退相干（听牌时必定自摸）的那一次不管
+      if (awaiWaitingForCorner(g, seat) !== null && !stateOf(g, seat).decohere) {
+        const waits = g.waits(seat);
+        if (waits.length) return { seat, ability: 'awai', text: '命运支配', deny: (t: TileId) => waits.includes(kindOf(t)) };
+      }
       return;
     }
     if (accel) {

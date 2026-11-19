@@ -304,7 +304,7 @@ export class Game {
     return ![0, 1, 2, 3].some((o) => o !== seat && this.binds(o, seat) && !!this.active(o)?.forbidsWin?.(this, o, seat));
   }
 
-  // 别人的能力许不许这家自摸（衣的海底路线：别人听了牌也不能自摸）
+  // 别人的能力许不许这家自摸（现在没有角色用：衣的海底路线改成了别人摸不到和了牌，见 koromo.ts）
   canTsumo(seat: number): boolean {
     return ![0, 1, 2, 3].some((o) => o !== seat && this.binds(o, seat) && !!this.active(o)?.forbidsTsumo?.(this, o, seat));
   }

@@ -14,7 +14,7 @@ import { PRIORITY, type Ability, type DrawRule } from './types';
 //   鸣完以后海底换成她的和了牌、只给她看，这一局进入“海底”路线（海底本身是役，所以可以无役鸣牌）
 // - 一向听地狱：整场都在。别家一向听时摸不到进张，要靠鸣牌才听得了牌（原作里她支配的场上，别家都卡在一向听）。
 //   海底路线上每次都摸不到；不在海底路线上的局按月相算概率（新月也有，满月每次）
-// - 海底路线上：别家听了牌的不能自摸；
+// - 海底路线上：别家听了牌也摸不到和了牌（牌山里、岭上的都换走）；
 //   她听了牌以后，别家鸣不了牌（看得穿海底的咲、久、真子、美穗子除外）。
 //   有人鸣牌、开杠把海底错开，路线就停下来，等她再挪回来（原作里咲就是这样破的）
 // - 海底牌能定成宝牌（或赤牌）就定成宝牌
@@ -53,7 +53,7 @@ export const KOROMO = {
   dealDora: [1, 2] as ByMoon, // 月下的配牌：海底归她的局，配牌里最多几张孤张换成宝牌（四舍五入）
   riichiAt: 4, // 牌山剩这么多张时（她倒数第二次摸牌）立直
   holdUnder: 8000, // 电脑的衣：海底路线上不到这么大（庄家 1.5 倍）的和先不和，等海底自摸
-  // 海底被别人鸣牌错开以后，这一局还算不算海底路线（地狱、别人不能自摸照样起作用）
+  // 海底被别人鸣牌错开以后，这一局还算不算海底路线（地狱、别人摸不到和了牌照样起作用）
   sticky: true,
   // 别家电脑（没经验的）每局会想到去鸣牌错开她海底的概率；KOROMO_READERS 里的人每局都会
   aiDisrupt: 0.3,
@@ -72,7 +72,7 @@ interface KoromoGameState {
 }
 interface KoromoState {
   route?: 'deal' | 'call'; // 这一局进了海底路线：配牌时（海底捞月）还是鸣牌（海底挪移）
-  on?: boolean; // 现在海底在她那边，路线起作用（地狱、别人不能自摸）
+  on?: boolean; // 现在海底在她那边，路线起作用（地狱、别人摸不到和了牌）
   haitei?: TileId; // 安排好的海底牌（锁住，只给她看）
   kind?: number; // 海底定的是哪种牌（被错开以后再回到她这边时还按这种牌安排）
   called?: boolean; // 她这一局鸣过牌（鸣牌以后听牌、海底归她，就是海底挪移）
@@ -80,7 +80,7 @@ interface KoromoState {
   fogged?: boolean; // 稳乃的雾遮住了这一局的海底（掷过就是 true/false）
 }
 
-// 这一局海底路线起作用（地狱、别人不能自摸、不加潮起潮落）：海底归她时；sticky 时进过路线就一直算
+// 这一局海底路线起作用（地狱、别人摸不到和了牌、不加潮起潮落）：海底归她时；sticky 时进过路线就一直算
 const routeLive = (st: KoromoState) => !!st.on || (KOROMO.sticky && !!st.route);
 
 const gameStateOf = (g: Game, seat: number) => g.abilityGameState[seat] as KoromoGameState;
@@ -268,10 +268,28 @@ function richRule(g: Game, seat: number): DrawRule | undefined {
   return { seat, ability: 'koromo', text: '满潮', deny: (t) => !want(t) };
 }
 
+// 海底路线上，听了牌的别家摸不到和了牌：牌山里、岭上的都换走。
+// 他自己的能力锁好的和了牌（咲配牌时定好的岭上牌之类）也照换（照涅莉的七姐妹那样强行换），
+// 不然他摸到了却自摸不了。玄这样的作者钦定照样守，别人锁的牌换不动就算了
+function haiteiWall(g: Game, seat: number, drawer: number, rinshan: boolean): DrawRule | undefined {
+  const waits = g.waits(drawer);
+  if (!waits.length) return;
+  const deny = (t: TileId) => waits.includes(kindOf(t));
+  const w = g.wall;
+  const next = rinshan ? w.rinshan[0] : w.live[0];
+  if (next !== undefined && deny(next) && g.binds(seat, drawer) && !g.isAbsolute(drawer)) {
+    const id = g.active(drawer)?.id;
+    const owners = w.locked.ownersOf(next);
+    const own = owners.length > 0 && !!id && owners.every((o) => o === id || o === `${id}-${drawer}`);
+    if (own && w.forceNext(rinshan, (t) => !deny(t) && !w.deny?.(t), g.rng)) g.emit({ type: 'ability', seat, ability: 'koromo', text: '海底捞月', target: drawer });
+  }
+  return { seat, ability: 'koromo', text: '海底捞月', deny };
+}
+
 export const koromoAbility: Ability = {
   id: 'koromo',
   name: '海底捞月',
-  description: `海底捞月：配完牌时，如果没人鸣牌、牌山最后一张归她，海底就变成她不求人和得了的牌（只有她看得到），这一局走“海底”路线，配牌里还会混进一两张宝牌；最后两巡还没人鸣牌，她立直，下一巡一发自摸海底。海底挪移：海底不归她时，她一向听以内鸣一手就能听牌、最后一张又轮到她，鸣完海底就换成她的和了牌，同样走海底路线。一向听地狱：整场都在，别家一向听时摸不到进张，要靠鸣牌才听得了牌（海底路线上每次都摸不到，平时有 ${span(KOROMO.hell)}）。海底路线上，别家听了牌的不能自摸；她听牌以后别家鸣不了牌（咲、久、真子、美穗子看得穿，照样能鸣），立直以后谁都鸣不了；有人鸣牌、开杠把海底错开，路线就停下来。海底牌能定成宝牌就定成宝牌。满潮：海底路线上，她没听牌时摸牌有 ${span(KOROMO.flood)} 换成进张，听牌以后同样的概率换成还听着牌的宝牌。潮起潮落：不在海底路线上时，她的进张效率上升 ${span(KOROMO.tide)}。换进张时先给宝牌（松实玄的宝牌还在时不给）。感知：看得出别家听没听牌、牌有多大（头像旁亮灯，不知道听哪几张）。月相：每个半庄随机一个月相，上面写成两个数的都是从新月到满月，月亮越圆她越强；越接近满月，别人的能力也越难干扰她（满月挡掉 ${KOROMO.resist * 100}%），霞和玄的能力照样管得到。`,
+  description: `海底捞月：配完牌时，如果没人鸣牌、牌山最后一张归她，海底就变成她不求人和得了的牌（只有她看得到），这一局走“海底”路线，配牌里还会混进一两张宝牌；最后两巡还没人鸣牌，她立直，下一巡一发自摸海底。海底挪移：海底不归她时，她一向听以内鸣一手就能听牌、最后一张又轮到她，鸣完海底就换成她的和了牌，同样走海底路线。一向听地狱：整场都在，别家一向听时摸不到进张，要靠鸣牌才听得了牌（海底路线上每次都摸不到，平时有 ${span(KOROMO.hell)}）。海底路线上，别家听了牌也摸不到和了牌；她听牌以后别家鸣不了牌（咲、久、真子、美穗子看得穿，照样能鸣），立直以后谁都鸣不了；有人鸣牌、开杠把海底错开，路线就停下来。海底牌能定成宝牌就定成宝牌。满潮：海底路线上，她没听牌时摸牌有 ${span(KOROMO.flood)} 换成进张，听牌以后同样的概率换成还听着牌的宝牌。潮起潮落：不在海底路线上时，她的进张效率上升 ${span(KOROMO.tide)}。换进张时先给宝牌（松实玄的宝牌还在时不给）。感知：看得出别家听没听牌、牌有多大（头像旁亮灯，不知道听哪几张）。月相：每个半庄随机一个月相，上面写成两个数的都是从新月到满月，月亮越圆她越强；越接近满月，别人的能力也越难干扰她（满月挡掉 ${KOROMO.resist * 100}%），霞和玄的能力照样管得到。`,
   priority: PRIORITY.koromo,
 
   beforeDeal(g, seat) {
@@ -379,6 +397,8 @@ export const koromoAbility: Ability = {
     const p = g.players[drawer];
     const counts = toCounts(p.hand);
     const sh = shanten(counts, p.melds.length);
+    // 海底路线上，别家听了牌也摸不到和了牌（以前是摸得到、只是不许自摸，看着像出了错）
+    if (hell && sh === 0) return haiteiWall(g, seat, drawer, rinshan);
     if (sh < 1 || sh > KOROMO.hellDepth) return;
     if (!hell) {
       const chance = koromoTonight(g, seat, KOROMO.hell);
@@ -397,10 +417,6 @@ export const koromoAbility: Ability = {
     };
   },
 
-  // 海底路线上，别人听了牌也不能自摸
-  forbidsTsumo(g, seat, target) {
-    return target !== seat && routeLive(stateOf(g, seat));
-  },
 
   // 海底路线上（海底归她）：她听牌以后，别家鸣不了牌（看得穿海底的人除外）；她立直以后谁都鸣不了
   freezesCalls(g, seat, caller) {
@@ -462,7 +478,7 @@ export const koromoAbility: Ability = {
     const st = stateOf(g, seat);
     const out = [moon ? `今晚是${moon.name}，别人的能力有 ${Math.round(koromoResist(g, seat) * 100)}% 干扰不到她` : '月相还没出来'];
     const off = `不在海底路线上（潮起潮落 ${pct(koromoTonight(g, seat, KOROMO.tide))}；一向听地狱：别家一向听时有 ${pct(koromoTonight(g, seat, KOROMO.hell))} 摸不到进张）`;
-    out.push(st.on ? `海底路线（${st.route === 'deal' ? '海底捞月' : '海底挪移'}）：别家一向听地狱、不能自摸；满潮 ${pct(koromoTonight(g, seat, KOROMO.flood))}，宝牌往她手里流` : st.route ? '海底被错开了，路线停下来' : off);
+    out.push(st.on ? `海底路线（${st.route === 'deal' ? '海底捞月' : '海底挪移'}）：别家一向听地狱、听了牌也摸不到和了牌；满潮 ${pct(koromoTonight(g, seat, KOROMO.flood))}，宝牌往她手里流` : st.route ? '海底被错开了，路线停下来' : off);
     return out;
   },
 
