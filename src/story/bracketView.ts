@@ -55,5 +55,7 @@ export function bracketHtml(b: Bracket, fresh: Set<string> = new Set(), live: Ma
     return `<section class="bk-half h${h}" aria-label="${HALVES[h]}">${h === 0 ? r1 + r2 : r2 + r1}</section>`;
   };
   const fin = col('总决赛', 2, 'r3', box(roundTables(b, 2)[0], '决赛'));
-  return `<div class="bk-grid">${half(0)}<section class="bk-final" aria-label="总决赛">${fin}</section>${half(1)}</div>`;
+  // 窄屏上下排时，玩家所在的半区排在最上面
+  const mineHalf = roundTables(b, 0).find((t) => t.schools.includes(b.mine))?.half ?? 0;
+  return `<div class="bk-grid mine-h${mineHalf}">${half(0)}<section class="bk-final" aria-label="总决赛">${fin}</section>${half(1)}</div>`;
 }

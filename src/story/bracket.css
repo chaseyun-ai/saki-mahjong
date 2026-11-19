@@ -185,6 +185,7 @@
   .bk-final { order: 3; }
   .bk-half.h1 { order: 2; }
   .bk-half.h1 .bk-col.r1 { order: -1; }
+  .bk-grid.mine-h1 .bk-half.h1 { order: -1; }
 }
 @media (max-width: 640px) {
   .story-screen { padding: 10px 10px 120px; box-shadow: none; }
