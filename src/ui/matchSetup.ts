@@ -44,6 +44,8 @@ export interface MatchSettings {
   slamOrder: 'first' | 'lift' | 'slap';
   // 通用的自摸动作用哪一套（各人自己有招牌动作的不管）：slap 拍牌；edge 边缘切（现实里的桌切：按着牌往自己这边划、磕在边上弹回来，手牌跟着倒）
   slamStyle: 'slap' | 'edge';
+  // 换页面、上牌桌时的过场（transition.ts）：random 一筒和牌背随机轮着来；pin 只用一筒；tiles 只用牌背
+  xfade: 'random' | 'pin' | 'tiles';
 }
 
 export const SEAT_NAMES = ['下家', '对家', '上家'];
@@ -70,6 +72,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   slam: 'hand',
   slamOrder: 'first',
   slamStyle: 'slap',
+  xfade: 'random',
 };
 
 const KEY = 'saki-match-settings';
@@ -158,6 +161,16 @@ const ROWS: Row[] = [
       { label: '仅自己', value: 'self' },
     ],
   },
+  {
+    key: 'xfade',
+    name: '过场动画',
+    note: '换页面、上牌桌时的过场；随机是一筒和牌背轮着来',
+    options: [
+      { label: '随机', value: 'random' },
+      { label: '一筒', value: 'pin' },
+      { label: '牌背', value: 'tiles' },
+    ],
+  },
   { key: 'vary', name: '微变化', options: onOff, note: '落桌声、出牌动作、牌河每次差一点点' },
   { key: 'spotlight', name: '和牌聚光灯', options: onOff, note: '3D、2.5D 牌桌：手牌一倒，上方几盏灯照着和了的牌，四周暗一点' },
   { key: 'winZoom', name: '和牌转镜头', options: onOff, note: '3D、2.5D 牌桌：别家和牌时镜头推过去看他的手牌' },
@@ -220,7 +233,7 @@ const ROWS: Row[] = [
 
 // 两个面板各管哪几项（存在同一份设置里）
 const MATCH_KEYS: (keyof MatchSettings)[] = ['length', 'start', 'target', 'tobi', 'red', 'kuitan', 'minHan', 'open'];
-const VISUAL_KEYS: (keyof MatchSettings)[] = ['drawPath', 'vary', 'spotlight', 'winZoom'];
+const VISUAL_KEYS: (keyof MatchSettings)[] = ['xfade', 'drawPath', 'vary', 'spotlight', 'winZoom'];
 
 // 按钮上写的值换回设置里的值
 export function setOption(s: MatchSettings, key: string, value: string): void {

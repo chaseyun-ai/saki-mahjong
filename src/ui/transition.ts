@@ -14,8 +14,27 @@ import { STICK_TIMES, StickToss } from './stickToss';
 // 系统开了「减少动态效果」、或者画不了 canvas（测试环境），直接换页。
 
 // stick（立直棒）：贴着桌面的低机位，一根立直棒飞进来、磕桌竖起、翻过去拍在牌河前面躺平（stickToss.ts 画），
-//   然后从落点泛白盖满画面，换页，白色退掉。
+//   然后从落点泛白盖满画面，换页，白色退掉。用户 2026-11-19 说先撤下、东西留着（有新想法），现在没有地方用它，
+//   只能写明 transition(swap, 'stick') 叫出来。
 export type TransitionKind = 'pin' | 'tiles' | 'stick';
+
+// 视觉设置里的「过场动画」：随机（一筒和牌背轮着来）、只用一筒、只用牌背。app 读了设置告诉这里
+export type TransitionStyle = 'random' | 'pin' | 'tiles';
+let style: TransitionStyle = 'random';
+let recent: TransitionKind[] = [];
+
+export function setTransitionStyle(s: TransitionStyle): void {
+  style = s;
+}
+
+// 随机：一半一半，但同一种连着出了两次，第三次换另一种（不然看着像没在随机）
+function pickKind(): TransitionKind {
+  if (style !== 'random') return style;
+  const [a, b] = recent;
+  const k: TransitionKind = a && a === b ? (a === 'pin' ? 'tiles' : 'pin') : Math.random() < 0.5 ? 'pin' : 'tiles';
+  recent = [k, a];
+  return k;
+}
 
 interface Look {
   // 前一半（盖住旧页面）多长，秒
@@ -35,7 +54,8 @@ export function inTransition(): boolean {
   return running;
 }
 
-export function transition(kind: TransitionKind, swap: () => void): void {
+// kind 不写就照视觉设置里选的
+export function transition(swap: () => void, kind?: TransitionKind): void {
   if (running) return;
   const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const canvas = reduce ? null : document.createElement('canvas');
@@ -50,7 +70,8 @@ export function transition(kind: TransitionKind, swap: () => void): void {
   canvas.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483000;pointer-events:auto;touch-action:none;';
   document.body.appendChild(canvas);
 
-  const look: Look = kind === 'pin' ? pinLook() : kind === 'stick' ? (stickLook() ?? pinLook()) : tilesLook();
+  const k = kind ?? pickKind();
+  const look: Look = k === 'pin' ? pinLook() : k === 'stick' ? (stickLook() ?? pinLook()) : tilesLook();
   let w = 0;
   let h = 0;
   let dpr = 1;
@@ -298,12 +319,22 @@ function keyed(keys: [number, number][], t: number, log = false): number {
 }
 
 function pinLook(): Look {
-  // 前一半：从上面掉下来（0.27 秒落到底），弹起来，往下落的半路上切镜
-  const FLOOR = 0.8;
-  const PEAK = 0.56;
+  // 前一半：从上面掉下来（0.27 秒落到底），弹起来，往下落的半路上切镜。
+  // 切镜那一刻小一筒正好回到画面正中，高度、转的角度都和后一半的大一筒接上，后一半就从这一点推进、开圆窗。
+  // （原先落点在 0.8 高、切镜时在 0.68，和正中展开的大一筒差了一截）
   const LAND = 0.27;
   const HOP = 0.1; // 弹起来到最高点用的时间
   const CUT = 0.44;
+  const PEAK = 0.4;
+  const CUT_Y = 0.5;
+  const fallBack = ((CUT - LAND - HOP) / HOP) ** 2; // 切镜时从最高点往回落了弹起高度的几成
+  const FLOOR = PEAK + (CUT_Y - PEAK) / fallBack;
+  const yAt = (t: number): number => {
+    if (t < LAND) return -0.15 + (FLOOR + 0.15) * (t / LAND) ** 2;
+    const v = (t - LAND - HOP) / HOP;
+    return PEAK + (FLOOR - PEAK) * v * v;
+  };
+  const spin = (t: number): number => -0.35 + t * 1.1;
   // 后一半（照参考逐帧量的，秒）：切到大一筒停一下 → 推到整朵花停一下 → 一下推进轮毂，宝石变成圆窗 →
   // 橙格子往外退出画面，圆窗跟着开大，最后冲出画面
   const OPEN = 0.15; // 宝石变圆窗
@@ -315,24 +346,20 @@ function pinLook(): Look {
       ctx.clearRect(0, 0, w, h);
       const unit = Math.min(h, w * 0.9);
       const R = unit * 0.12;
-      let y: number;
-      if (t < LAND) y = -0.15 + (FLOOR + 0.15) * (t / LAND) ** 2;
-      else {
-        const v = (t - LAND - HOP) / HOP;
-        y = PEAK + (FLOOR - PEAK) * v * v;
-      }
       // 落地那一下压扁一点
       const squash = 0.16 * Math.exp(-(((t - LAND) / 0.035) ** 2));
-      ctx.translate(w / 2, y * h);
+      ctx.translate(w / 2, yAt(t) * h);
       ctx.scale(1 + squash * 0.6, 1 - squash);
-      ctx.rotate(-0.35 + t * 1.1);
+      ctx.rotate(spin(t));
       drawPin(ctx, R, Infinity, true, true);
     },
     drawReveal(ctx, t, w, h, dpr) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       const u = Math.min(w, h);
-      const view = Math.hypot(w, h) / 2;
+      // 圆心就是切镜那一刻小一筒的中心
+      const cy = yAt(CUT) * h;
+      const view = Math.hypot(w / 2, Math.max(cy, h - cy));
       // 白花心（橙格子的里边）盖过画面四角的时候，格子就都退出去了
       const gone = (view * 1.05) / CELL_IN / u;
       const R =
@@ -350,9 +377,9 @@ function pinLook(): Look {
           t,
           true,
         );
-      ctx.translate(w / 2, h / 2);
-      // 推进轮毂的时候顺手转一点，像参考里那样格子边退边歪
-      ctx.rotate(t < OPEN ? 0 : (t - OPEN) * 0.5);
+      ctx.translate(w / 2, cy);
+      // 接着小一筒切镜时的角度；推进轮毂的时候再顺手转一点，像参考里那样格子边退边歪
+      ctx.rotate(spin(CUT) + (t < OPEN ? 0 : (t - OPEN) * 0.5));
       drawPin(ctx, R, view, t < OPEN, false);
       if (t < OPEN) return false;
       // 圆窗：从宝石那么大开始，先停一下、再一段段开大，最后一下冲出画面

@@ -91,7 +91,7 @@ import { himekoKeySeat } from '../abilities/himeko';
 import type { BindKey } from '../abilities/types';
 import { Himeko2D } from './himeko2d';
 import { beatSeed } from './himekoBeat';
-import { inTransition, transition } from './transition';
+import { inTransition, setTransitionStyle, transition } from './transition';
 
 // 座位在画面上的位置：0 是自己（下），1 下家（右），2 对家（上），3 上家（左）
 const POS = ['bottom', 'right', 'top', 'left'];
@@ -343,6 +343,8 @@ export class App {
     document.fonts?.load('1em "Ma Shan Zheng"', '立直碰吃杠荣和自摸暗加宝牌聚集岭上开花一巡先见的气息').catch(() => {});
     // 一打开先到主页（第一次盖着「点一下开始」）
     this.renderTitle(true);
+    // 视觉设置里选的过场动画
+    setTransitionStyle(this.settings.xfade);
     // 声音设置那页顶上点「对局」「视觉」：换回这边的面板
     onSoundTab((v) => this.openPanel(v));
     // 素材页里换了图：牌局里重画头像框，选人页重画一遍
@@ -391,7 +393,7 @@ export class App {
     this.team = null;
     this.teamFlow = null;
     this.panel = null;
-    new BracketPreview(this.root, () => transition('pin', () => this.renderTitle()));
+    new BracketPreview(this.root, () => transition(() => this.renderTitle()));
   }
 
   // 角色图鉴（codex.ts）：主页的收音机进来，返回回到主页
@@ -401,7 +403,7 @@ export class App {
     this.team = null;
     this.teamFlow = null;
     this.panel = null;
-    mountCodex(this.root, () => transition('pin', () => this.renderTitle()));
+    mountCodex(this.root, () => transition(() => this.renderTitle()));
   }
 
   // 设置面板上次停在哪一页（便签打开时回到那一页）
@@ -487,14 +489,14 @@ export class App {
   }
 
   // 出场、随机出场、点头像：照对局设置开局（记在浏览器里，第一次是默认规则）。
-  // 从选人页上牌桌用扔立直棒的过场（transition.ts）；主页的随机出场已经在牌背的过场里了，直接开
+  // 上牌桌也过场（视觉设置里选的那种，transition.ts）；主页的随机出场已经在过场里了，直接开
   private quickStart(id: string): void {
     const go = (): void => {
       this.panel = null;
       this.startGame(id);
     };
     if (inTransition()) go();
-    else transition('stick', go);
+    else transition(go);
   }
 
   // 右上角的两个设置面板
@@ -826,8 +828,8 @@ export class App {
   private openTeam(from: 'title' | 'select'): void {
     this.teamFrom = from;
     this.teamFlow = new TeamFlow(this.root, {
-      play: (run, seats, auto) => transition('tiles', () => this.startTeamMatch(run, seats, auto)),
-      exit: () => transition('pin', () => (this.teamFrom === 'title' ? this.renderTitle() : this.renderSelect())),
+      play: (run, seats, auto) => transition(() => this.startTeamMatch(run, seats, auto)),
+      exit: () => transition(() => (this.teamFrom === 'title' ? this.renderTitle() : this.renderSelect())),
     });
   }
 
@@ -2719,7 +2721,7 @@ export class App {
     // 主页：白板纸上三行（个人对局进选人页，团体赛进布阵，全国大赛进晋级表），麻将桌是随机出场
     if (el.dataset.ui === 'home-go') {
       const v = el.dataset.v;
-      homeGo(el, v === 'random' ? 'tiles' : 'pin', () => {
+      homeGo(el, () => {
         if (v === 'single') this.renderSelect();
         else if (v === 'team') this.openTeam('title');
         else if (v === 'story') this.openBracket();
@@ -2728,7 +2730,7 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'codex') {
-      transition('pin', () => this.renderCodex());
+      transition(() => this.renderCodex());
       return;
     }
     // 便签上的齿轮：设置面板（对局、视觉、声音三页），回到上次看的那一页
@@ -2746,7 +2748,7 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'home') {
-      transition('pin', () => {
+      transition(() => {
         this.panel = null;
         this.renderTitle();
       });
@@ -2782,13 +2784,14 @@ export class App {
       this.readTarget();
       setOption(this.settings, el.dataset.k, el.dataset.v);
       saveSettings(this.settings);
+      setTransitionStyle(this.settings.xfade);
       this.renderPanel();
       return;
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、咲的标准 / 加强、动画开关是别处的设置，留着
-      const { chisui, sakiStrong, drawPath, vary, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, drawPath, vary, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle };
+      const { chisui, sakiStrong, drawPath, vary, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle, xfade } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, drawPath, vary, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle, xfade };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -2884,7 +2887,7 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'team') {
-      transition('pin', () => this.openTeam('select'));
+      transition(() => this.openTeam('select'));
       return;
     }
     if (el.dataset.ui === 'team-next' && this.team && this.game) {
@@ -2911,7 +2914,7 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'restart') {
-      transition('pin', () => this.renderSelect());
+      transition(() => this.renderSelect());
       return;
     }
     if (el.dataset.ui === 'auto') {

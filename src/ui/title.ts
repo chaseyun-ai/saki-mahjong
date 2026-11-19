@@ -224,8 +224,8 @@ export function titleGo(btn: HTMLElement, go: () => void): void {
   screen.classList.add('leaving');
   scene?.press(id);
   playClick({ varied: true });
-  // 牌跳起来的同时开始过场（transition.ts）：随机出场直接开局，用牌背；其余换页用一筒
-  transition(id === 'random' ? 'tiles' : 'pin', () => {
+  // 牌跳起来的同时开始过场（transition.ts，视觉设置里选的那种）
+  transition(() => {
     if (btn.isConnected) go();
   });
 }

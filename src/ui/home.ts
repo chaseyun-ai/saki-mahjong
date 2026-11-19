@@ -1,6 +1,6 @@
 import './home.css';
 import { playClick, playFlip, playLily } from './sound';
-import { type TransitionKind, transition } from './transition';
+import { transition } from './transition';
 
 // 主页：麻将部的部室（用户用 Gemini 画的图，public/home/ 下清晨、白天、黄昏、夜晚各一张，构图一样）。
 // 黄昏那张原来桌上摆着画错的牌，换成了清晨那张的空桌面（只留茶杯），所以茶的热气只有黄昏有。
@@ -403,7 +403,7 @@ function circlePath(x: number, y: number, w: number, h: number): string {
 }
 
 // 点了纸上一行、或者麻将桌：先演一下（红笔圈 / 桌子闪一下），再过场换页
-export function homeGo(btn: HTMLElement, kind: TransitionKind, go: () => void): void {
+export function homeGo(btn: HTMLElement, go: () => void): void {
   const room = btn.closest<HTMLElement>('.home-room');
   if (!room || room.classList.contains('leaving')) return;
   room.classList.add('leaving');
@@ -431,7 +431,7 @@ export function homeGo(btn: HTMLElement, kind: TransitionKind, go: () => void): 
   }
   setTimeout(() => {
     if (!btn.isConnected) return;
-    transition(kind, () => {
+    transition(() => {
       if (btn.isConnected) go();
     });
   }, wait);
