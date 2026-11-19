@@ -1,5 +1,5 @@
 import './home.css';
-import { playClick, playFlip, playLily } from './sound';
+import { playClick, playFlip } from './sound';
 import { transition } from './transition';
 
 // 主页：麻将部的部室（用户用 Gemini 画的图，public/home/ 下清晨、白天、黄昏、夜晚各一张，构图一样）。
@@ -139,7 +139,7 @@ function entryHtml(e: Entry): string {
   return `<button class="hr-entry" data-ui="home-go" data-v="${e.v}"><span class="hr-no">${e.no}</span><span class="hr-entry-t"><b>${e.label}</b><small>${e.sub}</small></span></button>`;
 }
 
-export function homeHtml(opts: { gate: boolean }): string {
+export function homeHtml(): string {
   const tod = currentTod();
   const paper = quadMatrix(PAPER_W, PAPER_H, PAPER);
   const note = quadMatrix(NOTE_W, NOTE_H, NOTE);
@@ -149,7 +149,7 @@ export function homeHtml(opts: { gate: boolean }): string {
     const y = 120 + ((i * 263) % 760);
     return `<i style="left:${x}px;top:${y}px;--d:${(7 + (i % 5) * 1.7).toFixed(1)}s;--o:${(-(i * 0.83) % 9).toFixed(2)}s;--s:${(0.6 + (i % 4) * 0.25).toFixed(2)}"></i>`;
   }).join('');
-  return `<div class="home-room${opts.gate ? ' gated' : ''}" data-tod="${tod}" style="--bg:url('${imgOf(tod)}')">
+  return `<div class="home-room loading" data-tod="${tod}" style="--bg:url('${imgOf(tod)}')">
     <h1 class="hr-sr">超能力麻将</h1>
     <div class="hr-view">
       <div class="hr-sizer">
@@ -184,7 +184,6 @@ export function homeHtml(opts: { gate: boolean }): string {
     <div class="hr-tip" aria-hidden="true"></div>
     <div class="hr-say hr-sr" role="status" aria-live="polite"></div>
     <div class="hr-pan" aria-hidden="true">← 左右拖动，看看部室 →</div>
-    ${opts.gate ? '<div class="hr-gate" role="button" tabindex="0" aria-label="点一下开始"><div class="hr-logo">超能力麻将</div><span class="hr-start"><span class="hr-loading">整理部室中…</span><span class="hr-go">点一下开始</span></span></div>' : ''}
     <p class="hr-foot">原型 · 角色与能力参考《天才麻将少女》，同人非商业作品</p>
     <div id="setup"></div>
   </div>`;
@@ -209,7 +208,6 @@ export function mountHome(room: HTMLElement): void {
   const stage = room.querySelector<HTMLElement>('.hr-stage')!;
   const bg = room.querySelector<HTMLImageElement>('.hr-bg')!;
   const tip = room.querySelector<HTMLElement>('.hr-tip')!;
-  const gate = room.querySelector<HTMLElement>('.hr-gate');
 
   // 铺满：等比缩放到盖住屏幕；屏幕太窄（图要裁掉一大块）就改成按高度放、左右拖着看
   let scroll = false;
@@ -326,8 +324,9 @@ export function mountHome(room: HTMLElement): void {
     g?.classList.add('spin');
   });
 
-  // 开场：图读好了才写「点一下开始」；点了才放声音（浏览器要等玩家点过才能出声）
-  const ready = (): void => gate?.classList.add('ready');
+  // 开场：一打开就是部室（不用先点一下）；图读好以前先黑着，读好了淡进来。
+  // 声音照旧要等玩家第一次点（浏览器的规矩，music.ts 第一下点击时解锁）
+  const ready = (): void => room.classList.remove('loading');
   if (bg.complete && bg.naturalWidth) ready();
   else {
     bg.addEventListener('load', ready, { once: true });
@@ -339,23 +338,6 @@ export function mountHome(room: HTMLElement): void {
       },
       { once: true },
     );
-  }
-  if (gate) {
-    const open = (): void => {
-      if (!gate.classList.contains('ready') || gate.classList.contains('gone')) return;
-      room.classList.remove('gated');
-      gate.classList.add('gone');
-      playLily(0.3);
-      setTimeout(() => gate.remove(), 700);
-    };
-    gate.addEventListener('click', open);
-    gate.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        open();
-      }
-    });
-    gate.focus({ preventScroll: true });
   }
 }
 

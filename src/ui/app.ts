@@ -341,8 +341,8 @@ export class App {
     window.addEventListener('resize', () => this.fit());
     // 大字特效用的书法字体先下好，免得第一次立直时字还没出来
     document.fonts?.load('1em "Ma Shan Zheng"', '立直碰吃杠荣和自摸暗加宝牌聚集岭上开花一巡先见的气息').catch(() => {});
-    // 一打开先到主页（第一次盖着「点一下开始」）
-    this.renderTitle(true);
+    // 一打开先到主页（直接是部室）
+    this.renderTitle();
     // 视觉设置里选的过场动画
     setTransitionStyle(this.settings.xfade);
     // 声音设置那页顶上点「对局」「视觉」：换回这边的面板
@@ -372,14 +372,14 @@ export class App {
     this.root.classList.remove('mihoko-eye', 'awai-dark', 'awai-source');
   }
 
-  // 主页（home.ts）：麻将部的部室，白板上的纸、便签、收音机、麻将桌是入口。gate：盖着「点一下开始」（只有刚打开游戏时）
-  private renderTitle(gate = false): void {
+  // 主页（home.ts）：麻将部的部室，白板上的纸、便签、收音机、麻将桌是入口。一打开就进部室，不用先点一下
+  private renderTitle(): void {
     this.teardown();
     menuMusic();
     this.team = null;
     this.teamFlow = null;
     this.auto = false;
-    this.root.innerHTML = homeHtml({ gate });
+    this.root.innerHTML = homeHtml();
     const room = this.root.querySelector<HTMLElement>('.home-room');
     if (room) mountHome(room);
     // 换皮肤会重画整页：开着的设置面板照样开着
