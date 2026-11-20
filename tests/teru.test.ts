@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { TERU, TERU_LADDER, TERU_TOP, teruAbility, teruAccepts, teruBuild, teruDanger, teruLadder, teruMirrored, teruPace, teruReads, teruStreakWith, teruTier, teruWallCounts, teruWinValue } from '../src/abilities/teru';
+import { TERU, TERU_LADDER, TERU_TOP, teruAbility, teruAccepts, teruBuild, teruDanger, teruFitWall, teruImprovers, teruLadder, teruMirrored, teruOutlook, teruPace, teruReads, teruStreakWith, teruThin, teruTier, teruWallCounts, teruWallHas, teruWinValue } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import type { WinResult } from '../src/engine/score';
-import { shanten } from '../src/engine/shanten';
+import { shanten, waitingKinds } from '../src/engine/shanten';
 import { Kind, TileId, doraFromIndicator, kindOf, parseKinds, parseTiles, toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
@@ -291,6 +291,124 @@ describe('宫永照：做大牌、放慢、照得穿智叶的鞘', () => {
     (g.abilityGameState[0] as { rounds?: number }).rounds = 1;
     expect(teruDanger(g, 0).size).toBe(0);
   });
+});
+
+describe('宫永照：电脑像高手一样听牌（不急着立直窄听、不守空听）', () => {
+  // 照坐庄、照魔镜看过、连和 3 次、上一次 5800 点。平和断幺九听 2-5 索：
+  // 默听自摸 3900、立直荣和 5800 都接不上，只有立直自摸（7800）接得上。牌山里的 2、5 索只留 keep 张
+  const thinTable = (seed: number, keep: number) => {
+    const g = new Game({ seed, players: ['teru', 'izumi', 'izumi', 'izumi'].map((id) => ({ name: id, ability: byId(id).ability })) });
+    if (g.dealer !== 0) return null;
+    Object.assign(g.abilityGameState[0], { rounds: 2, level: 3, last: 5800, streak: [5800] });
+    const p = g.players[0];
+    const hand = parseTiles('234m456p678s55p34s');
+    const extra = parseTiles('4z')[0];
+    p.hand = [...hand, extra];
+    p.drawn = extra;
+    p.melds = [];
+    p.discards = [];
+    (g as unknown as { noCallsYet: boolean }).noCallsYet = false;
+    let left = keep;
+    for (const t of g.wall.live) {
+      if (kindOf(t) !== parseKinds('2s')[0] && kindOf(t) !== parseKinds('5s')[0]) continue;
+      if (left > 0) left--;
+      else g.wall.locked.add(t, 'test');
+    }
+    // 宝牌碰巧在手里（默听也接得上）的种子不要
+    if (teruOutlook(g, 0, hand, [], { live: teruWallHas(g) }) !== 1) return null;
+    // 别人手里拿着的多，牌山里凑不够 keep 张的也不要
+    if (teruFitWall(g, 0, hand, [], true) !== keep) return null;
+    return { g, hand, extra };
+  };
+  const ai = { ...byId('teru').ai, mistakeRate: 0 };
+
+  it('立直才接得上、牌山里能和的只剩两张：牌山还多就先默听等改良；听得宽、来不及等、关掉 riichiWall 都照常立直', () => {
+    let tried = 0;
+    for (let seed = 1; seed <= 60 && tried < 3; seed++) {
+      const s = thinTable(seed, 2);
+      if (!s) continue;
+      const { g, hand, extra } = s;
+      expect(teruFitWall(g, 0, hand, [], true)).toBe(2);
+      expect(teruFitWall(g, 0, hand, [], false)).toBe(0);
+      if (!teruThin(g, 0, hand)) continue;
+      tried++;
+      const a = chooseAction(g, 0, ai);
+      expect(a.type === 'discard' && a.tile === extra && !a.riichi).toBe(true);
+      // 来不及等改良了：立直
+      const late = TERU.riichiLate;
+      TERU.riichiLate = 200;
+      expect(teruThin(g, 0, hand)).toBe(false);
+      const b = chooseAction(g, 0, ai);
+      expect(b.type === 'discard' && b.tile === extra && b.riichi).toBe(true);
+      TERU.riichiLate = late;
+      // 关掉：听牌就立直（原来的打法）
+      TERU.riichiWall = 0;
+      const c = chooseAction(g, 0, ai);
+      expect(c.type === 'discard' && c.riichi).toBe(true);
+      TERU.riichiWall = 3;
+    }
+    expect(tried).toBeGreaterThanOrEqual(2);
+    // 牌山里能和的有四张：听得够宽，直接立直
+    let wide = 0;
+    for (let seed = 1; seed <= 60 && wide < 2; seed++) {
+      const s = thinTable(seed, 4);
+      if (!s) continue;
+      wide++;
+      expect(teruThin(s.g, 0, s.hand)).toBe(false);
+      const a = chooseAction(s.g, 0, ai);
+      expect(a.type === 'discard' && a.riichi).toBe(true);
+    }
+    expect(wide).toBe(2);
+  });
+
+  it('等改良时，能力把改良牌送到下一张（换完默听接得上，或者立直听得宽）', () => {
+    const improve = TERU.improve;
+    TERU.improve = 1;
+    let tried = 0;
+    for (let seed = 1; seed <= 60 && tried < 3; seed++) {
+      const s = thinTable(seed, 2);
+      if (!s || !teruThin(s.g, 0, s.hand)) continue;
+      tried++;
+      const { g, hand } = s;
+      g.players[0].hand = hand;
+      g.players[0].drawn = null;
+      const better = teruImprovers(g, 0, hand, 2)!;
+      teruAbility.beforeDraw!(g, 0, false);
+      expect(better(g.wall.live[0])).toBe(true);
+    }
+    TERU.improve = improve;
+    expect(tried).toBeGreaterThanOrEqual(2);
+  });
+
+  it('连和中的电脑的照：听得窄不急着立直；不守着牌山里已经没有和了牌的空听', () => {
+    const n = { tenpai: 0, dead: 0, riichi: 0 };
+    for (let seed = 1; seed <= 8; seed++) {
+      play(seed, LINEUPS[seed % 4], {
+        before: (g, me) => {
+          if (g.phase !== 'turn' || g.turn !== me || g.players[me].riichi || !teruMirrored(g, me) || teruLadder(g, me).level === 0) return;
+          const a = chooseAction(g, me, byId('teru').ai);
+          if (a.type !== 'discard') return;
+          const p = g.players[me];
+          const hand = p.hand.filter((t) => t !== a.tile);
+          const c = toCounts(hand);
+          if (shanten(c, p.melds.length) !== 0) return;
+          if (a.riichi) {
+            n.riichi++;
+            expect(teruThin(g, me, hand)).toBe(false);
+          } else if (g.wall.remaining > TERU.deadLate) {
+            n.tenpai++;
+            const wall = teruWallCounts(g);
+            if (waitingKinds(c, p.melds.length).every((k) => wall[k] === 0)) n.dead++;
+          }
+        },
+      });
+    }
+    console.log(n);
+    expect(n.riichi).toBeGreaterThan(3);
+    expect(n.tenpai).toBeGreaterThan(30);
+    // 原来约一成（上一次 6000 点以上时两成多）
+    expect(n.dead / n.tenpai).toBeLessThan(0.05);
+  }, 240000);
 });
 
 describe('宫永照（原来的天梯）', () => {

@@ -115,6 +115,7 @@ export const DEFAULT_RULES: Rules = { target: 30000, tobi: true, red: 3, kuitan:
 export interface GameOptions {
   seed: number;
   players: PlayerConfig[];
+  // 起始点数（规矩上的，比如 25000、50000，团体赛是每队的 100000）；不给 scores 时每家就带着它开局
   startScore?: number;
   // 每家开局的点数（团体赛：每人带着自己队伍现在的点数上场），盖过 startScore
   scores?: number[];
@@ -162,6 +163,8 @@ export class Game {
   startForm: boolean[] = [false, false, false, false];
   format: 'one' | 'east' | 'south' | 'team' = 'east';
   rules: Rules = { ...DEFAULT_RULES };
+  // 这一场规矩上的起始点数（GameOptions.startScore，不给是 25000）
+  startScore = 25000;
   // 每个座位的队友（见 GameOptions.allies），不是团体赛是空的
   allies: string[][] = [[], [], [], []];
   // 每个座位从之前的位置带来的钥匙（见 GameOptions.keys）
@@ -234,6 +237,7 @@ export class Game {
     this.manual = opts.players.map((p) => !!p.manual);
     this.startForm = opts.players.map((p) => !!p.startForm);
     this.format = opts.format ?? 'east';
+    this.startScore = opts.startScore ?? 25000;
     this.rules = { ...DEFAULT_RULES, ...opts.rules };
     setRedFives(this.rules.red);
     if (opts.allies) this.allies = opts.allies.map((a) => [...a]);

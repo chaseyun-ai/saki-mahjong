@@ -84,7 +84,7 @@ import { TeamFlow } from './teamFlow';
 import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentConsoleShape, currentTableStyle, currentTheme, setConsoleShape, setTableStyle, setTheme, tableColors } from './theme';
 import { lastDeltas, lastWinners, winCounts } from './winTally';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
-import { POSITIONS, TeamRun } from '../team/team';
+import { POSITIONS, TEAM_START, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 import { DEFAULT_SETTINGS, MatchSettings, TABLE_MODES, TableMode, loadSettings, loadTableMode, matchPanelHtml, parseTarget, pickOpponents, rulesOf, saveSettings, saveTableMode, setOption, visualPanelHtml } from './matchSetup';
 import { ForecastCache } from '../ai/forecast';
@@ -748,7 +748,7 @@ export class App {
     const allies = seats.map((t) => run.teams[t].lineup.map((c) => c.id));
     // 同队的哩在之前的位置拿到的钥匙
     const keys = seats.map((t) => run.keys[t]);
-    const game = new Game({ seed, format: 'team', firstDealer: Math.floor(Math.random() * 4), scores: start, riichiSticks: run.riichiSticks, allies, keys, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
+    const game = new Game({ seed, format: 'team', firstDealer: Math.floor(Math.random() * 4), startScore: TEAM_START, scores: start, riichiSticks: run.riichiSticks, allies, keys, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
     this.beginGame(chars, game);
   }
 

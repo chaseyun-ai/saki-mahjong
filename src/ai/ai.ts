@@ -27,7 +27,7 @@ import { NELLY, nellyBigDiscard, nellyBigReady, nellyDue, nellyFlush, nellyLiveW
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { harvestShanten, komakiActiveGod, komakiHarvestSuit } from '../abilities/komaki';
 import { toyoneLurks, toyoneMode } from '../abilities/toyone';
-import { TERU, teruAccepts, teruBuild, teruCheapNext, teruDanger, teruFits, teruLadder, teruMirrored, teruOutlook, teruRaisable, teruReads, teruRising, teruSoftCap, teruTier, teruTiltSet, teruUnder, teruWallHas, teruWinValue } from '../abilities/teru';
+import { TERU, teruAccepts, teruBuild, teruCheapNext, teruDanger, teruFitWall, teruFits, teruLadder, teruMirrored, teruOutlook, teruRaisable, teruReads, teruRising, teruSoftCap, teruThin, teruTier, teruTiltSet, teruUnder, teruWallHas, teruWinValue } from '../abilities/teru';
 import { isDoraTile, kuroLost } from '../abilities/kuro';
 import { himekoBroken, himekoExtra, himekoKeyAhead, himekoPlan } from '../abilities/himeko';
 import { riiBind, riiHoldsShort } from '../abilities/rii';
@@ -522,6 +522,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   // 向听只按这一门的进张算（别处现成的面子、雀头照用），进张也只数这一门的
   const harvest = style.gods ? komakiHarvestSuit(g, seat) : null;
   const onHaitei = !!style.haitei && !sealed && koromoRouteOn(g, seat);
+  // 照看得见牌山：听的牌牌山里一张都没有了（空听）不算听牌，换听或者退一步重新组（牌山快摸完了照旧守着听牌）
+  const teruWall =
+    style.streak && !sealed && TERU.mode === 'points' && TERU.plan && TERU.wallAware && TERU.deadSwap && teruMirrored(g, seat) && g.wall.remaining > TERU.deadLate ? teruWallHas(g) : null;
   const cands: Cand[] = [];
   const seen = new Set<string>();
   for (const a of discards) {
@@ -609,6 +612,11 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       sh = 1;
       std = Math.max(std, 1);
     }
+    // 照：听的牌牌山里一张都没有了，同样不算听牌
+    if (teruWall && sh === 0 && !waitingKinds(c, p.melds.length).some(teruWall)) {
+      sh = 1;
+      std = Math.max(std, 1);
+    }
     // 明华：听的就是要来的场风（一定摸得到）：算听牌，进张多算 FUUJIN_AI.sure 张
     let fuujinUke = -1;
     if (coming !== null && sh < 0) {
@@ -692,7 +700,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       if (min === 0) {
         const out = teruOutlook(g, seat, hand, p.melds, { live: inWall });
         x.reach = out > 0;
-        x.plan = reach ? out * 100 + (alive(hand) ? 10 : 0) + teruOutlook(g, seat, hand, p.melds, { live }) : out;
+        // 同一档里先挑牌山里还有的听法，再挑牌山里能和的张数多的（默听接得上按默听数，立直才接得上按立直数）
+        x.plan = reach ? out * 1000 + (alive(hand) ? 100 : 0) + Math.min(9, out > 0 ? teruFitWall(g, seat, hand, p.melds, out === 1) : 0) * 10 + teruOutlook(g, seat, hand, p.melds, { live }) : out;
         continue;
       }
       const c = toCounts(hand);
@@ -932,6 +941,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       // 没起胡：默听荣和不了（没役，只能等自摸）就立直，先和出来再说
       const start = TERU.startRiichi && teruLadder(g, seat).level === 0 && out > 0 && !ronResults(g, seat, hand, false).length;
       if (out !== 1 && !start) return best.a;
+      // 立直才接得上，但牌山里能和的只剩一两张：牌山还多、换得到更好的听牌，就先默听等改良
+      if (!start && teruThin(g, seat, hand)) return best.a;
     } else if (style.streak && !sealed && TERU.mode !== 'ladder') {
       // 打点递增：默听荣和就比上一次高，默听（台阶踩得小）；不够高才立直往上抬
       const hand = p.hand.filter((t) => t !== best.a.tile);
