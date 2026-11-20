@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Game, GameEvent } from '../engine/game';
+import { riichiSideIndex } from '../engine/pond';
 import { TILE_COUNT, TileId, WIND_CN, kindOf } from '../engine/tiles';
 import { meldLayout } from '../ui/meldLayout';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
@@ -3860,15 +3861,17 @@ export class Table3D {
     let row = 0;
     const pstep = TILE_W + GAP;
     let px = -((POND_COLS * pstep) / 2);
-    for (const d of p.discards) {
+    // 横放的那张：立直宣言牌，宣言牌被鸣走了就是下一巡打的那张
+    const sideAt = riichiSideIndex(p.discards);
+    for (const [i, d] of p.discards.entries()) {
       if (d.called) continue;
       if (col === POND_COLS && row < 2) {
         col = 0;
         row++;
         px = -((POND_COLS * pstep) / 2);
       }
-      // 淡掉时那一张是立直宣言牌也竖着放：别人不该知道她立直了
-      const side = d.riichi && !(vanishing && d === p.discards[p.discards.length - 1]);
+      // 淡掉时那一张是横放的立直牌也竖着放：别人不该知道她立直了
+      const side = i === sideAt && !(vanishing && i === p.discards.length - 1);
       const w = side ? TILE_H : TILE_W;
       const z = this.dim.pondZ + row * (TILE_H + GAP) + TILE_H / 2;
       // 随机微变化：像真人随手放的，每张牌稍微转一点、偏一点（按牌算好的固定值，重画时不会抖）

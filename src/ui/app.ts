@@ -55,6 +55,7 @@ import { initLensDrag, lensMarkHtml, lensSlotsHtml, playLensShot } from './lensD
 import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
 import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/game';
+import { riichiSideIndex } from '../engine/pond';
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
@@ -4060,6 +4061,8 @@ export class App {
     if (g.stealthed(s, this.me) && !vanish) return `<div class="pond ${POS[s]}"></div>`;
     const ghost = [0, 1, 2, 3].some((o) => o !== s && g.stealthed(s, o));
     const ron = new Set(g.phase === 'roundEnd' ? (g.roundResult?.wins ?? []).filter((w) => w.from === s).map((w) => w.tile) : []);
+    // 横放的那张：立直宣言牌，宣言牌被鸣走了就是下一巡打的那张（被鸣走的宣言牌半透明留着，竖回来）
+    const side = riichiSideIndex(p.discards);
     const tiles = p.discards
       .map((d, i) => {
         const classes: string[] = [];
@@ -4071,7 +4074,7 @@ export class App {
         // 被荣和的那张：留在牌河里发金光，到下一局
         if (ron.has(d.tile)) classes.push('ron');
         // 淡掉的时候立直宣言牌也竖着：别人不该知道她立直了
-        return tileHtml(d.tile, { size: 'pond', sideways: d.riichi && !vanish, classes });
+        return tileHtml(d.tile, { size: 'pond', sideways: i === side && !vanish, classes });
       })
       .join('');
     return `<div class="pond ${POS[s]}${vanish ? ' vanish' : ''}"${vanish}>${tiles}</div>`;
