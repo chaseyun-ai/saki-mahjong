@@ -1,17 +1,17 @@
 import { CHARACTERS, baseAi, type Character } from '../abilities/characters';
 import { Rng } from '../engine/rng';
 import { SCHOOLS } from '../ui/schools';
-import { VIRTUAL_SCHOOLS } from './bracket';
 import { HanchanSim, SOLO_START } from './hanchanSim';
+import type { HandEvent } from './hands';
 
 // 全国大赛个人赛（用户 2026-11-20 定的方案 A：32 人瑞士轮积分赛 + 决赛桌）
-// - 32 人：13 所原作学校每校两人（SOLO_ROSTER），加 6 名虚拟选手（团体赛那三所虚拟学校各两人，没有能力）。
-//   玩家从全部角色里挑一位报名：在名单上就是她本人，不在名单上就顶掉最后一名虚拟选手
+// - 32 人：8 名种子（SOLO_SEEDS）每届必定参赛，其余 24 个位子每届从别的角色里抽签（用户 11-20 定的第一批热闹化），
+//   所以每届阵容都不一样。玩家从全部角色里挑一位报名，她一定参赛
 // - 预赛 6 轮，每轮一个半庄、8 桌。第 1 轮抽签（同校的不同桌），之后每轮按积分 1–4 名一桌、5–8 名一桌……
 // - 积分照原作长野县个人战：每场（终局点数 − 25000）÷ 1000，加起来排名。同分比单场最高的终局点数，再比费用
 // - 预赛积分前 4 名进决赛桌，积分清零再打 2 个半庄，两场加起来定冠军；预赛积分只在决赛同分时用
 // - 每一场都是真打的半庄（hanchanSim.ts）：玩家那桌玩家自己打，别桌在后台真打；每桌的种子由大赛种子定，
-//   玩家重打只换自己那桌，存档读回来重算结果不变
+//   玩家重打只换自己那桌，存档读回来重算结果不变。每桌还记下每一局的和牌（hands.ts），赛事快报用
 // 整个状态是普通对象，可以直接 JSON 存档。积分在这里都按点数存（−20500 这样），画面上再除以 1000
 
 export const PRELIM_ROUNDS = 6;
@@ -21,23 +21,25 @@ export const FINALISTS = 4;
 export const PLAYERS = 32;
 const TABLE_NAMES = ['A 桌', 'B 桌', 'C 桌', 'D 桌', 'E 桌', 'F 桌', 'G 桌', 'H 桌'];
 export const FINAL_TABLE = '决赛桌';
+// 焦点桌：预赛打到第 3 轮起，A 桌就是积分前四名那一桌（挂 LIVE、放决战的音乐）
+export const FOCUS_FROM = 2;
 
 export const roundName = (r: number): string => (r < PRELIM_ROUNDS ? `第 ${r + 1} 轮` : `决赛第 ${r - PRELIM_ROUNDS + 1} 场`);
 // 积分榜表头用的短名
 export const roundShort = (r: number): string => (r < PRELIM_ROUNDS ? `${r + 1}` : `决${r - PRELIM_ROUNDS + 1}`);
 
-// 13 所学校的两名代表（学校按 schools.ts 的顺序；方案文档里列的名单）
-export const SOLO_ROSTER = ['saki', 'nodoka', 'koromo', 'toka', 'mihoko', 'kana', 'yumi', 'momo', 'shizuno', 'kuro', 'toki', 'ryuuka', 'rii', 'himeko', 'teru', 'awai', 'komaki', 'hatsumi', 'toyone', 'aislinn', 'hiroe', 'suzu', 'nelly', 'satoha', 'sawaya', 'yukiko'];
-const VIRTUAL_TAGS = ['甲', '乙'];
+// 种子：原作里全国级的 8 人，每届必定参赛（名单在这里改）
+export const SOLO_SEEDS = ['teru', 'awai', 'nelly', 'koromo', 'saki', 'komaki', 'satoha', 'toki'];
 
 export interface SoloPlayer {
-  id: string; // 角色 id；虚拟选手是 npc-solo- 开头的
+  id: string; // 角色 id；旧存档里的虚拟选手是 npc-solo- 开头的
   name: string;
   school: string;
   short: string; // 学校简称
   color: string;
-  cost: number; // 角色费用 1–5（虚拟选手按 1 算），只用来排同分
-  minor: boolean; // 虚拟选手：没能力
+  cost: number; // 角色费用 1–5，只用来排同分
+  minor: boolean; // 旧存档里的虚拟选手：没能力（现在的名单里没有了）
+  seed?: boolean; // 种子
 }
 
 export interface SoloTable {
@@ -45,6 +47,7 @@ export interface SoloTable {
   name: string;
   seats: number[]; // 四个人（players 的下标）
   scores: number[] | null; // 终局点数，按 seats 的顺序；还没打完是 null
+  hands?: HandEvent[]; // 这一场的和牌（下标是 seats 的顺序）；旧存档没有
 }
 
 export interface League {
@@ -65,36 +68,43 @@ function schoolInfo(name: string) {
 
 function playerOf(c: Character): SoloPlayer {
   const s = schoolInfo(c.school);
-  return { id: c.id, name: c.name, school: c.school, short: s.short, color: s.color, cost: c.cost, minor: false };
+  return { id: c.id, name: c.name, school: c.school, short: s.short, color: s.color, cost: c.cost, minor: false, seed: SOLO_SEEDS.includes(c.id) };
 }
-
-const virtualPlayers = (): SoloPlayer[] =>
-  VIRTUAL_SCHOOLS.flatMap((v) => VIRTUAL_TAGS.map((tag) => ({ id: `npc-solo-${v.short}-${tag}`, name: `${v.short}·${tag}`, school: v.name, short: v.short, color: v.color, cost: 1, minor: true })));
 
 // 能报名的人：全部角色
 export const PICKABLE = CHARACTERS.map((c) => c.id);
-export const isRepresentative = (id: string): boolean => SOLO_ROSTER.includes(id);
+export const isSeed = (id: string): boolean => SOLO_SEEDS.includes(id);
 
-// 报名、抽第 1 轮：32 人打乱，同校的人不同桌
+// 报名、抽签：8 名种子 + 玩家挑的人 + 从其余角色里抽满 32 人；第 1 轮分桌同校的人不同桌
 export function createLeague(seed: number, pick: string): League {
   const me = CHARACTERS.find((c) => c.id === pick);
   if (!me) throw new Error(`没有这个角色：${pick}`);
-  const players = [...SOLO_ROSTER.map((id) => playerOf(CHARACTERS.find((c) => c.id === id)!)), ...virtualPlayers()];
-  let mine = players.findIndex((p) => p.id === pick);
-  if (mine < 0) {
-    mine = players.length - 1;
-    players[mine] = playerOf(me);
-  }
-  const l: League = { seed, mine, players, tables: [], round: 0, finalists: null, podium: null, retries: 0 };
   const rng = new Rng(seed);
-  let order = rng.shuffle(players.map((_, i) => i));
-  for (let k = 0; k < 500 && !schoolsApart(l, order); k++) order = rng.shuffle(order);
-  l.tables = chunk(order).map((seats, i) => ({ round: 0, name: TABLE_NAMES[i], seats, scores: null }));
+  const fixed = [...SOLO_SEEDS, ...(isSeed(pick) ? [] : [pick])];
+  const pool = rng.shuffle(CHARACTERS.filter((c) => !fixed.includes(c.id)).map((c) => c.id));
+  const ids = [...fixed, ...pool.slice(0, PLAYERS - fixed.length)];
+  const players = ids.map((id) => playerOf(CHARACTERS.find((c) => c.id === id)!));
+  const mine = ids.indexOf(pick);
+  const l: League = { seed, mine, players, tables: [], round: 0, finalists: null, podium: null, retries: 0 };
+  l.tables = firstDraw(l, rng).map((seats, i) => ({ round: 0, name: TABLE_NAMES[i], seats, scores: null }));
   return l;
 }
 
+// 第 1 轮分桌：学校打乱、同校的人排在一起，第 k 个人坐第 k % 8 桌——一所学校不超过 8 人就一定不同桌；
+// 再打乱桌序和每桌的座次
+function firstDraw(l: League, rng: Rng): number[][] {
+  const bySchool = new Map<string, number[]>();
+  for (const p of rng.shuffle(l.players.map((_, i) => i))) {
+    const k = l.players[p].school;
+    bySchool.set(k, [...(bySchool.get(k) ?? []), p]);
+  }
+  const order = rng.shuffle([...bySchool.keys()]).flatMap((k) => bySchool.get(k)!);
+  const tables: number[][] = TABLE_NAMES.map(() => []);
+  order.forEach((p, k) => tables[k % TABLE_NAMES.length].push(p));
+  return rng.shuffle(tables.map((t) => rng.shuffle(t)));
+}
+
 const chunk = (order: number[]): number[][] => TABLE_NAMES.map((_, i) => order.slice(i * 4, i * 4 + 4));
-const schoolsApart = (l: League, order: number[]) => chunk(order).every((t) => new Set(t.map((p) => l.players[p].school)).size === 4);
 
 export const roundTables = (l: League, round = l.round): SoloTable[] => l.tables.filter((t) => t.round === round);
 export const myTable = (l: League, round = l.round): SoloTable | null => roundTables(l, round).find((t) => t.seats.includes(l.mine)) ?? null;
@@ -134,17 +144,19 @@ export function tableSim(l: League, t: SoloTable, salt = 0): HanchanSim {
   );
 }
 
-// 记下一桌的终局点数（按 t.seats 的顺序）
-export function setResult(t: SoloTable, scores: number[]): void {
+// 记下一桌的终局点数（按 t.seats 的顺序）和这一场的和牌
+export function setResult(t: SoloTable, scores: number[], hands?: HandEvent[]): void {
   if (scores.length !== 4) throw new Error('一桌要四个人的点数');
   t.scores = [...scores];
+  if (hands) t.hands = hands.map((h) => ({ ...h, yaku: [...h.yaku] }));
+  else delete t.hands;
 }
 
 // 玩家那桌打完：交上来四个人的终局点数（按 t.seats 的顺序）
-export function reportMine(l: League, scores: number[]): SoloTable {
+export function reportMine(l: League, scores: number[], hands?: HandEvent[]): SoloTable {
   const t = myTable(l);
   if (!t) throw new Error('这一场玩家没有比赛');
-  setResult(t, scores);
+  setResult(t, scores, hands);
   return t;
 }
 
@@ -153,12 +165,16 @@ export function retryMine(l: League): void {
   const t = myTable(l);
   if (!t) return;
   t.scores = null;
+  delete t.hands;
   l.retries++;
 }
 
 // 别桌一口气真打完（测试、node 里用；画面里用后台慢慢算的 BgRunner）
 export function simulateOthers(l: League): void {
-  for (const t of pendingOthers(l)) setResult(t, tableSim(l, t).runAll());
+  for (const t of pendingOthers(l)) {
+    const sim = tableSim(l, t);
+    setResult(t, sim.runAll(), sim.hands);
+  }
 }
 
 // ---------- 积分 ----------
@@ -240,7 +256,13 @@ export function runLeague(l: League, play?: (l: League, t: SoloTable) => number[
   while (!finished(l)) {
     simulateOthers(l);
     const t = myTable(l);
-    if (t && !t.scores) setResult(t, play ? play(l, t) : tableSim(l, t).runAll());
+    if (t && !t.scores) {
+      if (play) setResult(t, play(l, t));
+      else {
+        const sim = tableSim(l, t);
+        setResult(t, sim.runAll(), sim.hands);
+      }
+    }
     advance(l);
   }
   return l;

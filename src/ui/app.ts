@@ -70,6 +70,7 @@ import { NationalFlow } from '../story/national';
 import { IndividualFlow } from '../story/individual';
 import { SOLO_RULES, SOLO_START } from '../story/hanchanSim';
 import { fmtPts } from '../story/soloView';
+import { type HandEvent, recordHands } from '../story/hands';
 import { type NationalTab, saveTab, savedTab } from '../story/tabs';
 import { paceOf, vary } from './vary';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
@@ -379,7 +380,7 @@ export class App {
   private national: NationalFlow | null = null;
   private solo: IndividualFlow | null = null;
   // 个人赛里玩家正在打的那一场：order[座位] 是这一桌第几个人（玩家坐 0 号位），打完把点数按桌上的顺序交回去
-  private soloMatch: { order: number[]; label: string; done: (scores: number[]) => void } | null = null;
+  private soloMatch: { order: number[]; label: string; finale: boolean; hands: HandEvent[]; done: (scores: number[], hands: HandEvent[]) => void } | null = null;
 
   private openBracket(tab: NationalTab = savedTab()): void {
     this.teardown();
@@ -403,7 +404,7 @@ export class App {
       });
     if (tab === 'solo') {
       this.solo = new IndividualFlow(this.root, {
-        playHanchan: (chars, me, label, done) => transition(() => this.startSoloMatch(chars, me, label, done)),
+        playHanchan: (chars, me, info, done) => transition(() => this.startSoloMatch(chars, me, info, done)),
         switchTab: () => transition(() => this.openBracket('team')),
         exit,
       });
@@ -417,17 +418,18 @@ export class App {
   }
 
   // 个人赛里玩家那一场：规则固定（半庄、25000 点起……见 SOLO_RULES），玩家坐 0 号位，其余三人照桌上的顺序往下坐；
-  // 起家随机。打完结算窗的按钮是「回到积分榜」
-  private startSoloMatch(chars: Character[], me: number, label: string, done: (scores: number[]) => void): void {
+  // 起家随机。焦点桌、决赛桌放决战的音乐；每一局的和牌记下来（赛事快报用）。打完结算窗的按钮是「回到积分榜」
+  private startSoloMatch(chars: Character[], me: number, info: { label: string; finale: boolean }, done: (scores: number[], hands: HandEvent[]) => void): void {
     const order = [0, 1, 2, 3].map((i) => (me + i) % 4);
     const players = order.map((k) => chars[k]);
     this.teardown();
     this.team = null;
     this.teamFlow = null;
     this.auto = false;
-    this.soloMatch = { order, label, done };
     const seed = Math.floor(Math.random() * 2 ** 31);
-    this.beginGame(players, new Game({ seed, format: 'south', startScore: SOLO_START, rules: SOLO_RULES, firstDealer: Math.floor(Math.random() * 4), players: players.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) }));
+    const game = new Game({ seed, format: 'south', startScore: SOLO_START, rules: SOLO_RULES, firstDealer: Math.floor(Math.random() * 4), players: players.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) });
+    this.soloMatch = { order, label: info.label, finale: info.finale, hands: recordHands(game, order), done };
+    this.beginGame(players, game);
   }
 
   // 全国大赛里玩家那一桌：团体赛的布阵、点数板、上场 / 托管；打完把四校点数交回晋级表，中途退出就不算
@@ -1170,9 +1172,9 @@ export class App {
     return { me: this.me, quiet: this.auto || !!this.vision, finale: this.finale(), delay: this.busyMs() };
   }
 
-  // 压轴的一场（放决战的音乐）：团体赛的大将战、个人赛的决赛桌
+  // 压轴的一场（放决战的音乐）：团体赛的大将战、个人赛的焦点桌和决赛桌
   private finale(): boolean {
-    return (!!this.team && this.team.run.pos >= POSITIONS.length - 1) || !!this.soloMatch?.label.startsWith('决赛');
+    return (!!this.team && this.team.run.pos >= POSITIONS.length - 1) || !!this.soloMatch?.finale;
   }
 
   private onGameEvent(e: GameEvent): void {
@@ -2838,12 +2840,12 @@ export class App {
       return;
     }
     if (el.dataset.ui === 'solo-done' && this.soloMatch && this.game) {
-      const { order, done } = this.soloMatch;
+      const { order, hands, done } = this.soloMatch;
       const g = this.game;
       const scores = [0, 0, 0, 0];
       order.forEach((k, seat) => (scores[k] = g.players[seat].score));
       this.soloMatch = null;
-      done(scores);
+      done(scores, hands);
       transition(() => {
         this.teardown();
         menuMusic();

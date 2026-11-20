@@ -15,6 +15,7 @@ import {
   TOTAL_ROUNDS,
 } from './league';
 import { portraitUrl } from '../ui3d/looks';
+import { isFocus, latestNews, newsTitle, tableTags } from './news';
 
 // 个人赛的积分榜画面（方案文档里的样图）：上面一排便签是赛程，左边是这一场的 8 桌（决赛是一桌），
 // 右边是 32 人的预赛积分榜，前 4 名下面画决赛线，自己那一行用黄色荧光笔。
@@ -34,7 +35,7 @@ const ptsHtml = (n: number | null, extra = '') => (n === null ? `<span class="${
 
 const nameHtml = (l: League, p: number) => {
   const e = l.players[p];
-  return `${esc(e.name)}<small>${esc(e.short)}</small>${e.minor ? '<i>虚拟</i>' : ''}`;
+  return `${esc(e.name)}<small>${esc(e.short)}</small>${e.minor ? '<i>虚拟</i>' : e.seed ? '<i class="seed">种子</i>' : ''}`;
 };
 
 // 赛程：第 1–6 轮、决赛两场
@@ -46,6 +47,20 @@ export function stepsHtml(l: League): string {
   }).join('');
   const podium = l.podium ? '<span class="now fin">颁奖</span>' : '';
   return `<div class="ip-steps">${notes}${podium}</div>`;
+}
+
+// 桌名后面的小标签：焦点桌挂 LIVE，同门内战、死亡之组、复仇之战
+function headTags(l: League, t: SoloTable): string {
+  const live = isFocus(t) && t.name !== FINAL_TABLE ? '<b class="ip-live">LIVE</b>' : '';
+  return live + tableTags(l, t).map((x) => `<b class="ip-tag" title="${esc(x.note)}">${x.label}</b>`).join('');
+}
+
+// 赛事快报：这一场（或上一场）各桌最热闹的几条。still：和上次画的一样，不再一条条亮起来
+export function newsHtml(l: League, still = false): string {
+  const n = latestNews(l);
+  if (!n) return '';
+  const items = n.items.map((x) => `<li${x.mine ? ' class="mine"' : ''}><b>${esc(x.table)}</b>${esc(x.text)}</li>`).join('');
+  return `<section class="ip-news${still ? ' still' : ''}" aria-label="赛事快报"><h4>${newsTitle(n.round)}</h4><ul>${items}</ul></section>`;
 }
 
 // 预赛的一桌
@@ -66,7 +81,7 @@ function prelimTableHtml(l: League, t: SoloTable, fresh: boolean, live?: string)
     .join('');
   const mine = t.seats.includes(l.mine);
   const note = live ? `<span class="bk-live">进行中 · ${live}</span>` : mine && !t.scores ? '<span class="bk-here">你在这桌</span>' : '';
-  return `<div class="bk-table${mine ? ' has-mine' : ''}${live ? ' live' : ''}" data-solo-table="${esc(t.name)}"><div class="bk-head"><span>${esc(t.name)}</span>${note}</div>${rows}</div>`;
+  return `<div class="bk-table${mine ? ' has-mine' : ''}${live ? ' live' : ''}${isFocus(t) ? ' focus' : ''}" data-solo-table="${esc(t.name)}"><div class="bk-head"><span>${esc(t.name)}${headTags(l, t)}</span>${note}</div>${rows}</div>`;
 }
 
 // 决赛桌：两场的积分和合计，打完写名次
@@ -92,7 +107,7 @@ function finalTableHtml(l: League, fresh: boolean, live?: string): string {
   const mine = fin.includes(l.mine);
   const note = live ? `<span class="bk-live">进行中 · ${live}</span>` : mine && now && !now.scores ? '<span class="bk-here">你在这桌</span>' : l.podium ? '<span class="bk-here">打完了</span>' : '';
   const head = `<div class="bk-row ip-fhead"><b class="bk-dot"></b><span class="bk-name">积分清零</span><span class="ip-fg">第 1 场</span><span class="ip-fg">第 2 场</span><span class="ip-d">合计</span><em class="bk-tag"></em></div>`;
-  return `<div class="bk-table ip-final${mine ? ' has-mine' : ''}${live ? ' live' : ''}" data-solo-table="${FINAL_TABLE}"><div class="bk-head"><span>${FINAL_TABLE}</span>${note}</div>${head}${rows}</div>`;
+  return `<div class="bk-table ip-final${mine ? ' has-mine' : ''}${live ? ' live' : ''}" data-solo-table="${FINAL_TABLE}"><div class="bk-head"><span>${FINAL_TABLE}${l.podium ? '' : '<b class="ip-live">LIVE</b>'}</span>${note}</div>${head}${rows}</div>`;
 }
 
 // 颁奖台：亚军、冠军、季军（冠军站中间、最高）
@@ -127,14 +142,14 @@ export function boardHtml(l: League): string {
 }
 
 // 整个积分榜画面的中间部分。live：后台在打的桌（桌名 → 打到哪了）
-export function soloHtml(l: League, fresh: Set<string> = new Set(), live: Map<string, string> = new Map()): string {
+export function soloHtml(l: League, fresh: Set<string> = new Set(), live: Map<string, string> = new Map(), stillNews = false): string {
   const r = Math.min(l.round, TOTAL_ROUNDS - 1);
   const inFinal = r >= PRELIM_ROUNDS;
   const tables = inFinal ? finalTableHtml(l, fresh.has(FINAL_TABLE), live.get(FINAL_TABLE)) : roundTables(l, r).map((t) => prelimTableHtml(l, t, fresh.has(t.name), live.get(t.name))).join('');
   const champ = champion(l);
   const title = l.podium ? `颁奖 <small>冠军 ${esc(l.players[champ!].name)}</small>` : `${roundName(r)} <small>${inFinal ? '前 4 名，两个半庄定冠军' : r === 0 ? '抽签分桌，同校不同桌' : '按积分分桌'}</small>`;
   const mineHere = myTable(l, r);
-  return `${stepsHtml(l)}<div class="ip-grid${mineHere ? '' : ' no-mine'}">
+  return `${stepsHtml(l)}${newsHtml(l, stillNews)}<div class="ip-grid${mineHere ? '' : ' no-mine'}">
     <section class="ip-col" aria-label="这一场"><h3>${title}</h3>${l.podium ? podiumHtml(l) : ''}<div class="ip-tables${inFinal ? ' one' : ''}">${tables}</div></section>
     <section class="ip-col" aria-label="积分榜"><h3>预赛积分榜 <small>每场（终局点数 − 25000）÷ 1000</small></h3>${boardHtml(l)}</section>
   </div>`;

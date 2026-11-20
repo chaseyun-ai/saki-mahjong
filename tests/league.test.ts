@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CHARACTERS } from '../src/abilities/characters';
 import { HanchanSim, SOLO_START } from '../src/story/hanchanSim';
 import {
   advance,
@@ -18,13 +19,15 @@ import {
   roundDone,
   roundTables,
   setResult,
-  SOLO_ROSTER,
+  simulateOthers,
+  SOLO_SEEDS,
   type SoloTable,
   standingOf,
   standings,
   tableSim,
   TOTAL_ROUNDS,
 } from '../src/story/league';
+import { bubbleHint, isFocus, latestNews, roundNews, tableTags } from '../src/story/news';
 
 // 不真打的快速结果：桌上第一个人最多，加起来 10 万
 const fake = (order: number[]) => {
@@ -44,40 +47,47 @@ const playOut = (l: League, play: (l: League, t: SoloTable) => number[] = () => 
 };
 
 describe('全国大赛个人赛（瑞士轮 + 决赛桌）', () => {
-  it('32 人：13 校各两人加 6 名虚拟选手；第 1 轮 8 桌不重不漏，同校不同桌', () => {
-    expect(SOLO_ROSTER).toHaveLength(26);
-    for (let seed = 1; seed < 40; seed++) {
+  it('32 人：8 名种子必定参赛，其余抽签、每届不一样；第 1 轮 8 桌不重不漏，同校不同桌', () => {
+    expect(SOLO_SEEDS).toHaveLength(8);
+    const rosters = new Set<string>();
+    for (let seed = 1; seed < 60; seed++) {
       const l = createLeague(seed, 'saki');
       expect(l.players).toHaveLength(PLAYERS);
-      expect(l.players.filter((p) => p.minor)).toHaveLength(6);
+      expect(new Set(l.players.map((p) => p.id)).size).toBe(PLAYERS);
+      for (const id of SOLO_SEEDS) expect(l.players.find((p) => p.id === id)?.seed).toBe(true);
+      expect(l.players.filter((p) => p.seed)).toHaveLength(8);
+      expect(l.players.some((p) => p.minor)).toBe(false);
       const first = roundTables(l);
       expect(first).toHaveLength(8);
       const all = first.flatMap((t) => t.seats);
       expect(new Set(all).size).toBe(PLAYERS);
       for (const t of first) expect(new Set(t.seats.map((p) => l.players[p].school)).size).toBe(4);
       expect(l.players[l.mine].id).toBe('saki');
+      rosters.add(l.players.map((p) => p.id).sort().join());
     }
+    expect(rosters.size).toBeGreaterThan(50);
     expect(createLeague(7, 'saki').tables).toEqual(createLeague(7, 'saki').tables);
+    expect(createLeague(7, 'saki').players).toEqual(createLeague(7, 'saki').players);
   });
 
-  it('挑名单外的人：顶掉最后一名虚拟选手；同校三个人照样分开坐', () => {
+  it('挑种子以外的人：她一定参赛；每个角色都能报名', () => {
     for (let seed = 1; seed < 20; seed++) {
       const l = createLeague(seed, 'hisa');
-      expect(l.mine).toBe(PLAYERS - 1);
       expect(l.players[l.mine].id).toBe('hisa');
-      expect(l.players.filter((p) => p.school === '清澄高中')).toHaveLength(3);
-      expect(l.players.filter((p) => p.minor)).toHaveLength(5);
+      expect(l.players[l.mine].seed).toBe(false);
+      expect(l.players.filter((p) => p.seed)).toHaveLength(8);
       for (const t of roundTables(l)) expect(new Set(t.seats.map((p) => l.players[p].school)).size).toBe(4);
     }
+    for (const c of CHARACTERS) expect(createLeague(3, c.id).players[createLeague(3, c.id).mine].id).toBe(c.id);
     expect(() => createLeague(1, 'nobody')).toThrow();
   });
 
-  it('上场的人：原作角色照角色表，虚拟选手没有能力', () => {
+  it('上场的人照角色表；旧存档里的虚拟选手是没有能力的电脑', () => {
     const l = createLeague(3, 'saki');
     expect(charOf(l, l.mine).ability?.id).toBe('saki');
-    const v = l.players.findIndex((p) => p.minor);
-    expect(charOf(l, v).ability).toBeNull();
-    expect(charOf(l, v).note).toContain('没有能力');
+    l.players[5] = { id: 'npc-solo-越谷-甲', name: '越谷·甲', school: '越谷女子', short: '越谷', color: '#8a8f99', cost: 1, minor: true };
+    expect(charOf(l, 5).ability).toBeNull();
+    expect(charOf(l, 5).note).toContain('没有能力');
   });
 
   it('积分：（终局点数 − 25000）÷ 1000，每桌加起来是 0；按积分 1–4 名一桌、5–8 名一桌分下一轮', () => {
@@ -224,5 +234,102 @@ describe('个人赛积分榜画面', () => {
     expect(end.match(/data-solo-table=/g)).toHaveLength(1);
     expect(end).toContain('冠军');
     expect(end).toContain('颁奖');
+  });
+});
+
+describe('个人赛的场外信息：和牌记录、赛事快报、对局词条、卡线', () => {
+  it('真打的桌记下每一局的和牌，存进这一桌', () => {
+    const l = createLeague(21, 'saki');
+    simulateOthers(l);
+    const done = roundTables(l).filter((t) => t.scores);
+    expect(done).toHaveLength(7);
+    const hands = done.flatMap((t) => t.hands ?? []);
+    expect(hands.length).toBeGreaterThan(20);
+    for (const h of hands) {
+      expect(h.win).toBeGreaterThanOrEqual(0);
+      expect(h.win).toBeLessThan(4);
+      expect(h.from).not.toBe(h.win);
+      expect(h.gain).toBeGreaterThan(0);
+      expect(h.yaku.length).toBeGreaterThan(0);
+    }
+    // 存档来回一趟还在
+    expect((JSON.parse(JSON.stringify(l)) as League).tables[0].hands).toEqual(l.tables[0].hands);
+  }, 120000);
+
+  it('快报：役满排最前，一桌最多两条；击飞、种子垫底、三连一位都会写', () => {
+    const l = createLeague(4, 'saki');
+    const [a, b] = roundTables(l);
+    const yakuman = { round: '南 4 局', win: 1, from: 2, gain: 32000, han: 13, limit: '役满', yaku: ['四暗刻'] };
+    const big = { round: '东 2 局', win: 0, from: -1, gain: 24000, han: 11, limit: '三倍满', yaku: ['立直', '门前清自摸和', '清一色'] };
+    const haitei = { round: '南 3 局', win: 3, from: -1, gain: 8000, han: 5, limit: '满贯', yaku: ['海底捞月', '立直'] };
+    setResult(a, [20000, 60000, -2000, 22000], [yakuman, big]);
+    // a 桌三条（役满、三倍满、击飞）只留两条；b 桌也有人被击飞
+    setResult(b, [-1000, 30000, 26000, 45000], [haitei]);
+    for (const t of roundTables(l)) if (!t.scores) setResult(t, fake([0, 1, 2, 3]));
+    const news = roundNews(l, 0);
+    expect(news.length).toBeLessThanOrEqual(4);
+    expect(news[0].text).toContain('役满');
+    expect(news[0].text).toContain('四暗刻');
+    expect(news.filter((n) => n.table === a.name).length).toBeLessThanOrEqual(2);
+    expect(roundNews(l, 0, 20).filter((n) => n.table === a.name).length).toBe(2);
+    expect(roundNews(l, 0, 20).some((n) => n.table === b.name && n.text.includes('击飞'))).toBe(true);
+    expect(roundNews(l, 0, 20).some((n) => n.text.includes('海底捞月'))).toBe(true);
+    // 三连一位：假结果每桌第一个座位拿一位，积分榜第一一直坐 A 桌第一个座位
+    const s = createLeague(5, 'saki');
+    for (let r = 0; r < 3; r++) {
+      for (const t of roundTables(s)) setResult(t, fake([0, 1, 2, 3]));
+      if (r < 2) advance(s);
+    }
+    expect(roundNews(s, 2, 20).some((n) => n.text.includes('三连一位'))).toBe(true);
+    expect(latestNews(s)?.round).toBe(2);
+  });
+
+  it('词条：同门内战、死亡之组、复仇之战；焦点桌是第 3 轮起的 A 桌和决赛桌', () => {
+    const l = createLeague(6, 'saki');
+    const school = (p: number) => l.players[p].school;
+    const seeds = l.players.map((p, i) => (p.seed ? i : -1)).filter((i) => i >= 0 && i !== l.mine);
+    const mate = l.players.findIndex((p, i) => i !== seeds[0] && p.school === school(seeds[0]));
+    const others = l.players.map((_, i) => i).filter((i) => !l.players[i].seed && school(i) !== school(seeds[0]) && i !== l.mine);
+    const t1: SoloTable = { round: 1, name: 'B 桌', seats: [seeds[0], mate >= 0 ? mate : others[0], others[1], others[2]], scores: null };
+    if (mate >= 0) expect(tableTags(l, t1).map((x) => x.label)).toContain('同门内战');
+    // 一桌两对同校（白糸台的照和淡、临海的涅莉和智叶都是种子）只挂一个词条，说明里两对都写
+    const at = (id: string) => l.players.findIndex((p) => p.id === id);
+    const two: SoloTable = { round: 1, name: 'E 桌', seats: ['teru', 'awai', 'nelly', 'satoha'].map(at), scores: null };
+    const same = tableTags(l, two).filter((x) => x.label === '同门内战');
+    expect(same).toHaveLength(1);
+    expect(same[0].note.split('；')).toHaveLength(2);
+    const t2: SoloTable = { round: 1, name: 'C 桌', seats: [seeds[0], seeds[1], seeds[2], others[3]], scores: null };
+    expect(tableTags(l, t2).map((x) => x.label)).toContain('死亡之组');
+    // 复仇：第 1 轮压过玩家的人，第 2 轮又同桌
+    const mine = myTable(l)!;
+    for (const t of roundTables(l)) setResult(t, t === mine ? fake([...[0, 1, 2, 3].filter((k) => t.seats[k] !== l.mine), t.seats.indexOf(l.mine)]) : fake([0, 1, 2, 3]));
+    const rival = mine.seats.find((p) => p !== l.mine)!;
+    const t3: SoloTable = { round: 1, name: 'D 桌', seats: [l.mine, rival, others[4], others[5]], scores: null };
+    const tags = tableTags(l, t3);
+    expect(tags.map((x) => x.label)).toContain('复仇之战');
+    expect(tags.find((x) => x.label === '复仇之战')!.note).toContain(l.players[rival].name);
+    expect(isFocus({ round: 1, name: 'A 桌', seats: [], scores: null })).toBe(false);
+    expect(isFocus({ round: 2, name: 'A 桌', seats: [], scores: null })).toBe(true);
+    expect(isFocus({ round: 3, name: 'B 桌', seats: [], scores: null })).toBe(false);
+    expect(isFocus({ round: 6, name: FINAL_TABLE, seats: [], scores: null })).toBe(true);
+  });
+
+  it('卡线提示：只在预赛最后两轮、自己这一场还没打时出；在线下写要多少，线上写守住多少', () => {
+    const l = createLeague(8, 'nodoka');
+    for (let r = 0; r < PRELIM_ROUNDS - 2; r++) {
+      expect(bubbleHint(l)).toBeNull();
+      for (const t of roundTables(l)) setResult(t, fake([0, 1, 2, 3]));
+      advance(l);
+    }
+    const hint = bubbleHint(l)!;
+    expect(hint).toContain('最后两场加起来');
+    const s = prelimStandings(l);
+    const place = s.findIndex((x) => x.p === l.mine) + 1;
+    expect(hint).toContain(`第 ${place} 名`);
+    expect(hint).toContain(place <= FINALISTS ? '守得住' : '大概要');
+    for (const t of roundTables(l)) setResult(t, fake([0, 1, 2, 3]));
+    expect(bubbleHint(l)).toBeNull();
+    advance(l);
+    expect(bubbleHint(l)).toContain('这一场');
   });
 });

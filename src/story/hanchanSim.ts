@@ -2,6 +2,7 @@ import type { Character } from '../abilities/characters';
 import { chooseAction } from '../ai/ai';
 import { DEFAULT_RULES, Game, type Rules } from '../engine/game';
 import { Rng } from '../engine/rng';
+import { type HandEvent, recordHands } from './hands';
 
 // 后台真打一个半庄（全国大赛个人赛用）：四个人、25000 点起、规则固定（SOLO_RULES），剩下的立直棒归第一。
 // 和 TeamSim 一样一点一点打（step 给一个时间预算），可以塞进浏览器空闲的时候算；runAll 一口气打完（测试、node 里用）。
@@ -18,6 +19,8 @@ const WINDS = ['东', '南', '西', '北'];
 export class HanchanSim {
   // 终局点数，按传进来的 chars 的顺序；打完以前是 null
   scores: number[] | null = null;
+  // 这一场的和牌（赛事快报用），按 chars 的顺序记谁和、谁放铳
+  hands: HandEvent[] = [];
   done = false;
   private game: Game | null = null;
   private readonly seats: number[]; // 每个座位坐的是 chars 里第几个
@@ -79,6 +82,7 @@ export class HanchanSim {
       firstDealer: this.firstDealer,
       players: sat.map((c) => ({ name: c.name, ability: c.ability })),
     });
+    this.hands = recordHands(this.game, this.seats);
   }
 
   private finish(g: Game): void {

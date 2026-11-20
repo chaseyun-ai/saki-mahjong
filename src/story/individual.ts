@@ -11,7 +11,7 @@ import {
   createLeague,
   FINALISTS,
   inFinal,
-  isRepresentative,
+  isSeed,
   type League,
   loadLeague,
   myPlace,
@@ -31,6 +31,8 @@ import {
   TOTAL_ROUNDS,
 } from './league';
 import { fmtPts, soloHtml } from './soloView';
+import type { HandEvent } from './hands';
+import { bubbleHint, isFocus, latestNews, tableTags } from './news';
 import { tabsHtml } from './tabs';
 
 // 全国大赛个人赛（全国大赛里的第二个页签）：
@@ -41,9 +43,10 @@ import { tabsHtml } from './tabs';
 // 点击用 data-solo，只在自己的画面（.solo-screen）上才管
 
 export interface SoloHooks {
-  // 打玩家那一场：chars 是这一桌四个人（按 seats 的顺序），me 是玩家坐第几个，label 是「第 3 轮」之类；
-  // App 打完后调 done(四个人按同样顺序的终局点数)；中途离开就不调
-  playHanchan?(chars: Character[], me: number, label: string, done: (scores: number[]) => void): void;
+  // 打玩家那一场：chars 是这一桌四个人（按 seats 的顺序），me 是玩家坐第几个；
+  // info.label 是「第 3 轮 · A 桌」之类，info.finale：焦点桌、决赛桌（放决战的音乐）。
+  // App 打完后调 done(四个人按同样顺序的终局点数, 这一场的和牌)；中途离开就不调
+  playHanchan?(chars: Character[], me: number, info: { label: string; finale: boolean }, done: (scores: number[], hands: HandEvent[]) => void): void;
   // 切到团体赛页签
   switchTab?(): void;
   exit(): void;
@@ -59,6 +62,7 @@ export class IndividualFlow {
   private restartArmed = 0; // 点过一次「重新报名」的时间：3 秒内再点一下才真的放弃这一届
   private runner = new BgRunner<HanchanSim>((j) => this.jobDone(j));
   private liveTimer: number | null = null;
+  private newsSeen = ''; // 上次画的快报：一样就不再一条条亮起来
 
   constructor(
     private root: HTMLElement,
@@ -100,7 +104,7 @@ export class IndividualFlow {
       const who = membersOf(s.name)
         .map((c) => {
           const on = this.picked === c.id;
-          const rep = isRepresentative(c.id) ? '<b class="ip-rep">代表</b>' : '';
+          const rep = isSeed(c.id) ? '<b class="ip-rep">种子</b>' : '';
           return `<button class="ip-who${on ? ' on' : ''}" data-solo="pick" data-id="${c.id}" aria-pressed="${on}" title="${esc(c.name)}（${c.cost} 费）">${rep}<span class="ip-face" style="--c:${c.color}"><span>${c.name.slice(-1)}</span><img src="${portraitUrl(c.id, 'neutral')}" alt="" onerror="this.remove()" /></span><small>${esc(c.name)}</small></button>`;
         })
         .join('');
@@ -109,9 +113,9 @@ export class IndividualFlow {
     const l = this.l;
     const last = l?.podium ? `<p class="np-last">上一届冠军：${esc(l.players[l.podium[0]].name)}${l.podium[0] === l.mine ? '（就是你！）' : `；${esc(l.players[l.mine].name)}第 ${myPlace(l)} 名`}</p>` : '';
     const who = CHARACTERS.find((c) => c.id === this.picked);
-    const note = who ? (isRepresentative(who.id) ? `以<b>${esc(who.name)}</b>报名（${esc(who.school)}的代表）。` : `以<b>${esc(who.name)}</b>报名：她不在代表名单上，顶掉一名虚拟选手。`) : '点一位选手。';
+    const note = who ? `以<b>${esc(who.name)}</b>报名${isSeed(who.id) ? '（种子选手）' : ''}。其余选手抽签决定，每届都不一样。` : '点一位选手。';
     this.root.innerHTML = `<div class="story-screen solo-screen ip-screen">
-      ${this.top('全国高中麻将大赛 · 个人赛报名', `${PLAYERS} 人参赛：13 所学校各两名代表（标了「代表」的），加 6 名没有能力的虚拟选手。`, '')}${last}
+      ${this.top('全国高中麻将大赛 · 个人赛报名', `${PLAYERS} 人参赛：标了「种子」的 8 人每届必定参赛，其余位子每届从别的角色里抽签。你挑的人一定参赛。`, '')}${last}
       <p class="ip-rules">预赛打 <b>6 轮</b>半庄，第 1 轮抽签，之后每轮按积分重新分桌（1–4 名一桌、5–8 名一桌……）。每场积分 =（终局点数 − 25000）÷ 1000，加起来排名。预赛前 <b>${FINALISTS} 名</b>进决赛桌，积分清零再打 <b>2 个半庄</b>定冠军。每场规则固定：半庄、25000 点起、击飞、赤宝牌 3 张、食断、一番缚，剩下的立直棒归第一。</p>
       <div class="ip-pick-grid">${schools}</div>
       <footer class="bk-bar"><span>${note}</span><div><button class="bk-btn" data-solo="enter"${this.picked ? '' : ' disabled'}>报名，抽签</button></div></footer>
@@ -130,13 +134,15 @@ export class IndividualFlow {
     const me = l.players[l.mine];
     const where = l.podium ? `最终第 ${myPlace(l)} 名` : l.round >= PRELIM_ROUNDS ? (inFinal(l) ? '决赛桌' : `预赛第 ${myPlace(l)} 名`) : l.round > 0 ? `现在第 ${myPlace(l)} 名` : roundName(0);
     this.watchLive();
+    const news = JSON.stringify(latestNews(l));
     this.root.innerHTML = `<div class="story-screen solo-screen board-screen">
       ${this.top('全国高中麻将大赛 · 个人赛', `<b class="bk-dot" style="background:${me.color}"></b> ${esc(me.name)} · ${esc(me.short)} · ${where} · 重打 ${l.retries} 次`, '<button class="bk-btn ghost" data-solo="restart">重新报名</button>')}
-      ${soloHtml(l, this.fresh, this.live())}
+      ${soloHtml(l, this.fresh, this.live(), news === this.newsSeen)}
       <footer class="bk-bar"><span>${s.text}</span><div>${btns}</div></footer>
     </div>`;
     // 刚出结果的桌只亮这一次：后面别桌出结果重画时不再从头播
     this.fresh.clear();
+    this.newsSeen = news;
   }
 
   // 「进行中 · 南 2 局」跟着后台的进度走：每半秒换一下字（不重画整页，免得按钮在手底下换掉）
@@ -185,7 +191,7 @@ export class IndividualFlow {
     const t = roundTables(l).find((x) => x.name === name);
     // 已经换了一届、或者这一场已经过去了：丢掉
     if (!t || head !== `${l.seed}:${t.round}` || t.scores || !j.sim.scores) return;
-    setResult(t, j.sim.scores);
+    setResult(t, j.sim.scores, j.sim.hands);
     this.fresh.add(t.name);
     saveLeague(l);
     if (this.screen === 'board' && this.root.querySelector('.solo-screen')) this.showBoard();
@@ -215,7 +221,10 @@ export class IndividualFlow {
       if (auto) return { text: `电脑在替${me}打 · ${auto}…`, buttons: [], wait: true };
       const rivals = t.seats.filter((p) => p !== l.mine).map(name).join('、');
       const play: [string, string][] = this.hooks.playHanchan ? [['play', '上场']] : [];
-      return { text: `${round}${l.round < PRELIM_ROUNDS ? ` · ${esc(t.name)}` : ''}：${me}对${rivals}。`, buttons: [['auto', '交给电脑打', true], ...play], wait: false };
+      const tags = tableTags(l, t).map((x) => `<b class="ip-tag">${x.label}</b>${esc(x.note)}。`).join('');
+      const focus = isFocus(t) && t.name !== '决赛桌' ? '<b class="ip-live">LIVE</b>焦点桌。' : '';
+      const bubble = bubbleHint(l);
+      return { text: `${round}${l.round < PRELIM_ROUNDS ? ` · ${esc(t.name)}` : ''}：${me}对${rivals}。${focus}${tags}${bubble ? `<br><b class="ip-tag bubble">卡线</b>${esc(bubble)}` : ''}`, buttons: [['auto', '交给电脑打', true], ...play], wait: false };
     }
     const net = netOf(t, l.mine)!;
     const place = [...t.scores].sort((a, b) => b - a).indexOf(t.scores[t.seats.indexOf(l.mine)]) + 1;
@@ -233,15 +242,15 @@ export class IndividualFlow {
     const t = myTable(l);
     if (!t || t.scores) return;
     const round = l.round;
-    const label = roundName(round);
+    const label = round < PRELIM_ROUNDS ? `${roundName(round)} · ${t.name}${isFocus(t) ? '（焦点桌）' : ''}` : roundName(round);
     this.hooks.playHanchan?.(
       t.seats.map((p) => charOf(l, p)),
       t.seats.indexOf(l.mine),
-      label,
-      (scores) => {
+      { label, finale: isFocus(t) },
+      (scores, hands) => {
         // 打完回来时已经不是这一届、这一场（中途重新报名之类）：不算
         if (this.l !== l || l.round !== round || t.scores) return;
-        reportMine(l, scores);
+        reportMine(l, scores, hands);
         this.fresh.add(t.name);
         saveLeague(l);
       },

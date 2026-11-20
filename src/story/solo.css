@@ -55,7 +55,10 @@
 .ip-board .hd { font-size: 11px; color: var(--ink-l); border-bottom: 1.5px solid #e2d8c4; padding-bottom: 5px; }
 .ip-board .r { border-top: 1px dashed #eee5d4; }
 .ip-board .rk { font-variant-numeric: tabular-nums; color: var(--ink-m); text-align: right; }
-.ip-board .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 名字长、又挂种子和决赛两个牌子时，先缩学校的简称，牌子不截 */
+.ip-board .nm { display: flex; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; }
+.ip-board .nm small { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ip-board .nm i, .ip-board .nm .ip-fin { flex: none; }
 .ip-board .nm i, .ip-tables .bk-name i { margin-left: 5px; padding: 0 4px; border: 1px solid #b9b0a3; font-size: 10px; font-style: normal; color: var(--ink-l); }
 .ip-fin { margin-left: 5px; padding: 0 4px; background: #2b2622; color: #f4df72; font-size: 10px; font-weight: 400; }
 .ip-board .c { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -64,6 +67,29 @@
 .ip-cut { display: flex; align-items: center; gap: 8px; padding: 4px 12px; color: var(--red); font: 400 17px 'Long Cang', cursive; }
 .ip-cut::before, .ip-cut::after { content: ''; flex: 1; border-top: 2px dashed var(--red); }
 .solo-screen { padding-bottom: 110px; }
+
+/* 赛事快报：一条贴在白板上的纸带 */
+.ip-news { margin: 0 6px 16px; padding: 8px 14px 9px; background: var(--paper); border-left: 6px solid var(--red); box-shadow: 0 3px 8px rgba(30, 30, 30, 0.14); transform: rotate(-0.2deg); }
+.ip-news h4 { margin: 0 0 4px; font: 400 20px 'Long Cang', cursive; color: var(--red); }
+.ip-news ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 22px; }
+.ip-news li { display: flex; gap: 6px; font-size: 13.5px; line-height: 1.55; color: #3b342d; animation: bk-in 0.45s ease-out both; }
+.ip-news li:nth-child(2) { animation-delay: 0.12s; }
+.ip-news li:nth-child(3) { animation-delay: 0.24s; }
+.ip-news li:nth-child(4) { animation-delay: 0.36s; }
+.ip-news li b { flex: none; min-width: 40px; color: var(--ink-l); font-weight: 400; font-size: 12px; }
+.ip-news li.mine { font-weight: 700; }
+.ip-news.still li { animation: none; }
+
+/* 焦点桌、对局词条 */
+.ip-live { display: inline-block; margin-left: 8px; padding: 0 5px; background: #d0302f; color: #fff; font: 700 11px/17px 'Noto Sans SC', sans-serif; letter-spacing: 0.05em; vertical-align: 3px; animation: ip-live 1.6s ease-in-out infinite; }
+@keyframes ip-live { 50% { opacity: 0.55; } }
+.ip-tag { display: inline-block; margin-left: 6px; padding: 0 5px; border: 1.5px solid #b3302b; color: #b3302b; font: 700 11px/16px 'Noto Sans SC', sans-serif; vertical-align: 3px; cursor: help; }
+.bk-bar .ip-tag { margin: 0 6px 0 4px; vertical-align: 1px; cursor: default; }
+.bk-bar .ip-live { margin: 0 6px 0 4px; vertical-align: 1px; }
+.ip-tag.bubble { background: #b3302b; color: #fff8f2; }
+.bk-table.focus { box-shadow: 0 0 0 2px #2b2622, 0 6px 14px rgba(30, 30, 30, 0.22); }
+.bk-table.focus.has-mine { box-shadow: 0 0 0 3px #d0302f, 0 6px 14px rgba(30, 30, 30, 0.22); }
+.ip-board .nm i.seed, .ip-tables .bk-name i.seed { border-color: #c9a227; color: #8a6d0b; }
 
 /* 颁奖台：冠军在中间最高 */
 .ip-podium { display: flex; justify-content: center; align-items: flex-end; gap: 14px; margin: 6px 0 22px; }
@@ -93,6 +119,7 @@
   .ip-final .bk-row { padding: 7px 8px; font-size: 14px; }
   .bk-row .ip-fg, .bk-row .ip-d { min-width: 42px; }
   .ip-steps span { padding: 2px 9px; font-size: 17px; }
+  .ip-news ul { grid-template-columns: minmax(0, 1fr); }
   .ip-podium { gap: 8px; }
   .ip-step { width: 31%; }
   .ip-step .ip-face { width: 56px; height: 68px; }
@@ -100,4 +127,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .ip-face { transition: none; }
+  .ip-live, .ip-news li { animation: none; }
 }
