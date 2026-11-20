@@ -83,6 +83,8 @@ export class TeamSim {
     this.game = new Game({
       seed: this.rng.int(2 ** 31),
       format: 'team',
+      // 规矩上的起始点数（咲的天意按它算正负零），和 App 打团体赛时一样传每队的 10 万
+      startScore: TEAM_START,
       firstDealer: this.rng.int(4),
       scores: this.seats.map((t) => this.points[t]),
       riichiSticks: this.sticks,
