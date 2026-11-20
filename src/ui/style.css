@@ -1155,8 +1155,236 @@ button {
   }
 }
 
+/* 出牌的花样（2D）：和 3D、2.5D 的十种对应（discardMotion.ts），时长和 app.ts 的 FRESH_2D 一样。
+   从上往下看：+y 是出牌的人那一侧，+x 是这一行接着往后摆的方向。只动 translate / scale / rotate 属性，
+   动画播完落回牌自己歪的那一点（内联的 rotate、translate）；立直牌的横放写在 transform 里，不受影响 */
+.pond .tile.fresh[class*='fx-'] {
+  z-index: 2;
+}
+
+/* 拍：抬高了直着拍下去，落桌时压扁一下 */
+.pond .tile.fresh.fx-snap {
+  animation: drop-snap 0.22s linear;
+}
+
+@keyframes drop-snap {
+  0% {
+    translate: 0 -24px;
+    scale: 1.3;
+    opacity: 0.2;
+  }
+  45% {
+    translate: 0 -20px;
+    scale: 1.32;
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.6, 0, 1, 0.6);
+  }
+  80% {
+    translate: 0 0;
+    scale: 0.94;
+  }
+}
+
+/* 滑：放在跟前，贴着桌面往前一推 */
+.pond .tile.fresh.fx-slide {
+  animation: drop-slide 0.3s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@keyframes drop-slide {
+  0% {
+    translate: 3px 30px;
+    scale: 1.08;
+    opacity: 0.3;
+  }
+  20% {
+    translate: 3px 28px;
+    scale: 1;
+    opacity: 1;
+  }
+}
+
+/* 旋：牌在半空平着转一圈 */
+.pond .tile.fresh.fx-spin {
+  animation: drop-spin 0.38s cubic-bezier(0.2, 0.6, 0.4, 1);
+}
+
+@keyframes drop-spin {
+  0% {
+    translate: 0 -18px;
+    scale: 1.25;
+    rotate: -360deg;
+    opacity: 0.2;
+  }
+  35% {
+    opacity: 1;
+  }
+  85% {
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+/* 抛：翻个跟头落下去，弹两下 */
+.pond .tile.fresh.fx-toss {
+  animation: drop-toss 0.52s linear;
+}
+
+@keyframes drop-toss {
+  0% {
+    translate: 0 -26px;
+    scale: 1.25 1.25;
+    opacity: 0.2;
+  }
+  20% {
+    translate: 0 -18px;
+    scale: 1.2 0.12;
+    opacity: 1;
+  }
+  42% {
+    translate: 0 0;
+    scale: 1 1;
+    animation-timing-function: ease-out;
+  }
+  60% {
+    translate: 0 -7px;
+    scale: 1.07 1.07;
+    animation-timing-function: ease-in;
+  }
+  78% {
+    translate: 0 0;
+    scale: 1 1;
+    animation-timing-function: ease-out;
+  }
+  89% {
+    translate: 0 -2px;
+    animation-timing-function: ease-in;
+  }
+}
+
+/* 立倒：立着放在靠自己的那条边上（从上面看只有一条），往前倒平 */
+.pond .tile.fresh.fx-stand {
+  animation: drop-stand 0.42s linear;
+}
+
+@keyframes drop-stand {
+  0% {
+    translate: 0 20px;
+    scale: 1.1 0.5;
+    opacity: 0.2;
+  }
+  18% {
+    translate: 0 10px;
+    scale: 1 0.46;
+    opacity: 1;
+  }
+  45% {
+    translate: 0 10px;
+    scale: 1 0.46;
+    animation-timing-function: cubic-bezier(0.6, 0, 1, 0.7);
+  }
+}
+
+/* 立直宣言牌 · 转横：先竖着放下，按着转成横的 */
+.pond .tile.fresh.fx-turn {
+  animation: drop-turn 0.52s linear;
+}
+
+@keyframes drop-turn {
+  0% {
+    translate: -5px -14px;
+    rotate: 90deg;
+    scale: 1.15;
+    opacity: 0.2;
+  }
+  28% {
+    translate: -5px 0;
+    rotate: 90deg;
+    scale: 1;
+    opacity: 1;
+  }
+  46% {
+    translate: -5px 0;
+    rotate: 90deg;
+    animation-timing-function: cubic-bezier(0.3, 1.3, 0.5, 1);
+  }
+}
+
+/* 立直宣言牌 · 陀螺：落在旁边转起来，越转越慢，滑进位置 */
+.pond .tile.fresh.fx-top {
+  animation: drop-top 0.95s linear;
+}
+
+@keyframes drop-top {
+  0% {
+    translate: 44px -8px;
+    rotate: 810deg;
+    scale: 1.15;
+    opacity: 0.2;
+  }
+  12% {
+    translate: 44px 5px;
+    rotate: 760deg;
+    scale: 1;
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.1, 0.55, 0.3, 1);
+  }
+}
+
+/* 立直宣言牌 · 举高：举到半空停一下，再砸下去 */
+.pond .tile.fresh.fx-hold {
+  animation: drop-hold 0.9s linear;
+}
+
+@keyframes drop-hold {
+  0% {
+    translate: 0 -6px;
+    scale: 1.1;
+    opacity: 0.2;
+    animation-timing-function: ease-out;
+  }
+  30% {
+    translate: 0 -30px;
+    rotate: 7deg;
+    scale: 1.7;
+    opacity: 1;
+  }
+  80% {
+    translate: 0 -33px;
+    rotate: 7deg;
+    scale: 1.76;
+    animation-timing-function: cubic-bezier(0.7, 0, 1, 0.6);
+  }
+  94% {
+    translate: 0 0;
+    scale: 0.94;
+  }
+}
+
+/* 立直宣言牌 · 横推：横着放在旁边，一把推过去靠上前一张 */
+.pond .tile.fresh.fx-push {
+  animation: drop-push 0.5s linear;
+}
+
+@keyframes drop-push {
+  0% {
+    translate: 36px -12px;
+    scale: 1.12;
+    opacity: 0.2;
+  }
+  26% {
+    translate: 36px 0;
+    scale: 1;
+    opacity: 1;
+  }
+  48% {
+    translate: 36px 0;
+    animation-timing-function: cubic-bezier(0.6, 0, 0.9, 0.5);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .pond .tile.fresh {
+  .pond .tile.fresh,
+  .pond .tile.fresh[class*='fx-'] {
     animation: none;
   }
 }

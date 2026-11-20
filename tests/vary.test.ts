@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_DISCARD } from '../src/ui3d/discardMotion';
-import { POND_SHIFT_X, POND_TWIST, Vary, paceOf, pondJitter, vary, varyDiscard } from '../src/ui/vary';
+import { DEFAULT_DISCARD, NORMAL_STYLES, RIICHI_STYLES, roomNeeded } from '../src/ui3d/discardMotion';
+import { POND_LOOKS, POND_SHIFT_X, POND_TWIST, Vary, paceOf, pickDiscardStyle, pondJitter, vary, varyDiscard } from '../src/ui/vary';
 import { TILE_H } from '../src/ui3d/tableLayout';
 
 // table3d.ts 里牌河牌之间的缝
@@ -15,7 +15,8 @@ describe('随机微变化', () => {
     expect(v.pick('click', 3)).toBe(0);
     vary.reset(1, false);
     expect(varyDiscard(DEFAULT_DISCARD)).toBe(DEFAULT_DISCARD);
-    expect(pondJitter(5, 17)).toEqual({ yaw: 0, dx: 0, dz: 0 });
+    // 牌河歪不歪不跟这个开关走，看牌河摆放的设置：整齐就是一点不歪
+    expect(pondJitter(5, 17, 'neat')).toEqual({ yaw: 0, dx: 0, dz: 0 });
   });
 
   it('同一个种子得到同一串变化', () => {
@@ -87,6 +88,74 @@ describe('随机微变化', () => {
     // 两张牌朝相反方向转到头、又朝对方偏到头：转角让牌角伸出半个牌长 × 角度
     const worst = 2 * ((TILE_H / 2) * Math.sin(POND_TWIST) + POND_SHIFT_X);
     expect(worst).toBeLessThan(POND_GAP);
+    // 随手、凌乱的歪得多（牌桌摆的时候另外挨着排，见 pond-layout 的测试），但都不超过各自的上限
+    for (const style of ['loose', 'messy'] as const) {
+      for (let t = 0; t < 136; t++) {
+        const j = pondJitter(77, t, style);
+        expect(Math.abs(j.yaw)).toBeLessThanOrEqual(POND_LOOKS[style].twist);
+        expect(Math.abs(j.dx)).toBeLessThanOrEqual(POND_LOOKS[style].shiftX);
+        expect(Math.abs(j.dz)).toBeLessThanOrEqual(POND_LOOKS[style].shiftZ);
+      }
+    }
+    vary.reset(0, false);
+  });
+
+  it('出牌的样子：设置里选了哪种就是哪种，选多样就照各人的手风换着来', () => {
+    vary.reset(21, false);
+    // 选了固定的一种：谁都用它；平常的牌用不了立直宣言的样子，反过来也一样
+    for (const id of ['nodoka', 'yuuki', 'hisa', '']) {
+      for (const k of NORMAL_STYLES) expect(pickDiscardStyle(id, false, k)).toBe(k);
+      for (const k of RIICHI_STYLES) expect(pickDiscardStyle(id, true, k)).toBe(k);
+      expect(pickDiscardStyle(id, true, 'snap')).toBe('place');
+      expect(pickDiscardStyle(id, false, 'top')).toBe('place');
+    }
+    // 多样：只出这一类里的样子，关了微变化也照样换（它有自己的设置）
+    const count = (id: string, riichi: boolean, room = Infinity, flipped = false) => {
+      const seen = new Map<string, number>();
+      for (let i = 0; i < 4000; i++) {
+        const k = pickDiscardStyle(id, riichi, 'varied', room, flipped);
+        expect(riichi ? RIICHI_STYLES : NORMAL_STYLES).toContain(k);
+        seen.set(k, (seen.get(k) ?? 0) + 1);
+      }
+      return seen;
+    };
+    const plain = count('', false);
+    expect(plain.size).toBe(NORMAL_STYLES.length);
+    // 没特别写的人大多还是平放
+    expect(plain.get('place')!).toBeGreaterThan(4000 * 0.4);
+    expect(count('', true).size).toBe(RIICHI_STYLES.length);
+    // 和规规矩矩，不拍不抛；优希拍的、抛的多
+    const nodoka = count('nodoka', false);
+    expect(nodoka.has('snap') || nodoka.has('toss') || nodoka.has('spin')).toBe(false);
+    const yuuki = count('yuuki', false);
+    expect(yuuki.get('snap')! + yuuki.get('toss')!).toBeGreaterThan(4000 * 0.3);
+    // 不给设置（调试场景）也照手风来
+    expect(NORMAL_STYLES).toContain(pickDiscardStyle('saki', false, undefined));
+    vary.reset(0, false);
+  });
+
+  it('出牌的样子：跟前放不下的不用，牌河倒着摆的人不立倒', () => {
+    vary.reset(22, true);
+    for (const id of ['', 'yuuki', 'shiromi', 'hisa']) {
+      for (let i = 0; i < 1500; i++) {
+        expect(roomNeeded(pickDiscardStyle(id, false, 'varied', 0))).toBe(0);
+        expect(roomNeeded(pickDiscardStyle(id, true, 'varied', 0))).toBe(0);
+        expect(pickDiscardStyle(id, false, 'varied', Infinity, true)).not.toBe('stand');
+      }
+    }
+    // 固定选了放不下的那种，这一张就平放
+    expect(pickDiscardStyle('', false, 'slide', 0.2)).toBe('place');
+    expect(pickDiscardStyle('', false, 'stand', Infinity, true)).toBe('place');
+    expect(pickDiscardStyle('', false, 'slide', 2)).toBe('slide');
+    vary.reset(0, false);
+  });
+
+  it('出牌的样子：同一个种子每次挑的一样', () => {
+    const run = () => {
+      vary.reset(1234, true);
+      return Array.from({ length: 40 }, (_, i) => pickDiscardStyle(['saki', 'hisa', 'yuuki', 'nodoka'][i % 4], i % 9 === 0, 'varied'));
+    };
+    expect(run()).toEqual(run());
     vary.reset(0, false);
   });
 });

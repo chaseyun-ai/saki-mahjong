@@ -33,12 +33,13 @@ import { TileBeam } from './tileBeam';
 import { tileSurface } from './tileLooks';
 import { winCounts } from '../ui/winTally';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
-import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
+import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, POND_ROWS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
-import { DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, dueMarkers, sampleDiscard, totalTime } from './discardMotion';
+import { CueKind, DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, DiscardStyle, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, afterTime, declareDelay, dueCues, dueMarkers, sampleDiscard, styleParams, totalTime } from './discardMotion';
 import { CONSOLE_SCALE, type FeltPattern, TableColors, tableColors } from '../ui/theme';
 import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, outline, sealSpot, skinSignColors } from './consoleLooks';
-import { hash01, pondJitter, varyDiscard, vary } from '../ui/vary';
+import { type DiscardFx, POND_LOOKS, type PondFx, type PondStyle, type RiichiFx, hash01, pickDiscardStyle, pondStyleOf, varyDiscard, vary } from '../ui/vary';
+import { type PondItem, pondRows, pondSpots } from './pondLayout';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
 import { BeatHit, beatFinal, beatHit, beatLength, beatSeed } from '../ui/himekoBeat';
@@ -373,6 +374,10 @@ interface HandAnim {
   landed?: THREE.Vector3; // 放下的位置，之后牌被拿走手也停在这里
   startScale?: number; // 出牌时牌在手里放大多少，搬运途中缩回牌河的大小
   drop?: boolean; // 2.5D 的立直棒：不开抽屉，从上方掉下来
+  style?: DiscardStyle; // 出牌的样子（discardMotion.ts），不给是平放
+  spin?: number; // 这一次往哪边转（1 或 -1）
+  cued?: number; // 落桌以后的动静已经报过几个
+  lost?: boolean; // 落桌以后落点变了（牌被鸣走）：不再管这张牌，交给牌桌自己归位
 }
 
 const STACKS_HALF = 9;
@@ -461,6 +466,9 @@ export interface SyncView {
   slamHand?: boolean; // 改良布局的自摸砸牌带不带手（false：牌自己跳起来拍下去），不给就带手
   slamOrder?: SlapOrder; // 通用的拍牌：手牌什么时候倒（first 先倒再拍、lift 举牌时倒、slap 拍下去时倒），不给是先倒
   slamStyle?: 'slap' | 'edge'; // 通用的自摸动作用哪一套：slap 拍牌，edge 边缘切（按着牌往自己这边划、磕在边上弹回来），不给是拍牌
+  discardFx?: DiscardFx; // 出牌的样子：varied 照各人的手风随机，其余是固定用那一种；不给是原来的平放
+  riichiFx?: RiichiFx; // 立直宣言牌怎么放：同上；不给是原来的重拍
+  pondFx?: PondFx; // 牌河摆得多齐：char 照各人的手风，其余是所有人都那样；不给是原来的样子（随手放的）
   mist?: number; // 高鸭稳乃的深山：牌山上的雾有几级（0 没有）
   sketch?: boolean; // 爱丽丝的手绘板：牌、桌布换成手绘风格
   gale?: { seat: number; level: number } | null; // 薄墨初美的里鬼门：紫色的风聚得多浓（0–1），和牌时那张牌上紫光往上冲
@@ -605,7 +613,9 @@ export class Table3D {
   private view25: View25 = { ...DEFAULT_VIEW_25D };
   // 出牌动作经过标记（出发、抓住、落桌、松手、收回）时通知外面，比如落桌时放声音。
   // 每张打出的牌每个标记都恰好报一次，动作被打断也会补报
-  onMarker: ((seat: number, tile: TileId, name: MarkerName) => void) | null = null;
+  onMarker: ((seat: number, tile: TileId, name: MarkerName, style: DiscardStyle) => void) | null = null;
+  // 落桌以后牌又有动静（又磕了一下、贴着桌面滑）：声音由外面放
+  onCue: ((seat: number, tile: TileId, kind: CueKind) => void) | null = null;
   // 砸牌（放音效用）：phase 'press' 是牌扣到桌上，'hit' 是牌立起来炸开；lily：咲的岭上开花这一手的基本点（不是就是 null）
   onSlam: ((seat: number, lily: number | null, phase: 'press' | 'hit') => void) | null = null;
   // 天江衣的海底牌砸进海里炸开的那一下（放水声用；扣进水里那一下照常是 onSlam 的 'press'）
@@ -1241,7 +1251,8 @@ export class Table3D {
     if (this.deal) until = Math.max(until, this.deal.start + this.deal.extra + DEAL_END);
     if (this.himekoDeal) until = Math.max(until, this.himekoDeal.fireAt, this.himeko.endsAt);
     // 别人打出的牌落到牌河之前先别响应
-    for (const a of this.handAnims) if (a.kind === 'tile') until = Math.max(until, this.now - a.t + a.timing.reach + a.timing.carry);
+    // （立直宣言牌落桌以后还要转横、推到位的，等它摆好）
+    for (const a of this.handAnims) if (a.kind === 'tile') until = Math.max(until, this.now - a.t + a.timing.reach + a.timing.carry + (a.riichi ? afterTime(a.style) : 0));
     // 摸到的牌还没从牌山出发
     if (this.heldDraw) until = Math.max(until, this.heldDraw.at);
     // 衣的海底捞月：牌还没捞上来、飞进手里
@@ -1321,18 +1332,22 @@ export class Table3D {
       const flat = this.style === '25d';
       // 随机微变化：每次出牌快慢、抬多高都差一点；2.5D 照雀魂调的节奏和立直宣言牌只变一半
       const base = e.riichi ? (flat ? SLIDE_RIICHI : RIICHI_DISCARD) : flat ? SLIDE_DISCARD : DEFAULT_DISCARD;
-      const motion = varyDiscard(base, flat || e.riichi ? 0.5 : 1);
+      // 出牌的样子：照设置和这个人的手风挑一种（隐身那一张不放立直特效，照平常的牌挑）
+      const style = this.pickStyle(e.seat, !!e.riichi && !vanishing);
+      const motion = varyDiscard(styleParams(base, style, flat), flat || e.riichi ? 0.5 : 1);
       if (vanishing) {
         this.gone.add(e.seat);
         this.vanish.set(e.seat, { at: this.now + motion.reach + motion.carry + VANISH_DELAY });
-        this.playDiscard(e.seat, e.tile, motion, false);
+        this.playDiscard(e.seat, e.tile, motion, false, style);
         return;
       }
-      this.playDiscard(e.seat, e.tile, motion, !!e.riichi);
-      if (e.riichi) this.startStickAnim(e.seat, -(motion.reach + motion.carry + (flat ? STICK_DROP_DELAY : motion.settle)));
+      this.playDiscard(e.seat, e.tile, motion, !!e.riichi, style);
+      // 宣言牌摆好了（转横的、推过去的要等牌到位）才去拿立直棒
+      const declared = motion.reach + motion.carry + declareDelay(style);
+      if (e.riichi) this.startStickAnim(e.seat, -(declared + (flat ? STICK_DROP_DELAY : motion.settle)));
       // 淡的双立直：立直棒落桌那一下星空铺开
       if (e.riichi && g.players[e.seat].doubleRiichi && g.abilities[e.seat]?.id === 'awai' && g.active(e.seat)) {
-        this.starDeclare(e.seat, motion.reach + motion.carry + (flat ? STICK_DROP_DELAY + STICK_DROP.carry : motion.settle + STICK_TIMING.reach + STICK_TIMING.carry));
+        this.starDeclare(e.seat, declared + (flat ? STICK_DROP_DELAY + STICK_DROP.carry : motion.settle + STICK_TIMING.reach + STICK_TIMING.carry));
       }
       for (const ch of all) {
         // 别人出牌时看一眼，反应有先后
@@ -1498,16 +1513,17 @@ export class Table3D {
   }
 
   // 鸣牌、立直的特效：在这家前面的桌上放冲击波、迸一把火星，四周被照亮一下，角色举手示意
-  private callFx(seat: number, kind: 'call' | 'kan' | 'riichi'): void {
+  private callFx(seat: number, kind: 'call' | 'kan' | 'riichi', power = 1): void {
     const color = kind === 'riichi' ? FX_RED : kind === 'kan' ? '#9fd8ff' : FX_GOLD;
     const at = this.seatPoint(seat, 0, 0.1, kind === 'riichi' ? this.dim.pondZ : this.dim.handZ - 2);
-    this.effects.ring(at, color, kind === 'kan' ? 9 : 6);
+    // power：举高了砸下来的立直宣言牌，冲击波大一圈、震得重一点
+    this.effects.ring(at, color, (kind === 'kan' ? 9 : 6) * power);
     this.effects.ring(at, '#ffffff', kind === 'kan' ? 4.5 : 3.5, 0.4, 0.7);
     this.effects.flash(at.clone().setY(1.5), color, kind === 'riichi' ? 9 : 6, 0.5);
-    if (kind !== 'call') this.effects.ring(at, color, 12, 1.1, 0.6);
-    this.effects.burst(at.clone().setY(0.4), color, kind === 'call' ? 30 : 50, kind === 'call' ? 8 : 11, 0.7);
+    if (kind !== 'call') this.effects.ring(at, color, 12 * power, 1.1, 0.6);
+    this.effects.burst(at.clone().setY(0.4), color, Math.round((kind === 'call' ? 30 : 50) * power), (kind === 'call' ? 8 : 11) * power, 0.7);
     this.effects.pulse(at.clone().setY(2.2), color, kind === 'call' ? 40 : 65, kind === 'call' ? 0.18 : 0.28);
-    this.shake = Math.max(this.shake, kind === 'call' ? 0.25 : 0.45);
+    this.shake = Math.max(this.shake, (kind === 'call' ? 0.25 : 0.45) * power);
     // 立直时手要去拿立直棒，不举手
     if (kind !== 'riichi') this.raiseHand(seat);
   }
@@ -1676,16 +1692,46 @@ export class Table3D {
 
   // 出牌：手牌在牌落进牌河之前保持原样，出牌的人看着牌河，手把牌搬过去。
   // 牌局和动作调试场景都走这里；调用之后再 sync，牌的落点就是 sync 算出的牌河位置
-  playDiscard(seat: number, tile: TileId, motion: DiscardParams, riichi = false): void {
+  playDiscard(seat: number, tile: TileId, motion: DiscardParams, riichi = false, style: DiscardStyle = 'place'): void {
     const prev = this.layouts[seat];
     // 空位留到落桌：2.5D 落桌那一刻就合拢（雀魂空位停约 0.35 秒），3D 再多等一下
     const close = this.style === '25d' ? 0 : 0.15;
     if (prev) this.frozen.set(seat, { ...prev, until: this.now + motion.reach + motion.carry + close });
-    this.startHandAnim(seat, tile, motion, riichi);
+    this.startHandAnim(seat, tile, motion, riichi, style);
     this.characterAt(seat)?.avatar?.lookAtPoint(this.seatPoint(seat, 0, 0, this.dim.pondZ + 1.5), 1);
   }
 
-  private startHandAnim(seat: number, tile: TileId, motion: DiscardParams, riichi = false): void {
+  // 这一张（已经记进牌河了）怎么打出去：照设置（没给设置就是原来的平放 / 重拍）和这个人的手风
+  private pickStyle(seat: number, riichi: boolean): DiscardStyle {
+    const view = this.lastSync?.view;
+    const fx = riichi ? view?.riichiFx : view?.discardFx;
+    if (!view || !fx) return 'place';
+    const id = view.ids[seat] ?? '';
+    const discards = this.lastSync!.g.players[seat].discards;
+    // 宣言牌被鸣走以后补横的那一张：不是宣言，横着平放下去就好，不耍花样
+    if (!riichi && riichiSideIndex(discards) === discards.length - 1) return 'place';
+    // 落在第几行：照这家牌河里现在有几张算；这一行跟前空着多宽，放不下的花样不用
+    const n = discards.filter((d) => !d.called).length;
+    const row = Math.min(2, Math.floor(Math.max(0, n - 1) / POND_COLS));
+    return pickDiscardStyle(id, riichi, fx, this.pondRoom(seat, row), !!LOOKS[id]?.upsideDown);
+  }
+
+  // 牌河第 row 行靠出牌的人这一侧空着多宽：前两行跟前是空着的下一行，第三行跟前就是牌山
+  private pondRoom(seat: number, row: number): number {
+    if (row < 2) return TILE_H;
+    const me = this.lastSync?.view.me ?? 0;
+    const near = this.dim.pondZ + POND_ROWS * (TILE_H + GAP + POND_LOOKS.messy.rowGap);
+    return Math.max(0, this.wallZ((seat - me + 4) % 4) - TILE_H / 2 - 0.1 - near);
+  }
+
+  // 这家牌河摆得多齐。没给设置（调试场景）就是原来的样子：开了微变化是随手放的，没开一丝不苟
+  private pondStyleAt(seat: number): PondStyle {
+    const view = this.lastSync?.view;
+    if (!view?.pondFx) return vary.on ? 'natural' : 'neat';
+    return pondStyleOf(view.ids[seat] ?? '', view.pondFx, this.pondSalt, seat);
+  }
+
+  private startHandAnim(seat: number, tile: TileId, motion: DiscardParams, riichi = false, style: DiscardStyle = 'place'): void {
     const obj = this.tiles[tile];
     // 同一个人上一个动作还没做完就直接结束它
     this.cancelHandAnims(seat);
@@ -1701,6 +1747,9 @@ export class Table3D {
       motion,
       hold: 0,
       riichi,
+      style,
+      // 往哪边转：按牌算好的固定值（同一张牌重放时不变）
+      spin: hash01(this.pondSalt, tile, 5) < 0.5 ? -1 : 1,
     };
     // 牌还没摆出来就不演了，但落桌声音照样要响
     if (obj.shown) this.handAnims.push(a);
@@ -1710,12 +1759,27 @@ export class Table3D {
   // 报出出牌动作到时刻 t 为止经过的标记
   private emitMarkers(a: HandAnim, t: number): void {
     if (a.kind !== 'tile') return;
-    const due = dueMarkers(a.motion!, a.hold, a.fired ?? 0, t);
+    const style = a.style ?? 'place';
+    const due = dueMarkers(a.motion!, a.hold, a.fired ?? 0, t, style);
     a.fired = (a.fired ?? 0) + due.length;
     for (const m of due) {
-      if (m.name === 'land') this.splashTile(a.tile, a.riichi ? 1.4 : 1);
-      if (m.name === 'land' && a.riichi) this.callFx(a.seat, 'riichi');
-      this.onMarker?.(a.seat, a.tile, m.name);
+      if (m.name === 'land') {
+        this.splashTile(a.tile, a.riichi ? 1.4 : 1);
+        // 拍下去的那一下桌子震一震
+        if (style === 'snap') this.shake = Math.max(this.shake, 0.14);
+      }
+      this.onMarker?.(a.seat, a.tile, m.name, style);
+    }
+    // 落桌以后的动静；立直特效在宣言牌摆好的那一刻放（平常就是落桌那一刻）
+    const cues = dueCues(a.motion!, a.cued ?? 0, t, style);
+    a.cued = (a.cued ?? 0) + cues.length;
+    for (const c of cues) {
+      if (c.kind === 'declare') {
+        if (a.riichi) this.callFx(a.seat, 'riichi', style === 'hold' ? 1.5 : 1);
+      } else if (c.kind === 'glint') {
+        // 举在半空闪一下（被打断补报的时候不闪）
+        if (t !== Infinity) this.effects.flash(this.tiles[a.tile].group.position.clone(), '#fff3c4', 5);
+      } else if (t !== Infinity) this.onCue?.(a.seat, a.tile, c.kind);
     }
   }
 
@@ -3856,30 +3920,22 @@ export class Table3D {
       } else place(drawn);
     }
 
-    // 牌河：六张一行，立直牌横放
-    let col = 0;
-    let row = 0;
-    const pstep = TILE_W + GAP;
-    let px = -((POND_COLS * pstep) / 2);
+    // 牌河：六张一行，立直牌横放。摆得多齐看这家的手风，位置由 pondLayout 算
+    const shown: PondItem[] = [];
     // 横放的那张：立直宣言牌，宣言牌被鸣走了就是下一巡打的那张
     const sideAt = riichiSideIndex(p.discards);
     for (const [i, d] of p.discards.entries()) {
       if (d.called) continue;
-      if (col === POND_COLS && row < 2) {
-        col = 0;
-        row++;
-        px = -((POND_COLS * pstep) / 2);
-      }
       // 淡掉时那一张是横放的立直牌也竖着放：别人不该知道她立直了
       const side = i === sideAt && !(vanishing && i === p.discards.length - 1);
-      const w = side ? TILE_H : TILE_W;
-      const z = this.dim.pondZ + row * (TILE_H + GAP) + TILE_H / 2;
-      // 随机微变化：像真人随手放的，每张牌稍微转一点、偏一点（按牌算好的固定值，重画时不会抖）
-      const j = pondJitter(this.pondSalt, d.tile);
-      out.set(d.tile, this.toWorld(s, me, px + w / 2 + j.dx, lyingY, z + j.dz, FACE_UP, (side ? Math.PI / 2 : 0) + flip + j.yaw));
-      px += w + GAP;
-      col++;
+      shown.push({ tile: d.tile, side });
     }
+    const pond = this.pondStyleAt(s);
+    const spots = pondSpots(shown, pond, this.pondSalt, s, pondRows(pond, this.dim.pondZ, this.wallZ((s - me + 4) % 4) - TILE_H / 2));
+    shown.forEach((it, i) => {
+      const at = spots[i];
+      out.set(it.tile, this.toWorld(s, me, at.x, lyingY, at.z, FACE_UP, (it.side ? Math.PI / 2 : 0) + flip + at.yaw));
+    });
   }
 
   // 一局结束：和牌的人、流局时听牌的人把手牌摊开（倒牌），和的那张放在最右边
@@ -4864,15 +4920,20 @@ export class Table3D {
     const target = this.tiles[a.tile].target;
     if (!target) return null;
     const me = this.lastSync?.view.me ?? 0;
+    const toward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(a.seat, me));
     return {
       from: a.start,
       fromQuat: a.startQuat!,
       to: target.pos,
       toQuat: target.quat,
       landed: a.landed,
-      toward: new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.seatAngle(a.seat, me)),
+      toward,
       scale: this.dim.scale,
       hold: a.hold,
+      style: a.style,
+      spin: a.spin,
+      // 落点靠出牌的人这一侧空着多宽：照落点离桌子中心多远看它在第几行
+      room: this.pondRoom(a.seat, target.pos.dot(toward) > this.dim.pondZ + 2 * (TILE_H + GAP) ? 2 : 0),
     };
   }
 
@@ -4881,16 +4942,21 @@ export class Table3D {
     const p = a.motion!;
     const tile = this.tiles[a.tile];
     const path = this.discardPath(a);
-    if (!path || a.t > totalTime(p, a.hold)) {
+    if (!path || a.t > totalTime(p, a.hold, a.style)) {
       this.emitMarkers(a, Infinity);
       if (av) av.reachWeight = 0;
       return false;
     }
     this.emitMarkers(a, a.t);
-    const pose = sampleDiscard(p, path, a.t);
     // 放下那一刻记住位置，之后牌被拿走（比如荣和）手也停在原处
-    if (pose.phase === 'settle') a.landed ??= path.to.clone();
-    if (pose.holding) {
+    if (a.t >= p.reach + p.carry && !a.landed) {
+      a.landed = path.to.clone();
+      path.landed = a.landed;
+    }
+    // 落桌以后牌自己还在动（滑、转、弹）的时候被人鸣走了：落点变了，这张牌不再管，交给牌桌自己飞过去
+    if (a.landed && !a.lost && path.to.distanceTo(a.landed) > 0.05) a.lost = true;
+    const pose = sampleDiscard(p, path, a.t);
+    if (pose.holding && !a.lost) {
       tile.group.position.copy(pose.tilePos);
       tile.group.quaternion.copy(pose.tileQuat);
       // 自己的手牌是放大的，搬过去的路上缩回牌河里的大小

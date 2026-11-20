@@ -97,7 +97,7 @@ export class Gizmos {
 
   // 整个出牌过程中手腕和牌走过的路线（按参数从头算一遍，不依赖播到哪了）
   setPaths(p: DiscardParams, path: DiscardPath): void {
-    const total = totalTime(p, path.hold);
+    const total = totalTime(p, path.hold, path.style);
     const wrist: THREE.Vector3[] = [];
     const tile: THREE.Vector3[] = [];
     for (let i = 0; i <= PATH_SAMPLES; i++) {

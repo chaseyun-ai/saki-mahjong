@@ -1,10 +1,11 @@
 import { Rng } from '../engine/rng';
-import type { DiscardParams } from '../ui3d/discardMotion';
+import { type DiscardParams, type DiscardStyle, NORMAL_STYLES, RIICHI_STYLES, roomNeeded } from '../ui3d/discardMotion';
 
 // 随机微变化：同一个动作每次都差一点点（落桌声、电脑想多久、出牌动作的快慢、牌河里牌放得正不正），
 // 像植物大战僵尸那样，几百次重复下来不会觉得是同一段录像在放。
 // 只给“看起来、听起来”的东西用，牌山、能力用的还是牌局自己的 Rng：这里取多少次随机数都不影响牌局。
 // 关掉（设置里的“微变化”、动作调试场景）时每个函数都原样返回基准值，和没加这个文件之前一模一样。
+// 出牌的样子、牌河摆得齐不齐另有自己的设置（见下面的手风），不跟这个开关走。
 
 export class Vary {
   on = false;
@@ -159,15 +160,188 @@ export function varyDiscard(p: DiscardParams, amount = 1): DiscardParams {
   };
 }
 
-// 牌河里一张牌歪多少：转角（弧度）和左右、前后的偏移（世界单位，牌宽是 1）。
-// 牌之间只有 0.04 的缝，转 1° 加上偏 0.006 两张最坏也不会碰上
-export const POND_TWIST = (1 * Math.PI) / 180;
-export const POND_SHIFT_X = 0.006;
-export const POND_SHIFT_Z = 0.008;
+// ---------- 出牌的样子、牌河摆得齐不齐：每个人有自己的手风 ----------
 
-export function pondJitter(salt: number, tile: number): { yaw: number; dx: number; dz: number } {
-  if (!vary.on) return { yaw: 0, dx: 0, dz: 0 };
+// 视觉设置里的三项。varied / char 是照各人的手风随机；其余是所有人都固定用那一种
+export type DiscardFx = 'varied' | 'place' | 'snap' | 'slide' | 'spin' | 'toss' | 'stand';
+export type RiichiFx = 'varied' | 'place' | 'turn' | 'top' | 'hold' | 'push';
+export type PondFx = 'char' | PondStyle;
+// 牌河摆得多齐：neat 一丝不苟，natural 随手放的（原来的样子），loose 松松垮垮，messy 东倒西歪
+export type PondStyle = 'neat' | 'natural' | 'loose' | 'messy';
+
+// 手风：平常出牌各种样子的比重、立直宣言牌各种样子的比重、牌河摆得多齐
+interface Habit {
+  discard: Partial<Record<DiscardStyle, number>>;
+  riichi: Partial<Record<DiscardStyle, number>>;
+  pond: PondStyle;
+}
+
+const HABITS = {
+  // 没特别写的人：大多平放，偶尔换个花样
+  plain: {
+    discard: { place: 52, slide: 16, snap: 12, spin: 8, stand: 8, toss: 4 },
+    riichi: { place: 32, turn: 24, push: 16, hold: 16, top: 12 },
+    pond: 'natural',
+  },
+  // 端正：规规矩矩平放，牌河一丝不苟
+  neat: {
+    discard: { place: 78, slide: 14, stand: 8 },
+    riichi: { turn: 46, place: 30, push: 24 },
+    pond: 'neat',
+  },
+  // 文静：轻拿轻放，推过去的多
+  gentle: {
+    discard: { place: 60, slide: 28, stand: 12 },
+    riichi: { turn: 42, push: 34, place: 24 },
+    pond: 'natural',
+  },
+  // 豪快：拍的、抛的多，牌河东倒西歪
+  rough: {
+    discard: { place: 36, snap: 26, toss: 16, slide: 12, spin: 10 },
+    riichi: { place: 40, hold: 30, top: 18, push: 12 },
+    pond: 'messy',
+  },
+  // 爱耍帅：转牌、立倒这些花样多
+  showy: {
+    discard: { place: 40, spin: 22, snap: 14, stand: 12, slide: 8, toss: 4 },
+    riichi: { top: 34, hold: 30, place: 22, turn: 14 },
+    pond: 'loose',
+  },
+  // 懒散：能推就不抬手，牌河松松垮垮
+  lazy: {
+    discard: { slide: 46, place: 44, toss: 10 },
+    riichi: { push: 44, turn: 36, place: 20 },
+    pond: 'loose',
+  },
+} satisfies Record<string, Habit>;
+
+const HABIT_OF: Record<string, keyof typeof HABITS> = {
+  nodoka: 'neat', // 数字派，摆得像网络麻将
+  toka: 'neat',
+  tomoki: 'neat',
+  hiroko: 'neat',
+  sumire: 'neat',
+  yumi: 'neat',
+  teru: 'neat',
+  mihoko: 'neat',
+  satoha: 'neat',
+  kasumi: 'neat',
+  tomoe: 'neat',
+  ryuuka: 'neat',
+  arata: 'neat',
+  kyouko: 'neat',
+  huiyu: 'neat',
+  yukiko: 'neat',
+  chikako: 'neat', // 认真，每一手都想一下
+  sae: 'neat',
+  rii: 'neat',
+  saki: 'gentle',
+  kuro: 'gentle',
+  yu: 'gentle',
+  toki: 'gentle',
+  miharu: 'gentle',
+  momo: 'gentle',
+  komaki: 'gentle',
+  takami: 'gentle',
+  himeko: 'gentle',
+  naruka: 'gentle',
+  aislinn: 'gentle',
+  yuuki: 'rough', // 东场一路冲
+  kana: 'rough',
+  satomi: 'rough',
+  hiroe: 'rough',
+  sera: 'rough',
+  jun: 'rough',
+  seiko: 'rough',
+  izumi: 'rough',
+  nelly: 'rough',
+  shizuno: 'rough',
+  suzu: 'rough', // 爆发型
+  hisa: 'showy', // 恶听还要摔牌的人
+  awai: 'showy',
+  koromo: 'showy',
+  hatsumi: 'showy',
+  megan: 'showy',
+  toyone: 'showy',
+  sawaya: 'showy',
+  myeonghwa: 'showy',
+  hajime: 'showy', // 变戏法的手
+  shiromi: 'lazy', // 好麻烦
+  haru: 'lazy', // 一边吃黑糖一边打
+  kaori: 'lazy', // 新手，摆不齐
+  kurumi: 'lazy',
+};
+
+const habitOf = (id: string): Habit => HABITS[HABIT_OF[id] ?? 'plain'];
+
+// 按比重抽一个；r 是 [0, 1) 的随机数
+function weighted(weights: Partial<Record<DiscardStyle, number>>, allowed: DiscardStyle[], r: number): DiscardStyle {
+  const list = allowed.filter((k) => (weights[k] ?? 0) > 0);
+  const sum = list.reduce((n, k) => n + weights[k]!, 0);
+  let x = r * sum;
+  for (const k of list) {
+    x -= weights[k]!;
+    if (x < 0) return k;
+  }
+  return 'place';
+}
+
+// 这一张怎么打出去。fx 是设置里选的（不给、选了多样就照这个人的手风抽）；room 是落点靠她这一侧空着多宽，
+// 放不下的样子（滑的、立着放的要占跟前的地方）不用；flipped 是牌河倒过来摆的人（立倒会倒向前一行，不用）。
+// 只看是谁、是不是立直宣言牌，不看手牌：从怎么出牌看不出她听没听
+export function pickDiscardStyle(id: string, riichi: boolean, fx: DiscardFx | RiichiFx | undefined, room = Infinity, flipped = false): DiscardStyle {
+  const all = riichi ? RIICHI_STYLES : NORMAL_STYLES;
+  const fits = (k: DiscardStyle) => roomNeeded(k) <= room && !(flipped && k === 'stand');
+  if (fx && fx !== 'varied') return all.includes(fx) && fits(fx) ? fx : 'place';
+  const habit = habitOf(id);
+  return weighted(riichi ? habit.riichi : habit.discard, all.filter(fits), vary.next());
+}
+
+// 这个人这一局牌河摆得多齐：照设置；设置是「看角色」时照她的手风，偶尔比平时齐一点或者乱一点
+export function pondStyleOf(id: string, fx: PondFx | undefined, salt: number, seat: number): PondStyle {
+  if (fx && fx !== 'char') return fx;
+  const order: PondStyle[] = ['neat', 'natural', 'loose', 'messy'];
+  const base = order.indexOf(habitOf(id).pond);
+  const r = hash01(salt, seat, 91);
+  const step = r < 0.18 ? -1 : r > 0.82 ? 1 : 0;
+  return order[Math.min(order.length - 1, Math.max(0, base + step))];
+}
+
+// 牌河里一张牌歪多少：转角（弧度）和左右、前后的偏移（世界单位，牌宽是 1）。
+// natural 是原来的样子：牌之间只有 0.04 的缝，转 1° 加上偏 0.006 两张最坏也不会碰上。
+// loose、messy 歪得多，行和行之间要多留一点（rowGap），整行还会斜一点（slope：每往右一张往前后偏多少）、
+// 左右错开一点（rowShift）；牌桌摆的时候一张张挨着往右排，不会压到前一张
+export interface PondLook {
+  twist: number;
+  shiftX: number;
+  shiftZ: number;
+  rowGap: number;
+  slope: number;
+  rowShift: number;
+}
+
+const DEG = Math.PI / 180;
+export const POND_LOOKS: Record<PondStyle, PondLook> = {
+  neat: { twist: 0, shiftX: 0, shiftZ: 0, rowGap: 0, slope: 0, rowShift: 0 },
+  natural: { twist: 1 * DEG, shiftX: 0.006, shiftZ: 0.008, rowGap: 0, slope: 0, rowShift: 0 },
+  loose: { twist: 3 * DEG, shiftX: 0.02, shiftZ: 0.03, rowGap: 0.07, slope: 0.004, rowShift: 0.04 },
+  messy: { twist: 5.5 * DEG, shiftX: 0.035, shiftZ: 0.05, rowGap: 0.11, slope: 0.008, rowShift: 0.08 },
+};
+export const POND_TWIST = POND_LOOKS.natural.twist;
+export const POND_SHIFT_X = POND_LOOKS.natural.shiftX;
+export const POND_SHIFT_Z = POND_LOOKS.natural.shiftZ;
+
+export function pondJitter(salt: number, tile: number, style: PondStyle = 'natural'): { yaw: number; dx: number; dz: number } {
+  const look = POND_LOOKS[style];
+  if (!look.twist) return { yaw: 0, dx: 0, dz: 0 };
   // 三个均匀数平均成钟形，大多数牌只歪一点点
   const b = (k: number) => (hash01(salt, tile, k) + hash01(salt, tile, k + 7) + hash01(salt, tile, k + 13)) / 1.5 - 1;
-  return { yaw: b(1) * POND_TWIST, dx: b(2) * POND_SHIFT_X, dz: b(3) * POND_SHIFT_Z };
+  return { yaw: b(1) * look.twist, dx: b(2) * look.shiftX, dz: b(3) * look.shiftZ };
+}
+
+// 一整行的偏移：这一行左右错开多少、每往右一张往前后偏多少（按座位和第几行算好的固定值）
+export function pondRowDrift(salt: number, seat: number, row: number, style: PondStyle): { shift: number; slope: number } {
+  const look = POND_LOOKS[style];
+  if (!look.rowShift && !look.slope) return { shift: 0, slope: 0 };
+  return { shift: (hash01(salt, seat, row, 31) * 2 - 1) * look.rowShift, slope: (hash01(salt, seat, row, 47) * 2 - 1) * look.slope };
 }

@@ -12,32 +12,75 @@ const CLICKS = [
   { freq: 2700, q: 1.6, vol: 0.5, len: 0.042, decay: 5 }, // 轻放，牌角碰桌的“咔”
 ];
 
-// 打牌落桌的“啪”。pan 是左右声道（-1 左到 1 右，下家在右、上家在左）；varied 为 true 时随机微变化
-export function playClick(opts: { pan?: number; varied?: boolean } = {}): void {
+// 落桌那一下多响：soft 轻轻放下，click 平常的一声，slap 重重拍下去
+export type ClickWeight = 'soft' | 'click' | 'slap';
+
+// 一小段带通噪声：落桌声、拍桌的闷响都是它
+function clickHit(a: AudioContext, freq: number, q: number, vol: number, seconds: number, decay: number, pan = 0, type: BiquadFilterType = 'bandpass'): void {
+  const len = Math.max(1, Math.floor(a.sampleRate * seconds));
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** decay;
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = type;
+  filter.frequency.value = freq;
+  filter.Q.value = q;
+  const gain = a.createGain();
+  gain.gain.value = vol;
+  let out: AudioNode = src.connect(filter).connect(gain);
+  if (pan) {
+    const panner = a.createStereoPanner?.();
+    if (panner) {
+      panner.pan.value = pan;
+      out = out.connect(panner);
+    }
+  }
+  out.connect(bus('sfx', a));
+  src.start();
+}
+
+// 打牌落桌的“啪”。pan 是左右声道（-1 左到 1 右，下家在右、上家在左）；varied 为 true 时随机微变化；
+// weight 是出牌的样子定的轻重（不给就是平常的一声，三种音色轮着来）
+export function playClick(opts: { pan?: number; varied?: boolean; weight?: ClickWeight } = {}): void {
   const a = audio();
   if (!a) return;
   const on = !!opts.varied && vary.on;
-  const c = CLICKS[on ? vary.pick('click', CLICKS.length) : 0];
+  const w = opts.weight ?? 'click';
+  const c = w === 'slap' ? CLICKS[1] : w === 'soft' ? CLICKS[2] : CLICKS[on ? vary.pick('click', CLICKS.length) : 0];
+  const loud = w === 'slap' ? 1.3 : w === 'soft' ? 0.6 : 1;
   const freq = on ? c.freq * (1 + vary.bell() * 0.12) : c.freq;
   // ±1.5 dB
-  const vol = on ? c.vol * 10 ** ((vary.bell() * 1.5) / 20) : c.vol;
-  const len = Math.floor(a.sampleRate * (on ? vary.jitter(c.len, 0.15) : c.len));
+  const vol = (on ? c.vol * 10 ** ((vary.bell() * 1.5) / 20) : c.vol) * loud;
+  const pan = on && opts.pan ? opts.pan : 0;
+  clickHit(a, freq, c.q, vol, on ? vary.jitter(c.len, 0.15) : c.len, c.decay, pan);
+  // 重拍：底下垫一记桌子的闷响
+  if (w === 'slap') clickHit(a, 320, 0.7, 0.5, 0.09, 2.4, pan, 'lowpass');
+}
+
+// 牌贴着桌面滑、转的沙沙声（滑着出牌、立直宣言牌转横、横推）
+export function playScrape(pan = 0, seconds = 0.2): void {
+  const a = audio();
+  if (!a) return;
+  const len = Math.floor(a.sampleRate * seconds);
   const buf = a.createBuffer(1, len, a.sampleRate);
   const data = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** c.decay;
+  // 两头轻、中间响
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.sin((Math.PI * i) / len) ** 0.7;
   const src = a.createBufferSource();
   src.buffer = buf;
   const filter = a.createBiquadFilter();
   filter.type = 'bandpass';
-  filter.frequency.value = freq;
-  filter.Q.value = c.q;
+  filter.frequency.value = 1300;
+  filter.Q.value = 0.6;
   const gain = a.createGain();
-  gain.gain.value = vol;
+  gain.gain.value = 0.16;
   let out: AudioNode = src.connect(filter).connect(gain);
-  if (on && opts.pan) {
+  if (pan && vary.on) {
     const panner = a.createStereoPanner?.();
     if (panner) {
-      panner.pan.value = opts.pan;
+      panner.pan.value = pan;
       out = out.connect(panner);
     }
   }

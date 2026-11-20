@@ -3,6 +3,7 @@ import { CHARACTERS, type Character } from '../abilities/characters';
 import type { Rules } from '../engine/game';
 import type { Rng } from '../engine/rng';
 import { SCHOOLS, membersOf } from './schools';
+import type { DiscardFx, PondFx, RiichiFx } from './vary';
 import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, type ThemeId, consoleShapeOf, skinTableColors, tableColors } from './theme';
 
 // 选人页右上角的两个设置面板：对局设置（规则、对手）和视觉设置（皮肤、牌桌视角、动画）。
@@ -20,8 +21,14 @@ export interface MatchSettings {
   open: boolean;
   // 摸牌路径（3D、2.5D 牌桌）：on 牌沿弧线从牌山飞进手里，off 在牌山上淡出、手里淡入，self 只有自己的飞
   drawPath: 'on' | 'off' | 'self';
-  // 微变化：落桌声、电脑思考时间、出牌动作、牌河摆放每次都差一点点，久玩不腻（vary.ts）
+  // 微变化：落桌声、电脑思考时间、出牌动作的快慢每次都差一点点，久玩不腻（vary.ts）
   vary: boolean;
+  // 出牌的样子（vary.ts 的手风）：varied 是每个人照自己的手风换着来，其余是所有人都只用那一种
+  discardFx: DiscardFx;
+  // 立直宣言牌怎么放：同上
+  riichiFx: RiichiFx;
+  // 牌河摆得多齐：char 看角色（有人一丝不苟，有人东倒西歪），其余是所有人都一样
+  pondFx: PondFx;
   // 和牌聚光灯（3D、2.5D 牌桌）：手牌一倒，上方几盏灯照着和了的那副牌，四周暗一点；默认关，照平时的光
   spotlight: boolean;
   // 和牌转镜头（3D、2.5D 牌桌）：别家和牌时镜头往他那边推过去看倒下的手牌；默认关，镜头不动
@@ -61,6 +68,9 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   open: false,
   drawPath: 'on',
   vary: true,
+  discardFx: 'varied',
+  riichiFx: 'varied',
+  pondFx: 'char',
   spotlight: false,
   winZoom: false,
   opponents: ['', '', ''],
@@ -80,7 +90,11 @@ const KEY = 'saki-match-settings';
 export function loadSettings(): MatchSettings {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null');
-    if (saved && typeof saved === 'object') return sanitize({ ...DEFAULT_SETTINGS, ...saved });
+    if (saved && typeof saved === 'object') {
+      // 以前关了微变化的人牌河是一丝不苟的：牌河摆放还没选过，就接着整齐
+      const pondFx = saved.vary === false && saved.pondFx === undefined ? { pondFx: 'neat' } : {};
+      return sanitize({ ...DEFAULT_SETTINGS, ...pondFx, ...saved });
+    }
   } catch {
     // 无痕模式之类读不到：用默认的
   }
@@ -171,7 +185,46 @@ const ROWS: Row[] = [
       { label: '牌背', value: 'tiles' },
     ],
   },
-  { key: 'vary', name: '微变化', options: onOff, note: '落桌声、出牌动作、牌河每次差一点点' },
+  { key: 'vary', name: '微变化', options: onOff, note: '落桌声、出牌快慢、电脑想多久每次差一点点' },
+  {
+    key: 'discardFx',
+    name: '出牌动作',
+    note: '多样是每个人照自己的手风换着来；选了哪一种，所有人都只用那一种',
+    options: [
+      { label: '多样', value: 'varied' },
+      { label: '平放', value: 'place' },
+      { label: '拍下', value: 'snap' },
+      { label: '滑推', value: 'slide' },
+      { label: '旋转', value: 'spin' },
+      { label: '轻抛', value: 'toss' },
+      { label: '立倒', value: 'stand' },
+    ],
+  },
+  {
+    key: 'riichiFx',
+    name: '立直宣言',
+    note: '立直宣言牌怎么放。多样是每个人照自己的手风换着来；重拍是原来的那一种',
+    options: [
+      { label: '多样', value: 'varied' },
+      { label: '重拍', value: 'place' },
+      { label: '转横', value: 'turn' },
+      { label: '陀螺', value: 'top' },
+      { label: '举高', value: 'hold' },
+      { label: '横推', value: 'push' },
+    ],
+  },
+  {
+    key: 'pondFx',
+    name: '牌河摆放',
+    note: '看角色是各人不一样：有人一丝不苟，有人东倒西歪；选了哪一种，所有人都一样',
+    options: [
+      { label: '看角色', value: 'char' },
+      { label: '整齐', value: 'neat' },
+      { label: '自然', value: 'natural' },
+      { label: '随手', value: 'loose' },
+      { label: '凌乱', value: 'messy' },
+    ],
+  },
   { key: 'spotlight', name: '和牌聚光灯', options: onOff, note: '3D、2.5D 牌桌：手牌一倒，上方几盏灯照着和了的牌，四周暗一点' },
   { key: 'winZoom', name: '和牌转镜头', options: onOff, note: '3D、2.5D 牌桌：别家和牌时镜头推过去看他的手牌' },
   {
@@ -233,7 +286,7 @@ const ROWS: Row[] = [
 
 // 两个面板各管哪几项（存在同一份设置里）
 const MATCH_KEYS: (keyof MatchSettings)[] = ['length', 'start', 'target', 'tobi', 'red', 'kuitan', 'minHan', 'open'];
-const VISUAL_KEYS: (keyof MatchSettings)[] = ['xfade', 'drawPath', 'vary', 'spotlight', 'winZoom'];
+const VISUAL_KEYS: (keyof MatchSettings)[] = ['xfade', 'drawPath', 'vary', 'discardFx', 'riichiFx', 'pondFx', 'spotlight', 'winZoom'];
 
 // 按钮上写的值换回设置里的值
 export function setOption(s: MatchSettings, key: string, value: string): void {

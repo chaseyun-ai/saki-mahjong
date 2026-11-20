@@ -1,9 +1,9 @@
 import './lab.css';
 import { CHARACTERS } from '../abilities/characters';
-import { playClick } from '../ui/sound';
+import { playClick, playScrape } from '../ui/sound';
 import { tileHtml } from '../ui/tile';
-import { vary } from '../ui/vary';
-import { DiscardParams, DiscardPath, markers, phaseAt, totalTime } from '../ui3d/discardMotion';
+import { type PondStyle, vary } from '../ui/vary';
+import { DiscardParams, DiscardPath, DiscardStyle, NORMAL_STYLES, RIICHI_STYLES, SLIDE_DISCARD, SLIDE_RIICHI, landWeight, markers, phaseAt, styleParams, totalTime } from '../ui3d/discardMotion';
 import { SyncView, Table3D } from '../ui3d/table3d';
 import { TILE_W, TableLayout, tableDims } from '../ui3d/tableLayout';
 import { GIZMO_COLORS, GIZMO_LABELS, GizmoKind, Gizmos } from './gizmos';
@@ -22,6 +22,17 @@ type Tab = keyof typeof TABS;
 // 收手之后多看一会儿再循环
 const TAIL = 0.35;
 const FRAME = 1 / 60;
+// 出牌的样子：平常的牌几种，横放（立直宣言牌）时另外几种；平放 / 重拍是原来的那一种
+// 看哪种牌桌（场景页里换；网址里带 ?table=25d 或 ?table=v2 时一打开就是 2.5D、2.5D 改良布局）。
+// 2.5D 没有人物，牌自己飞，快慢用牌局里 2.5D 的那一套（动作参数面板调的是 3D 的手）
+type LabTable = '3d' | '25d' | 'v2';
+const TABLE_LABELS: Record<LabTable, string> = { '3d': '3D', '25d': '2.5D', v2: '2.5D 改良' };
+function labTable(): LabTable {
+  const v = new URLSearchParams(location.search).get('table');
+  return v === '25d' || v === 'v2' ? v : '3d';
+}
+const POND_LABELS: Record<PondStyle, string> = { neat: '整齐', natural: '自然', loose: '随手', messy: '凌乱' };
+const STYLE_LABELS: Record<DiscardStyle, string> = { place: '平放', snap: '拍下', slide: '滑推', spin: '旋转', toss: '轻抛', stand: '立倒', turn: '转横', top: '陀螺', hold: '举高', push: '横推' };
 // 比赛用的 28 毫米牌宽约 21 毫米，拿来把牌桌换算成真实尺寸
 const REAL_TILE_MM = 21;
 
@@ -31,13 +42,17 @@ interface LabState {
   handSlot: number;
   pondSlot: number;
   sideways: boolean;
+  style: DiscardStyle;
+  pond: PondStyle; // 牌河摆得多齐
 }
 
 export class DiscardLab {
   private table: Table3D;
   private panel: HTMLElement;
   private status: HTMLElement;
-  private state: LabState = { char: 'saki', rel: 2, handSlot: 6, pondSlot: 3, sideways: false };
+  // 2.5D 这次出牌用的参数（换了样子、横放就重算）
+  private flatMotion: DiscardParams | null = null;
+  private state: LabState = { char: 'saki', rel: 2, handSlot: 6, pondSlot: 3, sideways: false, style: 'place', pond: 'neat' };
   // 模型加载完要先重放一次；换人物时旧的等待作废
   private waiting = 0;
   private timeline: Timeline;
@@ -65,8 +80,9 @@ export class DiscardLab {
 
   // onExit：点"返回游戏"时调用，这之前调试场景已经自己收拾干净
   constructor(
-    root: HTMLElement,
+    private root: HTMLElement,
     private onExit: () => void,
+    private kind: LabTable = labTable(),
   ) {
     // 调参数要每次都一样：随机微变化在这里关掉（牌河不歪，出牌不浮动）
     vary.reset(0, false);
@@ -121,14 +137,26 @@ export class DiscardLab {
       this.speed,
       this.loop,
     );
-    this.table = new Table3D(root.querySelector('#lab-three')!, () => {});
+    this.table = new Table3D(root.querySelector('#lab-three')!, () => {}, this.kind === '3d' ? '3d' : '25d', this.kind === 'v2');
     this.table.setLayout(this.layoutPanel.params);
-    this.table.onMarker = (_seat, _tile, name) => {
+    this.table.onMarker = (_seat, _tile, name, style) => {
       if (this.seeking) return;
       this.timeline.flash(name);
-      if (name === 'land') playClick();
+      if (name === 'land') playClick({ weight: landWeight(style) });
+    };
+    this.table.onCue = (_seat, _tile, kind) => {
+      if (this.seeking) return;
+      if (kind === 'scrape') playScrape();
+      else if (kind === 'tap' || kind === 'slap') playClick({ weight: kind === 'tap' ? 'soft' : 'slap' });
     };
     this.gizmos = new Gizmos(this.table.overlay);
+    // 2.5D 没有手：只留牌走过的路线
+    if (this.kind !== '3d') {
+      for (const k of Object.keys(this.shown) as GizmoKind[]) {
+        this.shown[k] = k === 'tilePath';
+        this.gizmos.show(k, this.shown[k]);
+      }
+    }
     this.cam = new LabCamera(this.table);
     this.renderView();
     this.table.beforeRender = () => this.tick();
@@ -160,7 +188,7 @@ export class DiscardLab {
   private view(): SyncView {
     const ids = this.seating();
     const chars = ids.map((id) => CHARACTERS.find((c) => c.id === id)!);
-    return { me: 0, clickable: new Set(), colors: chars.map((c) => c.color), ids };
+    return { me: 0, clickable: new Set(), colors: chars.map((c) => c.color), ids, pondFx: this.state.pond };
   }
 
   private compose(): LabScene {
@@ -168,18 +196,26 @@ export class DiscardLab {
     return composeScene(names, this.setup());
   }
 
-  // 正在调的参数；出牌动作直接引用这一份，面板上改了马上生效
+  // 正在调的参数；出牌动作直接引用这一份，面板上改了马上生效。
+  // 选了别的出牌样子时，照牌局里那样在这份参数上按样子调一遍（抬多高、搬多久），是另算出来的一份
   private motion(): DiscardParams {
-    return this.paramsPanel.params;
+    if (this.kind !== '3d') return (this.flatMotion ??= styleParams(this.state.sideways ? SLIDE_RIICHI : SLIDE_DISCARD, this.state.style, true));
+    const p = this.paramsPanel.params;
+    return this.state.style === 'place' ? p : styleParams(p, this.state.style);
+  }
+
+  private get style(): DiscardStyle {
+    return this.state.style;
   }
 
   // 参数改了：时间轴和轨迹按新参数重画；暂停时停在同一时刻重新算这一帧，播放时接着播；
   // 整套换了（换预设）就从头播
   private paramsChanged(structural: boolean): void {
     if (!this.table) return;
-    if (structural && this.playing) return this.replay();
+    // 别的出牌样子用的是另算出来的参数，改了要重新出一次牌才生效
+    if ((structural || this.style !== 'place') && this.playing) return this.replay();
     if (!this.playing) return this.seek(this.t);
-    this.timeline.setMarkers(markers(this.motion()), this.duration());
+    this.timeline.setMarkers(markers(this.motion(), 0, this.style), this.duration());
     if (this.path) this.gizmos.setPaths(this.motion(), this.path);
   }
 
@@ -190,11 +226,11 @@ export class DiscardLab {
     this.table.sync(scene.game, view);
     this.table.snap();
     this.t0 = this.table.time;
-    this.table.playDiscard(this.seat, scene.tile, this.motion());
+    this.table.playDiscard(this.seat, scene.tile, this.motion(), false, this.style);
     applyDiscard(scene, this.setup());
     this.table.sync(scene.game, view);
     this.table.setOthersVisible(this.seat, !this.hideOthers);
-    this.timeline.setMarkers(markers(this.motion()), this.duration());
+    this.timeline.setMarkers(markers(this.motion(), 0, this.style), this.duration());
     const info = this.table.discardInfo(this.seat);
     if (info) {
       this.path = info.path;
@@ -217,7 +253,7 @@ export class DiscardLab {
   }
 
   private duration(): number {
-    return totalTime(this.motion()) + TAIL;
+    return totalTime(this.motion(), 0, this.style) + TAIL;
   }
 
   private setPlaying(on: boolean): void {
@@ -258,7 +294,7 @@ export class DiscardLab {
       else this.setPlaying(false);
     }
     const t = Math.min(this.t, this.duration());
-    this.timeline.show(t, phaseAt(this.motion(), t), this.playing);
+    this.timeline.show(t, phaseAt(this.motion(), t, 0, this.style), this.playing);
     const av = this.table.avatarAt(this.seat);
     if (!av) return;
     const info = this.table.discardInfo(this.seat);
@@ -375,7 +411,15 @@ export class DiscardLab {
       return `<button class="lab-cell ${cls}" data-act="pond" data-v="${i}" title="牌河第 ${i + 1} 张">${i === s.pondSlot ? i + 1 : ''}</button>`;
     }).join('');
 
+    const tables = (Object.keys(TABLE_LABELS) as LabTable[]).map((k) => this.chip('table', k, TABLE_LABELS[k], k === this.kind)).join('');
+    const ponds = (Object.keys(POND_LABELS) as PondStyle[]).map((k) => this.chip('pondfx', k, POND_LABELS[k], k === s.pond)).join('');
+    const styles = (s.sideways ? RIICHI_STYLES : NORMAL_STYLES).map((k) => this.chip('style', k, k === 'place' && s.sideways ? '重拍' : STYLE_LABELS[k], k === s.style)).join('');
+
     this.sceneTab.innerHTML = `
+      <section>
+        <h2>牌桌 <small>${this.kind === '3d' ? '' : '没有人物，牌自己飞；快慢照牌局里的'}</small></h2>
+        <div class="lab-row">${tables}</div>
+      </section>
       <section>
         <h2>人物</h2>
         <div class="lab-row">${chars}</div>
@@ -392,6 +436,14 @@ export class DiscardLab {
         <h2>落到牌河 <small>第 ${s.pondSlot + 1} 张</small></h2>
         <div class="lab-pond">${pond}</div>
         <label class="lab-check"><input type="checkbox" data-act="sideways" ${s.sideways ? 'checked' : ''} /> 横放（立直宣言牌）</label>
+      </section>
+      <section>
+        <h2>出牌的样子 <small>${s.sideways ? '立直宣言牌' : '平常的牌'}</small></h2>
+        <div class="lab-row">${styles}</div>
+      </section>
+      <section>
+        <h2>牌河摆放 <small>四家都照这一种摆</small></h2>
+        <div class="lab-row">${ponds}</div>
       </section>`;
   }
 
@@ -446,9 +498,25 @@ export class DiscardLab {
       this.replay(true);
     } else if (act === 'sideways') {
       s.sideways = (el as HTMLInputElement).checked;
+      // 平常的牌和立直宣言牌各有各的样子，换过去先回到原来的那一种
+      s.style = 'place';
+      this.flatMotion = null;
       this.renderScene();
       // 还在用没改过的内置参数时，跟着换成立直出牌（或换回默认出牌）
       this.paramsPanel.followSideways(s.sideways);
+      this.replay(true);
+    } else if (act === 'table' && v !== this.kind) {
+      // 换牌桌要整个重建：收拾掉这一个，在原地再开一个
+      this.dispose();
+      new DiscardLab(this.root, this.onExit, v as LabTable);
+    } else if (act === 'pondfx' && v !== s.pond) {
+      s.pond = v as PondStyle;
+      this.renderScene();
+      this.replay(true);
+    } else if (act === 'style' && v !== s.style) {
+      s.style = v as DiscardStyle;
+      this.flatMotion = null;
+      this.renderScene();
       this.replay(true);
     } else if (act === 'camera') {
       // 侧面看时别家正好挡在镜头前，先藏起来（可以再勾回来）

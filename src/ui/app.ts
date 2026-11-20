@@ -59,7 +59,7 @@ import { riichiSideIndex } from '../engine/pond';
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playBreeze, playDuelMiss, playDuelStart, playDuelStep, playGunshot, playIaiDraw, playIaiPush, playIaiSheath, playSong, playLamp, playLily, playMachine, playRiichi, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin, playWindow } from './sound';
+import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playBreeze, playDuelMiss, playDuelStart, playDuelStep, playGunshot, playIaiDraw, playIaiPush, playIaiSheath, playSong, playLamp, playLily, playMachine, playRiichi, playScrape, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin, playWindow } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { closeSoundPanel, onSoundTab, openSoundPanel, soundButtonHtml, soundPanelOpen } from './soundPanel';
@@ -73,7 +73,8 @@ import { SOLO_RULES, SOLO_START } from '../story/hanchanSim';
 import { fmtPts } from '../story/soloView';
 import { type HandEvent, recordHands } from '../story/hands';
 import { type NationalTab, saveTab, savedTab } from '../story/tabs';
-import { paceOf, vary } from './vary';
+import { hash01, paceOf, pickDiscardStyle, pondJitter, pondStyleOf, vary } from './vary';
+import { type DiscardStyle, landWeight } from '../ui3d/discardMotion';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
@@ -121,6 +122,23 @@ const AI_TURN_DELAY_25D = 620;
 const AI_CALL_DELAY = 250;
 // 桃子隐身那一下要多久（毫秒，先停半拍再淡掉），和 style.css 里 .vanish 的动画一样长
 const VANISH_MS = 1150;
+// 2D 牌桌每种出牌动画多长、什么时候响哪一声（毫秒；和 style.css 里 .pond .tile.fresh.fx-* 的时长对得上）
+type Fresh2dSound = 'soft' | 'click' | 'slap' | 'scrape';
+const FRESH_2D: Record<DiscardStyle, { ms: number; sounds: [number, Fresh2dSound][] }> = {
+  place: { ms: 250, sounds: [[0, 'click']] },
+  snap: { ms: 220, sounds: [[170, 'slap']] },
+  slide: { ms: 300, sounds: [[50, 'soft'], [60, 'scrape']] },
+  spin: { ms: 380, sounds: [[320, 'click']] },
+  toss: { ms: 520, sounds: [[215, 'click'], [400, 'soft']] },
+  stand: { ms: 420, sounds: [[0, 'soft'], [400, 'soft']] },
+  turn: { ms: 520, sounds: [[145, 'click'], [240, 'scrape']] },
+  top: { ms: 950, sounds: [[110, 'click'], [130, 'scrape']] },
+  hold: { ms: 900, sounds: [[845, 'slap']] },
+  push: { ms: 500, sounds: [[130, 'soft'], [240, 'scrape'], [480, 'slap']] },
+};
+// 2D 的牌河里牌歪多少：牌小（28 像素宽），转角照 3D 的七成，免得挤到旁边的牌
+const POND_2D_TWIST = 0.7;
+const POND_2D_PX = 28;
 // 自己立直后摸切：摸到的牌飞到空中要多久（和牌桌的摸牌飞行一样），在空中停多久（毫秒）
 const AIR_FLIGHT = 250;
 const AIR_PAUSE = 250;
@@ -199,7 +217,8 @@ export class App {
   private timer: number | null = null;
   private showResult = false;
   // 刚打出的牌只在第一次画出来时播放落桌动画，之后重绘不再重播
-  private freshDiscard: string | null = null;
+  // 2D 牌桌刚打出来的那一张：哪一张（座位-第几张）、怎么放下去的、什么时候打的（动画没播完又重画时接着播）
+  private freshDiscard: { key: string; style: DiscardStyle; at: number } | null = null;
   // 桃子：这一局已经隐身的座位；正在淡掉的座位（开始的时刻）
   private gone = new Set<number>();
   private vanishAt = new Map<number, number>();
@@ -882,8 +901,14 @@ export class App {
         this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel')].map((el) => el.getBoundingClientRect());
       }
       // 3D 牌桌上牌真正落到牌河时才响
-      this.table3d.onMarker = (seat, _tile, name) => {
-        if (name === 'land') playClick({ pan: this.clickPan(seat), varied: true });
+      this.table3d.onMarker = (seat, _tile, name, style) => {
+        if (name === 'land') playClick({ pan: this.clickPan(seat), varied: true, weight: landWeight(style) });
+      };
+      // 出牌的花样里落桌以后的动静：弹一下、倒平了的轻响，推到位的重响，贴着桌面滑的沙沙声
+      this.table3d.onCue = (seat, _tile, kind) => {
+        const pan = this.clickPan(seat);
+        if (kind === 'scrape') playScrape(pan);
+        else if (kind === 'tap' || kind === 'slap') playClick({ pan, varied: true, weight: kind === 'tap' ? 'soft' : 'slap' });
       };
       // 自摸砸牌：牌扣到桌上“嗒”一声，翻起来炸开时一记闷响加一阵旋风；咲的岭上开花再加一串铃和风声
       this.table3d.onSlam = (seat, lily, phase) => {
@@ -1213,8 +1238,13 @@ export class App {
         window.setTimeout(() => this.game && this.render(), VANISH_MS + 50);
         return;
       }
-      this.freshDiscard = `${e.seat}-${this.game!.players[e.seat].discards.length - 1}`;
-      if (!this.table3d) playClick({ pan: this.clickPan(e.seat), varied: true });
+      // 2D：这一张怎么放下去（3D、2.5D 的牌桌自己挑，见 table3d 的 pickStyle），落桌声跟着动画响
+      const pond = this.game!.players[e.seat].discards;
+      // 宣言牌被鸣走以后补横的那一张不是宣言，平放下去，不耍花样
+      const plain = !!this.table3d || (!e.riichi && riichiSideIndex(pond) === pond.length - 1);
+      const style = plain ? 'place' : pickDiscardStyle(this.chars[e.seat]?.id ?? '', !!e.riichi, e.riichi ? this.settings.riichiFx : this.settings.discardFx);
+      this.freshDiscard = { key: `${e.seat}-${pond.length - 1}`, style, at: Date.now() };
+      if (!this.table3d) this.freshSounds(e.seat, style);
       this.gbSigh(e.seat, e.tile);
       if (e.riichi) {
         playRiichi(this.speak(e.seat, { kind: 'riichi' }) ? VOICED_CUE : 1);
@@ -2740,8 +2770,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、咲的标准 / 加强、动画开关是别处的设置，留着
-      const { chisui, sakiStrong, drawPath, vary, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle, xfade } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, drawPath, vary, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle, xfade };
+      const { chisui, sakiStrong, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle, xfade } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle, xfade };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -3088,7 +3118,8 @@ export class App {
     this.syncChains2d();
     setSketchTiles(false);
     table.parentElement?.classList.toggle('sketch', sketch);
-    this.freshDiscard = null;
+    // 刚打的那一张动画播完了才不再标着（陀螺要转将近一秒，中间重画不能把它打断）
+    if (this.freshDiscard && Date.now() - this.freshDiscard.at >= FRESH_2D[this.freshDiscard.style].ms) this.freshDiscard = null;
     this.renderToasts();
   }
 
@@ -3135,6 +3166,9 @@ export class App {
       handOrder: this.myHand(),
       openHands: this.openHands(),
       drawPath: this.settings.drawPath,
+      discardFx: this.settings.discardFx,
+      riichiFx: this.settings.riichiFx,
+      pondFx: this.settings.pondFx,
       spotlight: this.settings.spotlight,
       winZoom: this.settings.winZoom,
       slamHand: this.settings.slam !== 'tile',
@@ -4063,21 +4097,43 @@ export class App {
     const ron = new Set(g.phase === 'roundEnd' ? (g.roundResult?.wins ?? []).filter((w) => w.from === s).map((w) => w.tile) : []);
     // 横放的那张：立直宣言牌，宣言牌被鸣走了就是下一巡打的那张（被鸣走的宣言牌半透明留着，竖回来）
     const side = riichiSideIndex(p.discards);
+    // 牌河摆得多齐（和 3D、2.5D 一样看设置和这个人的手风）：每张牌歪一点、偏一点，这一局里不变
+    const salt = Math.floor(hash01(g.seed, g.round, 17) * 2 ** 31);
+    const pond = pondStyleOf(this.chars[s]?.id ?? '', this.settings.pondFx, salt, s);
+    const fresh = this.freshDiscard;
     const tiles = p.discards
       .map((d, i) => {
         const classes: string[] = [];
+        const css: string[] = [];
         if (ghost) classes.push('stealth');
         if (d.called) classes.push('called');
         if (d.tsumogiri) classes.push('tsumogiri');
         if (last && last.seat === s && i === p.discards.length - 1) classes.push('last');
-        if (this.freshDiscard === `${s}-${i}`) classes.push('fresh');
+        if (fresh?.key === `${s}-${i}`) {
+          classes.push('fresh', `fx-${fresh.style}`);
+          // 动画播到一半重画：从播到的地方接着播
+          const t = Date.now() - fresh.at;
+          if (t > 30) css.push(`animation-delay:-${t}ms`);
+        }
         // 被荣和的那张：留在牌河里发金光，到下一局
         if (ron.has(d.tile)) classes.push('ron');
+        const j = pondJitter(salt, d.tile, pond);
+        if (j.yaw) css.push(`rotate:${(((j.yaw * 180) / Math.PI) * POND_2D_TWIST).toFixed(2)}deg`, `translate:${(j.dx * POND_2D_PX).toFixed(1)}px ${(j.dz * POND_2D_PX).toFixed(1)}px`);
         // 淡掉的时候立直宣言牌也竖着：别人不该知道她立直了
-        return tileHtml(d.tile, { size: 'pond', sideways: i === side && !vanish, classes });
+        return tileHtml(d.tile, { size: 'pond', sideways: i === side && !vanish, classes, style: css.join(';') });
       })
       .join('');
     return `<div class="pond ${POS[s]}${vanish ? ' vanish' : ''}"${vanish}>${tiles}</div>`;
+  }
+
+  // 2D 牌桌出牌的声音：照这种出牌动画的节奏，落桌、弹起、推到位各响一下
+  private freshSounds(seat: number, style: DiscardStyle): void {
+    const pan = this.clickPan(seat);
+    for (const [ms, kind] of FRESH_2D[style].sounds) {
+      const play = () => (kind === 'scrape' ? playScrape(pan, style === 'top' ? 0.6 : 0.2) : playClick({ pan, varied: true, weight: kind }));
+      if (ms <= 0) play();
+      else window.setTimeout(play, ms);
+    }
   }
 
   // 桃子正在淡掉：返回接着播动画的 style（重画时从播到的地方接着播），没在淡就是空串
