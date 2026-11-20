@@ -22,6 +22,8 @@ import type { Ability } from './types';
 //   牌越大越慢：起胡以后摸牌的帮助按“要比多少点高”分档（TERU.pace）
 //   要做大牌的局电脑的照不和小牌把连和断掉（TERU.build）：最快的做法接不上就拆了往混一色、清一色做，
 //   要的打点到了 TERU.buildFrom 从头就只留那一门；牌山剩 TERU.buildLeft 张以内才能和就和
+//   她看得见牌山，电脑的照照高手的样子听牌：立直才接得上、牌山里能和的又只剩一两张时先默听等改良（TERU.riichiWall，
+//   能力帮着送改良的牌）；听的牌牌山里没了就不守着空听，换听或者退一步（TERU.deadSwap）
 // - 叽叽叽：一轮连和里自摸满 TERU.kiki 次，下一局配牌直接是九莲宝灯的听牌
 // 原来的天梯（八层，正好和出下一层）还留着：Object.assign(TERU, TERU_LADDER) 就换回去
 export const TERU = {
@@ -70,6 +72,13 @@ export const TERU = {
   settleDraw: false, // 这种时候能力还主动送一张普通的和了牌（试过，太强：和小了还留在起胡以后的档位上，等于断不掉）
   startRiichi: true, // 电脑的照：没起胡时，默听荣和不了（没役）就立直
   readFold: true, // 电脑的照：读得出听牌的立直家，不是铳牌的牌一律当安全牌（不再照一般人那样弃和拆搭子）
+  // 电脑的照：立直才接得上的听牌，牌山里接得上的和了牌不到这么多张（听得窄）、牌山还多、换得到更好的听牌，就先默听等改良，
+  // 能力也帮着送改良的牌（换完默听就接得上，或者立直听得宽）；0 是不管（听牌就立直）
+  riichiWall: 3,
+  riichiLate: 44, // riichiWall：牌山剩这么多张以内，听得窄也立直（来不及等改良了）
+  improve: 0.8, // riichiWall：等改良时，每次摸牌换成改良牌的概率（不比平时的帮助低）
+  deadSwap: true, // 电脑的照：听的牌牌山里一张都没有了（空听）不算听牌，换听或者退回一向听重新组
+  deadLate: 12, // deadSwap：牌山剩这么多张以内照旧守着听牌（流局时听牌还有罚符）
   build: true, // 电脑的照：要做大牌的局不和小的断连和，宁可退向听也往染手做（混一色、清一色，够不着再加立直）
   buildFrom: 7700, // build：要比这么多点高（坐庄折回去）起，从配牌就只留染手那一门；不到这么多时，最快的做法接不上才拆
   buildLeft: 20, // build：牌山剩这么多张以内不再拆牌（来不及做了，能和就和）
@@ -563,6 +572,73 @@ export function teruRaisable(g: Game, seat: number, hand: TileId[]): boolean {
   return false;
 }
 
+// 一手听牌（13 张）的和了牌，牌山里（没锁住的活牌）还有几张和出来接得上连和。
+// riichi：按立直算（门清才立得了；已经立直了照算）；不然按默听算。牌山里的牌她自己摸得到，别人摸了打出来也能荣和（振听不算荣和）
+// wall：牌山里每种牌几张（不给就现数）
+export function teruFitWall(g: Game, seat: number, hand: TileId[], melds: Meld[], riichi: boolean, wall = teruWallCounts(g)): number {
+  const p = g.players[seat];
+  if (riichi && !p.riichi && !melds.every((m) => m.type === 'ankan')) return 0;
+  const c = toCounts(hand);
+  const waits = waitingKinds(c, melds.length);
+  if (!waits.length) return 0;
+  const furiten = p.furitenRiichi || waits.some((k) => p.discards.some((d) => kindOf(d.tile) === k));
+  const dora = g.wall.visibleDoraIndicators().map(kindOf);
+  const dealer = seat === g.dealer;
+  let n = 0;
+  for (const k of waits) {
+    if (!wall[k] || c[k] >= 4) continue;
+    const t = [0, 1, 2, 3].map((i) => k * 4 + i).find((x) => !hand.includes(x) && !isRed(x)) ?? k * 4 + 1;
+    const fits = [true, false].some((tsumo) => {
+      if (!tsumo && furiten) return false;
+      const r = evaluateWin({ closed: [...hand, t], melds, kuitan: g.rules.kuitan, winTile: t, tsumo, seatWind: g.seatWind(seat), roundWind: EAST + g.roundWind, isDealer: dealer, riichi: riichi || p.riichi, doubleRiichi: p.doubleRiichi, ippatsu: false, doraIndicators: dora });
+      return !!r && teruAccepts(g, seat, r, tsumo);
+    });
+    if (fits) n += wall[k];
+  }
+  return n;
+}
+
+// 摸进 t、换一张打出去以后听牌变好了：默听就接得上（牌山里有和了牌），或者立直接得上、牌山里能和的有 TERU.riichiWall 张以上（比现在多）
+// 牌山里的张数按摸走 t 以后算
+function improvesWith(g: Game, seat: number, hand: TileId[], t: TileId, now: number): boolean {
+  const melds = g.players[seat].melds;
+  const wall = teruWallCounts(g);
+  if (wall[kindOf(t)] > 0) wall[kindOf(t)]--;
+  const tried = new Set<number>([kindOf(t)]);
+  for (const d of hand) {
+    if (tried.has(kindOf(d))) continue;
+    tried.add(kindOf(d));
+    const next = [...hand.filter((x) => x !== d), t];
+    if (shanten(toCounts(next), melds.length) !== 0) continue;
+    if (teruFitWall(g, seat, next, melds, false, wall) > 0) return true;
+    if (teruFitWall(g, seat, next, melds, true, wall) >= Math.max(TERU.riichiWall, now + 1)) return true;
+  }
+  return false;
+}
+
+// 牌山里改得好这手听牌的牌（宝牌不找她，宝牌不算）：返回判断一张牌是不是改良牌的函数；一张都没有是 null
+export function teruImprovers(g: Game, seat: number, hand: TileId[], now: number): ((t: TileId) => boolean) | null {
+  const memo = new Map<number, boolean>();
+  const improves = (t: TileId) => {
+    if (TERU.doraOut && isDoraTile(g, t)) return false;
+    let ok = memo.get(kindOf(t));
+    if (ok === undefined) memo.set(kindOf(t), (ok = improvesWith(g, seat, hand, t, now)));
+    return ok;
+  };
+  for (const t of g.wall.live) if (!g.wall.locked.has(t) && improves(t)) return improves;
+  return null;
+}
+
+// 听得窄：这手听牌（13 张）只有立直才接得上连和，牌山里接得上的和了牌不到 TERU.riichiWall 张，牌山还多，
+// 而且牌山里有改得好它的牌。电脑的照这时先默听等改良，不急着立直；能力帮着送改良的牌
+export function teruThin(g: Game, seat: number, hand: TileId[]): boolean {
+  const p = g.players[seat];
+  if (!TERU.riichiWall || !teruPoints() || p.riichi || g.wall.remaining <= TERU.riichiLate) return false;
+  if (teruOutlook(g, seat, hand, p.melds, { live: teruWallHas(g) }) !== 1) return false;
+  const now = teruFitWall(g, seat, hand, p.melds, true);
+  return now < TERU.riichiWall && teruImprovers(g, seat, hand, now) !== null;
+}
+
 export const teruAbility: Ability = {
   id: 'teru',
   name: '照魔镜·连续和了',
@@ -797,12 +873,17 @@ export const teruAbility: Ability = {
       return best;
     };
     const lead = (t: number) => leadClass(t) >= 3;
+    // 听得窄、在等改良（见 teruThin）：送一张换完听得好的牌
+    const thin = points && sh === 0 && !stuck && teruThin(g, seat, p.hand);
     if (stuck) {
       if (g.rng.chance(boost) && !g.wall.bringToLive(0, raise, g.rng) && TERU.settleDraw && level > 0) {
         // 怎么换都接不上了：送一张普通的和了牌，和小了重新起头
         const any = (t: number) => plain(t) && !!winOf(t, true);
         g.wall.bringToLive(0, any, g.rng);
       }
+    } else if (thin) {
+      const improves = teruImprovers(g, seat, p.hand, teruFitWall(g, seat, p.hand, p.melds, true));
+      if (improves && g.rng.chance(Math.max(boost, TERU.improve)) && !improves(before)) g.wall.bringToLive(0, improves, g.rng);
     } else if (points && TERU.softDraw && sh === 1) {
       if (g.rng.chance(boost) && !(leadClass(before) === (TERU.tight > 0 ? 4 : 3) && onSuit(before))) {
         if (!(TERU.tight > 0 && g.wall.bringToLive(0, (t) => leadClass(t) === 4, g.rng)) && !(lead(before) && onSuit(before)) && !g.wall.bringToLive(0, (t) => lead(t) && onSuit(t), g.rng) && !g.wall.bringToLive(0, lead, g.rng) && !(useful(before) && onSuit(before)) && !g.wall.bringToLive(0, (t) => useful(t) && onSuit(t), g.rng) && !useful(before)) g.wall.bringToLive(0, useful, g.rng);
