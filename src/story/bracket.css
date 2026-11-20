@@ -61,6 +61,20 @@
 }
 .bk-bar > div { display: flex; gap: 10px; flex: none; }
 
+/* 团体赛 / 个人赛页签（两边的报名页、晋级表、积分榜顶上都有） */
+.nt-tabs { display: flex; gap: 4px; margin: 0 6px 10px; }
+.nt-tab {
+  min-height: 40px;
+  padding: 0 18px;
+  border: 0;
+  background: #d6dbd8;
+  color: var(--ink-m) !important;
+  font: 400 22px 'Long Cang', cursive !important;
+  box-shadow: 0 2px 4px rgba(40, 30, 10, 0.12);
+}
+.nt-tab:hover { background: #e3e7e4; }
+.nt-tab.on { display: inline-flex; align-items: center; background: var(--paper); color: var(--red) !important; box-shadow: 0 -3px 0 var(--red) inset, 0 2px 6px rgba(40, 30, 10, 0.16); }
+
 /* ---------- 晋级表：东区 | 总决赛 | 西区 ---------- */
 .bk-grid {
   display: grid;
@@ -191,6 +205,7 @@
   .story-screen { padding: 10px 10px 120px; box-shadow: none; }
   .bk-top { flex-direction: column; }
   .bk-top h1 { font-size: 30px; }
+  .nt-tab { min-height: 38px; padding: 0 14px; font-size: 20px !important; }
   .bk-half { grid-template-columns: minmax(0, 1fr); }
   .bk-bar { left: 0; right: 0; bottom: 0; flex-direction: column; align-items: stretch; padding: 10px 12px 14px; font-size: 14px; }
   .bk-bar > div { justify-content: flex-end; }

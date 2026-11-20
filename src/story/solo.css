@@ -1,0 +1,103 @@
+/* 全国大赛个人赛：报名、积分榜、决赛桌。白板贴纸那套样式在 bracket.css，这里只加个人赛的几块 */
+
+/* ---------- 报名：按学校分组的全部角色 ---------- */
+.ip-rules { margin: 0 6px 14px; padding: 10px 14px; background: var(--paper); box-shadow: 0 3px 8px rgba(30, 30, 30, 0.12); font-size: 13.5px; line-height: 1.7; color: #3b342d; transform: rotate(-0.25deg); }
+.ip-rules b { color: var(--red); }
+.ip-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; padding: 4px 6px; }
+.ip-school { padding: 10px 12px 12px; border-top: 6px solid var(--s); background: var(--paper); box-shadow: 0 4px 12px rgba(30, 30, 30, 0.14); }
+.ip-school:nth-child(odd) { transform: rotate(-0.4deg); }
+.ip-school:nth-child(even) { transform: rotate(0.35deg); }
+.ip-school h4 { margin: 0 0 8px; font: 400 24px/1.1 'Ma Shan Zheng', serif; color: color-mix(in srgb, var(--s) 55%, #1d1416); }
+.ip-school h4 small { margin-left: 6px; font: 400 12px 'Noto Sans SC', sans-serif; color: var(--ink-l); }
+.ip-who-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ip-who { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; width: 58px; padding: 0; border: 0; background: none; }
+.ip-face { position: relative; display: grid; place-items: center; width: 50px; height: 60px; overflow: hidden; border: 3px solid #fff; border-bottom-width: 7px; background: var(--c); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.18); font: 400 26px 'Ma Shan Zheng', serif; color: #fff7ee; transition: transform 0.12s; }
+.ip-face img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 18%; }
+.ip-who > small { max-width: 58px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: #3b342d; }
+.ip-who:hover .ip-face { transform: translateY(-2px); }
+.ip-who.on .ip-face { box-shadow: 0 0 0 3px #d0302f, 0 6px 10px rgba(0, 0, 0, 0.2); transform: translateY(-2px) rotate(-2deg); }
+.ip-who.on > small { color: var(--red); font-weight: 700; }
+.ip-rep { position: absolute; z-index: 1; top: -5px; right: -2px; padding: 0 4px; background: var(--red); color: #fff8f2; font: 700 10px/16px 'Noto Sans SC', sans-serif; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); transform: rotate(6deg); }
+
+/* ---------- 积分榜 ---------- */
+.ip-steps { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 6px 14px; }
+.ip-steps span { padding: 3px 12px; background: #f4df72; font: 400 19px 'Long Cang', cursive; color: #3a2f20; box-shadow: 0 2px 4px rgba(40, 30, 10, 0.18); transform: rotate(-1deg); }
+.ip-steps span:nth-child(even) { transform: rotate(0.8deg); }
+.ip-steps span.done { background: #d9e7d3; color: #4b6b45; }
+.ip-steps span.fin { background: #2b2622; color: #f4df72; }
+.ip-steps span.fin.done { background: #6b6259; color: #e9dfb4; }
+.ip-steps span.now { background: var(--red); color: #fff8f2; }
+.ip-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(420px, 580px); gap: 22px; align-items: start; }
+.ip-col { min-width: 0; }
+.ip-col h3 { margin: 0 0 8px; text-align: center; font: 400 22px 'Long Cang', cursive; color: var(--red); }
+.ip-col h3 small { margin-left: 6px; font: 400 13px 'Noto Sans SC', sans-serif; color: var(--ink-l); }
+.ip-tables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.ip-tables.one { grid-template-columns: minmax(0, 560px); justify-content: center; }
+.ip-tables .bk-table:nth-child(odd) { transform: rotate(-0.35deg); }
+.ip-tables .bk-table:nth-child(even) { transform: rotate(0.35deg); }
+.ip-tables .bk-name small, .ip-board .nm small { margin-left: 4px; font-size: 11px; font-weight: 400; color: var(--ink-l); }
+.bk-row .ip-tot { margin-left: auto; font-size: 12px; color: var(--ink-l); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bk-row .ip-d { min-width: 50px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bk-row .ip-tot + .ip-d { margin-left: 0; }
+.bk-row .ip-fg { min-width: 50px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ip-final .bk-row { font-size: 15px; padding: 8px 12px; }
+.ip-final .bk-name { flex: 1; }
+.ip-final .ip-fhead { padding: 4px 12px; font-size: 11px; font-weight: 400; color: var(--ink-l); }
+.ip-final .ip-fhead .ip-fg, .ip-final .ip-fhead .ip-d { font-size: 11px; font-weight: 400; color: var(--ink-l); }
+.ip-final .bk-tag { min-width: 52px; color: var(--ink-l); font-weight: 400; }
+.ip-final .champ .bk-tag { color: #b8860b; font-weight: 700; font-size: 14px; }
+.ip-final .bk-row:not(.ip-fhead) .bk-tag:not(:empty) { margin-left: 0; }
+.plus { color: #2f7d4f; }
+.minus { color: #b3302b; }
+.ip-board { background: var(--paper); box-shadow: 0 4px 12px rgba(30, 30, 30, 0.16); padding: 4px 0 8px; transform: rotate(0.3deg); }
+.ip-board .hd, .ip-board .r { display: grid; grid-template-columns: 30px 12px minmax(0, 1fr) repeat(var(--n), 40px) 56px; gap: 6px; align-items: center; padding: 3px 12px; font-size: 13.5px; }
+.ip-board .hd .rk { white-space: nowrap; }
+.ip-board .hd { font-size: 11px; color: var(--ink-l); border-bottom: 1.5px solid #e2d8c4; padding-bottom: 5px; }
+.ip-board .r { border-top: 1px dashed #eee5d4; }
+.ip-board .rk { font-variant-numeric: tabular-nums; color: var(--ink-m); text-align: right; }
+.ip-board .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ip-board .nm i, .ip-tables .bk-name i { margin-left: 5px; padding: 0 4px; border: 1px solid #b9b0a3; font-size: 10px; font-style: normal; color: var(--ink-l); }
+.ip-fin { margin-left: 5px; padding: 0 4px; background: #2b2622; color: #f4df72; font-size: 10px; font-weight: 400; }
+.ip-board .c { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.ip-board .t { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ip-board .r.mine { font-weight: 700; background: linear-gradient(transparent 55%, rgba(244, 223, 114, 0.75) 55%); }
+.ip-cut { display: flex; align-items: center; gap: 8px; padding: 4px 12px; color: var(--red); font: 400 17px 'Long Cang', cursive; }
+.ip-cut::before, .ip-cut::after { content: ''; flex: 1; border-top: 2px dashed var(--red); }
+.solo-screen { padding-bottom: 110px; }
+
+/* 颁奖台：冠军在中间最高 */
+.ip-podium { display: flex; justify-content: center; align-items: flex-end; gap: 14px; margin: 6px 0 22px; }
+.ip-step { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 150px; padding: 12px 8px 0; background: var(--paper); box-shadow: 0 4px 12px rgba(30, 30, 30, 0.16); text-align: center; }
+.ip-step .ip-face { width: 72px; height: 88px; font-size: 38px; }
+.ip-step b { margin-top: 6px; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ip-step small { font-size: 12px; color: var(--ink-l); }
+.ip-step em { width: 100%; margin-top: 8px; padding: 6px 0 4px; font: 400 24px 'Long Cang', cursive; font-style: normal; color: #fff8f2; background: #8a8178; }
+.ip-step.p1 { padding-top: 18px; transform: rotate(-1deg); }
+.ip-step.p1 .ip-face { width: 88px; height: 106px; }
+.ip-step.p1 em { padding: 18px 0 14px; background: var(--red); font-size: 30px; }
+.ip-step.p2 { transform: rotate(1.2deg); }
+.ip-step.p2 em { padding: 10px 0 8px; }
+.ip-step.p3 { transform: rotate(-0.6deg); }
+.ip-step.mine b { background: linear-gradient(transparent 55%, rgba(244, 223, 114, 0.85) 55%); }
+
+@media (max-width: 1100px) {
+  .ip-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .ip-pick-grid { grid-template-columns: minmax(0, 1fr); }
+  .ip-tables { grid-template-columns: minmax(0, 1fr); }
+  .ip-tables.one { grid-template-columns: minmax(0, 1fr); }
+  .ip-board .hd, .ip-board .r { grid-template-columns: 24px 10px minmax(0, 1fr) repeat(var(--nm), 36px) 50px; padding: 3px 8px; font-size: 13px; }
+  .ip-board .old { display: none; }
+  .ip-board .nm small { display: none; }
+  .ip-final .bk-row { padding: 7px 8px; font-size: 14px; }
+  .bk-row .ip-fg, .bk-row .ip-d { min-width: 42px; }
+  .ip-steps span { padding: 2px 9px; font-size: 17px; }
+  .ip-podium { gap: 8px; }
+  .ip-step { width: 31%; }
+  .ip-step .ip-face { width: 56px; height: 68px; }
+  .ip-step.p1 .ip-face { width: 68px; height: 82px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ip-face { transition: none; }
+}

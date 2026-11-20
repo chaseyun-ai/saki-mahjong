@@ -5,6 +5,7 @@ import './ui/tableStyles.css';
 import { App } from './ui/app';
 import { DiscardLab } from './lab/discardLab';
 import { NationalFlow } from './story/national';
+import { IndividualFlow } from './story/individual';
 import { applyTheme } from './ui/theme';
 import { installSoundPanel } from './ui/soundPanel';
 import { installSoundtrack, stopMusic } from './ui/soundtrack';
@@ -19,8 +20,8 @@ let root = document.getElementById('app')!;
 
 // 游戏和出牌动作调试场景来回切换：换一个新的 #app，旧的连同上面的点击监听一起扔掉，两边互不干扰。
 // 不靠改网址再刷新页面，嵌在别的页面里（比如试玩页）也能切
-type Page = 'game' | 'lab' | 'bracket';
-const pageOf = (hash: string): Page => (hash === '#lab' ? 'lab' : hash === '#bracket' ? 'bracket' : 'game');
+type Page = 'game' | 'lab' | 'bracket' | 'solo';
+const pageOf = (hash: string): Page => (hash === '#lab' ? 'lab' : hash === '#bracket' ? 'bracket' : hash === '#solo' ? 'solo' : 'game');
 
 function show(page: Page): void {
   const fresh = root.cloneNode(false) as HTMLElement;
@@ -35,8 +36,9 @@ function show(page: Page): void {
   // 调试场景、晋级表不放音乐（回到游戏时选人页自己会放）
   if (page !== 'game') stopMusic();
   if (page === 'lab') new DiscardLab(root, () => show('game'));
-  // 全国大赛单独看（网址加 #bracket）：没有牌桌，玩家那桌只能交给电脑打
-  else if (page === 'bracket') new NationalFlow(root, { exit: () => show('game') });
+  // 全国大赛单独看（网址加 #bracket 是团体赛、#solo 是个人赛）：没有牌桌，玩家那桌只能交给电脑打
+  else if (page === 'bracket') new NationalFlow(root, { exit: () => show('game'), switchTab: () => show('solo') });
+  else if (page === 'solo') new IndividualFlow(root, { exit: () => show('game'), switchTab: () => show('bracket') });
   else new App(root, () => show('lab'));
 }
 

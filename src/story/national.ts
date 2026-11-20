@@ -25,8 +25,9 @@ import {
   tableSim,
 } from './bracket';
 import { bracketHtml } from './bracketView';
+import { tabsHtml } from './tabs';
 
-// 全国大赛（主页白板纸上的第三行）：
+// 全国大赛团体赛（主页白板纸上的第三行进来，顶上的页签可以切到个人赛 individual.ts）：
 // 1. 报名：从 13 所原作学校里挑一所（上一届没打完的话直接接着打）
 // 2. 抽签：16 校分东西两区（bracket.ts）
 // 3. 每一轮：玩家那桌自己打（App 的团体赛画面：布阵、上场、托管），别桌在后台真打（BgRunner）
@@ -36,6 +37,8 @@ import { bracketHtml } from './bracketView';
 export interface NationalHooks {
   // 打玩家那一桌：App 用团体赛画面打完后调 done(四所学校按桌上顺序的点数)；中途退出就不调
   playTable?(run: TeamRun, done: (points: number[]) => void): void;
+  // 切到个人赛页签
+  switchTab?(): void;
   exit(): void;
 }
 
@@ -98,7 +101,7 @@ export class NationalFlow {
     }).join('');
     const last = this.b?.champion ? `<p class="np-last">上一届冠军：${esc(this.b.entrants[this.b.champion].name)}${this.b.champion === this.b.mine ? '（就是你们！）' : ''}</p>` : '';
     this.root.innerHTML = `<div class="story-screen national-screen np-screen">
-      <header class="bk-top">
+      ${tabsHtml('team', 'data-story')}<header class="bk-top">
         <div><h1>全国高中麻将大赛 · 报名</h1><p>选一所学校出战。十六校抽签分进东西两区，每桌四校，前两名晋级，一路打到总决赛。</p>${last}</div>
         <button class="bk-btn ghost" data-story="exit">返回</button>
       </header>
@@ -121,7 +124,7 @@ export class NationalFlow {
     const mine = b.entrants[b.mine];
     this.watchLive();
     this.root.innerHTML = `<div class="story-screen national-screen bracket-screen">
-      <header class="bk-top">
+      ${tabsHtml('team', 'data-story')}<header class="bk-top">
         <div><h1>全国高中麻将大赛 · 团体赛</h1><p><b class="bk-dot" style="background:${mine.color}"></b> ${esc(mine.name)} · ${HALVES[halfOf(b, b.mine)]} · 重打 ${b.retries} 次</p></div>
         <div class="bk-top-btns"><button class="bk-btn ghost" data-story="restart">重新报名</button><button class="bk-btn ghost" data-story="exit">返回</button></div>
       </header>
@@ -252,6 +255,11 @@ export class NationalFlow {
     if (a === 'exit') {
       this.runner.hurry(false);
       this.hooks.exit();
+      return;
+    }
+    if (a === 'tab') {
+      this.runner.hurry(false);
+      this.hooks.switchTab?.();
       return;
     }
     if (a === 'pick' && el.dataset.school) {
