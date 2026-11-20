@@ -22,7 +22,10 @@ import type { Ability } from './types';
 //   有杠材、快做成的时候，容易摸到让手牌正好听岭上那张的牌
 // - 淡的时间迟滞只把她压到 SAKI.awaiLag 向听（原作里别人五向听，她七对子四向听）。淡等着转角暗杠时，
 //   她留着淡要摸的那张岭上牌的对子、刻子，等淡打出来大明杠
-// - 天意（正负零）：她下意识地往 29500–30500 打。离得太远（落后）时天意发力，领先太多就收手
+// - 天意（正负零）：她下意识地往正负零打。离得太远（落后）时天意发力，领先太多就收手。
+//   正负零是返点：原作的规矩 25000 点起、30000 点返（每家交 5000 给一位），终局 30000 点精算下来正好 ±0。
+//   起始点数不同时按同一个比例换算（返点 = 起始点数 × 1.2）：50000 点起是 60000，100000 点起（团体赛每队也是）是 120000；
+//   正负零的范围、发力线、收手线也跟着起始点数等比放大（sakiZero）
 // - 她的杠一般不给自己加宝牌：她开杠翻出的杠宝牌、她和牌时的里宝牌不指向她自己的牌（doraControl），岭上摸到赤宝牌照常可以
 // - 会被稳乃的深山削弱，满 6 个标记的稳乃在场时失效
 // - 加强版（SAKI.strong）：玩家自己用咲时可以在选人页切换（像透华的常态 / 治水），天意的手更重、连杠局更多；电脑的咲都是标准版。
@@ -48,8 +51,9 @@ export const SAKI = {
   dealTrip: 0.25, // 配牌里有现成的刻子的概率（一个对子多发一张；自然发牌大约 9%）
   dealTripTwo: 0.04, // 其中有两个刻子的概率（自然发牌不到 0.2%）
   awaiLag: 4, // 淡的时间迟滞只压到几向听
-  // 天意：正负零的目标
-  target: 30000,
+  // 天意：正负零的目标。下面是 25000 点起时的数，别的起始点数按 startScore / base 等比换算（sakiZero）
+  base: 25000,
+  target: 30000, // 返点：25000 点起、30000 点返
   band: 500,
   pushBelow: 8000, // 比目标少这么多：天意发力
   calmAbove: 8000, // 比目标多这么多：收手
@@ -75,11 +79,19 @@ export const SAKI = {
 
 export type SakiMood = 'push' | 'even' | 'calm';
 
+// 天意：这一场的正负零（返点）、范围和发力线、收手线，按规矩上的起始点数等比换算，取整到百
+export function sakiZero(start: number): { target: number; band: number; pushBelow: number; calmAbove: number } {
+  const r = start / SAKI.base;
+  const at = (n: number) => Math.round((n * r) / 100) * 100;
+  return { target: at(SAKI.target), band: at(SAKI.band), pushBelow: at(SAKI.pushBelow), calmAbove: at(SAKI.calmAbove) };
+}
+
 // 天意：现在离正负零多远
 export function sakiMood(g: Game, seat: number): SakiMood {
-  const d = g.players[seat].score - SAKI.target;
-  if (d <= -SAKI.pushBelow) return 'push';
-  if (d >= SAKI.calmAbove) return 'calm';
+  const z = sakiZero(g.startScore);
+  const d = g.players[seat].score - z.target;
+  if (d <= -z.pushBelow) return 'push';
+  if (d >= z.calmAbove) return 'calm';
   return 'even';
 }
 
@@ -385,7 +397,7 @@ function placeKan(g: Game, seat: number, first: number, dealt = false): void {
 export const sakiAbility: Ability = {
   id: 'saki',
   name: '岭上开花',
-  description: `岭上的线：四张岭上牌配牌时就定好、一直看得见（鼠标移到岭上牌上投影出来），开杠时不会变，杠了摸到的就是看到的那张；越靠前的越贴着她的配牌（搭子缺的那张、孤张的同种牌），靠后的会混进字牌、杂牌；配牌有现成刻子的局，有时第一张是她另一个对子的同种牌，可以连着开两杠。朝着“杠完正好听岭上那张”做牌，开杠就是岭上开花。杠材：手里成刻（或碰出来）时，牌山里的第四张落到她的摸牌路上（配牌就有的刻子：这一局第 ${SAKI.kanDeal[0]}–${SAKI.kanDeal[1]} 次摸牌；后来成的：之后第 ${SAKI.kanDraw[0]}–${SAKI.kanDraw[1]} 次摸牌），变透明、牌山前面投影出牌面；别人鸣牌会把它错开。天意的手：配牌偏对子，偶尔带现成的刻子，对子容易长成刻子，快做成时容易摸到要的牌。淡的时间迟滞只压到 ${SAKI.awaiLag} 向听。天意：往正负零（${SAKI.target - SAKI.band}–${SAKI.target + SAKI.band}）打，落后 ${SAKI.pushBelow} 以上时天意发力，领先 ${SAKI.calmAbove} 以上收手。她的杠一般不给自己加宝牌、里宝牌（岭上的赤宝牌照拿）。自己用她时，选人页头像上可以切到“加强”：对子更容易成刻、快成时更容易摸到要的牌、连杠局更多。`,
+  description: `岭上的线：四张岭上牌配牌时就定好、一直看得见（鼠标移到岭上牌上投影出来），开杠时不会变，杠了摸到的就是看到的那张；越靠前的越贴着她的配牌（搭子缺的那张、孤张的同种牌），靠后的会混进字牌、杂牌；配牌有现成刻子的局，有时第一张是她另一个对子的同种牌，可以连着开两杠。朝着“杠完正好听岭上那张”做牌，开杠就是岭上开花。杠材：手里成刻（或碰出来）时，牌山里的第四张落到她的摸牌路上（配牌就有的刻子：这一局第 ${SAKI.kanDeal[0]}–${SAKI.kanDeal[1]} 次摸牌；后来成的：之后第 ${SAKI.kanDraw[0]}–${SAKI.kanDraw[1]} 次摸牌），变透明、牌山前面投影出牌面；别人鸣牌会把它错开。天意的手：配牌偏对子，偶尔带现成的刻子，对子容易长成刻子，快做成时容易摸到要的牌。淡的时间迟滞只压到 ${SAKI.awaiLag} 向听。天意：往正负零（返点：${SAKI.base} 点起是 ${SAKI.target - SAKI.band}–${SAKI.target + SAKI.band}）打，落后 ${SAKI.pushBelow} 以上时天意发力，领先 ${SAKI.calmAbove} 以上收手；起始点数不同时这些都按比例换算：50000 点起的正负零是 ${sakiZero(50000).target}，100000 点起（团体赛也是）是 ${sakiZero(100000).target}。她的杠一般不给自己加宝牌、里宝牌（岭上的赤宝牌照拿）。自己用她时，选人页头像上可以切到“加强”：对子更容易成刻、快成时更容易摸到要的牌、连杠局更多。`,
 
   lagShanten: SAKI.awaiLag,
 
@@ -471,7 +483,8 @@ export const sakiAbility: Ability = {
   insight(g, seat) {
     const kinds = sakiKanKinds(g, seat);
     const m = sakiMood(g, seat);
-    const mood = m === 'push' ? '天意发力中（离正负零太远）' : m === 'calm' ? '领先太多，收着打' : '在正负零附近';
+    const zero = sakiZero(g.startScore).target;
+    const mood = m === 'push' ? `天意发力中（离正负零 ${zero} 太远）` : m === 'calm' ? `比正负零 ${zero} 领先太多，收着打` : `在正负零 ${zero} 附近`;
     const out = [kinds.length ? `在等杠：${kinds.map(kindLabel).join('、')}` : '手里还没有能杠的刻子', '看得见岭上牌，朝着杠完正好听那一张做牌', mood];
     return sakiStrong(g, seat) ? [...out, '加强版：对子更容易长成刻子，快成时更容易摸到要的牌'] : out;
   },

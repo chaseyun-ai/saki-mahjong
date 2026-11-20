@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { SAKI, bloomGap, sakiKanKinds, sakiKanOk, sakiKanTiles, sakiLine, sakiMood, sakiRinshan, sakiSeesThrough, sakiStrong } from '../src/abilities/saki';
+import { SAKI, bloomGap, sakiKanKinds, sakiKanOk, sakiKanTiles, sakiLine, sakiMood, sakiRinshan, sakiSeesThrough, sakiStrong, sakiZero } from '../src/abilities/saki';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { kindOf, parseKinds, parseTiles, toCounts } from '../src/engine/tiles';
@@ -314,6 +314,27 @@ describe('宫永咲', () => {
     expect(sakiMood(g, 0)).toBe('push');
     g.players[0].score = SAKI.target + SAKI.calmAbove;
     expect(sakiMood(g, 0)).toBe('calm');
+  });
+
+  it('天意：正负零按起始点数换算（50000 点起 60000，100000 点起和团体赛 120000），发力线、收手线等比放大', () => {
+    expect(sakiZero(25000)).toEqual({ target: 30000, band: 500, pushBelow: 8000, calmAbove: 8000 });
+    expect(sakiZero(50000)).toEqual({ target: 60000, band: 1000, pushBelow: 16000, calmAbove: 16000 });
+    expect(sakiZero(100000)).toEqual({ target: 120000, band: 2000, pushBelow: 32000, calmAbove: 32000 });
+    const seats = () => [byId('saki'), byId('nodoka'), byId('mihoko'), byId('hisa')].map((c) => ({ name: c.id, ability: c.ability }));
+    // 50000 点起：开局 50000 在正负零 60000 附近，不再是领先太多
+    const g = new Game({ seed: 1, startScore: 50000, players: seats() });
+    expect(g.players[0].score).toBe(50000);
+    expect(sakiMood(g, 0)).toBe('even');
+    g.players[0].score = 44000;
+    expect(sakiMood(g, 0)).toBe('push');
+    g.players[0].score = 76000;
+    expect(sakiMood(g, 0)).toBe('calm');
+    // 团体赛：每队 100000 点起，带着队伍现在的点数上场
+    const team = (score: number) => new Game({ seed: 1, format: 'team', startScore: 100000, scores: [score, 100000, 100000, 100000], players: seats() });
+    expect(sakiMood(team(100000), 0)).toBe('even');
+    expect(sakiMood(team(88000), 0)).toBe('push');
+    expect(sakiMood(team(151900), 0)).toBe('even');
+    expect(sakiMood(team(152000), 0)).toBe('calm');
   });
 
   it('电脑的咲看着岭上牌决定杠不杠：杠完正好听岭上那张才杠，废牌就留着', () => {
