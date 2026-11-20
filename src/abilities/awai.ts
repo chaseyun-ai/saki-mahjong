@@ -105,6 +105,10 @@ const stateOf = (g: Game, seat: number) => g.abilityState[seat] as AwaiState;
 export function awaiKanUra(g: Game, seat: number): number | undefined {
   return stateOf(g, seat).kanUra;
 }
+// 她是不是开过转角暗杠、杠里已经定下来了（和牌时杠的那四张全是里宝牌）。牌桌照这个放杠里的流星、逆回旋的自摸
+export function awaiKanUraHit(g: Game, seat: number): boolean {
+  return g.abilities[seat]?.id === 'awai' && stateOf(g, seat).kanUra !== undefined && g.players[seat].melds.some((m) => m.type === 'ankan');
+}
 // 开局能量：用开局种子另起一个随机数掷（不动 g.rng，牌山不跟着变）
 function startEnergy(g: Game, seat: number): number {
   const [lo, hi] = AWAI.energyStart;

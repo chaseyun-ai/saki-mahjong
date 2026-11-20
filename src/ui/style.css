@@ -1362,23 +1362,89 @@ button {
 
 /* 立直宣言牌 · 横推：横着放在旁边，一把推过去靠上前一张 */
 .pond .tile.fresh.fx-push {
-  animation: drop-push 0.5s linear;
+  animation:
+    drop-push-in 0.24s linear,
+    drop-push-go var(--push-ms, 160ms) linear 0.24s;
 }
 
-@keyframes drop-push {
+/* 先横着放在右边（--push：右边多远，照落在一行里的第几格算），停一下 */
+@keyframes drop-push-in {
   0% {
-    translate: 36px -12px;
+    translate: var(--push, 36px) -12px;
     scale: 1.12;
     opacity: 0.2;
   }
-  26% {
-    translate: 36px 0;
+  54% {
+    translate: var(--push, 36px) 0;
     scale: 1;
     opacity: 1;
   }
-  48% {
-    translate: 36px 0;
-    animation-timing-function: cubic-bezier(0.6, 0, 0.9, 0.5);
+  100% {
+    translate: var(--push, 36px) 0;
+  }
+}
+
+/* 再匀速推过去（--push-ms：推多久，远的推得久） */
+@keyframes drop-push-go {
+  0% {
+    translate: var(--push, 36px) 0;
+  }
+}
+
+/* 大星淡的双立直 · 回旋：从右手边跟前甩出去，牌面朝上转着走一道弧线，落在右边滑进位置 */
+.pond .tile.fresh.fx-fling {
+  animation: drop-fling 1.15s linear;
+}
+
+@keyframes drop-fling {
+  0% {
+    translate: 140px 150px;
+    rotate: 1080deg;
+    scale: 1.3;
+    opacity: 0.2;
+  }
+  14.8% {
+    translate: 140px 150px;
+    rotate: 1080deg;
+    scale: 1.3;
+    opacity: 1;
+  }
+  24% {
+    translate: 134px 96px;
+    rotate: 859deg;
+    scale: 1.24;
+  }
+  33.2% {
+    translate: 117px 53px;
+    rotate: 663deg;
+    scale: 1.18;
+  }
+  42.4% {
+    translate: 95px 23px;
+    rotate: 493deg;
+    scale: 1.12;
+  }
+  51.7% {
+    translate: 70px 5px;
+    rotate: 348deg;
+    scale: 1.06;
+  }
+  60.9% {
+    translate: 45px 0;
+    rotate: 228deg;
+    scale: 1;
+  }
+  70.7% {
+    translate: 19px 0;
+    rotate: 128deg;
+  }
+  80.4% {
+    translate: 6px 0;
+    rotate: 57deg;
+  }
+  90.2% {
+    translate: 1px 0;
+    rotate: 14deg;
   }
 }
 
@@ -2047,6 +2113,33 @@ button {
 }
 /* 2D：照的旋风自摸。砸下去那一下牌就被砸得牌面朝上、平着转起来，跟着风越卷越猛越转越快、微微浮起来，风散了还转、慢慢停下
    （和 ui3d/twister.ts 的 TWISTER 对得上：砸下去就起风，0.5 秒长到顶，风到 1.3 秒开始散、散 0.26 秒，再转 0.62 秒，最后 0.24 秒停住） */
+/* 2D：大星淡中了杠里的自摸（逆回旋），手牌从和了牌那一头起一张张跳起来逆着翻开（--i 是倒着数的），翻完亮一下，和了牌再砸下去 */
+.win.slam.whirl .win-hand > .tile:not(.win-tile) {
+  transform-origin: 50% 50%;
+  animation: awai-whirl 0.6s cubic-bezier(0.2, 0.6, 0.4, 1) both;
+  animation-delay: calc(var(--t, 0s) + var(--i, 0) * 0.045s);
+}
+@keyframes awai-whirl {
+  0% {
+    transform: perspective(240px) rotateX(-642deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  50% {
+    transform: perspective(240px) translateY(-16px) rotateX(-170deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .win.slam.whirl .win-hand > .tile:not(.win-tile) {
+    animation: none;
+  }
+}
+
 .win.slam.twist .win-hand > .win-tile {
   animation:
     slam-drop 0.55s linear both,

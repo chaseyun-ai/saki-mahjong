@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_DISCARD,
-  DiscardParams,
+  DiscardMotion,
   DiscardPath,
   DiscardStyle,
   NORMAL_STYLES,
@@ -16,11 +16,12 @@ import {
   dueCues,
   dueMarkers,
   markers,
+  pushDistAt,
   sampleDiscard,
   styleParams,
   totalTime,
 } from '../src/ui3d/discardMotion';
-import { TILE_H, TILE_T, TILE_W } from '../src/ui3d/tableLayout';
+import { POND_GAP, TILE_H, TILE_T, TILE_W } from '../src/ui3d/tableLayout';
 
 // 牌河里的牌面朝上躺着；立直宣言牌再横过来
 const FLAT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
@@ -39,12 +40,16 @@ const path = (style: DiscardStyle, sideways: boolean, extra: Partial<DiscardPath
 });
 
 // 每种样子在 3D（有手）和 2.5D（牌自己飞）各一套参数
-const CASES: { style: DiscardStyle; riichi: boolean; flat: boolean; p: DiscardParams }[] = [];
+const CASES: { style: DiscardStyle; riichi: boolean; flat: boolean; p: DiscardMotion }[] = [];
 for (const flat of [false, true]) {
   for (const style of NORMAL_STYLES) CASES.push({ style, riichi: false, flat, p: styleParams(flat ? SLIDE_DISCARD : DEFAULT_DISCARD, style, flat) });
   for (const style of RIICHI_STYLES) CASES.push({ style, riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, style, flat) });
+  // 横推：落在一行里靠左的格子推得远
+  for (const col of [0, 2, 5]) CASES.push({ style: 'push', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'push', flat, pushDistAt(col)) });
+  // 大星淡的双立直
+  CASES.push({ style: 'fling', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'fling', flat) });
 }
-const label = (c: (typeof CASES)[number]) => `${c.riichi ? '立直' : '平常'} ${c.style} ${c.flat ? '2.5D' : '3D'}`;
+const label = (c: (typeof CASES)[number]) => `${c.riichi ? '立直' : '平常'} ${c.style}${c.p.pushDist ? ` 推 ${c.p.pushDist.toFixed(2)}` : ''} ${c.flat ? '2.5D' : '3D'}`;
 
 // 牌最低的地方离桌面多高（桌面在落点下面半个牌厚）
 function clearance(pos: THREE.Vector3, quat: THREE.Quaternion): number {
@@ -61,6 +66,8 @@ function reach(pos: THREE.Vector3, quat: THREE.Quaternion): { left: number; far:
   };
   return { left: pos.x - ext(new THREE.Vector3(1, 0, 0)), far: pos.z - ext(new THREE.Vector3(0, 0, 1)) };
 }
+
+const c2riichi = (style: DiscardStyle) => style === 'fling' || (RIICHI_STYLES as DiscardStyle[]).includes(style);
 
 describe('出牌的样子', () => {
   it('平放（place）和不写样子一模一样', () => {
@@ -82,7 +89,7 @@ describe('出牌的样子', () => {
       const pa = path(c.style, c.riichi);
       const start = sampleDiscard(c.p, pa, 0);
       expect(start.tilePos.distanceTo(pa.from), label(c)).toBeLessThan(1e-9);
-      const stop = c.p.reach + c.p.carry + afterTime(c.style);
+      const stop = c.p.reach + c.p.carry + afterTime(c.style, c.p);
       const end = sampleDiscard(c.p, pa, stop + 1e-6);
       expect(end.tilePos.distanceTo(pa.to), label(c)).toBeLessThan(1e-6);
       expect(end.tileQuat.angleTo(pa.toQuat), label(c)).toBeLessThan(1e-6);
@@ -124,14 +131,14 @@ describe('出牌的样子', () => {
 
   it('落桌以后贴着桌面动的：不越过左边的前一张，不压到里面的上一行', () => {
     // 落点左边紧挨着前一张牌，里面紧挨着上一行
-    const sideways = (style: DiscardStyle) => RIICHI_STYLES.includes(style) && style !== 'place';
+    const sideways = (style: DiscardStyle) => c2riichi(style) && style !== 'place';
     for (const c of CASES) {
-      if (!['slide', 'stand', 'turn', 'top', 'push'].includes(c.style)) continue;
+      if (!['slide', 'stand', 'turn', 'top', 'push', 'fling'].includes(c.style)) continue;
       for (const spin of [1, -1]) {
         const pa = path(c.style, sideways(c.style), { spin, landed: TO.clone() });
         const rest = reach(pa.to, pa.toQuat);
         const land = c.p.reach + c.p.carry;
-        for (let t = land; t <= land + afterTime(c.style) + 0.02; t += 1 / 480) {
+        for (let t = land; t <= land + afterTime(c.style, c.p) + 0.02; t += 1 / 480) {
           const pose = sampleDiscard(c.p, pa, t);
           const r = reach(pose.tilePos, pose.tileQuat);
           expect(r.left, `${label(c)} t=${(t - land).toFixed(3)}`).toBeGreaterThan(rest.left - 1e-6);
@@ -159,7 +166,7 @@ describe('出牌的样子', () => {
       for (let i = 1; i < list.length; i++) expect(list[i].t, label(c)).toBeGreaterThanOrEqual(list[i - 1].t);
       const declare = list.filter((x) => x.kind === 'declare');
       expect(declare.length, label(c)).toBe(1);
-      expect(declare[0].t, label(c)).toBeCloseTo(land + declareDelay(c.style));
+      expect(declare[0].t, label(c)).toBeCloseTo(land + declareDelay(c.style, c.p));
       expect(declare[0].t, label(c)).toBeLessThanOrEqual(totalTime(c.p, 0, c.style) + 1e-9);
       // 按帧推进，每个只报一次；中途打断时剩下的一次报完
       for (const dt of [1 / 30, 1 / 60, 0.4]) {
@@ -191,6 +198,81 @@ describe('出牌的样子', () => {
         seen.push(...due.map((x) => x.name));
       }
       expect(seen, label(c)).toEqual(['depart', 'grab', 'land', 'release', 'done']);
+    }
+  });
+
+  it('横推：匀速推过去，落在一行里越靠左推得越远、越久', () => {
+    expect(pushDistAt(5)).toBe(pushDistAt(4));
+    expect(pushDistAt(0)).toBeGreaterThan(pushDistAt(2));
+    expect(pushDistAt(2)).toBeGreaterThan(pushDistAt(4));
+    // 放下的地方不超出这一行的右头太多：第一格推过来的那张，放下时右边还在六格以内
+    expect(TILE_H / 2 + pushDistAt(0) + TILE_H / 2).toBeLessThanOrEqual(6 * (TILE_W + POND_GAP));
+    let speed = 0;
+    for (const col of [0, 1, 3, 5]) {
+      const p = styleParams(SLIDE_RIICHI, 'push', true, pushDistAt(col));
+      const pa = path('push', true, { landed: TO.clone() });
+      const land = p.reach + p.carry;
+      // 落桌时在落点右边那么远
+      expect(sampleDiscard(p, pa, land + 1e-6).tilePos.x - TO.x).toBeCloseTo(pushDistAt(col), 4);
+      // 推的那一段每一小步走得一样远
+      const steps: number[] = [];
+      const dt = 1 / 240;
+      const from = land + 0.1 + dt;
+      const to = land + afterTime('push', p) - dt;
+      for (let t = from; t + dt <= to; t += dt) steps.push(sampleDiscard(p, pa, t).tilePos.x - sampleDiscard(p, pa, t + dt).tilePos.x);
+      expect(steps.length).toBeGreaterThan(5);
+      for (const d of steps) expect(d).toBeCloseTo(steps[0], 6);
+      // 远近都是同一个速度
+      if (speed) expect(steps[0] / dt).toBeCloseTo(speed, 4);
+      speed = steps[0] / dt;
+      // 推得越远，摆好得越晚
+      expect(declareDelay('push', p)).toBeCloseTo(0.1 + pushDistAt(col) / speed, 4);
+    }
+  });
+
+  it('回旋（淡的双立直）：从右手边跟前甩出去，牌面一直朝上，转着走一道弧线，从右边滑进落点', () => {
+    for (const flat of [false, true]) {
+      const p = styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'fling', flat);
+      const pa = path('fling', true);
+      const grab = p.reach;
+      const land = p.reach + p.carry;
+      const up = (q: THREE.Quaternion) => new THREE.Vector3(0, 0, 1).applyQuaternion(q).y; // 牌面朝上是 1
+      // 带到右手边跟前：在落点右边、靠自己这边
+      const wind = sampleDiscard(p, pa, grab + p.carry * 0.3);
+      expect(wind.tilePos.x - TO.x).toBeGreaterThan(3);
+      expect(wind.tilePos.z - TO.z).toBeGreaterThan(3);
+      expect(up(wind.tileQuat)).toBeGreaterThan(0.999);
+      let turned = 0;
+      let prev = wind;
+      let maxX = -Infinity;
+      for (let t = grab + p.carry * 0.3 + 1 / 240; t <= land + afterTime('fling', p); t += 1 / 240) {
+        if (t >= land) pa.landed = TO.clone();
+        const cur = sampleDiscard(p, pa, t);
+        // 出手以后牌面一直朝上
+        expect(up(cur.tileQuat), `t=${t.toFixed(3)}`).toBeGreaterThan(0.999);
+        // 一路往左前方去：不往回走（落桌以后让牌角的那一点点不算）
+        if (t < land) {
+          expect(cur.tilePos.x).toBeLessThanOrEqual(prev.tilePos.x + 1e-6);
+          expect(cur.tilePos.z).toBeLessThanOrEqual(prev.tilePos.z + 1e-6);
+        }
+        // 弧线：往右前方鼓出去（在起点到落点那条直线的右前方）
+        maxX = Math.max(maxX, cur.tilePos.x);
+        turned += cur.tileQuat.angleTo(prev.tileQuat);
+        prev = cur;
+      }
+      // 途中转了好几圈
+      expect(turned).toBeGreaterThan(2 * Math.PI * 2.5);
+      // 弧线上的中间一点比直线靠右、靠前
+      const mid = sampleDiscard(p, { ...pa, landed: undefined }, grab + p.carry * 0.65);
+      const k = (mid.tilePos.z - TO.z) / (wind.tilePos.z - TO.z);
+      expect(mid.tilePos.x).toBeGreaterThan(TO.x + k * (wind.tilePos.x - TO.x) + 0.5);
+      // 飞过牌山的那一段够高（牌山两层高 2 个牌厚）
+      for (let t = grab + p.carry * 0.3; t < land; t += 1 / 240) {
+        const pose = sampleDiscard(p, { ...pa, landed: undefined }, t);
+        if (pose.tilePos.z > 8.5) expect(pose.tilePos.y - TILE_T / 2).toBeGreaterThan(2 * TILE_T + 0.3);
+      }
+      // 落桌时在落点右边，之后往左滑进去
+      expect(sampleDiscard(p, pa, land + 1e-6).tilePos.x).toBeGreaterThan(TO.x + 1);
     }
   });
 

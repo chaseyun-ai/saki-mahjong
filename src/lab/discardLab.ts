@@ -3,7 +3,7 @@ import { CHARACTERS } from '../abilities/characters';
 import { playClick, playScrape } from '../ui/sound';
 import { tileHtml } from '../ui/tile';
 import { type PondStyle, vary } from '../ui/vary';
-import { DiscardParams, DiscardPath, DiscardStyle, NORMAL_STYLES, RIICHI_STYLES, SLIDE_DISCARD, SLIDE_RIICHI, landWeight, markers, phaseAt, styleParams, totalTime } from '../ui3d/discardMotion';
+import { DiscardParams, DiscardPath, DiscardStyle, NORMAL_STYLES, RIICHI_STYLES, SLIDE_DISCARD, SLIDE_RIICHI, landWeight, markers, phaseAt, pushDistAt, styleParams, totalTime } from '../ui3d/discardMotion';
 import { SyncView, Table3D } from '../ui3d/table3d';
 import { TILE_W, TableLayout, tableDims } from '../ui3d/tableLayout';
 import { GIZMO_COLORS, GIZMO_LABELS, GizmoKind, Gizmos } from './gizmos';
@@ -32,7 +32,7 @@ function labTable(): LabTable {
   return v === '25d' || v === 'v2' ? v : '3d';
 }
 const POND_LABELS: Record<PondStyle, string> = { neat: '整齐', natural: '自然', loose: '随手', messy: '凌乱' };
-const STYLE_LABELS: Record<DiscardStyle, string> = { place: '平放', snap: '拍下', slide: '滑推', spin: '旋转', toss: '轻抛', stand: '立倒', turn: '转横', top: '陀螺', hold: '举高', push: '横推' };
+const STYLE_LABELS: Record<DiscardStyle, string> = { place: '平放', snap: '拍下', slide: '滑推', spin: '旋转', toss: '轻抛', stand: '立倒', turn: '转横', top: '陀螺', hold: '举高', push: '横推', fling: '淡 · 双立直' };
 // 比赛用的 28 毫米牌宽约 21 毫米，拿来把牌桌换算成真实尺寸
 const REAL_TILE_MM = 21;
 
@@ -144,9 +144,9 @@ export class DiscardLab {
       this.timeline.flash(name);
       if (name === 'land') playClick({ weight: landWeight(style) });
     };
-    this.table.onCue = (_seat, _tile, kind) => {
+    this.table.onCue = (_seat, _tile, kind, seconds) => {
       if (this.seeking) return;
-      if (kind === 'scrape') playScrape();
+      if (kind === 'scrape') playScrape(0, seconds);
       else if (kind === 'tap' || kind === 'slap') playClick({ weight: kind === 'tap' ? 'soft' : 'slap' });
     };
     this.gizmos = new Gizmos(this.table.overlay);
@@ -199,9 +199,12 @@ export class DiscardLab {
   // 正在调的参数；出牌动作直接引用这一份，面板上改了马上生效。
   // 选了别的出牌样子时，照牌局里那样在这份参数上按样子调一遍（抬多高、搬多久），是另算出来的一份
   private motion(): DiscardParams {
-    if (this.kind !== '3d') return (this.flatMotion ??= styleParams(this.state.sideways ? SLIDE_RIICHI : SLIDE_DISCARD, this.state.style, true));
+    // 横推推多远看落在一行里的第几格（第三行放不下的接着往右排）
+    const slot = this.state.pondSlot;
+    const push = pushDistAt(slot - Math.min(2, Math.floor(slot / 6)) * 6);
+    if (this.kind !== '3d') return (this.flatMotion ??= styleParams(this.state.sideways ? SLIDE_RIICHI : SLIDE_DISCARD, this.state.style, true, push));
     const p = this.paramsPanel.params;
-    return this.state.style === 'place' ? p : styleParams(p, this.state.style);
+    return this.state.style === 'place' ? p : styleParams(p, this.state.style, false, push);
   }
 
   private get style(): DiscardStyle {
@@ -413,7 +416,7 @@ export class DiscardLab {
 
     const tables = (Object.keys(TABLE_LABELS) as LabTable[]).map((k) => this.chip('table', k, TABLE_LABELS[k], k === this.kind)).join('');
     const ponds = (Object.keys(POND_LABELS) as PondStyle[]).map((k) => this.chip('pondfx', k, POND_LABELS[k], k === s.pond)).join('');
-    const styles = (s.sideways ? RIICHI_STYLES : NORMAL_STYLES).map((k) => this.chip('style', k, k === 'place' && s.sideways ? '重拍' : STYLE_LABELS[k], k === s.style)).join('');
+    const styles = (s.sideways ? [...RIICHI_STYLES, 'fling' as const] : NORMAL_STYLES).map((k) => this.chip('style', k, k === 'place' && s.sideways ? '重拍' : STYLE_LABELS[k], k === s.style)).join('');
 
     this.sceneTab.innerHTML = `
       <section>
@@ -494,6 +497,7 @@ export class DiscardLab {
       this.replay(true);
     } else if (act === 'pond') {
       s.pondSlot = +v;
+      this.flatMotion = null;
       this.renderScene();
       this.replay(true);
     } else if (act === 'sideways') {

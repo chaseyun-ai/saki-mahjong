@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TILE_H, TILE_T, TILE_W } from './tableLayout';
+import { POND_GAP, TILE_H, TILE_T, TILE_W } from './tableLayout';
 
 // 出牌动作：给定参数和时间 t，算出这一刻手腕该在哪、伸手权重多少、牌在哪。
 // 不保存任何状态，同样的参数和时间永远得到同样的姿势，所以牌桌和动作调试场景共用它，
@@ -16,6 +16,11 @@ export interface DiscardParams {
   arcMax: number; // 手离开休息位置时最多往上拱多高（米）
   leanMax: number; // 伸手时身体最多前倾多少（弧度）
   wristBend: number; // 伸出去的手腕往下弯多少（弧度）
+}
+
+// 某一次出牌用的参数：在上面那些之外，还带着这一次才知道的量（styleParams 填）
+export interface DiscardMotion extends DiscardParams {
+  pushDist?: number; // 横推：横着放在落点右边多远再推过来（牌宽），不给是 PUSH_SIDE。推得匀速，远的推得久
 }
 
 export const DEFAULT_DISCARD: DiscardParams = {
@@ -44,10 +49,14 @@ export const SLIDE_RIICHI: DiscardParams = { ...SLIDE_DISCARD, lift: 2 };
 //   平常的牌：snap 拍（抬高了直着拍下去）、slide 滑（放在跟前往前一推）、spin 旋（手指一搓，牌在半空平着转一圈）、
 //             toss 抛（半路松手，牌翻个跟头落下去弹两下）、stand 立倒（立着放下，往前一推倒成牌面朝上）
 //   立直宣言牌：turn 转横（先竖着放下，按着转成横的）、top 陀螺（落在旁边像陀螺一样转，慢下来滑进位置）、
-//             hold 举高（举到半空停一下再砸下去）、push 横推（横着放在右边，一把推过去靠上前一张）
-export type DiscardStyle = 'place' | 'snap' | 'slide' | 'spin' | 'toss' | 'stand' | 'turn' | 'top' | 'hold' | 'push';
-export const NORMAL_STYLES: DiscardStyle[] = ['place', 'snap', 'slide', 'spin', 'toss', 'stand'];
-export const RIICHI_STYLES: DiscardStyle[] = ['place', 'turn', 'top', 'hold', 'push'];
+//             hold 举高（举到半空停一下再砸下去）、push 横推（横着放在右边，匀速推过去靠上前一张）
+//   角色自己的：fling 回旋（大星淡的双立直：从右手边跟前往左前方甩出去，牌面朝上平着转，走一道圆弧落到牌河第一格）。
+//             不在设置里，也不随机抽，牌桌看是谁、是不是双立直来用
+export type DiscardStyle = 'place' | 'snap' | 'slide' | 'spin' | 'toss' | 'stand' | 'turn' | 'top' | 'hold' | 'push' | 'fling';
+// 设置里能选、随机会抽到的那些（角色自己的那一套不算）
+export type CommonStyle = Exclude<DiscardStyle, 'fling'>;
+export const NORMAL_STYLES: CommonStyle[] = ['place', 'snap', 'slide', 'spin', 'toss', 'stand'];
+export const RIICHI_STYLES: CommonStyle[] = ['place', 'turn', 'top', 'hold', 'push'];
 
 // 落桌那一下多响：soft 轻轻放下，click 平常的一声，slap 重重拍下去
 export type LandWeight = 'soft' | 'click' | 'slap';
@@ -78,10 +87,23 @@ const TOP_SIDE = 1.62;
 const TOP_NEAR = 0.2;
 const TOP_TURNS = 2.25;
 const TOP_TIME = 0.95;
-// 横推：放在位置右边多远，停多久、推多久
+// 横推：最少放在位置右边多远，停多久，推得多快（牌宽每秒，匀速）
 const PUSH_SIDE = 1.25;
 const PUSH_BEAT = 0.1;
-const PUSH_TIME = 0.16;
+const PUSH_SPEED = 8;
+// 横推的牌放下的地方照人算，不照落点算：手总是落在这一行偏右的那一格（从左数第几格，可以带小数），
+// 所以宣言牌在一行里越靠左推得越远、越久，靠右的只推一小段
+const PUSH_FROM_COL = 4.4;
+// 回旋（淡的双立直）：搬运的前几成是把牌带到右手边跟前（牌面翻朝上），之后甩出去；
+// 出手的地方在落点右边多远、比落点高多少；落在落点右边多远，贴着桌面滑进去要多久；出手以后一共转几圈
+const FLING_WIND = 0.3;
+const FLING_SIDE = 7.5;
+const FLING_UP = 2;
+const FLING_RUN = 1.6;
+const FLING_SKID = 0.48;
+const FLING_TURNS = 3;
+// 往哪边转：-1 是从上面看逆时针（右手从右往左前方甩出去带出来的转向）
+const FLING_DIR = -1;
 // 滑：最多从跟前多远滑过去、滑多久
 const SLIDE_DIST = 1.2;
 const SLIDE_TIME = 0.2;
@@ -100,17 +122,38 @@ const STYLES: Record<DiscardStyle, StyleSpec> = {
   turn: { after: TURN_BEAT + TURN_TIME, land: 'click', declare: TURN_BEAT + TURN_TIME, cues: [['scrape', TURN_BEAT]], grip: 1 + TURN_BEAT + TURN_TIME, room: 0.35 },
   top: { after: TOP_TIME, land: 'click', declare: 0, cues: [['scrape', 0], ['tap', TOP_TIME]], grip: 1, room: 0.5 },
   hold: { after: 0, land: 'slap', declare: 0, cues: [], grip: 1, room: 0 },
-  push: { after: PUSH_BEAT + PUSH_TIME, land: 'soft', declare: PUSH_BEAT + PUSH_TIME, cues: [['scrape', PUSH_BEAT], ['slap', PUSH_BEAT + PUSH_TIME]], grip: 1 + PUSH_BEAT + PUSH_TIME, room: 0 },
+  // （推多久看推多远，见 specOf；这里写的是最短的那一种）
+  push: { after: PUSH_BEAT + PUSH_SIDE / PUSH_SPEED, land: 'soft', declare: PUSH_BEAT + PUSH_SIDE / PUSH_SPEED, cues: [['scrape', PUSH_BEAT], ['slap', PUSH_BEAT + PUSH_SIDE / PUSH_SPEED]], grip: 1 + PUSH_BEAT + PUSH_SIDE / PUSH_SPEED, room: 0 },
+  // （出手比带到右手边晚一点点：手跟着甩出去一小段才松开）
+  fling: { after: FLING_SKID, land: 'click', declare: 0, cues: [['scrape', 0], ['tap', FLING_SKID]], grip: FLING_WIND + 0.1, room: 0 },
 };
 
+// 横推推多久（秒）：匀速，照推多远算
+const pushTime = (p?: DiscardMotion): number => (p?.pushDist ?? PUSH_SIDE) / PUSH_SPEED;
+// 这一次出牌照哪一套时刻走。横推的时刻跟着推多远变，别的样子是固定的
+function specOf(style: DiscardStyle, p?: DiscardMotion): StyleSpec {
+  const spec = STYLES[style];
+  if (style !== 'push') return spec;
+  const t = PUSH_BEAT + pushTime(p);
+  return { ...spec, after: t, declare: t, cues: [['scrape', PUSH_BEAT], ['slap', t]], grip: 1 + t };
+}
+
 export const landWeight = (style: DiscardStyle = 'place'): LandWeight => STYLES[style].land;
-export const afterTime = (style: DiscardStyle = 'place'): number => STYLES[style].after;
-export const declareDelay = (style: DiscardStyle = 'place'): number => STYLES[style].declare;
+export const afterTime = (style: DiscardStyle = 'place', p?: DiscardMotion): number => specOf(style, p).after;
+export const declareDelay = (style: DiscardStyle = 'place', p?: DiscardMotion): number => specOf(style, p).declare;
 export const roomNeeded = (style: DiscardStyle = 'place'): number => STYLES[style].room;
+// 贴着桌面滑的那一声要响多久（秒）
+export function scrapeTime(style: DiscardStyle = 'place', p?: DiscardMotion): number {
+  return style === 'push' ? pushTime(p) : style === 'top' ? 0.6 : style === 'fling' ? FLING_SKID : 0.2;
+}
+// 横推：宣言牌落在这一行从左数第 col 格（0 起）时，横着放在落点右边多远再推过来（牌宽）
+export function pushDistAt(col: number): number {
+  return Math.max(PUSH_SIDE, (PUSH_FROM_COL - col) * (TILE_W + POND_GAP));
+}
 
 // 这种出牌的快慢和抬多高：在基准参数上调。flat 是 2.5D（没有人物，牌自己飞，基准抬得很低）
-export function styleParams(base: DiscardParams, style: DiscardStyle = 'place', flat = false): DiscardParams {
-  const p = { ...base };
+export function styleParams(base: DiscardParams, style: DiscardStyle = 'place', flat = false, pushDist?: number): DiscardMotion {
+  const p: DiscardMotion = { ...base };
   const hand = (min: number) => (flat ? 0 : Math.max(p.settle, min)); // 手要按到牌不动了再收
   if (style === 'snap') {
     p.lift = Math.max(base.lift * 1.45, 1.9);
@@ -143,7 +186,13 @@ export function styleParams(base: DiscardParams, style: DiscardStyle = 'place', 
   } else if (style === 'push') {
     p.lift = base.lift * 0.6;
     p.carry = base.carry * 1.2;
-    p.settle = hand(PUSH_BEAT + PUSH_TIME + 0.1);
+    if (pushDist !== undefined) p.pushDist = pushDist;
+    p.settle = hand(PUSH_BEAT + pushTime(p) + 0.1);
+  } else if (style === 'fling') {
+    // 带到右手边、甩出去、飞过去一共这么久；lift 是带到右手边那一段抬多高
+    p.lift = 0.5;
+    p.carry = Math.max(base.carry * 2.7, 0.9);
+    p.settle = flat ? 0 : base.settle;
   }
   return p;
 }
@@ -192,12 +241,12 @@ const smooth = (x: number) => x * x * (3 - 2 * x);
 const easeOut = (x: number) => 1 - (1 - x) * (1 - x) * (1 - x);
 
 // 落桌以后牌自己还在动的（陀螺要转将近一秒），整个动作到牌停下才算完；2.5D 没有收手，也是等牌停
-export function totalTime(p: DiscardParams, hold = 0, style: DiscardStyle = 'place'): number {
-  return p.reach + p.carry + Math.max(p.settle + hold + p.back, afterTime(style));
+export function totalTime(p: DiscardMotion, hold = 0, style: DiscardStyle = 'place'): number {
+  return p.reach + p.carry + Math.max(p.settle + hold + p.back, afterTime(style, p));
 }
 
 // 出发、抓住、落桌、松手、收回的时刻
-export function markers(p: DiscardParams, hold = 0, style: DiscardStyle = 'place'): Marker[] {
+export function markers(p: DiscardMotion, hold = 0, style: DiscardStyle = 'place'): Marker[] {
   return [
     { name: 'depart', t: 0 },
     { name: 'grab', t: p.reach },
@@ -209,7 +258,7 @@ export function markers(p: DiscardParams, hold = 0, style: DiscardStyle = 'place
 
 // 已经报过 fired 个标记，到时刻 t 为止又经过了哪些（按顺序）。
 // 一帧跨过好几个标记时全部按顺序报出来；t 传 Infinity 就是把剩下的全报完（动作被打断时用）
-export function dueMarkers(p: DiscardParams, hold: number, fired: number, t: number, style: DiscardStyle = 'place'): Marker[] {
+export function dueMarkers(p: DiscardMotion, hold: number, fired: number, t: number, style: DiscardStyle = 'place'): Marker[] {
   const due: Marker[] = [];
   for (const m of markers(p, hold, style).slice(fired)) {
     // 时间是一帧帧累加出来的，差一点点浮点零头也算到了
@@ -220,9 +269,9 @@ export function dueMarkers(p: DiscardParams, hold: number, fired: number, t: num
 }
 
 // 落桌以后的动静各在什么时刻（从出发算起，按时间排好）。立直宣言成立（declare）每种样子都有一个
-export function cues(p: DiscardParams, style: DiscardStyle = 'place'): Cue[] {
+export function cues(p: DiscardMotion, style: DiscardStyle = 'place'): Cue[] {
   const land = p.reach + p.carry;
-  const spec = STYLES[style];
+  const spec = specOf(style, p);
   const list: Cue[] = spec.cues.map(([kind, t]) => ({ kind, t: land + t }));
   // 举高：停在半空的时候闪一下
   if (style === 'hold') list.push({ kind: 'glint', t: p.reach + p.carry * HOLD_RISE });
@@ -230,7 +279,7 @@ export function cues(p: DiscardParams, style: DiscardStyle = 'place'): Cue[] {
   return list.sort((a, b) => a.t - b.t);
 }
 
-export function dueCues(p: DiscardParams, fired: number, t: number, style: DiscardStyle = 'place'): Cue[] {
+export function dueCues(p: DiscardMotion, fired: number, t: number, style: DiscardStyle = 'place'): Cue[] {
   const due: Cue[] = [];
   for (const c of cues(p, style).slice(fired)) {
     if (c.t > t + 1e-9) break;
@@ -239,7 +288,7 @@ export function dueCues(p: DiscardParams, fired: number, t: number, style: Disca
   return due;
 }
 
-export function phaseAt(p: DiscardParams, t: number, hold = 0, style: DiscardStyle = 'place'): DiscardPhase {
+export function phaseAt(p: DiscardMotion, t: number, hold = 0, style: DiscardStyle = 'place'): DiscardPhase {
   if (t < p.reach) return 'reach';
   if (t < p.reach + p.carry) return 'carry';
   if (t < p.reach + p.carry + p.settle + hold) return 'settle';
@@ -248,14 +297,14 @@ export function phaseAt(p: DiscardParams, t: number, hold = 0, style: DiscardSty
 }
 
 // 手腕在接触点的后上方，手指正好捏住牌
-function grip(p: DiscardParams, path: DiscardPath, at: THREE.Vector3, raise: number): THREE.Vector3 {
+function grip(p: DiscardMotion, path: DiscardPath, at: THREE.Vector3, raise: number): THREE.Vector3 {
   return at
     .clone()
     .addScaledVector(path.toward, path.scale * p.gripBack)
     .addScaledVector(UP, path.scale * p.gripUp + raise);
 }
 
-export function sampleDiscard(p: DiscardParams, path: DiscardPath, t: number): DiscardPose {
+export function sampleDiscard(p: DiscardMotion, path: DiscardPath, t: number): DiscardPose {
   const hold = path.hold ?? 0;
   const style = path.style ?? 'place';
   if (style !== 'place') return sampleStyled(p, path, t, style);
@@ -330,7 +379,7 @@ const halfAlong = (e: number) => (TILE_H * Math.abs(Math.cos(e)) + TILE_W * Math
 const halfAcross = (e: number) => (TILE_W * Math.abs(Math.cos(e)) + TILE_H * Math.abs(Math.sin(e))) / 2;
 
 // 牌这一刻在哪：tc 是抓起来以后过了多久（搬运 + 落桌以后自己动的那一段）。end 是落点（落桌以后用已经放下的位置）
-function tileAt(p: DiscardParams, path: DiscardPath, style: DiscardStyle, tc: number, end: THREE.Vector3): TilePose {
+function tileAt(p: DiscardMotion, path: DiscardPath, style: DiscardStyle, tc: number, end: THREE.Vector3): TilePose {
   const T = path.toward;
   const R = new THREE.Vector3().crossVectors(UP, T);
   const dir = path.spin ?? 1;
@@ -424,17 +473,54 @@ function tileAt(p: DiscardParams, path: DiscardPath, style: DiscardStyle, tc: nu
     return { pos: apex.lerp(end, u * u * u), quat: hang.slerp(toQ, clamp01(u * 1.5)) };
   }
   if (style === 'push') {
-    // 横推：横着放在位置右边，停一下，一把推过去靠上前一张
-    const side = end.clone().addScaledVector(R, PUSH_SIDE);
+    // 横推：横着放在位置右边，停一下，匀速推过去靠上前一张
+    const side = end.clone().addScaledVector(R, p.pushDist ?? PUSH_SIDE);
     if (ta <= 0) return { pos: arc(side, p.lift), quat: turn(toQ) };
-    const u = clamp01((ta - PUSH_BEAT) / PUSH_TIME);
-    return { pos: side.lerp(end, u ** 2.4), quat: toQ.clone() };
+    return { pos: side.lerp(end, clamp01((ta - PUSH_BEAT) / pushTime(p))), quat: toQ.clone() };
+  }
+  if (style === 'fling') {
+    // 回旋：先把牌带到右手边跟前（牌面翻朝上），往左前方甩出去——从上面看是一道四分之一圆弧，先朝前、再拐向左，
+    // 一路牌面朝上平着转，越转越慢；落在落点右边，贴着桌面滑进位置，正好转成横的停住
+    const wind = FLING_WIND * p.carry;
+    const flight = p.carry - wind;
+    // 出手以后（飞 + 滑）过了几成：转角照这个算，出手时转得最快
+    const tau = clamp01((tc - wind) / (flight + FLING_SKID));
+    const e = FLING_DIR * FLING_TURNS * 2 * Math.PI * (1 - tau) ** 2;
+    const quat = yawQ(e).multiply(toQ);
+    const land = end.clone().addScaledVector(R, FLING_RUN);
+    if (ta > 0) {
+      // 落桌以后：转着滑进去，牌角不越过左边、里边（和转横、陀螺一样让着）
+      const u = clamp01(ta / FLING_SKID);
+      const at = end
+        .clone()
+        .addScaledVector(R, Math.max(FLING_RUN * (1 - easeOut(u)), halfAlong(e) - TILE_H / 2))
+        .addScaledVector(T, Math.max(halfAcross(e) - TILE_H / 2, 0));
+      return { pos: at, quat };
+    }
+    // 出手的地方：落点右边、手牌跟前（比手里那张靠里一点），比桌面高
+    const near = Math.min(9, Math.max(2.5, path.from.clone().sub(path.to).dot(T) - 0.6));
+    const start = path.to.clone().addScaledVector(R, FLING_SIDE).addScaledVector(T, near).addScaledVector(UP, FLING_UP);
+    if (tc < wind) {
+      const w = smooth(tc / wind);
+      return { pos: path.from.clone().lerp(start, w).addScaledVector(UP, Math.sin(w * Math.PI) * p.lift), quat: path.fromQuat.clone().slerp(quat, easeOut(tc / wind)) };
+    }
+    // 飞：水平是四分之一椭圆（三次贝塞尔），出手朝前、落地朝左；高度先平着飞过牌山再落下去。
+    // 速度略微放慢一点，落地时和接下来滑的那一段差不多快
+    const s = (tc - wind) / flight;
+    const u = 0.8 * s + 0.2 * (1 - (1 - s) ** 2);
+    const dx = FLING_SIDE - FLING_RUN;
+    const c = 0.5523;
+    const bez = (a: number, b: number, d: number, f: number) => (1 - u) ** 3 * a + 3 * (1 - u) ** 2 * u * b + 3 * (1 - u) * u * u * d + u ** 3 * f;
+    const x = bez(dx, dx, dx * c, 0);
+    const z = bez(near, near * (1 - c), 0, 0);
+    const y = bez(FLING_UP, FLING_UP + 0.9, 0.9, 0);
+    return { pos: land.addScaledVector(R, x).addScaledVector(T, z).addScaledVector(UP, y), quat };
   }
   return { pos: arc(end, p.lift), quat: turn(toQ) };
 }
 
 // 手：捏着牌的时候跟着牌走，松手以后停在松手的地方，到该收手了再收回去
-function sampleStyled(p: DiscardParams, path: DiscardPath, t: number, style: DiscardStyle): DiscardPose {
+function sampleStyled(p: DiscardMotion, path: DiscardPath, t: number, style: DiscardStyle): DiscardPose {
   const hold = path.hold ?? 0;
   const phase = phaseAt(p, t, hold, style);
   if (phase === 'reach') {
@@ -449,7 +535,7 @@ function sampleStyled(p: DiscardParams, path: DiscardPath, t: number, style: Dis
       tileQuat: path.fromQuat.clone(),
     };
   }
-  const spec = STYLES[style];
+  const spec = specOf(style, p);
   const tc = t - p.reach;
   // 落桌以后照着已经放下的位置算（之后落点变了，比如被人鸣走，这里不跟着跳）
   const end = tc >= p.carry ? (path.landed ?? path.to) : path.to;

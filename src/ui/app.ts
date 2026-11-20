@@ -9,7 +9,7 @@ import { tornado2d } from './tornado2d';
 import { flapPages } from '../ui3d/flapBoard';
 import { DARK, FLICK, FLICKER } from '../ui3d/lamp';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
-import { awaiCornerKan, awaiDomainOn, awaiFields, awaiKanUra, awaiSourceOn, awaiStars, awaiWaveTiles } from '../abilities/awai';
+import { awaiCornerKan, awaiDomainOn, awaiFields, awaiKanUra, awaiKanUraHit, awaiSourceOn, awaiStars, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
@@ -74,7 +74,7 @@ import { fmtPts } from '../story/soloView';
 import { type HandEvent, recordHands } from '../story/hands';
 import { type NationalTab, saveTab, savedTab } from '../story/tabs';
 import { hash01, paceOf, pickDiscardStyle, pondJitter, pondStyleOf, vary } from './vary';
-import { type DiscardStyle, landWeight } from '../ui3d/discardMotion';
+import { type DiscardStyle, landWeight, pushDistAt } from '../ui3d/discardMotion';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
@@ -134,8 +134,18 @@ const FRESH_2D: Record<DiscardStyle, { ms: number; sounds: [number, Fresh2dSound
   turn: { ms: 520, sounds: [[145, 'click'], [240, 'scrape']] },
   top: { ms: 950, sounds: [[110, 'click'], [130, 'scrape']] },
   hold: { ms: 900, sounds: [[845, 'slap']] },
-  push: { ms: 500, sounds: [[130, 'soft'], [240, 'scrape'], [480, 'slap']] },
+  push: { ms: 400, sounds: [[130, 'soft'], [240, 'scrape'], [380, 'slap']] },
+  fling: { ms: 1150, sounds: [[700, 'click'], [710, 'scrape'], [1130, 'soft']] },
 };
+// 2D 的横推：放下、停一下一共多久（毫秒，和 style.css 的 drop-push-in 一样长），之后匀速推过去，一个牌宽推多久
+const PUSH_2D_IN = 240;
+const PUSH_2D_MS = 125;
+// 这一次出牌的动画多长、什么时候响哪一声：横推照推多远算（push 是推多远，牌宽），别的样子是固定的
+function fresh2d(style: DiscardStyle, push = 0): { ms: number; sounds: [number, Fresh2dSound][] } {
+  if (style !== 'push' || !push) return FRESH_2D[style];
+  const go = Math.round(push * PUSH_2D_MS);
+  return { ms: PUSH_2D_IN + go, sounds: [[130, 'soft'], [PUSH_2D_IN, 'scrape'], [PUSH_2D_IN + go - 20, 'slap']] };
+}
 // 2D 的牌河里牌歪多少：牌小（28 像素宽），转角照 3D 的七成，免得挤到旁边的牌
 const POND_2D_TWIST = 0.7;
 const POND_2D_PX = 28;
@@ -218,7 +228,8 @@ export class App {
   private showResult = false;
   // 刚打出的牌只在第一次画出来时播放落桌动画，之后重绘不再重播
   // 2D 牌桌刚打出来的那一张：哪一张（座位-第几张）、怎么放下去的、什么时候打的（动画没播完又重画时接着播）
-  private freshDiscard: { key: string; style: DiscardStyle; at: number } | null = null;
+  // （push：横推的那一张横着放在落点右边多远再推过来，牌宽）
+  private freshDiscard: { key: string; style: DiscardStyle; at: number; push: number } | null = null;
   // 桃子：这一局已经隐身的座位；正在淡掉的座位（开始的时刻）
   private gone = new Set<number>();
   private vanishAt = new Map<number, number>();
@@ -272,6 +283,8 @@ export class App {
   private shiftRound: { g: Game; round: number } | null = null;
   // 2D：初美聚着风和牌，结算里手牌先倒、和了牌往下砸（哪一家、什么时候开始；结算重画时动画接着放）
   private galeSlam: { seat: number; t0: number } | null = null;
+  // 2D：淡中了杠里的自摸（逆回旋）是哪个座位（结算里手牌逆着翻开，见 style.css 的 .win.slam.whirl）
+  private whirl2d: number | null = null;
   // 2D：照的旋风自摸是哪个座位（结算里砸下去以后那张牌转起来，见 style.css 的 .win.slam.twist）
   private twist2d: number | null = null;
   private netTimer: number | null = null;
@@ -905,9 +918,9 @@ export class App {
         if (name === 'land') playClick({ pan: this.clickPan(seat), varied: true, weight: landWeight(style) });
       };
       // 出牌的花样里落桌以后的动静：弹一下、倒平了的轻响，推到位的重响，贴着桌面滑的沙沙声
-      this.table3d.onCue = (seat, _tile, kind) => {
+      this.table3d.onCue = (seat, _tile, kind, seconds) => {
         const pan = this.clickPan(seat);
-        if (kind === 'scrape') playScrape(pan);
+        if (kind === 'scrape') playScrape(pan, seconds);
         else if (kind === 'tap' || kind === 'slap') playClick({ pan, varied: true, weight: kind === 'tap' ? 'soft' : 'slap' });
       };
       // 自摸砸牌：牌扣到桌上“嗒”一声，翻起来炸开时一记闷响加一阵旋风；咲的岭上开花再加一串铃和风声
@@ -1242,9 +1255,14 @@ export class App {
       const pond = this.game!.players[e.seat].discards;
       // 宣言牌被鸣走以后补横的那一张不是宣言，平放下去，不耍花样
       const plain = !!this.table3d || (!e.riichi && riichiSideIndex(pond) === pond.length - 1);
-      const style = plain ? 'place' : pickDiscardStyle(this.chars[e.seat]?.id ?? '', !!e.riichi, e.riichi ? this.settings.riichiFx : this.settings.discardFx);
-      this.freshDiscard = { key: `${e.seat}-${pond.length - 1}`, style, at: Date.now() };
-      if (!this.table3d) this.freshSounds(e.seat, style);
+      // 大星淡的双立直是她自己的一套（回旋），设置里选了哪种都照这个来
+      const fling = !!e.riichi && this.chars[e.seat]?.id === 'awai' && this.game!.players[e.seat].doubleRiichi;
+      const style = plain ? 'place' : fling ? 'fling' : pickDiscardStyle(this.chars[e.seat]?.id ?? '', !!e.riichi, e.riichi ? this.settings.riichiFx : this.settings.discardFx);
+      // 横推推多远看这一张落在一行里的第几格（第三行放不下的接着往右排）
+      const n = Math.max(0, pond.filter((d) => !d.called).length - 1);
+      const push = style === 'push' ? pushDistAt(n - Math.min(2, Math.floor(n / 6)) * 6) : 0;
+      this.freshDiscard = { key: `${e.seat}-${pond.length - 1}`, style, at: Date.now(), push };
+      if (!this.table3d) this.freshSounds(e.seat, style, push);
       this.gbSigh(e.seat, e.tile);
       if (e.riichi) {
         playRiichi(this.speak(e.seat, { kind: 'riichi' }) ? VOICED_CUE : 1);
@@ -1427,6 +1445,15 @@ export class App {
         this.galeSlam = { seat: twirl.seat, t0: performance.now() };
         this.twist2d = twirl.seat;
         window.setTimeout(() => this.game === g && this.teruTornado2d(size), slamImpact2d(twirl.hand.filter((t) => t !== twirl.tile).length) * 1000);
+      }
+      // 2D：淡中了杠里的自摸（逆回旋），结算里手牌从和了牌那一头起一张张逆着翻开，亮一下，和了牌再砸下去（3D、2.5D 在牌桌上放）
+      this.whirl2d = null;
+      const whirl = !this.table3d && !slam && !bloom && !twirl ? e.result.wins.find((w) => w.from === null && this.chars[w.seat]?.id === 'awai' && awaiKanUraHit(g, w.seat)) : undefined;
+      if (whirl) {
+        this.galeSlam = { seat: whirl.seat, t0: performance.now() };
+        this.whirl2d = whirl.seat;
+        const pan = this.clickPan(whirl.seat);
+        window.setTimeout(() => this.game === g && playClick({ pan, weight: 'slap' }), (whirlStart2d(whirl.hand.filter((t) => t !== whirl.tile).length) + 0.55) * 1000);
       }
       for (const w of e.result.wins) {
         // 郝慧宇和牌喊「食糊」，国标 24 番以上金色
@@ -3119,7 +3146,7 @@ export class App {
     setSketchTiles(false);
     table.parentElement?.classList.toggle('sketch', sketch);
     // 刚打的那一张动画播完了才不再标着（陀螺要转将近一秒，中间重画不能把它打断）
-    if (this.freshDiscard && Date.now() - this.freshDiscard.at >= FRESH_2D[this.freshDiscard.style].ms) this.freshDiscard = null;
+    if (this.freshDiscard && Date.now() - this.freshDiscard.at >= fresh2d(this.freshDiscard.style, this.freshDiscard.push).ms) this.freshDiscard = null;
     this.renderToasts();
   }
 
@@ -4113,7 +4140,11 @@ export class App {
           classes.push('fresh', `fx-${fresh.style}`);
           // 动画播到一半重画：从播到的地方接着播
           const t = Date.now() - fresh.at;
-          if (t > 30) css.push(`animation-delay:-${t}ms`);
+          if (fresh.style === 'push' && fresh.push) {
+            // 横推是两段动画接起来的（放下、推过去），推多远、推多久照这一张算
+            css.push(`--push:${(fresh.push * POND_2D_PX).toFixed(0)}px`, `--push-ms:${Math.round(fresh.push * PUSH_2D_MS)}ms`);
+            if (t > 30) css.push(`animation-delay:-${t}ms,${PUSH_2D_IN - t}ms`);
+          } else if (t > 30) css.push(`animation-delay:-${t}ms`);
         }
         // 被荣和的那张：留在牌河里发金光，到下一局
         if (ron.has(d.tile)) classes.push('ron');
@@ -4127,10 +4158,11 @@ export class App {
   }
 
   // 2D 牌桌出牌的声音：照这种出牌动画的节奏，落桌、弹起、推到位各响一下
-  private freshSounds(seat: number, style: DiscardStyle): void {
+  private freshSounds(seat: number, style: DiscardStyle, push = 0): void {
     const pan = this.clickPan(seat);
-    for (const [ms, kind] of FRESH_2D[style].sounds) {
-      const play = () => (kind === 'scrape' ? playScrape(pan, style === 'top' ? 0.6 : 0.2) : playClick({ pan, varied: true, weight: kind }));
+    const scrape = style === 'push' && push ? (push * PUSH_2D_MS) / 1000 : style === 'top' ? 0.6 : style === 'fling' ? 0.45 : 0.2;
+    for (const [ms, kind] of fresh2d(style, push).sounds) {
+      const play = () => (kind === 'scrape' ? playScrape(pan, scrape) : playClick({ pan, varied: true, weight: kind }));
       if (ms <= 0) play();
       else window.setTimeout(play, ms);
     }
@@ -4570,11 +4602,14 @@ export class App {
     const since = this.galeSlam?.seat === w.seat && !this.table3d ? (performance.now() - this.galeSlam.t0) / 1000 : Infinity;
     // 照的旋风自摸：牌砸下去以后还要转（风卷完、再转一会儿），放得久一点
     const twist = this.twist2d === w.seat;
+    // 淡的逆回旋：手牌从和了牌那一头起逆着翻开（--i 倒着数），翻完亮一下再砸
+    const whirl = this.whirl2d === w.seat;
     const slam = since < (twist ? 5 : 4);
+    const count = w.hand.filter((t) => t !== w.tile).length;
     const hand = w.hand
       .filter((t) => t !== w.tile)
       .sort((a, b) => a - b)
-      .map((t, i) => tileHtml(t, { size: 'pond', style: slam ? `--i:${i}` : undefined }))
+      .map((t, i) => tileHtml(t, { size: 'pond', style: slam ? `--i:${whirl ? count - 1 - i : i}` : undefined }))
       .join('');
     const yaku = r.yaku.map((y) => `<div class="yaku"><span>${y.name}</span><span>${r.yakuman ? '役满' : `${y.han} 番`}</span></div>`);
     if (r.dora) yaku.push(`<div class="yaku"><span>宝牌</span><span>${r.dora} 番</span></div>`);
@@ -4591,7 +4626,7 @@ export class App {
         ? `<div class="win-art">${url ? `<img src="${url}" alt="" onerror="this.remove()" />` : `<span class="win-glyph">${this.chars[w.seat].name.slice(-1)}</span>`}</div>`
         : '';
     return `
-      <div class="win${slam ? ' slam' : ''}${slam && twist ? ' twist' : ''}" style="--c:${this.chars[w.seat].color}${slam ? `;--t:${(-since).toFixed(3)}s;--slam:${slamStart2d(w.hand.filter((t) => t !== w.tile).length).toFixed(3)}s` : ''}">
+      <div class="win${slam ? ' slam' : ''}${slam && twist ? ' twist' : ''}${slam && whirl ? ' whirl' : ''}" style="--c:${this.chars[w.seat].color}${slam ? `;--t:${(-since).toFixed(3)}s;--slam:${(whirl ? whirlStart2d(count) : slamStart2d(count)).toFixed(3)}s` : ''}">
         ${art}<div class="win-body">
         <h2>${this.chars[w.seat].name} ${how}</h2>
         <div class="win-hand">${hand}<span class="gap"></span>${tileHtml(w.tile, { size: 'pond', classes: ['win-tile'] })}<span class="gap"></span>${this.meldsHtml(w.melds, w.seat)}</div>
@@ -4917,6 +4952,10 @@ function fxSparksHtml(kind: string): string {
 // 和 style.css 里 .win.slam 的动画对得上
 function slamStart2d(handTiles: number): number {
   return Math.max(0, handTiles - 1) * 0.035 + 0.22 + 0.05;
+}
+// 2D 淡的逆回旋：手牌一张隔 0.045 秒翻开（每张 0.6 秒），翻完亮 0.4 秒，和了牌才举起来。和 style.css 里 .win.slam.whirl 的动画对得上
+function whirlStart2d(handTiles: number): number {
+  return Math.max(0, handTiles - 1) * 0.045 + 0.6 + 0.4;
 }
 function slamImpact2d(handTiles: number): number {
   return slamStart2d(handTiles) + 0.55;
