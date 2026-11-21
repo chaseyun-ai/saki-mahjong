@@ -9,6 +9,7 @@ import { tornado2d } from './tornado2d';
 import { flapPages } from '../ui3d/flapBoard';
 import { DARK, FLICK, FLICKER } from '../ui3d/lamp';
 import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
+import { CUTIN, CUTIN_TIME, playAwaiCutIn, preloadAwaiCutIn } from '../ui3d/awaiCutIn';
 import { awaiCornerKan, awaiDomainOn, awaiFields, awaiKanUra, awaiKanUraHit, awaiSourceOn, awaiStars, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
 import { mihokoEyeOpen } from '../abilities/mihoko';
@@ -136,7 +137,7 @@ const FRESH_2D: Record<DiscardStyle, { ms: number; sounds: [number, Fresh2dSound
   hold: { ms: 900, sounds: [[845, 'slap']] },
   push: { ms: 560, sounds: [[130, 'soft'], [370, 'scrape'], [540, 'slap']] },
   brake: { ms: 640, sounds: [[130, 'soft'], [370, 'scrape'], [625, 'soft']] },
-  fling: { ms: 1200, sounds: [[140, 'soft'], [160, 'scrape'], [1180, 'click']] },
+  fling: { ms: 1000, sounds: [[140, 'soft'], [160, 'scrape'], [980, 'click']] },
 };
 // 2D 的横推：放下、停一下一共多久（毫秒，和 style.css 的 drop-push-in 一样长），之后往回带一点、猛地推过去（多久照推多远算，和 3D 一样）
 const PUSH_2D_IN = 240;
@@ -544,6 +545,8 @@ export class App {
       ?.insertAdjacentHTML('beforeend', '<button data-ui="water-test" data-v="koromo">衣 · 海底捞月测试</button><button data-ui="water-test" data-v="toka">透华 · 治水测试</button>');
     // 大星淡的星空：对手没有能力、谁都不鸣牌，每一局都双立直、转角暗杠、杠里自摸
     this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="awai-test">大星淡 · 转角暗杠测试</button>');
+    // 特写测试：淡坐在对家（电脑），自己是没有能力的人、挂机，看她连招自摸时切进来的三角窗
+    this.root.querySelector('.sel-more-menu')?.insertAdjacentHTML('beforeend', '<button data-ui="awai-cutin-test">大星淡 · 连招特写测试（淡坐对家）</button>');
     this.fitDesc();
     // 能换素材的人（页面主人）在视觉设置里多一行“角色素材”
     void canEditSkins().then((ok) => {
@@ -753,6 +756,10 @@ export class App {
 
   // 「大星淡 · 转角暗杠测试」：别家不吃不碰不杠（能荣和照样荣和），摸牌顺序不错开，转角那张一定轮到她
   private quietTable = false;
+  // 特写测试：淡坐在对家，自己也不鸣牌（挂机的时候）
+  private quietSelf = false;
+  // 淡连招自摸的特写窗口（还开着的话，这个函数把它收掉）
+  private cutInStop: (() => void) | null = null;
   private pendingQuiet = false;
 
   // 「宫永咲 · 岭上开花测试」：自己打咲、开局坐庄，每局配牌都是暗杠、岭上自摸的那一档（cycle 一局一档轮着来）。
@@ -803,8 +810,8 @@ export class App {
   }
 
   // with：测试用，下家固定坐这位（白水哩和姬子同桌）；stage：测试用的摆牌（见 Game 的 Stage）；
-  // opts.dealer 测试用的起家，opts.chisui 透华不管设置开局就治水
-  private startGame(charId: string, withId?: string, stage?: Stage, opts: { dealer?: number; chisui?: boolean; opponents?: string[] } = {}): void {
+  // opts.dealer 测试用的起家，opts.chisui 透华不管设置开局就治水，opts.auto 一开局就挂机（自己坐庄时第一手也是电脑打）
+  private startGame(charId: string, withId?: string, stage?: Stage, opts: { dealer?: number; chisui?: boolean; opponents?: string[]; auto?: boolean } = {}): void {
     const mine = CHARACTERS.find((c) => c.id === charId)!;
     const seed = Math.floor(Math.random() * 2 ** 31);
     // 对手：设置里选了的照选的坐，随机的从其余角色里抽（测试局可以直接指定）
@@ -812,11 +819,11 @@ export class App {
     const others = opts.opponents?.map((id) => CHARACTERS.find((c) => c.id === id)!) ?? pickOpponents(pick, charId, new Rng(seed ^ 0x5a17));
     this.team = null;
     this.soloMatch = null;
-    this.auto = false;
+    this.auto = !!opts.auto;
     const st = this.settings;
     const chisui = opts.chisui ?? st.chisui;
     const firstDealer = opts.dealer ?? Math.floor(Math.random() * 4);
-    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer, players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me, startForm: i === this.me && ((c.id === 'toka' && chisui) || (c.id === 'saki' && !stage && st.sakiStrong) || (c.id === 'awai' && !stage && st.awaiClassic)) })), stage }));
+    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer, players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !opts.auto, startForm: i === this.me && ((c.id === 'toka' && chisui) || (c.id === 'saki' && !stage && st.sakiStrong) || (c.id === 'awai' && !stage && st.awaiClassic)) })), stage }));
   }
 
   // 公开手牌：单人对局按设置，团体赛不公开
@@ -852,6 +859,11 @@ export class App {
     this.pendingRiiTest = false;
     this.quietTable = this.pendingQuiet;
     this.pendingQuiet = false;
+    this.quietSelf = false;
+    this.cutInStop?.();
+    this.cutInStop = null;
+    // 桌上有淡：特写用的手模、牌面先备好
+    if (this.settings.awaiCutIn && chars.some((c) => c?.id === 'awai')) void preloadAwaiCutIn();
     useRiiLook(this.riiTest ? 'test' : 'main');
     this.chars = chars;
     this.game = game;
@@ -935,6 +947,8 @@ export class App {
         if (kind === 'scrape') playScrape(pan, seconds);
         else if (kind === 'tap' || kind === 'slap' || kind === 'knock') playClick({ pan, varied: true, weight: kind === 'tap' ? 'soft' : 'slap' });
       };
+      // 淡中了杠里的自摸：手牌开始逆着翻的时候，特写窗口切进来（试做，设置里能关）
+      this.table3d.onWhirl = (seat, delay) => this.awaiCutIn(seat, delay);
       // 自摸砸牌：牌扣到桌上“嗒”一声，翻起来炸开时一记闷响加一阵旋风；咲的岭上开花再加一串铃和风声
       this.table3d.onSlam = (seat, lily, phase) => {
         if (phase === 'press') {
@@ -1052,7 +1066,8 @@ export class App {
       const ron = ai.some((s) => g.legalActions(s).some((a) => a.type === 'ron'));
       this.timer = window.setTimeout(() => {
         for (const s of ai) {
-          const quiet = this.quietTable && s !== this.me ? (g.legalActions(s).find((a) => a.type === 'ron') ?? g.legalActions(s).find((a) => a.type === 'pass')) : undefined;
+          // 安静的测试局：别人只荣和、不鸣牌（淡自己照常打：转角之前她不荣和）
+          const quiet = this.quietTable && (s !== this.me || this.quietSelf) && this.chars[s]?.id !== 'awai' ? (g.legalActions(s).find((a) => a.type === 'ron') ?? g.legalActions(s).find((a) => a.type === 'pass')) : undefined;
           g.act(s, quiet ?? chooseAction(g, s, this.chars[s].ai));
         }
         this.step();
@@ -1472,11 +1487,13 @@ export class App {
       this.whirl2d = null;
       const whirl = !this.table3d && !slam && !bloom && !twirl ? e.result.wins.find((w) => w.from === null && this.chars[w.seat]?.id === 'awai' && awaiKanUraHit(g, w.seat)) : undefined;
       if (whirl) {
-        this.galeSlam = { seat: whirl.seat, t0: performance.now() };
+        // 有特写时先演特写：结算、结算里翻牌的动画和声音都往后挪 hold 秒
+        const hold = this.awaiCutIn(whirl.seat, CUTIN.snap);
+        this.galeSlam = { seat: whirl.seat, t0: performance.now() + hold * 1000 };
         this.whirl2d = whirl.seat;
         const pan = this.clickPan(whirl.seat);
-        window.setTimeout(() => this.game === g && playClick({ pan, weight: 'slap' }), 1000);
-        window.setTimeout(() => this.game === g && playClick({ pan, weight: 'slap' }), (whirlStart2d() + 0.55) * 1000);
+        window.setTimeout(() => this.game === g && playClick({ pan, weight: 'slap' }), (hold + whirlStart2d() - 0.45) * 1000);
+        window.setTimeout(() => this.game === g && playClick({ pan, weight: 'slap' }), (hold + whirlStart2d() + 0.55) * 1000);
       }
       for (const w of e.result.wins) {
         // 郝慧宇和牌喊「食糊」，国标 24 番以上金色
@@ -2820,8 +2837,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、咲的标准 / 加强、动画开关是别处的设置，留着
-      const { chisui, sakiStrong, awaiClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle, xfade } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, awaiClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, layout, hand, slam, slamOrder, slamStyle, xfade };
+      const { chisui, sakiStrong, awaiClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, slam, slamOrder, slamStyle, xfade } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, awaiClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, slam, slamOrder, slamStyle, xfade };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -2887,10 +2904,15 @@ export class App {
       this.root.querySelector('details.sel-more[open]')?.removeAttribute('open');
       // 对手固定成没有能力的三位，挂机看（点「挂机中」可以接管）
       this.pendingQuiet = true;
-      this.startGame('awai', undefined, undefined, { opponents: SEA_TEST_OPPONENTS });
-      this.auto = true;
-      if (this.game) this.game.manual[this.me] = false;
-      this.render();
+      this.startGame('awai', undefined, undefined, { opponents: SEA_TEST_OPPONENTS, auto: true });
+      return;
+    }
+    if (el.dataset.ui === 'awai-cutin-test') {
+      this.root.querySelector('details.sel-more[open]')?.removeAttribute('open');
+      // 自己是二条泉，淡坐对家，另外两家也没有能力；谁都不鸣牌，挂机看（点「挂机中」可以接管）
+      this.pendingQuiet = true;
+      this.startGame('izumi', undefined, undefined, { opponents: ['hajime', 'awai', 'tomoki'], auto: true });
+      this.quietSelf = true;
       return;
     }
     if (el.dataset.ui === 'saki-test') {
@@ -3074,6 +3096,26 @@ export class App {
   // 只看随机数和角色，不看手牌好坏，免得玩家能从停顿读出谁快听牌了。立直后摸切不会长考
   private thinkMs(g: Game, seat: number, median: number): number {
     return vary.think(median, paceOf(this.chars[seat]?.id ?? ''), g.players[seat].riichi);
+  }
+
+  // 试做：淡连招自摸（双立直、转角暗杠、杠里）的特写——画面一角切进来漫画式的三角窗，她的手把整排牌逆着翻起来。
+  // delay：牌桌上的手牌再过几秒开始翻；窗口提前一点切进来，手甩出去的那一下正好对上
+  // 返回从现在到特写演完有几秒（不演就是 0）
+  private awaiCutIn(seat: number, delay: number): number {
+    const g = this.game;
+    const host = document.querySelector<HTMLElement>('.stage3d') ?? document.querySelector<HTMLElement>('.stage .table');
+    const w = g?.roundResult?.wins.find((x) => x.seat === seat);
+    if (!this.settings.awaiCutIn || !g || !host || !w) return 0;
+    const tiles = g.players[seat].hand.filter((t) => t !== w.tile).sort((a, b) => a - b);
+    // 窗口躲开她在画面上的位置：她在下面、右边时放左上，在上面放左下，在左边放右上
+    const corner = (['tl', 'tl', 'bl', 'tr'] as const)[(seat - this.me + 4) % 4];
+    // 现在就搭好场景，等到牌桌上那一下再开演（换局时 beginGame 会收掉）
+    const wait = Math.max(0, delay - CUTIN.snap) * 1000;
+    this.cutInStop?.();
+    this.cutInStop = playAwaiCutIn(host, { tiles, corner, back: tableColors().back }, wait);
+    // 结算等特写演完再出来（2D 的结算来得快，不等的话窗口还没收就被盖住了）
+    this.riiHold = Math.max(this.riiHold, Date.now() + wait + CUTIN_TIME * 1000);
+    return wait / 1000 + CUTIN_TIME;
   }
 
   // 落桌声的左右声道：下家在右，上家在左，自己和对家在中间
@@ -4200,7 +4242,7 @@ export class App {
   // 2D 牌桌出牌的声音：照这种出牌动画的节奏，落桌、弹起、推到位各响一下
   private freshSounds(seat: number, style: DiscardStyle, push = 0): void {
     const pan = this.clickPan(seat);
-    const scrape = isPush(style) && push ? pushSeconds(push, style === 'brake').all - pushSeconds(push).wind : style === 'top' ? 0.6 : style === 'fling' ? 0.85 : 0.2;
+    const scrape = isPush(style) && push ? pushSeconds(push, style === 'brake').all - pushSeconds(push).wind : style === 'top' ? 0.6 : style === 'fling' ? 0.68 : 0.2;
     for (const [ms, kind] of fresh2d(style, push).sounds) {
       const play = () => (kind === 'scrape' ? playScrape(pan, scrape) : playClick({ pan, varied: true, weight: kind }));
       if (ms <= 0) play();
@@ -4995,9 +5037,9 @@ function fxSparksHtml(kind: string): string {
 function slamStart2d(handTiles: number): number {
   return Math.max(0, handTiles - 1) * 0.035 + 0.22 + 0.05;
 }
-// 2D 淡的逆回旋：整排手牌在半空逆着翻滚 1 秒落下来，亮 0.45 秒，和了牌才举起来。和 style.css 里 .win.slam.whirl 的动画对得上
+// 2D 淡的逆回旋：整排手牌在半空逆着翻滚 0.72 秒落下来，亮 0.45 秒，和了牌才举起来。和 style.css 里 .win.slam.whirl 的动画对得上
 function whirlStart2d(): number {
-  return 1 + 0.45;
+  return 0.72 + 0.45;
 }
 // 和了牌砸下去以后多久开始翻里宝牌指示牌，相邻两张隔多久，一张翻多久（秒；和 style.css 里 .ura-flip 的动画对得上）
 const URA_2D = { lead: 0.5, gap: 0.22, turn: 0.34 };

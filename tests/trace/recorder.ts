@@ -63,6 +63,9 @@ let inApply = false;
 const hookStack: string[] = [];
 let nestedOutside = 0;
 
+// 这一次摸牌里被 forceNext 强行换走的牌
+const forcedAway = new Set<TileId>();
+
 const say = (text: string) => curDraw?.lines.push(text);
 
 function where(w: Wall): Map<TileId, string> {
@@ -151,6 +154,18 @@ function install() {
     );
   }
 
+  patch(Wall.prototype, 'forceNext', (orig) =>
+    function (this: Wall, rinshan: boolean, ...rest: unknown[]) {
+      const old = rinshan ? this.rinshan[0] : this.live[0];
+      const ok = orig.call(this, rinshan, ...rest);
+      if (ok && old !== undefined) {
+        forcedAway.add(old);
+        say(`  · [${hookStack.at(-1) ?? (inApply ? '对账' : '其他')}] forceNext → 强行换走 ${tileText(old)}，换上 ${tileText(rinshan ? this.rinshan[0] : this.live[0])}`);
+      }
+      return ok;
+    },
+  );
+
   patch(Game.prototype, 'startRound', (orig) =>
     function (this: Game) {
       curDeal = { round: '', swaps: [], hooks: [] };
@@ -189,6 +204,7 @@ function install() {
       const head = rinshan ? w.rinshan[0] : w.live[0];
       const pub0 = publicView(this);
       const pos0 = where(w);
+      forcedAway.clear();
       const locked0 = [...w.locked].map((t) => ({ t, at: pos0.get(t)!, owners: w.locked.ownersOf(t) }));
       rec.conserved = conserved(this);
       say(`摸牌开始：${recorder.names[seat]}（座位 ${seat}）${rinshan ? '摸岭上牌' : '摸牌山'}，下一张是 ${tileText(head)}，牌山剩 ${w.remaining} 张`);
@@ -217,6 +233,7 @@ function install() {
         if (now === expectAt) continue;
         if (rinshan && now.startsWith('补进王牌')) continue;
         if (!w.locked.has(t) && owners.every((o) => o === 'koromo')) continue; // 衣解开自己的海底锁，重新安排
+        if (!w.locked.has(t) && forcedAway.has(t)) continue; // 被强行换走的下一张（衣的海底路线换掉淡留好的和了牌）：锁转到了换上来的那张身上
         rec.locksStay = false;
       }
       curDraw = null;

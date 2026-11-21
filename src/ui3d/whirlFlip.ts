@@ -5,7 +5,7 @@ import { TILE_H, TILE_T } from './tableLayout';
 // 落下来正好牌面朝上摊在桌上。只算一张牌的姿势，不碰牌桌
 
 // 翻滚多久（秒）；一共逆着翻几圈（带四分之三圈：开头是立着的，落下去是牌面朝上躺着的）；一开始悬在多高（牌宽）；先再往上飘多少
-export const WHIRL_TIME = 1.1;
+export const WHIRL_TIME = 0.8;
 export const WHIRL_TURNS = 2.75;
 export const WHIRL_HEIGHT = 3.3;
 export const WHIRL_RISE = 1.1;

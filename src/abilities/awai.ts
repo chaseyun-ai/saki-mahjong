@@ -60,7 +60,7 @@ export const AWAI = {
   starsDeal: 0.05,
   // 重做版：星符汇聚按下时掷一次，这么大概率一路摸到凑成大七星；掷不中就摸到中途星符消散（至少摸到 1 张，最多摸到还差 2 张）。
   // 1 是每次都凑得成（初版）。别人抢先和了也算不成，所以实际做成的比这个数低
-  starsFate: 0.65,
+  starsFate: 0.67,
   // 重做版：连招（双立直、转角暗杠、杠里、自摸）只算跳满，别的役、宝牌、赤宝牌、多的里宝牌一概不给。false 是不管（初版）
   comboCap: true,
   // 字牌手里有几种字牌：四、五、六、七种各占多少；每种有多大概率是一对
@@ -550,7 +550,8 @@ function idleDraws(g: Game, hand: number[]): boolean[] {
 
 // 转角暗杠的位置（live 的下标，配牌前算）：开局后摸牌经过的第 2 个转角前、轮到她摸的那张。
 // 要在她立直之后（她至少摸过三次），杠完还得再摸一次；第 2 个转角来不及（太靠近海底）时退到第 1 个转角
-// spare：后面多留几张（连招只算跳满时：别人再开一杠，她杠完的下一张也不是海底）
+// spare：杠完下一张（转角后面第 4 张）后面还要留几张牌山。连招只算跳满时留 1 张：
+// 开杠以后牌山尾巴补进王牌一张，不留的话她那张和了牌正好成了海底牌（多一番海底捞月）
 function cornerSlot(g: Game, seat: number, spare = 0): number | null {
   const sum = g.dice[0] + g.dice[1];
   const rel = (seat - g.dealer + 4) % 4;
@@ -925,7 +926,7 @@ export const awaiAbility: Ability = {
         const want = [...plan.kinds].sort((a, b) => a - b).join();
         g.addDealRule({ seat, ability: 'awai', text: '天听配牌', target: seat, bad: (hand) => ([...hand].map(kindOf).sort((a, b) => a - b).join() === want ? 0 : 1) });
         // 第四张放在第 2 个转角前她摸的位置，锁住
-        const slot = cornerSlot(g, seat, cap ? 2 : 0) ?? cornerSlot(g, seat);
+        const slot = cornerSlot(g, seat, cap ? 1 : 0);
         const kan = plan.kan;
         const isKan = (t: TileId) => kindOf(t) === kan;
         if (slot !== null && (w.bringToLive(slot, isKan, g.rng, (j) => j >= 52) || w.bringToLive(slot, isKan, g.rng, (j) => !mineSet.has(j)))) {

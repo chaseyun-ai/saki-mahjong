@@ -340,8 +340,8 @@ describe('出牌的样子', () => {
         turned += cur.tileQuat.angleTo(prev.tileQuat);
         prev = cur;
       }
-      // 途中转了三整圈，停下来正好是横的
-      expect(turned).toBeCloseTo(2 * Math.PI * 3, 1);
+      // 途中转了四整圈，停下来正好是横的
+      expect(turned).toBeCloseTo(2 * Math.PI * 4, 1);
       // 弧线：中间一点在起点到落点那条直线的右前方
       const mid = flingCurve(corner, p.flingVia, TO, 0.5);
       const k = (mid.z - TO.z) / (corner.z - TO.z);

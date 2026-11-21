@@ -84,6 +84,13 @@ function stageDraw(g: Game, seat: number, rinshan: boolean, me: number): void {
   if (p.riichi) {
     // 立直以后：摸到和的那一张
     for (const k of RIICHI_WIN) if (bringToFront(g, (t) => kindOf(t) === k && !isRed(t))) return;
+    // 没锁的都不在牌山里了（淡的转角暗杠正好是 2s，5s 又都在别人手里）：别人锁着的也拿，锁解掉
+    const w = g.wall;
+    const j = w.live.findIndex((t, i) => i > 0 && RIICHI_WIN.includes(kindOf(t)) && !isRed(t));
+    if (j > 0) {
+      w.locked.delete(w.live[j]);
+      swap(w.live, 0, w.live, j);
+    }
     return;
   }
   if (p.discards.length > 0) return;

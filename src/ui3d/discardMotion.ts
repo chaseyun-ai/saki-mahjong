@@ -117,11 +117,13 @@ const BRAKE_PER = 0.05;
 const BRAKE_RAMP = 0.22;
 const BRAKE_DRAG = 2.6;
 // 回旋（淡的双立直）：牌面朝上放到右手边的桌角，贴着桌面甩出去，转着滑一道弧线到落点。
-// 贴着桌面滑多久；一共转几圈（整数圈：放下时就是横的，停下也是横的）；越滑越慢的劲头（指数）；
+// 贴着桌面滑多久；一共转几圈（整数圈：放下时就是横的，停下也是横的）；越滑越慢、越转越慢的劲头（指数）；
 // 牌桌没给起点时，起点在落点右边多远、靠自己这边多远；弧线原本想走成多弯（见 flingBow）
-export const FLING_SLIDE = 1.05;
-const FLING_TURNS = 3;
+export const FLING_SLIDE = 0.85;
+export const FLING_TURNS = 4;
 const FLING_DRAG = 2.3;
+// 转得比滑得收得慢一点：四圈在 0.85 秒里转完，开头不至于快到一帧转过小半圈
+const FLING_SPIN_DRAG = 1.7;
 const FLING_SIDE = 12;
 const FLING_NEAR = 8.5;
 export const FLING_BOW = 0.7;
@@ -572,7 +574,7 @@ function tileAt(p: DiscardMotion, path: DiscardPath, style: DiscardStyle, tc: nu
     const start = flingStart(p, path);
     if (ta <= 0) return { pos: arc(start, p.lift), quat: turn(toQ) };
     const tau = clamp01(ta / FLING_SLIDE);
-    const e = FLING_DIR * FLING_TURNS * 2 * Math.PI * (1 - tau) ** 2;
+    const e = FLING_DIR * FLING_TURNS * 2 * Math.PI * (1 - tau) ** FLING_SPIN_DRAG;
     const u = 1 - (1 - tau) ** FLING_DRAG;
     return { pos: flingCurve(start, flingVia(p, path, start), end, u), quat: yawQ(e).multiply(toQ) };
   }

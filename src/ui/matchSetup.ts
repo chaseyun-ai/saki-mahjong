@@ -33,6 +33,8 @@ export interface MatchSettings {
   spotlight: boolean;
   // 和牌转镜头（3D、2.5D 牌桌）：别家和牌时镜头往他那边推过去看倒下的手牌；默认关，镜头不动
   winZoom: boolean;
+  // 试做：大星淡连招自摸（双立直、转角暗杠、杠里）时，画面一角切进来一个漫画式的三角窗，特写她的手把整排牌逆着翻起来
+  awaiCutIn: boolean;
   // 对手：下家、对家、上家坐谁（角色 id），空的是随机
   opponents: string[];
   // 自己用龙门渊透华时开局就是治水（不用等点数变动 10 万）：选人页透华头像旁边的“常态 / 治水”切换
@@ -75,6 +77,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   pondFx: 'char',
   spotlight: false,
   winZoom: false,
+  awaiCutIn: true,
   opponents: ['', '', ''],
   chisui: false,
   sakiStrong: false,
@@ -231,6 +234,7 @@ const ROWS: Row[] = [
   },
   { key: 'spotlight', name: '和牌聚光灯', options: onOff, note: '3D、2.5D 牌桌：手牌一倒，上方几盏灯照着和了的牌，四周暗一点' },
   { key: 'winZoom', name: '和牌转镜头', options: onOff, note: '3D、2.5D 牌桌：别家和牌时镜头推过去看他的手牌' },
+  { key: 'awaiCutIn', name: '淡的连招特写', options: onOff, note: '试做：大星淡连招自摸（双立直、转角暗杠、杠里）时，画面一角切进来漫画式的三角窗，特写她的手把整排牌逆着翻起来' },
   {
     key: 'layout',
     name: '2.5D 布局',
@@ -290,7 +294,7 @@ const ROWS: Row[] = [
 
 // 两个面板各管哪几项（存在同一份设置里）
 const MATCH_KEYS: (keyof MatchSettings)[] = ['length', 'start', 'target', 'tobi', 'red', 'kuitan', 'minHan', 'open'];
-const VISUAL_KEYS: (keyof MatchSettings)[] = ['xfade', 'drawPath', 'vary', 'discardFx', 'riichiFx', 'pondFx', 'spotlight', 'winZoom'];
+const VISUAL_KEYS: (keyof MatchSettings)[] = ['xfade', 'drawPath', 'vary', 'discardFx', 'riichiFx', 'pondFx', 'spotlight', 'winZoom', 'awaiCutIn'];
 
 // 按钮上写的值换回设置里的值
 export function setOption(s: MatchSettings, key: string, value: string): void {

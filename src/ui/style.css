@@ -1450,66 +1450,65 @@ button {
 
 /* 大星淡的双立直 · 回旋：牌面朝上放在右下的桌角，贴着桌面像陀螺一样转着滑一道弧线到位置，越滑越慢 */
 .pond .tile.fresh.fx-fling {
-  animation: drop-fling 1.2s linear;
+  animation: drop-fling 1s linear;
 }
 
 @keyframes drop-fling {
   0% {
     translate: 430px 250px;
-    rotate: 1080deg;
+    rotate: 1440deg;
     opacity: 0;
   }
-  12.5% {
+  15.0% {
     translate: 430px 250px;
-    rotate: 1080deg;
+    rotate: 1440deg;
     opacity: 1;
   }
-  19.8% {
+  22.1% {
     translate: 397px 179px;
-    rotate: 907deg;
+    rotate: 1242deg;
   }
-  27.1% {
+  29.2% {
     translate: 351px 125px;
-    rotate: 750deg;
+    rotate: 1056deg;
   }
-  34.4% {
+  36.3% {
     translate: 297px 85px;
-    rotate: 608deg;
+    rotate: 882deg;
   }
-  41.7% {
+  43.4% {
     translate: 241px 57px;
-    rotate: 480deg;
+    rotate: 722deg;
   }
-  49.0% {
+  50.5% {
     translate: 186px 36px;
-    rotate: 367deg;
+    rotate: 575deg;
   }
-  56.2% {
+  57.5% {
     translate: 136px 22px;
-    rotate: 270deg;
+    rotate: 444deg;
   }
-  63.5% {
+  64.5% {
     translate: 92px 13px;
-    rotate: 187deg;
+    rotate: 326deg;
   }
-  70.8% {
+  71.6% {
     translate: 56px 7px;
-    rotate: 120deg;
+    rotate: 223deg;
   }
-  78.1% {
+  78.7% {
     translate: 30px 3px;
-    rotate: 68deg;
+    rotate: 137deg;
   }
-  85.4% {
+  85.8% {
     translate: 12px 1px;
-    rotate: 30deg;
+    rotate: 69deg;
   }
-  92.7% {
+  92.9% {
     translate: 2px 0px;
-    rotate: 8deg;
+    rotate: 21deg;
   }
 }
-
 @media (prefers-reduced-motion: reduce) {
   .pond .tile.fresh,
   .pond .tile.fresh[class*='fx-'],
@@ -2179,7 +2178,7 @@ button {
 /* 2D：大星淡中了杠里的自摸（逆回旋），整排手牌在半空逆着翻滚（每张转得一样，看着就是一整排在转），落下来摊开，亮一下，和了牌再砸下去 */
 .win.slam.whirl .win-hand > .tile:not(.win-tile) {
   transform-origin: 50% 50%;
-  animation: awai-whirl 1s linear both;
+  animation: awai-whirl 0.72s linear both;
   animation-delay: var(--t, 0s);
 }
 @keyframes awai-whirl {
@@ -11204,4 +11203,64 @@ canvas.rii-sky {
 }
 .glyph-btn small {
   margin: 0;
+}
+
+/* ---------- 大星淡连招自摸的特写（试做，ui3d/awaiCutIn.ts）：漫画式的三角窗，叠在牌桌上面 ---------- */
+.tricut {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  overflow: hidden;
+}
+.tricut-win {
+  position: absolute;
+  inset: 0;
+}
+.tricut-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at var(--cx) var(--cy), rgba(140, 170, 255, 0.55), rgba(60, 60, 160, 0.2) 22%, transparent 46%),
+    linear-gradient(160deg, #0b1038, #1a1456 45%, #070a22);
+}
+/* 集中线：从中心往外的细白线 */
+.tricut-lines {
+  position: absolute;
+  left: calc(var(--cx) - 150vmax);
+  top: calc(var(--cy) - 150vmax);
+  width: 300vmax;
+  height: 300vmax;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0) 0deg 2.2deg, rgba(255, 255, 255, 0.5) 2.5deg 2.9deg, rgba(255, 255, 255, 0) 3.2deg 6.1deg, rgba(200, 215, 255, 0.35) 6.3deg 6.6deg, rgba(255, 255, 255, 0) 6.8deg 11deg);
+  mask-image: radial-gradient(circle, transparent 0, transparent 7vmax, #000 20vmax);
+  -webkit-mask-image: radial-gradient(circle, transparent 0, transparent 7vmax, #000 20vmax);
+  transform-origin: 50% 50%;
+}
+.tricut canvas {
+  position: absolute;
+  display: block;
+}
+.tricut-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--cx) var(--cy), #fff, rgba(255, 255, 255, 0.75) 30%, rgba(255, 255, 255, 0.2) 70%);
+  opacity: 0;
+}
+.tricut-edge {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.tricut-ink {
+  fill: none;
+  stroke: #0a0a12;
+  stroke-linejoin: miter;
+  stroke-miterlimit: 12;
+}
+.tricut-rim {
+  fill: none;
+  stroke: #fff;
+  stroke-linejoin: miter;
+  stroke-miterlimit: 12;
 }

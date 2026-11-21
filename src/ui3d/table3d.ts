@@ -655,6 +655,8 @@ export class Table3D {
   // 落桌以后牌又有动静（又磕了一下、贴着桌面滑）：声音由外面放
   // （seconds：贴着桌面滑的那一声响多久，别的动静不给）
   onCue: ((seat: number, tile: TileId, kind: CueKind, seconds?: number) => void) | null = null;
+  // 淡中了杠里的自摸：整排手牌再过 delay 秒开始逆着翻（牌桌外面的特写窗口跟着切进来，ui3d/awaiCutIn.ts）
+  onWhirl: ((seat: number, delay: number) => void) | null = null;
   // 砸牌（放音效用）：phase 'press' 是牌扣到桌上，'hit' 是牌立起来炸开；lily：咲的岭上开花这一手的基本点（不是就是 null）
   onSlam: ((seat: number, lily: number | null, phase: 'press' | 'hit') => void) | null = null;
   // 天江衣的海底牌砸进海里炸开的那一下（放水声用；扣进水里那一下照常是 onSlam 的 'press'）
@@ -1972,6 +1974,7 @@ export class Table3D {
       // 淡的逆回旋：整排手牌在半空翻滚，比平常倒牌久
       const whirl = r.wins.some((w) => w.seat === s && this.whirlWin(g, w));
       fxAt = Math.max(fxAt, at + (whirl ? WHIRL_TIME : (wave ? (n - 1) * stagger : 0) + TOPPLE_TIME) + 0.1);
+      if (whirl) this.onWhirl?.(s, at - this.now);
     }
     // 初美聚着风和牌：手牌先倒，倒完那张和了牌举起来往桌上砸，砸到的时候才放特效
     const slams: RevealState['slams'] = new Map();
