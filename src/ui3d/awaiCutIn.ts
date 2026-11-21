@@ -71,9 +71,25 @@ let handSource: Promise<THREE.Group> | null = null;
 let atlas: FaceAtlas | null = null;
 let atlasReady: Promise<void> | null = null;
 
+const HAND_URL = 'models/hand-awai.glb';
+
+// 发布页不能直接提供 .glb，那里的模型是 base64 文本（.glb.txt，和人物模型一样，见 avatar.ts），自己解码
+async function loadHand(url: string): Promise<THREE.Group> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.status}`);
+  let buf = await res.arrayBuffer();
+  if (url.endsWith('.txt')) {
+    const raw = atob(new TextDecoder().decode(buf).trim());
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    buf = bytes.buffer;
+  }
+  return (await new GLTFLoader().parseAsync(buf, '')).scene;
+}
+
 // 先把手模、牌面贴图备好（有淡的对局一开始就调），特写切进来时不用等
 export function preloadAwaiCutIn(): Promise<unknown> {
-  handSource ??= new GLTFLoader().loadAsync(new URL('models/hand-awai.glb', document.baseURI).href).then((g) => g.scene);
+  handSource ??= loadHand(HAND_URL);
   if (!atlas) {
     atlas = new FaceAtlas();
     atlasReady = atlas.draw();
