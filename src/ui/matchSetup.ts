@@ -192,20 +192,7 @@ const ROWS: Row[] = [
     ],
   },
   { key: 'vary', name: '微变化', options: onOff, note: '落桌声、出牌快慢、电脑想多久每次差一点点' },
-  {
-    key: 'discardFx',
-    name: '出牌动作',
-    note: '多样是每个人照自己的手风换着来；选了哪一种，所有人都只用那一种',
-    options: [
-      { label: '多样', value: 'varied' },
-      { label: '平放', value: 'place' },
-      { label: '拍下', value: 'snap' },
-      { label: '滑推', value: 'slide' },
-      { label: '旋转', value: 'spin' },
-      { label: '轻抛', value: 'toss' },
-      { label: '立倒', value: 'stand' },
-    ],
-  },
+  // （出牌动作只剩平放一种了，这一项不再显示；设置里的 discardFx 留着，旧存档读进来不出错）
   {
     key: 'riichiFx',
     name: '立直宣言',
@@ -214,10 +201,7 @@ const ROWS: Row[] = [
       { label: '多样', value: 'varied' },
       { label: '重拍', value: 'place' },
       { label: '转横', value: 'turn' },
-      { label: '陀螺', value: 'top' },
-      { label: '举高', value: 'hold' },
-      { label: '横推', value: 'push' },
-      { label: '横推·刹车', value: 'brake' },
+      { label: '横推', value: 'brake' },
     ],
   },
   {

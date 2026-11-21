@@ -62,7 +62,7 @@ function outlineMat(color: THREE.ColorRepresentation, width: number): THREE.Mesh
 
 // ---------- 手模 ----------
 
-interface HandRig {
+export interface HandRig {
   root: THREE.Group; // 手腕在它的原点
   bones: Record<string, THREE.Bone>;
 }
@@ -71,10 +71,10 @@ let handSource: Promise<THREE.Group> | null = null;
 let atlas: FaceAtlas | null = null;
 let atlasReady: Promise<void> | null = null;
 
-const HAND_URL = 'models/hand-awai.glb';
+export const HAND_URL = 'models/hand-awai.glb';
 
 // 发布页不能直接提供 .glb，那里的模型是 base64 文本（.glb.txt，和人物模型一样，见 avatar.ts），自己解码
-async function loadHand(url: string): Promise<THREE.Group> {
+export async function loadHand(url: string): Promise<THREE.Group> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   let buf = await res.arrayBuffer();
@@ -97,7 +97,7 @@ export function preloadAwaiCutIn(): Promise<unknown> {
   return Promise.all([handSource, atlasReady]).catch(() => null);
 }
 
-function buildHand(src: THREE.Group): HandRig {
+export function buildHand(src: THREE.Group, scale: number = CUTIN.handScale): HandRig {
   const root = new THREE.Group();
   const bones: Record<string, THREE.Bone> = {};
   // 同一份模型只用在一个特写里（特写一次只有一个），直接拿来用
@@ -122,13 +122,13 @@ function buildHand(src: THREE.Group): HandRig {
     line.bind(m.skeleton, m.bindMatrix);
     m.parent!.add(line);
   }
-  src.scale.setScalar(CUTIN.handScale);
+  src.scale.setScalar(scale);
   root.add(src);
   return { root, bones };
 }
 
 // 手型：四指三节各弯多少（弧度，往手心）、张开多少；大拇指往手心收多少、弯多少；手腕往上翘多少
-interface HandPose {
+export interface HandPose {
   curl: [number, number, number];
   // 各指比上面多弯多少（食指到小指）
   each: [number, number, number, number];
@@ -138,7 +138,7 @@ interface HandPose {
   wrist: number;
 }
 
-const mixPose = (a: HandPose, b: HandPose, k: number): HandPose => ({
+export const mixPose = (a: HandPose, b: HandPose, k: number): HandPose => ({
   curl: [lerp(a.curl[0], b.curl[0], k), lerp(a.curl[1], b.curl[1], k), lerp(a.curl[2], b.curl[2], k)],
   each: [lerp(a.each[0], b.each[0], k), lerp(a.each[1], b.each[1], k), lerp(a.each[2], b.each[2], k), lerp(a.each[3], b.each[3], k)],
   spread: lerp(a.spread, b.spread, k),
@@ -148,20 +148,20 @@ const mixPose = (a: HandPose, b: HandPose, k: number): HandPose => ({
 });
 
 // 搭着：指尖松松地搭在牌顶上
-const REST: HandPose = { curl: [0.35, 0.5, 0.3], each: [0, -0.04, 0.04, 0.16], spread: 0.05, thumbIn: 0.35, thumbCurl: 0.25, wrist: 0.12 };
+export const REST: HandPose = { curl: [0.35, 0.5, 0.3], each: [0, -0.04, 0.04, 0.16], spread: 0.05, thumbIn: 0.35, thumbCurl: 0.25, wrist: 0.12 };
 // 蓄力：指尖勾住牌顶那条棱，手腕压下去
-const HOOK: HandPose = { curl: [0.5, 0.95, 0.6], each: [0, -0.03, 0.05, 0.2], spread: 0, thumbIn: 0.55, thumbCurl: 0.45, wrist: -0.1 };
+export const HOOK: HandPose = { curl: [0.5, 0.95, 0.6], each: [0, -0.03, 0.05, 0.2], spread: 0, thumbIn: 0.55, thumbCurl: 0.45, wrist: -0.1 };
 // 甩出去：手指一下弹直张开，手腕往上翘
 const FLICK: HandPose = { curl: [-0.22, 0.05, 0.02], each: [0.02, 0, 0.03, 0.1], spread: 0.3, thumbIn: -0.25, thumbCurl: 0.05, wrist: 0.38 };
 // 收势：松下来
-const EASE: HandPose = { curl: [0.1, 0.25, 0.18], each: [0, 0.02, 0.06, 0.16], spread: 0.16, thumbIn: 0.05, thumbCurl: 0.15, wrist: 0.25 };
+export const EASE: HandPose = { curl: [0.1, 0.25, 0.18], each: [0, 0.02, 0.06, 0.16], spread: 0.16, thumbIn: 0.05, thumbCurl: 0.15, wrist: 0.25 };
 
 const Z = new THREE.Vector3(0, 0, 1);
 const Y = new THREE.Vector3(0, 1, 0);
 // 大拇指往手心弯的轴（它斜着朝 +X、-Z 伸出去）
 const THUMB_AXIS = new THREE.Vector3(-1, 0, -1).normalize();
 
-function poseHand(rig: HandRig, p: HandPose): void {
+export function poseHand(rig: HandRig, p: HandPose): void {
   const b = rig.bones;
   b.Hand.quaternion.setFromAxisAngle(Z, p.wrist);
   FINGERS.forEach((f, i) => {

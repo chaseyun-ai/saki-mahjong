@@ -75,7 +75,7 @@ import { fmtPts } from '../story/soloView';
 import { type HandEvent, recordHands } from '../story/hands';
 import { type NationalTab, saveTab, savedTab } from '../story/tabs';
 import { hash01, paceOf, pickDiscardStyle, pondJitter, pondStyleOf, vary } from './vary';
-import { type DiscardStyle, isPush, landWeight, pushDistAt, pushSeconds } from '../ui3d/discardMotion';
+import { type DiscardStyle, isPush, landWeight, pushDistFor, pushSeconds } from '../ui3d/discardMotion';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
@@ -1288,7 +1288,7 @@ export class App {
       // 横推推多远看这一张落在一行里的第几格（第三行放不下的接着往右排）
       const n = Math.max(0, pond.filter((d) => !d.called).length - 1);
       const col = n - Math.min(2, Math.floor(n / 6)) * 6;
-      const push = isPush(style) ? pushDistAt(col) : 0;
+      const push = isPush(style) ? pushDistFor(style, col) : 0;
       this.freshDiscard = { key: `${e.seat}-${pond.length - 1}`, style, at: Date.now(), push };
       // 横推撞上前一张：前一张歪一点（撞上的那一刻才歪）。刹车的那一种自己停住，不撞
       if (push && style === 'push' && col > 0) {

@@ -1396,11 +1396,32 @@ button {
   }
 }
 
-/* 立直宣言牌 · 横推·刹车：一样横着放在旁边、往回带一点，一把推出去，快到位了刹住，轻轻停下（不撞） */
+/* 立直宣言牌 · 横推（刹车）：横着放在右边两个牌宽的地方，右边微微翘起、左边贴着桌面，往回带一点，
+   一把推出去，快到位了刹住，放平了轻轻停下（不撞） */
 .pond .tile.fresh.fx-brake {
   animation:
     drop-push-in 0.24s linear,
     drop-brake-go var(--push-ms, 400ms) linear 0.24s;
+}
+
+.pond .tile.fresh.fx-brake.sideways {
+  animation:
+    drop-push-in 0.24s linear,
+    drop-brake-go var(--push-ms, 400ms) linear 0.24s,
+    drop-brake-tilt calc(0.24s + var(--push-ms, 400ms)) linear;
+}
+
+/* 翘着的右边：横放的牌在画面上往外转一点（左边不动），推的后半段放平 */
+@keyframes drop-brake-tilt {
+  0%,
+  45% {
+    transform: perspective(160px) translateX(-2px) rotateY(-26deg) rotate(-90deg);
+    filter: drop-shadow(3px 2px 2px rgba(0, 0, 0, 0.35));
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: perspective(160px) rotate(-90deg);
+  }
 }
 
 /* 往回带一点；起步很快冲到最快（走掉不到三成路），之后一路刹到停 */

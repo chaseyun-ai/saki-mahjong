@@ -18,7 +18,9 @@ import {
   flingBow,
   flingCurve,
   markers,
+  BRAKE_DIST,
   pushDistAt,
+  pushDistFor,
   sampleDiscard,
   styleParams,
   totalTime,
@@ -49,7 +51,7 @@ for (const flat of [false, true]) {
   for (const style of RIICHI_STYLES) CASES.push({ style, riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, style, flat) });
   // 横推：落在一行里靠左的格子推得远
   for (const col of [0, 2, 5]) CASES.push({ style: 'push', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'push', flat, pushDistAt(col), col > 0) });
-  for (const col of [0, 2, 5]) CASES.push({ style: 'brake', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'brake', flat, pushDistAt(col), col > 0) });
+  for (const col of [0, 2, 5]) CASES.push({ style: 'brake', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'brake', flat, pushDistFor('brake', col), col > 0) });
   // 大星淡的双立直
   CASES.push({ style: 'fling', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'fling', flat) });
 }
@@ -262,27 +264,59 @@ describe('出牌的样子', () => {
     }
   });
 
-  it('横推·刹车：一样横着放在右边、往回带一点，一把推出去很快到最快，之后一路刹到停在落点，不撞前一张', () => {
+  it('横推：一样横着放在右边，起步时右边略微抬起、左边的边贴着桌面，从约两个牌宽处一把推出去，一路刹到停在落点放平', () => {
+    // 牌左下那条边：横着的牌往右是一行的方向（这里是 +x）
+    const R = new THREE.Vector3(1, 0, 0);
+    const UP = new THREE.Vector3(0, 1, 0);
+    const toEdge = R.clone().multiplyScalar(-TILE_H / 2).addScaledVector(UP, -TILE_T / 2);
+    const tableY = TO.y - TILE_T / 2;
     for (const col of [0, 1, 3, 5]) {
-      // 左边有没有前一张都一样：自己刹住，不撞
-      const p = styleParams(SLIDE_RIICHI, 'brake', true, pushDistAt(col), col > 0);
+      // 落在哪一格都从两个牌宽处起步；左边有没有前一张都一样，自己刹住，不撞
+      expect(pushDistFor('brake', col)).toBe(BRAKE_DIST);
+      expect(BRAKE_DIST).toBeCloseTo(2, 6);
+      const p = styleParams(SLIDE_RIICHI, 'brake', true, pushDistFor('brake', col), col > 0);
       expect(p.pushHit).toBe(false);
       const pa = path('brake', true, { landed: TO.clone() });
       const land = p.reach + p.carry;
       const end = land + afterTime('brake', p);
-      const x = (t: number) => sampleDiscard(p, pa, t).tilePos.x - TO.x;
-      expect(x(land + 1e-6)).toBeCloseTo(pushDistAt(col), 4);
-      expect(x(land + 0.09)).toBeCloseTo(pushDistAt(col), 4);
+      const pose = (t: number) => sampleDiscard(p, pa, t);
+      // 牌转了多少（去掉横过来那一下），左下那条边在哪
+      const tiltOf = (t: number) => pose(t).tileQuat.clone().multiply(pa.toQuat.clone().invert());
+      const edge = (t: number) => {
+        const s = pose(t);
+        return s.tilePos.clone().add(toEdge.clone().applyQuaternion(tiltOf(t)));
+      };
+      const angle = (t: number) => 2 * Math.acos(Math.min(1, Math.abs(tiltOf(t).w)));
+      const x = (t: number) => edge(t).x - (TO.x - TILE_H / 2);
+      expect(x(land + 1e-6)).toBeCloseTo(BRAKE_DIST, 4);
+      expect(x(land + 0.09)).toBeCloseTo(BRAKE_DIST, 4);
+      // 起步略微倾斜：十度出头，右边抬起来（右下角比左下角高），左边的边在桌面上
+      expect(angle(land + 0.05)).toBeGreaterThan(0.15);
+      expect(angle(land + 0.05)).toBeLessThan(0.3);
+      const rightBottom = pose(land + 0.05).tilePos.clone().add(R.clone().multiplyScalar(TILE_H / 2).addScaledVector(UP, -TILE_T / 2).applyQuaternion(tiltOf(land + 0.05)));
+      expect(rightBottom.y - tableY).toBeGreaterThan(0.15);
       const dt = 1 / 480;
+      for (let t = land; t <= end + 1e-9; t += dt) {
+        expect(edge(t).y, `t=${(t - land).toFixed(3)}`).toBeCloseTo(tableY, 4);
+        expect(clearance(pose(t).tilePos, pose(t).tileQuat)).toBeGreaterThan(-1e-4);
+      }
+      // 推完放平
+      expect(angle(end)).toBeLessThan(1e-4);
       const go = land + 0.1 + 0.13; // 放下停完、往回带完，开始推
       let back = 0;
       let top = 0;
       let topAt = 0;
+      let prevAngle = Infinity;
       const speeds: number[] = [];
       for (let t = land + 0.1; t + dt <= end + 1e-9; t += dt) {
-        back = Math.max(back, x(t) - pushDistAt(col));
+        back = Math.max(back, x(t) - BRAKE_DIST);
         const v = (x(t) - x(t + dt)) / dt;
-        if (t >= go) speeds.push(v);
+        if (t >= go) {
+          speeds.push(v);
+          // 一边推一边慢慢放平，不会又翘起来
+          expect(angle(t)).toBeLessThanOrEqual(prevAngle + 1e-6);
+          prevAngle = angle(t);
+        }
         if (v > top) [top, topAt] = [v, t];
       }
       expect(back).toBeGreaterThan(0.1);
@@ -294,16 +328,15 @@ describe('出牌的样子', () => {
       for (let i = peak + 2; i < speeds.length; i++) expect(speeds[i]).toBeLessThanOrEqual(speeds[i - 1] + 1e-6);
       expect(speeds.at(-1)!).toBeLessThan(top * 0.05);
       // 刹车占了一大半：推到一半时间的时候已经走过大半的路，剩下的慢慢滑到
-      expect(x((go + end) / 2)).toBeLessThan(pushDistAt(col) * 0.4);
+      expect(x((go + end) / 2)).toBeLessThan(BRAKE_DIST * 0.4);
       // 一路只往左，正好停在落点，不越过去
       for (const v of speeds) expect(v).toBeGreaterThan(-1e-6);
       expect(x(end)).toBeCloseTo(0, 6);
+      expect(pose(end).tilePos.distanceTo(TO)).toBeLessThan(1e-6);
       for (let t = land; t <= end; t += dt) expect(x(t)).toBeGreaterThan(-1e-6);
       // 到头只有轻轻一下，没有撞
       expect(cues(p, 'brake').map((c) => c.kind)).toEqual(['scrape', 'tap', 'declare']);
-      // 比猛推的久一点，但摆好还是在 0.6 秒以内
-      const push = styleParams(SLIDE_RIICHI, 'push', true, pushDistAt(col), col > 0);
-      expect(declareDelay('brake', p)).toBeGreaterThan(declareDelay('push', push));
+      // 摆好还是在 0.6 秒以内
       expect(declareDelay('brake', p)).toBeLessThan(0.6);
     }
   });

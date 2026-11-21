@@ -35,7 +35,7 @@ import { winCounts } from '../ui/winTally';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, POND_ROWS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
-import { CueKind, DEFAULT_DISCARD, DiscardMotion, DiscardParams, DiscardPath, DiscardPose, DiscardStyle, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, afterTime, declareDelay, dueCues, dueMarkers, pushDistAt, sampleDiscard, scrapeTime, styleParams, totalTime } from './discardMotion';
+import { CueKind, DEFAULT_DISCARD, DiscardMotion, DiscardParams, DiscardPath, DiscardPose, DiscardStyle, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, afterTime, declareDelay, dueCues, dueMarkers, isPush, pushDistFor, sampleDiscard, scrapeTime, styleParams, totalTime } from './discardMotion';
 import { CONSOLE_SCALE, type FeltPattern, TableColors, tableColors } from '../ui/theme';
 import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, outline, sealSpot, skinSignColors } from './consoleLooks';
 import { type DiscardFx, POND_LOOKS, type PondFx, type PondStyle, type RiichiFx, hash01, pickDiscardStyle, pondStyleOf, varyDiscard, vary } from '../ui/vary';
@@ -58,6 +58,7 @@ import { type AwaiFieldView, type AwaiStarView, awaiCornerKan, awaiKanUra, awaiK
 import { AwaiFx } from './awaiFx';
 import { DORA_FLIP_TIME, DORA_TURN_TIME, doraFlipPose } from './doraFlip';
 import { WHIRL_TIME, whirlPose } from './whirlFlip';
+import { TEST_HAND_SCALE, TestHand } from './testHand';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -409,6 +410,7 @@ interface HandAnim {
   spin?: number; // 这一次往哪边转（1 或 -1）
   cued?: number; // 落桌以后的动静已经报过几个
   lost?: boolean; // 落桌以后落点变了（牌被鸣走）：不再管这张牌，交给牌桌自己归位
+  testArm?: { shoulder: THREE.Vector3; hide: (on: boolean) => void }; // 试用手模时这一家的右肩
 }
 
 const STACKS_HALF = 9;
@@ -515,6 +517,8 @@ export interface SyncView {
 export class Table3D {
   readonly renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
+  // 试用：出牌时用淡的特写那只手模搬牌（调试场景里的「手模」开关，或者网址带 ?testhand）
+  private testHand: TestHand | null = null;
   camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
   // 改良布局（ortho）：自己的手牌用这个没有透视的镜头单独画一层，朝向、位置跟着主镜头，
   // 大小按手牌那一排离镜头的距离定，手牌在画面上的位置和用主镜头画的一样，只是每张牌没有透视
@@ -836,6 +840,8 @@ export class Table3D {
     this.loop();
     // 调试用：?debug 时可以在控制台里拿到牌桌对象
     if (location.search.includes('debug')) (window as unknown as { table3d: Table3D }).table3d = this;
+    // 试用手模：对局里网址带 ?testhand 就开着
+    if (new URLSearchParams(location.search).has('testhand')) void this.setTestHand(true);
   }
 
   dispose(): void {
@@ -1175,6 +1181,29 @@ export class Table3D {
     if (rest > 1e-6) this.tick(rest);
   }
 
+  // 出牌时用手模搬牌（试用）。手模加载完才显示，返回加载完的时候
+  setTestHand(on: boolean): Promise<void> {
+    if (!on) {
+      if (this.testHand) this.scene.remove(this.testHand.group);
+      this.testHand = null;
+      return Promise.resolve();
+    }
+    if (!this.testHand) {
+      this.testHand = new TestHand(this.style === '3d' ? this.dim.scale : TEST_HAND_SCALE);
+      this.scene.add(this.testHand.group);
+    }
+    return this.testHand.load();
+  }
+
+  // 重新出牌前把手收起来
+  resetTestHand(): void {
+    this.testHand?.hide();
+  }
+
+  get testHandOn(): boolean {
+    return !!this.testHand;
+  }
+
   // 记下人物现在静止的样子，之后 snap 都回到这个样子
   captureIdle(): void {
     for (const c of this.characters) c.avatar?.captureIdle();
@@ -1384,7 +1413,7 @@ export class Table3D {
       if (style === 'fling' && !fling?.via) style = this.pickStyle(e.seat, true, false);
       // （横推推多远看这一张落在一行里的第几格；左边有前一张就撞上去）
       const cell = this.pondCell(e.seat);
-      const motion: DiscardMotion = varyDiscard(styleParams(base, style, flat, pushDistAt(cell.col), cell.col > 0), flat || e.riichi ? 0.5 : 1);
+      const motion: DiscardMotion = varyDiscard(styleParams(base, style, flat, pushDistFor(style, cell.col), cell.col > 0), flat || e.riichi ? 0.5 : 1);
       if (style === 'fling' && fling?.via) Object.assign(motion, { flingFrom: fling.from, flingVia: fling.via });
       if (vanishing) {
         this.gone.add(e.seat);
@@ -5236,6 +5265,7 @@ export class Table3D {
       return true;
     });
     for (const d of this.drawers) d.group.position.z = this.dim.bodyHalf - 0.1 + d.open * DRAWER_OPEN;
+    this.testHand?.update(dt);
   }
 
   // 出牌的起点终点：牌从手里的位置到牌桌给它算好的落点
@@ -5293,6 +5323,20 @@ export class Table3D {
       av.reachTarget = pose.wrist;
       av.reachWeight = pose.weight;
       av.tuning = p;
+    }
+    // 试用的手模：跟着手指捏住牌的点走；人物的手臂就不伸了
+    if (this.testHand?.ready && !a.lost) {
+      // 牌落桌以后还在自己动（推、转）的时候手也按在牌上跟着；横推按在牌右头往左推
+      const moving = pose.holding && pose.phase !== 'reach';
+      const at = moving ? pose.tilePos.clone() : pose.contact.clone();
+      if (moving && a.style && isPush(a.style)) {
+        const k = THREE.MathUtils.clamp((a.t - p.reach - p.carry) / 0.1, 0, 1);
+        at.addScaledVector(new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), path.toward), TILE_H * 0.3 * k);
+      }
+      const arm = av ? (a.testArm ??= { shoulder: new THREE.Vector3(), hide: (on: boolean) => av.hideRightArm(on) }) : undefined;
+      if (arm && av) arm.shoulder.copy(av.rightArm().shoulder);
+      this.testHand.follow({ contact: at, tileQuat: pose.tileQuat, forward: path.toward.clone().negate(), home: path.from, weight: moving ? 1 : pose.weight, holding: pose.holding, arm });
+      if (av) av.reachWeight = 0;
     }
     return true;
   }

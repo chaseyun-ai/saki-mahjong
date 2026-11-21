@@ -3,7 +3,7 @@ import { CHARACTERS } from '../abilities/characters';
 import { playClick, playScrape } from '../ui/sound';
 import { tileHtml } from '../ui/tile';
 import { type PondStyle, vary } from '../ui/vary';
-import { DiscardParams, DiscardPath, DiscardStyle, NORMAL_STYLES, RIICHI_STYLES, SLIDE_DISCARD, SLIDE_RIICHI, landWeight, markers, phaseAt, pushDistAt, styleParams, totalTime } from '../ui3d/discardMotion';
+import { DiscardParams, DiscardPath, DiscardStyle, NORMAL_STYLES, RIICHI_STYLES, SLIDE_DISCARD, SLIDE_RIICHI, landWeight, markers, phaseAt, pushDistFor, styleParams, totalTime } from '../ui3d/discardMotion';
 import { SyncView, Table3D } from '../ui3d/table3d';
 import { TILE_W, TableLayout, tableDims } from '../ui3d/tableLayout';
 import { GIZMO_COLORS, GIZMO_LABELS, GizmoKind, Gizmos } from './gizmos';
@@ -32,7 +32,7 @@ function labTable(): LabTable {
   return v === '25d' || v === 'v2' ? v : '3d';
 }
 const POND_LABELS: Record<PondStyle, string> = { neat: '整齐', natural: '自然', loose: '随手', messy: '凌乱' };
-const STYLE_LABELS: Record<DiscardStyle, string> = { place: '平放', snap: '拍下', slide: '滑推', spin: '旋转', toss: '轻抛', stand: '立倒', turn: '转横', top: '陀螺', hold: '举高', push: '横推', brake: '横推·刹车', fling: '淡 · 双立直' };
+const STYLE_LABELS: Record<DiscardStyle, string> = { place: '平放', snap: '拍下', slide: '滑推', spin: '旋转', toss: '轻抛', stand: '立倒', turn: '转横', top: '陀螺', hold: '举高', push: '横推（猛推）', brake: '横推', fling: '淡 · 双立直' };
 // 比赛用的 28 毫米牌宽约 21 毫米，拿来把牌桌换算成真实尺寸
 const REAL_TILE_MM = 21;
 
@@ -45,6 +45,9 @@ interface LabState {
   style: DiscardStyle;
   pond: PondStyle; // 牌河摆得多齐
 }
+
+// 用手模搬牌（试用）：换牌桌重建调试场景时记着
+let useHand = new URLSearchParams(location.search).has('testhand');
 
 export class DiscardLab {
   private table: Table3D;
@@ -139,6 +142,7 @@ export class DiscardLab {
     );
     this.table = new Table3D(root.querySelector('#lab-three')!, () => {}, this.kind === '3d' ? '3d' : '25d', this.kind === 'v2');
     this.table.setLayout(this.layoutPanel.params);
+    if (useHand) void this.table.setTestHand(true).then(() => this.replay());
     this.table.onMarker = (_seat, _tile, name, style) => {
       if (this.seeking) return;
       this.timeline.flash(name);
@@ -202,7 +206,7 @@ export class DiscardLab {
     // 横推推多远看落在一行里的第几格（第三行放不下的接着往右排）
     const slot = this.state.pondSlot;
     const col = slot - Math.min(2, Math.floor(slot / 6)) * 6;
-    const push = pushDistAt(col);
+    const push = pushDistFor(this.state.style, col);
     if (this.kind !== '3d') return (this.flatMotion ??= styleParams(this.state.sideways ? SLIDE_RIICHI : SLIDE_DISCARD, this.state.style, true, push, col > 0));
     const p = this.paramsPanel.params;
     return this.state.style === 'place' ? p : styleParams(p, this.state.style, false, push, col > 0);
@@ -229,6 +233,7 @@ export class DiscardLab {
     const view = this.view();
     this.table.sync(scene.game, view);
     this.table.snap();
+    this.table.resetTestHand();
     this.t0 = this.table.time;
     this.table.playDiscard(this.seat, scene.tile, this.motion(), false, this.style);
     applyDiscard(scene, this.setup());
@@ -446,6 +451,7 @@ export class DiscardLab {
       <section>
         <h2>出牌的样子 <small>${s.sideways ? '立直宣言牌' : '平常的牌'}</small></h2>
         <div class="lab-row">${styles}</div>
+        <label class="lab-check"><input type="checkbox" data-act="hand3d" ${useHand ? 'checked' : ''} /> 用手模搬牌（试用：淡的特写那只手）</label>
       </section>
       <section>
         <h2>牌河摆放 <small>四家都照这一种摆</small></h2>
@@ -516,6 +522,9 @@ export class DiscardLab {
       // 换牌桌要整个重建：收拾掉这一个，在原地再开一个
       this.dispose();
       new DiscardLab(this.root, this.onExit, v as LabTable);
+    } else if (act === 'hand3d') {
+      useHand = (el as HTMLInputElement).checked;
+      void this.table.setTestHand(useHand).then(() => this.replay());
     } else if (act === 'pondfx' && v !== s.pond) {
       s.pond = v as PondStyle;
       this.renderScene();

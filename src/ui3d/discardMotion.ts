@@ -54,14 +54,17 @@ export const SLIDE_RIICHI: DiscardParams = { ...SLIDE_DISCARD, lift: 2 };
 //             toss 抛（半路松手，牌翻个跟头落下去弹两下）、stand 立倒（立着放下，往前一推倒成牌面朝上）
 //   立直宣言牌：turn 转横（先竖着放下，按着转成横的）、top 陀螺（落在旁边像陀螺一样转，慢下来滑进位置）、
 //             hold 举高（举到半空停一下再砸下去）、push 横推（横着放在右边，往回带一点再猛地推过去，撞上前一张）、
-//             brake 横推·刹车（一样横着放在右边，一把推出去，快到位了刹住，轻轻停在前一张旁边，不撞）
+//             brake 横推·刹车（横着放在右边两个牌宽的地方，右边微微翘起、左边贴着桌面，一把推出去，快到位了刹住，
+//             放平了轻轻停在前一张旁边，不撞）
+//   弃用的（设置里没有、随机也不抽，留着代码，要用的时候放回下面两张表就行）：
+//             出牌的 snap 拍下、slide 滑推、spin 旋转、toss 轻抛、stand 立倒；立直的 top 陀螺、hold 举高、push 横推（猛推撞歪前一张）
 //   角色自己的：fling 回旋（大星淡的双立直：牌面朝上放在她右手边的桌角，贴着桌面甩出去，像陀螺一样转着走一道圆弧滑到牌河第一格）。
 //             不在设置里，也不随机抽，牌桌看是谁、是不是双立直、路上有没有牌山挡着来用
 export type DiscardStyle = 'place' | 'snap' | 'slide' | 'spin' | 'toss' | 'stand' | 'turn' | 'top' | 'hold' | 'push' | 'brake' | 'fling';
 // 设置里能选、随机会抽到的那些（角色自己的那一套不算）
 export type CommonStyle = Exclude<DiscardStyle, 'fling'>;
-export const NORMAL_STYLES: CommonStyle[] = ['place', 'snap', 'slide', 'spin', 'toss', 'stand'];
-export const RIICHI_STYLES: CommonStyle[] = ['place', 'turn', 'top', 'hold', 'push', 'brake'];
+export const NORMAL_STYLES: CommonStyle[] = ['place'];
+export const RIICHI_STYLES: CommonStyle[] = ['place', 'turn', 'brake'];
 // 横推的两种（猛推、刹车）：横着放在右边再推过来的那一套时刻、路线是共用的
 export const isPush = (style: DiscardStyle | undefined): boolean => style === 'push' || style === 'brake';
 
@@ -116,6 +119,10 @@ const BRAKE_BASE = 0.2;
 const BRAKE_PER = 0.05;
 const BRAKE_RAMP = 0.22;
 const BRAKE_DRAG = 2.6;
+// 刹车的那一种从哪儿推：不管落在第几格，都放在落点右边约两个牌宽的地方
+export const BRAKE_DIST = 2;
+// 放下时右边翘起多少（弧度，绕左边那条贴着桌面的棱）；推的时候跟着放平，推到位正好平了
+const BRAKE_TILT = 0.21;
 // 回旋（淡的双立直）：牌面朝上放到右手边的桌角，贴着桌面甩出去，转着滑一道弧线到落点。
 // 贴着桌面滑多久；一共转几圈（整数圈：放下时就是横的，停下也是横的）；越滑越慢、越转越慢的劲头（指数）；
 // 牌桌没给起点时，起点在落点右边多远、靠自己这边多远；弧线原本想走成多弯（见 flingBow）
@@ -206,7 +213,10 @@ export const roomNeeded = (style: DiscardStyle = 'place'): number => STYLES[styl
 export function scrapeTime(style: DiscardStyle = 'place', p?: DiscardMotion): number {
   return isPush(style) ? thrustTime(style === 'brake' ? ({ ...p, pushBrake: true } as DiscardMotion) : p) : style === 'top' ? 0.6 : style === 'fling' ? FLING_SLIDE * 0.8 : 0.2;
 }
-// 横推：宣言牌落在这一行从左数第 col 格（0 起）时，横着放在落点右边多远再推过来（牌宽）
+// 横推：宣言牌落在这一行从左数第 col 格（0 起）时，横着放在落点右边多远再推过来（牌宽）。刹车的那一种固定两个牌宽
+export function pushDistFor(style: DiscardStyle, col: number): number {
+  return style === 'brake' ? BRAKE_DIST : pushDistAt(col);
+}
 export function pushDistAt(col: number): number {
   return PUSH_SIDE + (PUSH_MAX - PUSH_SIDE) * clamp01((PUSH_NEAR_COL - col) / PUSH_NEAR_COL);
 }
@@ -566,8 +576,21 @@ function tileAt(p: DiscardMotion, path: DiscardPath, style: DiscardStyle, tc: nu
   if (isPush(style)) {
     // 横推：横着放在位置右边，停一下，往回带一点，再猛地推过去（撞上前一张就停）
     const side = end.clone().addScaledVector(R, p.pushDist ?? PUSH_SIDE);
-    if (ta <= 0) return { pos: arc(side, p.lift), quat: turn(toQ) };
-    return { pos: side.lerp(end, pushProgress(p, ta - PUSH_BEAT)), quat: toQ.clone() };
+    if (!p.pushBrake) {
+      if (ta <= 0) return { pos: arc(side, p.lift), quat: turn(toQ) };
+      return { pos: side.lerp(end, pushProgress(p, ta - PUSH_BEAT)), quat: toQ.clone() };
+    }
+    // 刹车的：右边翘起一点，绕左边那条贴着桌面的棱转（横放的牌左右是牌长、上下是牌厚），推的时候放平
+    const tilt = (a: number) => {
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3().crossVectors(R, UP), a);
+      const v = R.clone().multiplyScalar(TILE_H / 2).addScaledVector(UP, TILE_T / 2);
+      return { shift: v.clone().applyQuaternion(q).sub(v), q };
+    };
+    const full = tilt(BRAKE_TILT);
+    if (ta <= 0) return { pos: arc(side.clone().add(full.shift), p.lift), quat: turn(full.q.clone().multiply(toQ)) };
+    const f = pushProgress(p, ta - PUSH_BEAT);
+    const t = tilt(BRAKE_TILT * (1 - clamp01(f)));
+    return { pos: side.lerp(end, f).add(t.shift), quat: t.q.multiply(toQ) };
   }
   if (style === 'fling') {
     // 回旋：牌面朝上放到右手边的桌角，贴着桌面甩出去——像陀螺一样平着转，越转越慢，沿一道弧线滑到落点，正好转成横的停住

@@ -262,6 +262,11 @@ export class Avatar {
     return { shoulder: at(raw('rightUpperArm')), elbow: at(raw('rightLowerArm')), wrist, tip };
   }
 
+  // 试用手模的时候把自己的右臂（连手）缩到肩膀上藏起来
+  hideRightArm(on: boolean): void {
+    this.vrm.humanoid?.getRawBoneNode('rightUpperArm')?.scale.setScalar(on ? 0.001 : 1);
+  }
+
   private bone(name: VRMHumanBoneName): THREE.Object3D | null {
     return this.vrm.humanoid?.getNormalizedBoneNode(name) ?? null;
   }

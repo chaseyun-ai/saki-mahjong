@@ -102,51 +102,48 @@ describe('随机微变化', () => {
 
   it('出牌的样子：设置里选了哪种就是哪种，选多样就照各人的手风换着来', () => {
     vary.reset(21, false);
-    // 选了固定的一种：谁都用它；平常的牌用不了立直宣言的样子，反过来也一样
+    // 平常出牌只剩平放；立直宣言是平放、转横、横推（带刹车的那种）
+    expect(NORMAL_STYLES).toEqual(['place']);
+    expect([...RIICHI_STYLES].sort()).toEqual(['brake', 'place', 'turn']);
     for (const id of ['nodoka', 'yuuki', 'hisa', '']) {
-      for (const k of NORMAL_STYLES) expect(pickDiscardStyle(id, false, k)).toBe(k);
       for (const k of RIICHI_STYLES) expect(pickDiscardStyle(id, true, k)).toBe(k);
+      // 弃用的样子：旧存档里选了也只会平放；原来的横推换成带刹车的
+      for (const k of ['snap', 'slide', 'spin', 'toss', 'stand'] as const) expect(pickDiscardStyle(id, false, k)).toBe('place');
+      for (const k of ['top', 'hold'] as const) expect(pickDiscardStyle(id, true, k)).toBe('place');
+      expect(pickDiscardStyle(id, true, 'push')).toBe('brake');
       expect(pickDiscardStyle(id, true, 'snap')).toBe('place');
-      expect(pickDiscardStyle(id, false, 'top')).toBe('place');
+      expect(pickDiscardStyle(id, false, 'brake')).toBe('place');
     }
     // 多样：只出这一类里的样子，关了微变化也照样换（它有自己的设置）
-    const count = (id: string, riichi: boolean, room = Infinity, flipped = false) => {
+    const count = (id: string, riichi: boolean) => {
       const seen = new Map<string, number>();
       for (let i = 0; i < 4000; i++) {
-        const k = pickDiscardStyle(id, riichi, 'varied', room, flipped);
+        const k = pickDiscardStyle(id, riichi, 'varied');
         expect(riichi ? RIICHI_STYLES : NORMAL_STYLES).toContain(k);
         seen.set(k, (seen.get(k) ?? 0) + 1);
       }
       return seen;
     };
-    const plain = count('', false);
-    expect(plain.size).toBe(NORMAL_STYLES.length);
+    for (const id of ['', 'nodoka', 'yuuki', 'hisa']) expect([...count(id, false).keys()]).toEqual(['place']);
+    const plain = count('', true);
+    expect(plain.size).toBe(RIICHI_STYLES.length);
     // 没特别写的人大多还是平放
-    expect(plain.get('place')!).toBeGreaterThan(4000 * 0.4);
-    expect(count('', true).size).toBe(RIICHI_STYLES.length);
-    // 和规规矩矩，不拍不抛；优希拍的、抛的多
-    const nodoka = count('nodoka', false);
-    expect(nodoka.has('snap') || nodoka.has('toss') || nodoka.has('spin')).toBe(false);
-    const yuuki = count('yuuki', false);
-    expect(yuuki.get('snap')! + yuuki.get('toss')!).toBeGreaterThan(4000 * 0.3);
+    expect(plain.get('place')!).toBeGreaterThan(4000 * 0.35);
     // 不给设置（调试场景）也照手风来
-    expect(NORMAL_STYLES).toContain(pickDiscardStyle('saki', false, undefined));
+    expect(RIICHI_STYLES).toContain(pickDiscardStyle('saki', true, undefined));
+    expect(pickDiscardStyle('saki', false, undefined)).toBe('place');
     vary.reset(0, false);
   });
 
-  it('出牌的样子：跟前放不下的不用，牌河倒着摆的人不立倒', () => {
+  it('出牌的样子：跟前放不下的不用', () => {
     vary.reset(22, true);
     for (const id of ['', 'yuuki', 'shiromi', 'hisa']) {
       for (let i = 0; i < 1500; i++) {
         expect(roomNeeded(pickDiscardStyle(id, false, 'varied', 0))).toBe(0);
         expect(roomNeeded(pickDiscardStyle(id, true, 'varied', 0))).toBe(0);
-        expect(pickDiscardStyle(id, false, 'varied', Infinity, true)).not.toBe('stand');
+        expect(pickDiscardStyle(id, false, 'varied', Infinity, true)).toBe('place');
       }
     }
-    // 固定选了放不下的那种，这一张就平放
-    expect(pickDiscardStyle('', false, 'slide', 0.2)).toBe('place');
-    expect(pickDiscardStyle('', false, 'stand', Infinity, true)).toBe('place');
-    expect(pickDiscardStyle('', false, 'slide', 2)).toBe('slide');
     vary.reset(0, false);
   });
 

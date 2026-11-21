@@ -180,37 +180,37 @@ const HABITS = {
   // 没特别写的人：大多平放，偶尔换个花样
   plain: {
     discard: { place: 52, slide: 16, snap: 12, spin: 8, stand: 8, toss: 4 },
-    riichi: { place: 32, turn: 24, push: 10, brake: 6, hold: 16, top: 12 },
+    riichi: { place: 48, turn: 32, brake: 20 },
     pond: 'natural',
   },
   // 端正：规规矩矩平放，牌河一丝不苟
   neat: {
     discard: { place: 78, slide: 14, stand: 8 },
-    riichi: { turn: 46, place: 30, brake: 16, push: 8 },
+    riichi: { turn: 46, place: 30, brake: 24 },
     pond: 'neat',
   },
   // 文静：轻拿轻放，推过去的多
   gentle: {
     discard: { place: 60, slide: 28, stand: 12 },
-    riichi: { turn: 42, brake: 24, push: 10, place: 24 },
+    riichi: { turn: 42, brake: 34, place: 24 },
     pond: 'natural',
   },
   // 豪快：拍的、抛的多，牌河东倒西歪
   rough: {
     discard: { place: 36, snap: 26, toss: 16, slide: 12, spin: 10 },
-    riichi: { place: 40, hold: 30, top: 18, push: 12 },
+    riichi: { place: 70, brake: 30 },
     pond: 'messy',
   },
   // 爱耍帅：转牌、立倒这些花样多
   showy: {
     discard: { place: 40, spin: 22, snap: 14, stand: 12, slide: 8, toss: 4 },
-    riichi: { top: 34, hold: 30, place: 22, turn: 14 },
+    riichi: { turn: 50, place: 34, brake: 16 },
     pond: 'loose',
   },
   // 懒散：能推就不抬手，牌河松松垮垮
   lazy: {
     discard: { slide: 46, place: 44, toss: 10 },
-    riichi: { push: 22, brake: 22, turn: 36, place: 20 },
+    riichi: { brake: 44, turn: 36, place: 20 },
     pond: 'loose',
   },
 } satisfies Record<string, Habit>;
@@ -292,6 +292,8 @@ function weighted(weights: Partial<Record<DiscardStyle, number>>, allowed: Disca
 export function pickDiscardStyle(id: string, riichi: boolean, fx: DiscardFx | RiichiFx | undefined, room = Infinity, flipped = false): DiscardStyle {
   const all = riichi ? RIICHI_STYLES : NORMAL_STYLES;
   const fits = (k: DiscardStyle) => roomNeeded(k) <= room && !(flipped && k === 'stand');
+  // 横推（猛推）弃用了，原来选它的照横推·刹车来
+  if (fx === 'push') fx = 'brake';
   if (fx && fx !== 'varied') return all.includes(fx) && fits(fx) ? fx : 'place';
   const habit = habitOf(id);
   return weighted(riichi ? habit.riichi : habit.discard, all.filter(fits), vary.next());
