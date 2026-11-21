@@ -94,3 +94,65 @@ export function pondSpots(items: PondItem[], style: PondStyle, salt: number, sea
   }
   return out;
 }
+
+// 牌的四个角（座位自己的坐标）
+function corners(side: boolean, spot: PondSpot): [number, number][] {
+  const w = (side ? TILE_H : TILE_W) / 2;
+  const h = (side ? TILE_W : TILE_H) / 2;
+  const c = Math.cos(spot.yaw);
+  const s = Math.sin(spot.yaw);
+  return [
+    [-w, -h],
+    [w, -h],
+    [w, h],
+    [-w, h],
+  ].map(([x, z]) => [spot.x + x * c + z * s, spot.z - x * s + z * c]);
+}
+
+// 两张牌（凸四边形）是不是挨得比 gap 还近（分离轴）
+function tooClose(a: [number, number][], b: [number, number][], gap: number): boolean {
+  for (const poly of [a, b]) {
+    for (let i = 0; i < 4; i++) {
+      const [x0, z0] = poly[i];
+      const [x1, z1] = poly[(i + 1) % 4];
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      const nx = (z1 - z0) / len;
+      const nz = (x0 - x1) / len;
+      const da = a.map(([x, z]) => x * nx + z * nz);
+      const db = b.map(([x, z]) => x * nx + z * nz);
+      if (Math.max(...da) + gap <= Math.min(...db) || Math.max(...db) + gap <= Math.min(...da)) return false;
+    }
+  }
+  return true;
+}
+
+// 横推的宣言牌撞上前一张：被撞的那张歪一点（knocks 记着哪张牌多歪了多少，弧度），往左让开到不压着撞它的那张；
+// 再往左的牌要是被挤到了也跟着让一点。歪了以后会碰到上一行、下一行的牌就少歪一点。直接改 spots
+export function applyKnocks(items: PondItem[], spots: PondSpot[], knocks: ReadonlyMap<number, number>): void {
+  if (!knocks.size) return;
+  const rowOf = (i: number) => Math.min(POND_ROWS - 1, Math.floor(i / POND_COLS));
+  items.forEach((it, i) => {
+    let yaw = knocks.get(it.tile);
+    if (yaw === undefined) return;
+    const row = rowOf(i);
+    const base = spots[i].yaw;
+    // 别的行里的牌：歪过去不能碰到它们
+    const others = items.map((o, j) => (rowOf(j) === row ? null : corners(o.side, spots[j]))).filter((c) => c !== null);
+    for (let n = 0; n < 12; n++) {
+      const mine = corners(it.side, { ...spots[i], yaw: base + yaw });
+      if (!others.some((o) => tooClose(mine, o, POND_MIN_GAP / 2))) break;
+      yaw *= n < 11 ? 0.75 : 0;
+    }
+    spots[i].yaw = base + yaw;
+    // 右边那张（撞它的宣言牌）不动；没有右边那张（被鸣走了）就只是歪着
+    if (i + 1 >= items.length || rowOf(i + 1) !== row) return;
+    let edge = spots[i + 1].x - pondExtent(items[i + 1].side, spots[i + 1].yaw).hx;
+    for (let j = i; j >= 0 && rowOf(j) === row; j--) {
+      const hx = pondExtent(items[j].side, spots[j].yaw).hx;
+      const most = edge - POND_MIN_GAP - hx;
+      if (spots[j].x <= most) break;
+      spots[j].x = most;
+      edge = most - hx;
+    }
+  });
+}

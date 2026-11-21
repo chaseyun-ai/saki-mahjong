@@ -20,7 +20,10 @@ export interface DiscardParams {
 
 // 某一次出牌用的参数：在上面那些之外，还带着这一次才知道的量（styleParams 填）
 export interface DiscardMotion extends DiscardParams {
-  pushDist?: number; // 横推：横着放在落点右边多远再推过来（牌宽），不给是 PUSH_SIDE。推得匀速，远的推得久
+  pushDist?: number; // 横推：横着放在落点右边多远再推过来（牌宽），不给是 PUSH_SIDE。远的推得久
+  pushHit?: boolean; // 横推：左边有前一张牌，推到头撞上去（越推越快，撞上就停）；没有就自己刹住
+  flingFrom?: THREE.Vector3; // 回旋：牌放到桌上哪里开始滑（桌角，世界坐标），不给是落点右边、跟前的默认位置
+  flingVia?: THREE.Vector3; // 回旋：弧线的控制点（二次贝塞尔，世界坐标），牌桌照着绕开牌山算好给进来；不给是默认的弧
 }
 
 export const DEFAULT_DISCARD: DiscardParams = {
@@ -49,9 +52,9 @@ export const SLIDE_RIICHI: DiscardParams = { ...SLIDE_DISCARD, lift: 2 };
 //   平常的牌：snap 拍（抬高了直着拍下去）、slide 滑（放在跟前往前一推）、spin 旋（手指一搓，牌在半空平着转一圈）、
 //             toss 抛（半路松手，牌翻个跟头落下去弹两下）、stand 立倒（立着放下，往前一推倒成牌面朝上）
 //   立直宣言牌：turn 转横（先竖着放下，按着转成横的）、top 陀螺（落在旁边像陀螺一样转，慢下来滑进位置）、
-//             hold 举高（举到半空停一下再砸下去）、push 横推（横着放在右边，匀速推过去靠上前一张）
-//   角色自己的：fling 回旋（大星淡的双立直：从右手边跟前往左前方甩出去，牌面朝上平着转，走一道圆弧落到牌河第一格）。
-//             不在设置里，也不随机抽，牌桌看是谁、是不是双立直来用
+//             hold 举高（举到半空停一下再砸下去）、push 横推（横着放在右边，往回带一点再猛地推过去，撞上前一张）
+//   角色自己的：fling 回旋（大星淡的双立直：牌面朝上放在她右手边的桌角，贴着桌面甩出去，像陀螺一样转着走一道圆弧滑到牌河第一格）。
+//             不在设置里，也不随机抽，牌桌看是谁、是不是双立直、路上有没有牌山挡着来用
 export type DiscardStyle = 'place' | 'snap' | 'slide' | 'spin' | 'toss' | 'stand' | 'turn' | 'top' | 'hold' | 'push' | 'fling';
 // 设置里能选、随机会抽到的那些（角色自己的那一套不算）
 export type CommonStyle = Exclude<DiscardStyle, 'fling'>;
@@ -60,8 +63,9 @@ export const RIICHI_STYLES: CommonStyle[] = ['place', 'turn', 'top', 'hold', 'pu
 
 // 落桌那一下多响：soft 轻轻放下，click 平常的一声，slap 重重拍下去
 export type LandWeight = 'soft' | 'click' | 'slap';
-// 落桌以后的动静：tap 牌又磕了一下桌子，slap 重的一下，scrape 贴着桌面滑，glint 举在半空闪一下，declare 立直宣言成立（放特效、拿立直棒）
-export type CueKind = 'tap' | 'slap' | 'scrape' | 'glint' | 'declare';
+// 落桌以后的动静：tap 牌又磕了一下桌子，slap 重的一下，scrape 贴着桌面滑，glint 举在半空闪一下，
+// knock 横推的牌撞上前一张（前一张被撞歪一点），declare 立直宣言成立（放特效、拿立直棒）
+export type CueKind = 'tap' | 'slap' | 'scrape' | 'glint' | 'knock' | 'declare';
 export interface Cue {
   kind: CueKind;
   t: number;
@@ -87,21 +91,29 @@ const TOP_SIDE = 1.62;
 const TOP_NEAR = 0.2;
 const TOP_TURNS = 2.25;
 const TOP_TIME = 0.95;
-// 横推：最少放在位置右边多远，停多久，推得多快（牌宽每秒，匀速）
+// 横推：最少放在位置右边多远，放下停多久；先往回带多远（牌宽）、带多久，再猛地推过去：
+// 推多久 = PUSH_BASE + 每个牌宽 PUSH_PER（远的推得久一点，但快得多）；越推越快的劲头（指数，越大起步越慢、到头越猛）
 const PUSH_SIDE = 1.25;
 const PUSH_BEAT = 0.1;
-const PUSH_SPEED = 8;
+const PUSH_BACK = 0.2;
+const PUSH_WIND = 0.13;
+const PUSH_BASE = 0.14;
+const PUSH_PER = 0.035;
+const PUSH_POWER = 2.6;
+// 左边没有牌可撞（一行的第一张）：推到这几成开始自己刹住
+const PUSH_BRAKE = 0.72;
 // 横推的牌放下的地方照人算，不照落点算：手总是落在这一行偏右的那一格（从左数第几格，可以带小数），
 // 所以宣言牌在一行里越靠左推得越远、越久，靠右的只推一小段
 const PUSH_FROM_COL = 4.4;
-// 回旋（淡的双立直）：搬运的前几成是把牌带到右手边跟前（牌面翻朝上），之后甩出去；
-// 出手的地方在落点右边多远、比落点高多少；落在落点右边多远，贴着桌面滑进去要多久；出手以后一共转几圈
-const FLING_WIND = 0.3;
-const FLING_SIDE = 7.5;
-const FLING_UP = 2;
-const FLING_RUN = 1.6;
-const FLING_SKID = 0.48;
+// 回旋（淡的双立直）：牌面朝上放到右手边的桌角，贴着桌面甩出去，转着滑一道弧线到落点。
+// 贴着桌面滑多久；一共转几圈（整数圈：放下时就是横的，停下也是横的）；越滑越慢的劲头（指数）；
+// 牌桌没给起点时，起点在落点右边多远、靠自己这边多远；弧线原本想走成多弯（见 flingBow）
+export const FLING_SLIDE = 1.05;
 const FLING_TURNS = 3;
+const FLING_DRAG = 2.3;
+const FLING_SIDE = 12;
+const FLING_NEAR = 8.5;
+export const FLING_BOW = 0.7;
 // 往哪边转：-1 是从上面看逆时针（右手从右往左前方甩出去带出来的转向）
 const FLING_DIR = -1;
 // 滑：最多从跟前多远滑过去、滑多久
@@ -123,19 +135,38 @@ const STYLES: Record<DiscardStyle, StyleSpec> = {
   top: { after: TOP_TIME, land: 'click', declare: 0, cues: [['scrape', 0], ['tap', TOP_TIME]], grip: 1, room: 0.5 },
   hold: { after: 0, land: 'slap', declare: 0, cues: [], grip: 1, room: 0 },
   // （推多久看推多远，见 specOf；这里写的是最短的那一种）
-  push: { after: PUSH_BEAT + PUSH_SIDE / PUSH_SPEED, land: 'soft', declare: PUSH_BEAT + PUSH_SIDE / PUSH_SPEED, cues: [['scrape', PUSH_BEAT], ['slap', PUSH_BEAT + PUSH_SIDE / PUSH_SPEED]], grip: 1 + PUSH_BEAT + PUSH_SIDE / PUSH_SPEED, room: 0 },
-  // （出手比带到右手边晚一点点：手跟着甩出去一小段才松开）
-  fling: { after: FLING_SKID, land: 'click', declare: 0, cues: [['scrape', 0], ['tap', FLING_SKID]], grip: FLING_WIND + 0.1, room: 0 },
+  push: { after: PUSH_BEAT + PUSH_WIND + PUSH_BASE, land: 'soft', declare: PUSH_BEAT + PUSH_WIND + PUSH_BASE, cues: [], grip: 1 + PUSH_BEAT + PUSH_WIND + PUSH_BASE, room: 0 },
+  // （放到桌角算落桌；手跟着甩出去一小段才松开，牌滑到位宣言才成立）
+  fling: { after: FLING_SLIDE, land: 'soft', declare: FLING_SLIDE, cues: [['scrape', 0], ['tap', FLING_SLIDE]], grip: 1.07, room: 0 },
 };
 
-// 横推推多久（秒）：匀速，照推多远算
-const pushTime = (p?: DiscardMotion): number => (p?.pushDist ?? PUSH_SIDE) / PUSH_SPEED;
+// 横推猛推的那一段多久（秒）：照推多远算
+const thrustTime = (p?: DiscardMotion): number => PUSH_BASE + PUSH_PER * (p?.pushDist ?? PUSH_SIDE);
+// 横推从放下停完算起，往回带、再推到位一共多久（秒）
+const pushTime = (p?: DiscardMotion): number => PUSH_WIND + thrustTime(p);
+// 2D 牌桌用：推多远（牌宽）时，往回带、再推到位一共多久（秒），其中往回带占多久
+export const pushSeconds = (dist: number): { wind: number; all: number } => ({ wind: PUSH_WIND, all: PUSH_WIND + PUSH_BASE + PUSH_PER * dist });
+// 横推推到第几成（x 是放下停完以后过了多久）：0 是放下的地方，1 是落点；往回带的时候是负的。
+// 撞得上前一张的越推越快、撞上就停；撞不上的（一行的第一张）推到 PUSH_BRAKE 成自己刹住
+export function pushProgress(p: DiscardMotion | undefined, x: number): number {
+  const back = PUSH_BACK / (p?.pushDist ?? PUSH_SIDE);
+  if (x <= 0) return 0;
+  if (x < PUSH_WIND) return -back * smooth(x / PUSH_WIND);
+  const s = clamp01((x - PUSH_WIND) / thrustTime(p));
+  let f = s ** PUSH_POWER;
+  if (!p?.pushHit) {
+    const c = PUSH_BRAKE;
+    const top = 0.84;
+    f = s < c ? top * (s / c) ** PUSH_POWER : top + (1 - top) * (1 - (1 - (s - c) / (1 - c)) ** 2);
+  }
+  return -back + (1 + back) * f;
+}
 // 这一次出牌照哪一套时刻走。横推的时刻跟着推多远变，别的样子是固定的
 function specOf(style: DiscardStyle, p?: DiscardMotion): StyleSpec {
   const spec = STYLES[style];
   if (style !== 'push') return spec;
   const t = PUSH_BEAT + pushTime(p);
-  return { ...spec, after: t, declare: t, cues: [['scrape', PUSH_BEAT], ['slap', t]], grip: 1 + t };
+  return { ...spec, after: t, declare: t, cues: [['scrape', PUSH_BEAT + PUSH_WIND], [p?.pushHit ? 'knock' : 'slap', t]], grip: 1 + t };
 }
 
 export const landWeight = (style: DiscardStyle = 'place'): LandWeight => STYLES[style].land;
@@ -144,7 +175,7 @@ export const declareDelay = (style: DiscardStyle = 'place', p?: DiscardMotion): 
 export const roomNeeded = (style: DiscardStyle = 'place'): number => STYLES[style].room;
 // 贴着桌面滑的那一声要响多久（秒）
 export function scrapeTime(style: DiscardStyle = 'place', p?: DiscardMotion): number {
-  return style === 'push' ? pushTime(p) : style === 'top' ? 0.6 : style === 'fling' ? FLING_SKID : 0.2;
+  return style === 'push' ? thrustTime(p) : style === 'top' ? 0.6 : style === 'fling' ? FLING_SLIDE * 0.8 : 0.2;
 }
 // 横推：宣言牌落在这一行从左数第 col 格（0 起）时，横着放在落点右边多远再推过来（牌宽）
 export function pushDistAt(col: number): number {
@@ -152,7 +183,8 @@ export function pushDistAt(col: number): number {
 }
 
 // 这种出牌的快慢和抬多高：在基准参数上调。flat 是 2.5D（没有人物，牌自己飞，基准抬得很低）
-export function styleParams(base: DiscardParams, style: DiscardStyle = 'place', flat = false, pushDist?: number): DiscardMotion {
+// pushHit：横推的这一张左边有没有前一张牌可撞
+export function styleParams(base: DiscardParams, style: DiscardStyle = 'place', flat = false, pushDist?: number, pushHit = false): DiscardMotion {
   const p: DiscardMotion = { ...base };
   const hand = (min: number) => (flat ? 0 : Math.max(p.settle, min)); // 手要按到牌不动了再收
   if (style === 'snap') {
@@ -187,12 +219,13 @@ export function styleParams(base: DiscardParams, style: DiscardStyle = 'place', 
     p.lift = base.lift * 0.6;
     p.carry = base.carry * 1.2;
     if (pushDist !== undefined) p.pushDist = pushDist;
+    p.pushHit = pushHit;
     p.settle = hand(PUSH_BEAT + pushTime(p) + 0.1);
   } else if (style === 'fling') {
-    // 带到右手边、甩出去、飞过去一共这么久；lift 是带到右手边那一段抬多高
-    p.lift = 0.5;
-    p.carry = Math.max(base.carry * 2.7, 0.9);
-    p.settle = flat ? 0 : base.settle;
+    // 搬运是把牌带到右手边的桌角放下（不抬多高）；放下就甩出去，手顿一下再收
+    p.lift = flat ? 0.6 : 1.4;
+    p.carry = Math.max(base.carry * 1.25, 0.36);
+    p.settle = flat ? 0 : Math.max(base.settle, 0.3);
   }
   return p;
 }
@@ -378,6 +411,33 @@ interface TilePose {
 const halfAlong = (e: number) => (TILE_H * Math.abs(Math.cos(e)) + TILE_W * Math.abs(Math.sin(e))) / 2;
 const halfAcross = (e: number) => (TILE_W * Math.abs(Math.cos(e)) + TILE_H * Math.abs(Math.sin(e))) / 2;
 
+// 回旋的牌从哪里开始滑（和落点一样贴着桌面）：牌桌给了就用给的，没给是落点右边、靠自己这边的默认位置
+function flingStart(p: DiscardMotion, path: DiscardPath): THREE.Vector3 {
+  const R = new THREE.Vector3().crossVectors(UP, path.toward);
+  const at = p.flingFrom?.clone() ?? path.to.clone().addScaledVector(R, FLING_SIDE).addScaledVector(path.toward, FLING_NEAR);
+  return at.setY(path.to.y);
+}
+// 回旋的弧线往哪边拱（控制点）：牌桌给了就用给的，没给是从起点先朝前、再拐向左的那一道
+function flingVia(p: DiscardMotion, path: DiscardPath, start: THREE.Vector3): THREE.Vector3 {
+  return (p.flingVia?.clone() ?? flingBow(start, path.to, path.toward, FLING_BOW)).setY(path.to.y);
+}
+// 从 from 到 to 的弧线弯成 bow 时的控制点。toward 是水平方向，从牌指向出牌的人。
+// bow 0 是直线；1 是先笔直朝前、到了落点那一排再拐向左（控制点在起点的正前方、落点的正右方）；
+// 负的反过来，先朝左再朝前。在 -1 到 1 之间弧线一路只往左、往前走，不会滑过头再折回来
+export function flingBow(from: THREE.Vector3, to: THREE.Vector3, toward: THREE.Vector3, bow: number): THREE.Vector3 {
+  const mid = from.clone().add(to).multiplyScalar(0.5);
+  const near = from.clone().sub(to).dot(toward);
+  // 弯的那个角：往前拱的在落点正右方（和起点一样靠右），往左拱的在落点正跟前（和起点一样靠自己）
+  const corner = bow >= 0 ? from.clone().addScaledVector(toward, -near) : to.clone().addScaledVector(toward, near);
+  return mid.lerp(corner, Math.abs(bow));
+}
+// 弧线（二次贝塞尔）走到第 u 成在哪
+export function flingCurve(from: THREE.Vector3, via: THREE.Vector3, to: THREE.Vector3, u: number): THREE.Vector3 {
+  const a = (1 - u) * (1 - u);
+  const b = 2 * u * (1 - u);
+  return from.clone().multiplyScalar(a).addScaledVector(via, b).addScaledVector(to, u * u);
+}
+
 // 牌这一刻在哪：tc 是抓起来以后过了多久（搬运 + 落桌以后自己动的那一段）。end 是落点（落桌以后用已经放下的位置）
 function tileAt(p: DiscardMotion, path: DiscardPath, style: DiscardStyle, tc: number, end: THREE.Vector3): TilePose {
   const T = path.toward;
@@ -473,48 +533,19 @@ function tileAt(p: DiscardMotion, path: DiscardPath, style: DiscardStyle, tc: nu
     return { pos: apex.lerp(end, u * u * u), quat: hang.slerp(toQ, clamp01(u * 1.5)) };
   }
   if (style === 'push') {
-    // 横推：横着放在位置右边，停一下，匀速推过去靠上前一张
+    // 横推：横着放在位置右边，停一下，往回带一点，再猛地推过去（撞上前一张就停）
     const side = end.clone().addScaledVector(R, p.pushDist ?? PUSH_SIDE);
     if (ta <= 0) return { pos: arc(side, p.lift), quat: turn(toQ) };
-    return { pos: side.lerp(end, clamp01((ta - PUSH_BEAT) / pushTime(p))), quat: toQ.clone() };
+    return { pos: side.lerp(end, pushProgress(p, ta - PUSH_BEAT)), quat: toQ.clone() };
   }
   if (style === 'fling') {
-    // 回旋：先把牌带到右手边跟前（牌面翻朝上），往左前方甩出去——从上面看是一道四分之一圆弧，先朝前、再拐向左，
-    // 一路牌面朝上平着转，越转越慢；落在落点右边，贴着桌面滑进位置，正好转成横的停住
-    const wind = FLING_WIND * p.carry;
-    const flight = p.carry - wind;
-    // 出手以后（飞 + 滑）过了几成：转角照这个算，出手时转得最快
-    const tau = clamp01((tc - wind) / (flight + FLING_SKID));
+    // 回旋：牌面朝上放到右手边的桌角，贴着桌面甩出去——像陀螺一样平着转，越转越慢，沿一道弧线滑到落点，正好转成横的停住
+    const start = flingStart(p, path);
+    if (ta <= 0) return { pos: arc(start, p.lift), quat: turn(toQ) };
+    const tau = clamp01(ta / FLING_SLIDE);
     const e = FLING_DIR * FLING_TURNS * 2 * Math.PI * (1 - tau) ** 2;
-    const quat = yawQ(e).multiply(toQ);
-    const land = end.clone().addScaledVector(R, FLING_RUN);
-    if (ta > 0) {
-      // 落桌以后：转着滑进去，牌角不越过左边、里边（和转横、陀螺一样让着）
-      const u = clamp01(ta / FLING_SKID);
-      const at = end
-        .clone()
-        .addScaledVector(R, Math.max(FLING_RUN * (1 - easeOut(u)), halfAlong(e) - TILE_H / 2))
-        .addScaledVector(T, Math.max(halfAcross(e) - TILE_H / 2, 0));
-      return { pos: at, quat };
-    }
-    // 出手的地方：落点右边、手牌跟前（比手里那张靠里一点），比桌面高
-    const near = Math.min(9, Math.max(2.5, path.from.clone().sub(path.to).dot(T) - 0.6));
-    const start = path.to.clone().addScaledVector(R, FLING_SIDE).addScaledVector(T, near).addScaledVector(UP, FLING_UP);
-    if (tc < wind) {
-      const w = smooth(tc / wind);
-      return { pos: path.from.clone().lerp(start, w).addScaledVector(UP, Math.sin(w * Math.PI) * p.lift), quat: path.fromQuat.clone().slerp(quat, easeOut(tc / wind)) };
-    }
-    // 飞：水平是四分之一椭圆（三次贝塞尔），出手朝前、落地朝左；高度先平着飞过牌山再落下去。
-    // 速度略微放慢一点，落地时和接下来滑的那一段差不多快
-    const s = (tc - wind) / flight;
-    const u = 0.8 * s + 0.2 * (1 - (1 - s) ** 2);
-    const dx = FLING_SIDE - FLING_RUN;
-    const c = 0.5523;
-    const bez = (a: number, b: number, d: number, f: number) => (1 - u) ** 3 * a + 3 * (1 - u) ** 2 * u * b + 3 * (1 - u) * u * u * d + u ** 3 * f;
-    const x = bez(dx, dx, dx * c, 0);
-    const z = bez(near, near * (1 - c), 0, 0);
-    const y = bez(FLING_UP, FLING_UP + 0.9, 0.9, 0);
-    return { pos: land.addScaledVector(R, x).addScaledVector(T, z).addScaledVector(UP, y), quat };
+    const u = 1 - (1 - tau) ** FLING_DRAG;
+    return { pos: flingCurve(start, flingVia(p, path, start), end, u), quat: yawQ(e).multiply(toQ) };
   }
   return { pos: arc(end, p.lift), quat: turn(toQ) };
 }

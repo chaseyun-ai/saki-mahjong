@@ -201,10 +201,11 @@ export class DiscardLab {
   private motion(): DiscardParams {
     // 横推推多远看落在一行里的第几格（第三行放不下的接着往右排）
     const slot = this.state.pondSlot;
-    const push = pushDistAt(slot - Math.min(2, Math.floor(slot / 6)) * 6);
-    if (this.kind !== '3d') return (this.flatMotion ??= styleParams(this.state.sideways ? SLIDE_RIICHI : SLIDE_DISCARD, this.state.style, true, push));
+    const col = slot - Math.min(2, Math.floor(slot / 6)) * 6;
+    const push = pushDistAt(col);
+    if (this.kind !== '3d') return (this.flatMotion ??= styleParams(this.state.sideways ? SLIDE_RIICHI : SLIDE_DISCARD, this.state.style, true, push, col > 0));
     const p = this.paramsPanel.params;
-    return this.state.style === 'place' ? p : styleParams(p, this.state.style, false, push);
+    return this.state.style === 'place' ? p : styleParams(p, this.state.style, false, push, col > 0);
   }
 
   private get style(): DiscardStyle {
@@ -232,6 +233,8 @@ export class DiscardLab {
     this.table.playDiscard(this.seat, scene.tile, this.motion(), false, this.style);
     applyDiscard(scene, this.setup());
     this.table.sync(scene.game, view);
+    // 淡的回旋：落点定了才知道从桌角走哪道弧
+    if (this.style === 'fling') this.table.aimFling(this.seat);
     this.table.setOthersVisible(this.seat, !this.hideOthers);
     this.timeline.setMarkers(markers(this.motion(), 0, this.style), this.duration());
     const info = this.table.discardInfo(this.seat);

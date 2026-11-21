@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { POND_LOOKS, type PondStyle, pondStyleOf } from '../src/ui/vary';
-import { type PondItem, pondExtent, pondRows, pondSpots } from '../src/ui3d/pondLayout';
+import { type PondItem, applyKnocks, pondExtent, pondRows, pondSpots } from '../src/ui3d/pondLayout';
 import { POND_COLS, POND_GAP, TILE_H, TILE_W, WALL_Z } from '../src/ui3d/tableLayout';
 
 const STYLES: PondStyle[] = ['neat', 'natural', 'loose', 'messy'];
@@ -121,6 +121,45 @@ describe('牌河摆放', () => {
     expect(spread('natural')).toBeGreaterThan(0);
     expect(spread('loose')).toBeGreaterThan(spread('natural') * 1.5);
     expect(spread('messy')).toBeGreaterThan(spread('loose') * 1.3);
+  });
+
+  it('横推撞歪前一张：被撞的那张歪过去、往左让开，还是谁也不压谁；别的行、右边的牌不动', () => {
+    for (const style of STYLES) {
+      const rows = pondRows(style, POND_Z, WALL_INNER);
+      for (let salt = 1; salt <= 40; salt++) {
+        // 立直宣言牌在第 r 张（不在一行的头一张），撞的是它左边那张
+        const r = 1 + (salt % 5) + 6 * (salt % 3);
+        const items = pond(r + 1 + (salt % 4), r, salt);
+        const plain = pondSpots(items, style, salt * 7919, salt % 4, rows);
+        const spots = pondSpots(items, style, salt * 7919, salt % 4, rows);
+        const yaw = (salt % 2 ? 1 : -1) * (0.045 + 0.03 * ((salt * 37) % 10) / 10);
+        applyKnocks(items, spots, new Map([[items[r - 1].tile, yaw]]));
+        // 歪了，而且是照着撞的方向歪的（空着的地方够就歪足）
+        const turned = spots[r - 1].yaw - plain[r - 1].yaw;
+        expect(Math.sign(turned) || Math.sign(yaw), `${style} salt=${salt}`).toBe(Math.sign(yaw));
+        expect(Math.abs(turned)).toBeLessThanOrEqual(Math.abs(yaw) + 1e-9);
+        if (r + 1 === items.length && r >= 6 === false) expect(Math.abs(turned), `${style} salt=${salt}`).toBeGreaterThan(0.02);
+        // 往左让，最多让一条缝那么宽
+        expect(spots[r - 1].x).toBeLessThanOrEqual(plain[r - 1].x + 1e-9);
+        expect(plain[r - 1].x - spots[r - 1].x).toBeLessThan(0.12);
+        const row = Math.floor((r - 1) / POND_COLS);
+        spots.forEach((s, i) => {
+          const same = Math.min(2, Math.floor(i / POND_COLS)) === row;
+          // 右边的牌、别的行的牌一点不动；同一行左边的只会往左挪一点
+          if (i >= r || !same) expect(s, `${style} salt=${salt} #${i}`).toEqual(plain[i]);
+          else if (i < r - 1) expect(plain[i].x - s.x).toBeGreaterThanOrEqual(-1e-9);
+        });
+        const boxes = spots.map((s, i) => corners(items[i], s));
+        for (let i = 0; i < boxes.length; i++) for (let k = i + 1; k < boxes.length; k++) expect(overlap(boxes[i], boxes[k]), `${style} salt=${salt} #${i}/#${k}`).toBe(false);
+      }
+    }
+    // 没人被撞：原样
+    const items = pond(8, 5, 3);
+    const rows = pondRows('natural', POND_Z, WALL_INNER);
+    const a = pondSpots(items, 'natural', 99, 1, rows);
+    const b = pondSpots(items, 'natural', 99, 1, rows);
+    applyKnocks(items, b, new Map());
+    expect(b).toEqual(a);
   });
 
   it('横放的牌占的地方算对了', () => {

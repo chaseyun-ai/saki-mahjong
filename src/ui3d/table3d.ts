@@ -35,11 +35,12 @@ import { winCounts } from '../ui/winTally';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, POND_ROWS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
-import { CueKind, DEFAULT_DISCARD, DiscardParams, DiscardPath, DiscardPose, DiscardStyle, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, afterTime, declareDelay, dueCues, dueMarkers, pushDistAt, sampleDiscard, scrapeTime, styleParams, totalTime } from './discardMotion';
+import { CueKind, DEFAULT_DISCARD, DiscardMotion, DiscardParams, DiscardPath, DiscardPose, DiscardStyle, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, afterTime, declareDelay, dueCues, dueMarkers, pushDistAt, sampleDiscard, scrapeTime, styleParams, totalTime } from './discardMotion';
 import { CONSOLE_SCALE, type FeltPattern, TableColors, tableColors } from '../ui/theme';
 import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, outline, sealSpot, skinSignColors } from './consoleLooks';
 import { type DiscardFx, POND_LOOKS, type PondFx, type PondStyle, type RiichiFx, hash01, pickDiscardStyle, pondStyleOf, varyDiscard, vary } from '../ui/vary';
-import { type PondItem, pondRows, pondSpots } from './pondLayout';
+import { type Block, planFling, tileBlock } from './flingPath';
+import { type PondItem, applyKnocks, pondRows, pondSpots } from './pondLayout';
 import { HIMEKO_FX, DescentTile, HimekoFx } from './himekoFx';
 import { himekoKeySeat } from '../abilities/himeko';
 import { BeatHit, beatFinal, beatHit, beatLength, beatSeed } from '../ui/himekoBeat';
@@ -55,7 +56,8 @@ import { StarSky } from './starFx';
 import { SpaceWarp } from './warpFx';
 import { type AwaiFieldView, type AwaiStarView, awaiCornerKan, awaiKanUra, awaiKanUraHit } from '../abilities/awai';
 import { AwaiFx } from './awaiFx';
-import { WHIRL_STAGGER, WHIRL_TIME, whirlPose, whirlSpan } from './whirlFlip';
+import { DORA_FLIP_TIME, DORA_TURN_TIME, doraFlipPose } from './doraFlip';
+import { WHIRL_TIME, whirlPose } from './whirlFlip';
 
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
@@ -164,8 +166,27 @@ const DEAL_END = DEAL_SORT + SORT_TILT + 0.15;
 // 倒牌：宣言后停一下，手牌依次（或一起）往前倒，倒完再放和牌特效
 const REVEAL_DELAY = 0.7;
 const TOPPLE_TIME = 0.24;
-// 大星淡中了杠里的自摸（逆回旋，whirlFlip.ts）：手牌从和了牌那一头起一张张跳起来逆着翻开；翻完亮 WHIRL_SHOW 秒，和了牌才拍下去
-const WHIRL_SHOW = 0.4;
+// 大星淡中了杠里的自摸（逆回旋，whirlFlip.ts）：整排手牌在半空逆着翻滚、落下来摊开；亮 WHIRL_SHOW 秒，和了牌才拍下去
+const WHIRL_SHOW = 0.45;
+// 接着把宝牌那几墩（上面宝牌指示牌、下面里宝牌指示牌）拿到身前，宝牌挪到跟前，里宝牌从上往下翻开：
+// 和牌特效放完多久开始；拿过来多久、抬多高，相邻两墩差多久；停一下；宝牌挪下来多久；再停一下；里宝牌一张张翻，相邻两张隔多久；翻完停多久
+const URA_LEAD = 0.55;
+const URA_CARRY = 0.6;
+const URA_LIFT = 2;
+const URA_CARRY_GAP = 0.06;
+const URA_BEAT = 0.14;
+const URA_SPLIT = 0.3;
+const URA_FLIP_GAP = 0.22;
+const URA_TAIL = 0.2;
+// 摆在身前哪里（座位自己的坐标，牌宽）：牌河右边隔开一点（左右中心离多远起、一墩占多宽），里宝牌那一排离中心多远，宝牌挪到它跟前
+const URA_X0 = 4.35;
+const URA_PITCH = TILE_W + 0.08;
+const URA_Z = 5.05;
+const URA_DORA_Z = URA_Z + TILE_H + 0.1;
+// 淡的回旋：起点离桌角（桌布的边）多远
+const FLING_CORNER_IN = 1.1;
+// 横推的宣言牌把前一张撞歪多少（弧度，最少、最多）
+const KNOCK_YAW: [number, number] = [0.045, 0.075];
 // 改良布局：自己和牌（流局听牌）时照雀魂：宣言后 V2_STAND 秒，眼前那排大手牌换成桌上立着的一排（桌上牌的大小、手牌那条线），
 // 自摸的那张悬在右边上方，过 V2_PLACE 秒落到隔开一点的地方立好，再停 V2_HOLD 秒，整排和别家一样往前倒。
 // 荣和：点到的那张不进手牌，一直留在放铳的人的牌河里（闪电打在那张上），手牌立起来、停一下就倒
@@ -318,8 +339,8 @@ interface RevealState {
   boltAt: number | null; // 闪电打在和的那张牌上的时间（3D 不放闪电），放过了就是 null
   stagger: number; // 一张张往下倒，相邻两张隔多久
   wins: { seat: number; tsumo: boolean; tile: TileId }[];
-  // whirl：淡的逆回旋，这一张不是往前倒，是跳起来逆着翻（animateReveal）
-  topple: Map<TileId, { at: number; from: Placement | null; whirl?: boolean }>;
+  // whirl：淡的逆回旋，这一排不是往前倒，是整排在半空逆着翻滚落下来（animateReveal）：整排落定以后的中心、排的方向
+  topple: Map<TileId, { at: number; from: Placement | null; whirl?: { center: THREE.Vector3; axis: THREE.Vector3; landed: boolean } }>;
   // 改良布局的自己：什么时候在桌上立起来、自摸那张什么时候落好（不涉及自己时是 null）
   standAt: number | null;
   placeAt: number | null;
@@ -340,6 +361,10 @@ interface RevealState {
   // twist：宫永照连和中自摸（风多大，0–1），拍下去以后牌面朝上在桌上打转、卷起龙卷风；不是 null
   // whirl：大星淡中了杠里的自摸，手牌先逆着翻开，牌举在半空多等一会儿再拍
   tsumoSlam: { seat: number; tile: TileId; start: number; hitAt: number; revealAt?: number; started: boolean; lily: number | null; sea: boolean; twist: number | null; whirl: boolean; style: SlamStyle } | null;
+  // 淡的逆回旋自摸以后：把宝牌那几墩拿到身前，翻出里宝牌（animateUraShow）。at 开始的时间；stacks 每一墩上下两张；
+  // kan 杠里是第几墩（那张里宝牌最后翻，翻开了流星才飞）；side 摆在牌河右边（1）还是左边（-1）；
+  // from 开始时各张牌在牌山上的样子；step 做到第几步了（响过哪些声音）；starAt 流星什么时候飞；end 全部做完的时间
+  uraShow: { seat: number; at: number; stacks: { dora: TileId; ura: TileId }[]; kan: number; side: 1 | -1; from: Map<TileId, Placement> | null; step: number; starred: boolean; starAt: number; end: number } | null;
 }
 
 interface Flight {
@@ -583,6 +608,13 @@ export class Table3D {
   private handAnims: HandAnim[] = [];
   // 这一局牌河摆放的随机微变化用哪一套（vary.ts 的 pondJitter）
   private pondSalt = 0;
+  // 被横推的宣言牌撞歪的牌：多歪了多少（弧度）。一局一清
+  private knocks = new Map<TileId, number>();
+  // 这一局已经翻开过几张宝牌指示牌（-1：新的一局还没看过）；正在翻的那几张什么时候开始翻
+  private doraSeen = -1;
+  private doraFlips = new Map<TileId, number>();
+  // 淡翻到身前的里宝牌里已经亮过一下的
+  private uraLit = new Set<TileId>();
   private flights: Flight[] = [];
   // 别人打出的牌还在半空时摸到的牌：先留在牌山原处，落桌后再飞进手里
   private heldDraw: { seat: number; tile: TileId; at: number; from: Placement } | null = null;
@@ -1264,7 +1296,7 @@ export class Table3D {
     if (this.heldDraw) until = Math.max(until, this.heldDraw.at);
     // 衣的海底捞月：牌还没捞上来、飞进手里
     if (this.scoop) until = Math.max(until, this.now + SCOOP_TIME - this.scoop.t);
-    if (this.reveal) until = Math.max(until, this.reveal.fxAt + (this.starUraWin ? STAR_URA_TIME : 0));
+    if (this.reveal) until = Math.max(until, Math.max(this.reveal.fxAt, this.reveal.uraShow?.starAt ?? 0) + (this.starUraWin ? STAR_URA_TIME : 0), this.reveal.uraShow?.end ?? 0);
     until = Math.max(until, this.fxHold);
     // 白水哩的锁链在变金、崩断
     for (const c of this.chains) if (c && !c.locking) until = Math.max(until, this.now + c.remaining());
@@ -1310,6 +1342,10 @@ export class Table3D {
       this.rushAt = -1;
       // 牌河里每张牌歪多少换一套：同一张牌这一局一直歪成一样，下一局换个样子
       this.pondSalt = Math.floor(vary.next() * 2 ** 31);
+      this.knocks.clear();
+      this.doraSeen = -1;
+      this.doraFlips.clear();
+      this.uraLit.clear();
     }
     if (e.type === 'draw') {
       // 发牌动画里庄家的第一张不用另外飞。上家打的牌还在半空就先等它落桌
@@ -1340,9 +1376,14 @@ export class Table3D {
       // 随机微变化：每次出牌快慢、抬多高都差一点；2.5D 照雀魂调的节奏和立直宣言牌只变一半
       const base = e.riichi ? (flat ? SLIDE_RIICHI : RIICHI_DISCARD) : flat ? SLIDE_DISCARD : DEFAULT_DISCARD;
       // 出牌的样子：照设置和这个人的手风挑一种（隐身那一张不放立直特效，照平常的牌挑）
-      const style = this.pickStyle(e.seat, !!e.riichi && !vanishing);
-      // （横推推多远看这一张落在一行里的第几格）
-      const motion = varyDiscard(styleParams(base, style, flat, pushDistAt(this.pondCell(e.seat).col)), flat || e.riichi ? 0.5 : 1);
+      let style = this.pickStyle(e.seat, !!e.riichi && !vanishing);
+      // 淡的回旋贴着桌面从桌角滑过来：路上被牌山（或别的牌）挡住了就照平常的立直放
+      const fling = style === 'fling' ? this.flingPlan(e.seat, e.tile) : null;
+      if (style === 'fling' && !fling?.via) style = this.pickStyle(e.seat, true, false);
+      // （横推推多远看这一张落在一行里的第几格；左边有前一张就撞上去）
+      const cell = this.pondCell(e.seat);
+      const motion: DiscardMotion = varyDiscard(styleParams(base, style, flat, pushDistAt(cell.col), cell.col > 0), flat || e.riichi ? 0.5 : 1);
+      if (style === 'fling' && fling?.via) Object.assign(motion, { flingFrom: fling.from, flingVia: fling.via });
       if (vanishing) {
         this.gone.add(e.seat);
         this.vanish.set(e.seat, { at: this.now + motion.reach + motion.carry + VANISH_DELAY });
@@ -1710,7 +1751,8 @@ export class Table3D {
   }
 
   // 这一张（已经记进牌河了）怎么打出去：照设置（没给设置就是原来的平放 / 重拍）和这个人的手风
-  private pickStyle(seat: number, riichi: boolean): DiscardStyle {
+  // own：角色自己的那一套（淡的回旋）用不用；路被挡住了传 false，照平常的挑
+  private pickStyle(seat: number, riichi: boolean, own = true): DiscardStyle {
     const view = this.lastSync?.view;
     const fx = riichi ? view?.riichiFx : view?.discardFx;
     if (!view || !fx) return 'place';
@@ -1720,7 +1762,7 @@ export class Table3D {
     // 宣言牌被鸣走以后补横的那一张：不是宣言，横着平放下去就好，不耍花样
     if (!riichi && riichiSideIndex(discards) === discards.length - 1) return 'place';
     // 大星淡的双立直是她自己的一套（回旋），设置里选了哪种都照这个来；她别的立直照常
-    if (riichi && id === 'awai' && player.doubleRiichi) return 'fling';
+    if (own && riichi && id === 'awai' && player.doubleRiichi) return 'fling';
     // 这一行跟前空着多宽，放不下的花样不用
     return pickDiscardStyle(id, riichi, fx, this.pondRoom(seat, this.pondCell(seat).row), !!LOOKS[id]?.upsideDown);
   }
@@ -1730,6 +1772,77 @@ export class Table3D {
     const n = Math.max(0, (this.lastSync?.g.players[seat].discards.filter((d) => !d.called).length ?? 1) - 1);
     const row = Math.min(POND_ROWS - 1, Math.floor(n / POND_COLS));
     return { row, col: n - row * POND_COLS };
+  }
+
+  // 淡的回旋从哪滑到哪：起点是她右手边的桌角（画面外的往里收到画面边上），落点是这张牌在牌河里的位置；
+  // 沿着弧线不能碰到桌上别的牌（牌山、手牌、别家的牌河）和仪表盘。一道能走的弧都没有 via 就是 null
+  private flingPlan(seat: number, tile: TileId): { from: THREE.Vector3; via: THREE.Vector3 | null } | null {
+    const sync = this.lastSync;
+    if (!sync) return null;
+    const spots = new Map<TileId, Placement>();
+    this.placeSeat(sync.g, seat, sync.view.me, spots);
+    const to = spots.get(tile)?.pos;
+    if (!to) return null;
+    const corner = this.dim.tableHalf - FLING_CORNER_IN;
+    const from = this.seatPoint(seat, corner, to.y, corner);
+    // 桌角在画面外面：往落点收，收到刚好在画面边上（从画面的角上滑进来）
+    for (let i = 0; i < 60; i++) {
+      const n = from.clone().project(this.camera);
+      if (Math.abs(n.x) <= 1.05 && Math.abs(n.y) <= 1.08) break;
+      from.lerp(to, 0.02);
+    }
+    const blocks: Block[] = [{ x: 0, z: 0, ax: 1, az: 0, hx: CONSOLE_HALF, hz: CONSOLE_HALF }];
+    for (const [id, t] of this.tiles.entries()) {
+      // 举在半空的（刚摸到悬着的那张、改良布局挪到眼前的手牌）挡不着贴着桌面滑的牌
+      if (id === tile || !t.shown || !t.target || t.target.pos.y > TILE_H * 1.5 * t.target.scale) continue;
+      blocks.push(tileBlock(t.target.pos, t.target.quat, t.target.scale));
+    }
+    return { from, via: planFling(from, to, this.seatPoint(seat, 0, 0, 1), blocks, this.dim.tableHalf) };
+  }
+
+  // 动作调试场景用：正在演的这一次回旋照现在桌上的样子（已经 sync 过）定起点、挑路线。
+  // 路被挡住了也照演（走默认的那道弧，会从牌山上穿过去），返回路通不通
+  aimFling(seat: number): boolean {
+    const a = this.handAnims.find((x) => x.seat === seat && x.kind === 'tile' && x.style === 'fling');
+    if (!a?.motion) return false;
+    const plan = this.flingPlan(seat, a.tile);
+    Object.assign(a.motion, { flingFrom: plan?.from, flingVia: plan?.via ?? undefined });
+    return !!plan?.via;
+  }
+
+  // 横推的宣言牌撞上前一张：前一张歪一点、往左让一点，撞的地方溅一点火星，桌子轻轻一震
+  private knockPond(seat: number, tile: TileId, quiet: boolean): void {
+    const sync = this.lastSync;
+    if (!sync) return;
+    const pond = sync.g.players[seat].discards.filter((d) => !d.called).map((d) => d.tile);
+    const i = pond.indexOf(tile);
+    if (i <= 0) return;
+    const prev = pond[i - 1];
+    if (this.knocks.has(prev)) return;
+    const sign = hash01(this.pondSalt, prev, 11) < 0.5 ? -1 : 1;
+    this.knocks.set(prev, sign * (KNOCK_YAW[0] + (KNOCK_YAW[1] - KNOCK_YAW[0]) * hash01(this.pondSalt, prev, 12)));
+    // 这一家牌河里的牌照新的位置摆（被撞的那张自己滑过去）
+    const spots = new Map<TileId, Placement>();
+    this.placeSeat(sync.g, seat, sync.view.me, spots);
+    for (const id of pond) {
+      const at = spots.get(id);
+      if (at && this.tiles[id].target) this.tiles[id].target = at;
+    }
+    if (quiet) return;
+    const a = this.tiles[tile].group.position;
+    const b = this.tiles[prev].group.position;
+    // 两张牌挨着的那条缝
+    const at = b.clone().lerp(a, (TILE_W / 2) / Math.max(0.1, a.distanceTo(b))).setY(TILE_T * 0.8);
+    this.effects.flash(at, '#fff3c4', 1.6, 0.22);
+    this.effects.sparks(at, '#ffe9b0', {
+      count: 9,
+      life: [0.16, 0.34],
+      // 往两边、往上溅开一点
+      vel: (v) => v.set((Math.random() - 0.5) * 5, 1 + Math.random() * 2.2, (Math.random() - 0.5) * 5),
+      gravity: 9,
+      size: [0.05, 0.11],
+    });
+    this.shake = Math.max(this.shake, 0.1);
   }
 
   // 牌河第 row 行靠出牌的人这一侧空着多宽：前两行跟前是空着的下一行，第三行跟前就是牌山
@@ -1795,7 +1908,10 @@ export class Table3D {
       } else if (c.kind === 'glint') {
         // 举在半空闪一下（被打断补报的时候不闪）
         if (t !== Infinity) this.effects.flash(this.tiles[a.tile].group.position.clone(), '#fff3c4', 5);
-      } else if (t !== Infinity) this.onCue?.(a.seat, a.tile, c.kind, c.kind === 'scrape' ? scrapeTime(style, a.motion!) : undefined);
+      } else {
+        if (c.kind === 'knock') this.knockPond(a.seat, a.tile, t === Infinity);
+        if (t !== Infinity) this.onCue?.(a.seat, a.tile, c.kind, c.kind === 'scrape' ? scrapeTime(style, a.motion!) : undefined);
+      }
     }
   }
 
@@ -1853,9 +1969,9 @@ export class Table3D {
     for (const [s, win] of shown) {
       const n = g.players[s].hand.length + (win !== null && !g.players[s].hand.includes(win) ? 1 : 0);
       const wave = (LOOKS[this.lastSync?.view.ids[s] ?? '']?.reveal ?? 'wave') === 'wave';
-      // 淡的逆回旋：手牌翻得久一点
+      // 淡的逆回旋：整排手牌在半空翻滚，比平常倒牌久
       const whirl = r.wins.some((w) => w.seat === s && this.whirlWin(g, w));
-      fxAt = Math.max(fxAt, at + (whirl ? whirlSpan(n - 1) : (wave ? (n - 1) * stagger : 0) + TOPPLE_TIME) + 0.1);
+      fxAt = Math.max(fxAt, at + (whirl ? WHIRL_TIME : (wave ? (n - 1) * stagger : 0) + TOPPLE_TIME) + 0.1);
     }
     // 初美聚着风和牌：手牌先倒，倒完那张和了牌举起来往桌上砸，砸到的时候才放特效
     const slams: RevealState['slams'] = new Map();
@@ -1871,7 +1987,7 @@ export class Table3D {
       if (!this.galeWin(w.seat) && !sea && lily === null && twist === null && !whirl) continue;
       const n = g.players[w.seat].hand.filter((t) => t !== w.tile).length;
       const wave = (LOOKS[this.lastSync?.view.ids[w.seat] ?? '']?.reveal ?? 'wave') === 'wave';
-      const slamAt = at + (whirl ? whirlSpan(n) + WHIRL_SHOW : (wave ? Math.max(0, n - 1) * stagger : 0) + TOPPLE_TIME + 0.12);
+      const slamAt = at + (whirl ? WHIRL_TIME + WHIRL_SHOW : (wave ? Math.max(0, n - 1) * stagger : 0) + TOPPLE_TIME + 0.12);
       slams.set(w.tile, { seat: w.seat, at: slamAt, from: null, hit: false, ...(lily !== null ? { lily } : {}), ...(twist !== null ? { twist } : {}), ...(whirl ? { whirl } : {}) });
       fxAt = Math.max(fxAt, slamAt + SLAM_TIME + (twist !== null ? TWISTER_TIME + 0.1 : 0));
     }
@@ -1891,6 +2007,7 @@ export class Table3D {
       hops: [],
       spotsOn: false,
       tsumoSlam,
+      uraShow: this.planUraShow(g, fxAt + URA_LEAD),
       standAt,
       placeAt,
       snapped: false,
@@ -2065,6 +2182,8 @@ export class Table3D {
     this.placeReveal(g, view.me, targets);
     this.wallSlotOf = wallSlots(g);
     for (const [t, slot] of this.wallSlotOf) targets.set(t, this.wallPlacement(slot, view.me));
+    this.placeUraShow(view.me, targets);
+    this.watchDora(g);
     // 王牌感知：杠材一直看得见，岭上牌要鼠标移上去
     const seen = new Set<TileId>([...(view.kanSeen ?? []), ...(this.rinshanHover ? view.rinshanSeen ?? [] : [])].filter((t) => this.wallSlotOf.has(t)));
     this.aimHimeko(g, targets);
@@ -2626,7 +2745,9 @@ export class Table3D {
     const kan = g.players[seat].melds.find((m) => m.type === 'ankan');
     if (k === undefined || !kan) return;
     const sky = this.starSky();
-    const top = g.wall.doraIndicators[k];
+    // 逆回旋自摸把里宝牌翻到身前了：从那张里宝牌飞；不然从牌山上它头顶的那张杠宝牌指示牌飞
+    const shown = this.reveal?.uraShow?.seat === seat ? g.wall.uraIndicators[k] : undefined;
+    const top = shown ?? g.wall.doraIndicators[k];
     const from = (top !== undefined && this.tiles[top]?.shown ? this.tiles[top].group.position.clone() : new THREE.Vector3()).setY(0.6);
     sky.flare(from.clone().setY(1.4), 7, 1.4, '#ffffff', 0.9, 0.6);
     this.effects.ring(from.clone().setY(0.05), '#ffe9a8', 5, 0.6, 0.9);
@@ -3103,7 +3224,7 @@ export class Table3D {
       // 淡的逆回旋：手牌先翻开；牌举在半空等手牌翻完、亮一下，再拍
       order: ts.whirl ? 'first' : this.lastSync.view.slamOrder,
       ...(ts.twist !== null ? { timing: { hold: 0.05, leave: 0.24 } } : {}),
-      ...(ts.whirl ? { timing: { hang: this.whirlHang(g, ts.seat, ts.tile) } } : {}),
+      ...(ts.whirl ? { timing: { hang: this.whirlHang() } } : {}),
       ...(ts.style === 'edge' ? this.edgeRoom(g, ts.seat, ts.tile, to) : {}),
       at: Math.max(this.now, ts.start),
       onPress: (at) => (ts.sea ? this.seaPress(ts.seat, at, to.scale) : this.slamPress(ts.seat, at, to.scale)),
@@ -3294,6 +3415,158 @@ export class Table3D {
     this.fxHold = Math.max(this.fxHold, this.now + 1.9 + 0.9 * big);
   }
 
+  // ---------- 翻宝牌指示牌 ----------
+
+  // 新翻开的宝牌指示牌（开杠以后翻的杠宝牌）：不让它自己左右转过来，照现实里的翻法演——往前推一点，从下往上翻（doraFlip.ts）
+  private watchDora(g: Game): void {
+    const n = g.wall.doraRevealed;
+    // 新的一局：发牌时翻好的那一张不演
+    if (this.doraSeen < 0 || n < this.doraSeen || g.phase === 'predeal' || this.deal) this.doraSeen = n;
+    for (let i = this.doraSeen; i < n; i++) {
+      const id = g.wall.doraIndicators[i];
+      if (id !== undefined && this.tiles[id]?.shown) this.doraFlips.set(id, this.now + (i - this.doraSeen) * 0.12);
+    }
+    this.doraSeen = n;
+  }
+
+  private animateDoraFlips(): void {
+    for (const [id, at] of this.doraFlips) {
+      const tile = this.tiles[id];
+      const slot = this.wallSlotOf.get(id);
+      const to = tile.target;
+      const t = this.now - at;
+      // 翻完了、这张牌不在牌山上了（一局结束被拿到身前）：不管了
+      if (!to || !slot || !slot.faceUp || t >= DORA_FLIP_TIME || this.held.has(id)) {
+        this.doraFlips.delete(id);
+        continue;
+      }
+      // 牌山是谁面前的，就从谁那边翻
+      const pose = doraFlipPose(to, this.seatPoint(slot.wall, 0, 0, 1), Math.max(0, t), 1, true, to.scale);
+      tile.group.position.copy(pose.pos);
+      tile.group.quaternion.copy(pose.quat);
+      tile.group.scale.setScalar(to.scale);
+      this.held.add(id);
+    }
+  }
+
+  // ---------- 淡的逆回旋自摸：把宝牌那几墩拿到身前，翻出里宝牌 ----------
+
+  // 这一局是淡的逆回旋自摸：排好拿宝牌、翻里宝牌的时间（at 开始）；不是就是 null
+  private planUraShow(g: Game, at: number): RevealState['uraShow'] {
+    const w = g.roundResult?.wins.find((x) => this.whirlWin(g, x));
+    if (!w) return null;
+    const stacks: { dora: TileId; ura: TileId }[] = [];
+    for (let i = 0; i < g.wall.doraRevealed; i++) {
+      const dora = g.wall.doraIndicators[i];
+      const ura = g.wall.uraIndicators[i];
+      if (dora === undefined || ura === undefined || !this.tiles[dora]?.shown || !this.tiles[ura]?.shown) return null;
+      stacks.push({ dora, ura });
+    }
+    if (!stacks.length) return null;
+    const kan = Math.min(stacks.length - 1, Math.max(0, awaiKanUra(g, w.seat) ?? stacks.length - 1));
+    const n = stacks.length;
+    const flips = at + URA_CARRY + (n - 1) * URA_CARRY_GAP + URA_BEAT + URA_SPLIT + URA_BEAT;
+    const starAt = flips + (n - 1) * URA_FLIP_GAP + DORA_TURN_TIME;
+    // 第三行放不下、接着往右排出去的牌河占着右边：摆到左边去
+    const side = g.players[w.seat].discards.filter((d) => !d.called).length > POND_COLS * POND_ROWS ? -1 : 1;
+    return { seat: w.seat, at, stacks, kan, side, from: null, step: 0, starred: false, starAt, end: starAt + URA_TAIL };
+  }
+
+  // 第 i 墩拿到身前以后摆在哪：里宝牌（翻开以后）在前，宝牌指示牌挪到它跟前
+  private uraSpots(u: NonNullable<RevealState['uraShow']>, me: number, i: number): { ura: Placement; dora: Placement } {
+    const n = u.stacks.length;
+    // 从她那边看总是从左往右排
+    const x = u.side > 0 ? URA_X0 + i * URA_PITCH : -(URA_X0 + (n - 1 - i) * URA_PITCH);
+    return {
+      ura: this.toWorld(u.seat, me, x, TILE_T / 2, URA_Z, FACE_UP),
+      dora: this.toWorld(u.seat, me, x, TILE_T / 2, URA_DORA_Z, FACE_UP),
+    };
+  }
+
+  // 开始拿了以后，这几张牌的位置就是身前摆好的样子（途中由 animateUraShow 一帧帧摆）
+  private placeUraShow(me: number, out: Map<TileId, Placement>): void {
+    const u = this.reveal?.uraShow;
+    if (!u || this.now < u.at) return;
+    u.stacks.forEach((st, i) => {
+      const at = this.uraSpots(u, me, i);
+      out.set(st.ura, at.ura);
+      out.set(st.dora, at.dora);
+    });
+  }
+
+  private animateUraShow(rv: RevealState): void {
+    const u = rv.uraShow;
+    const sync = this.lastSync;
+    if (!u || !sync || this.now < u.at) return;
+    const me = sync.view.me;
+    const n = u.stacks.length;
+    if (!u.from) {
+      u.from = new Map();
+      for (const st of u.stacks) for (const id of [st.dora, st.ura]) {
+        const g = this.tiles[id].group;
+        u.from.set(id, { pos: g.position.clone(), quat: g.quaternion.clone(), scale: g.scale.x });
+      }
+      this.sync(sync.g, sync.view);
+    }
+    const t = this.now - u.at;
+    const smooth = (x: number) => THREE.MathUtils.smoothstep(x, 0, 1);
+    const toward = this.seatPoint(u.seat, 0, 0, 1);
+    const carried = URA_CARRY + (n - 1) * URA_CARRY_GAP;
+    const splitAt = carried + URA_BEAT;
+    const flipsAt = splitAt + URA_SPLIT + URA_BEAT;
+    // 里宝牌一张张翻：杠里的那张最后翻
+    const order = u.stacks.map((_, i) => i).filter((i) => i !== u.kan).concat(u.kan);
+    // 各一步响一声：放到身前、宝牌挪下来、每翻开一张
+    const steps = [carried, splitAt, ...order.map((_, j) => flipsAt + j * URA_FLIP_GAP + DORA_TURN_TIME)];
+    while (u.step < steps.length && t >= steps[u.step]) {
+      const kind: CueKind = u.step === 1 ? 'scrape' : 'tap';
+      this.onCue?.(u.seat, u.stacks[0].ura, kind, kind === 'scrape' ? URA_SPLIT : undefined);
+      u.step++;
+    }
+    if (!u.starred && this.now >= u.starAt) {
+      u.starred = true;
+      this.starUra(u.seat);
+    }
+    if (this.now >= u.end) return;
+    u.stacks.forEach((st, i) => {
+      const at = this.uraSpots(u, me, i);
+      // 扣着的里宝牌：照翻开以后的朝向倒推（从上往下翻之前的样子）
+      const down = doraFlipPose(at.ura, toward, 0, -1, false);
+      // 叠在里宝牌上面的宝牌指示牌
+      const top = at.ura.pos.clone().setY(TILE_T * 1.5);
+      const set = (id: TileId, pos: THREE.Vector3, quat: THREE.Quaternion) => {
+        const g = this.tiles[id].group;
+        g.position.copy(pos);
+        g.quaternion.copy(quat);
+        g.scale.setScalar(1);
+        this.held.add(id);
+      };
+      const k = smooth(Math.min(1, Math.max(0, (t - i * URA_CARRY_GAP) / URA_CARRY)));
+      if (k < 1) {
+        // 一墩两张一起拿过来：走一道弧，边走边转成朝着她
+        const lift = Math.sin(k * Math.PI) * URA_LIFT;
+        const fd = u.from!.get(st.dora)!;
+        const fu = u.from!.get(st.ura)!;
+        set(st.dora, fd.pos.clone().lerp(top, k).setY(THREE.MathUtils.lerp(fd.pos.y, top.y, k) + lift), fd.quat.clone().slerp(at.dora.quat, k));
+        set(st.ura, fu.pos.clone().lerp(down.pos, k).setY(THREE.MathUtils.lerp(fu.pos.y, down.pos.y, k) + lift), fu.quat.clone().slerp(down.quat, k));
+        return;
+      }
+      // 宝牌指示牌从里宝牌上面挪到跟前：先平着滑出去，过了边再落到桌上
+      const sp = Math.min(1, Math.max(0, (t - splitAt) / URA_SPLIT));
+      const dp = top.clone().lerp(at.dora.pos, smooth(sp));
+      dp.y = THREE.MathUtils.lerp(top.y, at.dora.pos.y, smooth(Math.min(1, Math.max(0, (sp - 0.5) / 0.5))));
+      set(st.dora, dp, at.dora.quat);
+      const ft = t - flipsAt - order.indexOf(i) * URA_FLIP_GAP;
+      const pose = doraFlipPose(at.ura, toward, Math.max(0, ft), -1, false);
+      set(st.ura, pose.pos, pose.quat);
+      // 翻开的那一下亮一下
+      if (ft >= DORA_TURN_TIME && ft - DORA_TURN_TIME < 0.05 && !this.uraLit.has(st.ura)) {
+        this.uraLit.add(st.ura);
+        this.effects.flash(at.ura.pos.clone().setY(0.9), i === u.kan ? '#ffd36b' : '#fff3c4', i === u.kan ? 4 : 2.4, 0.3);
+      }
+    });
+  }
+
   // 这一手是不是宫永照的旋风自摸（自摸 12000 点以上）：是就给风多大（0–1，点数越大越大），不是 null
   // 大星淡中了杠里的自摸（逆回旋）：手牌逆着翻开，亮出来以后和了牌再拍下去
   private whirlWin(g: Game, w: { seat: number; from: number | null }): boolean {
@@ -3301,10 +3574,9 @@ export class Table3D {
   }
 
   // 逆回旋：拍牌的手把牌举在半空停多久——等手牌翻完、亮够了再拍（照平常拍牌的节奏，从动手到拍下去是伸手、夹起、举高、停、拍）
-  private whirlHang(g: Game, seat: number, win: TileId): number {
-    const n = g.players[seat].hand.filter((t) => t !== win).length;
+  private whirlHang(): number {
     const t = SLAP_TIMING;
-    return Math.max(t.hang, whirlSpan(n) + WHIRL_SHOW - (t.reach + t.grab + t.lift + t.slap));
+    return Math.max(t.hang, WHIRL_TIME + WHIRL_SHOW - (t.reach + t.grab + t.lift + t.slap));
   }
 
   private twistSize(g: Game, w: { seat: number; from: number | null; result: WinResult }): number | null {
@@ -3969,6 +4241,7 @@ export class Table3D {
     }
     const pond = this.pondStyleAt(s);
     const spots = pondSpots(shown, pond, this.pondSalt, s, pondRows(pond, this.dim.pondZ, this.wallZ((s - me + 4) % 4) - TILE_H / 2));
+    applyKnocks(shown, spots, this.knocks);
     shown.forEach((it, i) => {
       const at = spots[i];
       out.set(it.tile, this.toWorld(s, me, at.x, lyingY, at.z, FACE_UP, (it.side ? Math.PI / 2 : 0) + flip + at.yaw));
@@ -4001,12 +4274,11 @@ export class Table3D {
       const facing = (s - me + 4) % 4 === 2 && !!this.lastSync?.view.openHands;
       const yaw = facing ? Math.PI : 0;
       const n = tiles.length;
-      // 淡的逆回旋：从和了牌那一头（右边）起一张张翻
+      // 淡的逆回旋：整排一起在半空翻滚（绕着这一排的方向），落下来摊开
       const whirl = !!g.roundResult?.wins.some((w) => w.seat === s && this.whirlWin(g, w));
       const topple = (t: TileId, i: number) => {
-        if (rv.topple.has(t)) return;
-        if (whirl) rv.topple.set(t, { at: rv.at + Math.max(0, n - 1 - i) * WHIRL_STAGGER, from: null, whirl: true });
-        else rv.topple.set(t, { at: rv.at + (wave ? i * stagger : 0), from: null });
+        if (rv.topple.has(t) || whirl) return;
+        rv.topple.set(t, { at: rv.at + (wave ? i * stagger : 0), from: null });
       };
       tiles.forEach((t, i) => {
         const tx = facing ? row.x0 + 0.5 + (n - i) * row.step : x;
@@ -4014,6 +4286,13 @@ export class Table3D {
         topple(t, i);
         x += row.step;
       });
+      if (whirl && n && !rv.topple.has(tiles[0]) && this.now < rv.at + WHIRL_TIME) {
+        const center = new THREE.Vector3();
+        for (const t of tiles) center.add(out.get(t)!.pos);
+        center.multiplyScalar(1 / n);
+        const row = { center, axis: this.seatPoint(s, 1, 0, 0), landed: false };
+        for (const t of tiles) rv.topple.set(t, { at: rv.at, from: null, whirl: row });
+      }
       if (win === null) continue;
       const tsumo = g.players[s].hand.includes(win);
       const slam = rv.slams.has(win);
@@ -5064,15 +5343,24 @@ export class Table3D {
         const slam = rv.slams.has(w.tile) ? this.tiles[w.tile].group.position.clone() : null;
         const own = rv.slams.get(w.tile);
         this.winFx(w.seat, w.tsumo, slam ? (w.tile === this.seaSlamTile ? MOON_GLOW : '#c870ff') : FX_GOLD, slam, own?.lily !== undefined || own?.twist !== undefined);
-        this.starUra(w.seat);
+        // 杠里的流星：逆回旋自摸的等里宝牌翻开了才飞（animateUraShow）
+        if (rv.uraShow?.seat !== w.seat) this.starUra(w.seat);
       }
     }
     this.animateSlams(rv);
+    this.animateUraShow(rv);
     const pivot = (p: Placement) => new THREE.Vector3(0, -TILE_H / 2, -TILE_T / 2).multiplyScalar(p.scale).applyQuaternion(p.quat);
     for (const [id, e] of rv.topple) {
       const tile = this.tiles[id];
       const to = tile.target;
       if (!to || this.now >= e.at + (e.whirl ? WHIRL_TIME : TOPPLE_TIME)) {
+        // 淡的逆回旋：整排落到桌上那一下，重重一声，桌子震一震
+        if (to && e.whirl && !e.whirl.landed) {
+          e.whirl.landed = true;
+          this.shake = Math.max(this.shake, 0.3);
+          this.effects.ring(e.whirl.center.clone().setY(0.05), '#d9c8ff', 7, 0.5, 0.7);
+          this.onCue?.(this.reveal?.uraShow?.seat ?? 0, id, 'slap');
+        }
         rv.topple.delete(id);
         continue;
       }
@@ -5081,7 +5369,7 @@ export class Table3D {
       const g = tile.group;
       e.from ??= { pos: g.position.clone(), quat: g.quaternion.clone(), scale: g.scale.x };
       if (e.whirl) {
-        const pose = whirlPose(e.from, to, (this.now - e.at) / WHIRL_TIME);
+        const pose = whirlPose(to, e.whirl.center, e.whirl.axis, (this.now - e.at) / WHIRL_TIME);
         g.position.copy(pose.pos);
         g.quaternion.copy(pose.quat);
         g.scale.setScalar(pose.scale);
@@ -5432,6 +5720,7 @@ export class Table3D {
       this.sync(this.lastSync.g, this.lastSync.view);
     }
     this.animateReveal();
+    this.animateDoraFlips();
     this.slam.update(this.now);
     this.updateTwist(dt);
     this.slamFx.update(dt);

@@ -15,12 +15,15 @@ import {
   declareDelay,
   dueCues,
   dueMarkers,
+  flingBow,
+  flingCurve,
   markers,
   pushDistAt,
   sampleDiscard,
   styleParams,
   totalTime,
 } from '../src/ui3d/discardMotion';
+import { FLING_RADIUS, blockDistance, flingBlocked, planFling, tileBlock } from '../src/ui3d/flingPath';
 import { POND_GAP, TILE_H, TILE_T, TILE_W } from '../src/ui3d/tableLayout';
 
 // 牌河里的牌面朝上躺着；立直宣言牌再横过来
@@ -45,7 +48,7 @@ for (const flat of [false, true]) {
   for (const style of NORMAL_STYLES) CASES.push({ style, riichi: false, flat, p: styleParams(flat ? SLIDE_DISCARD : DEFAULT_DISCARD, style, flat) });
   for (const style of RIICHI_STYLES) CASES.push({ style, riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, style, flat) });
   // 横推：落在一行里靠左的格子推得远
-  for (const col of [0, 2, 5]) CASES.push({ style: 'push', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'push', flat, pushDistAt(col)) });
+  for (const col of [0, 2, 5]) CASES.push({ style: 'push', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'push', flat, pushDistAt(col), col > 0) });
   // 大星淡的双立直
   CASES.push({ style: 'fling', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'fling', flat) });
 }
@@ -133,7 +136,8 @@ describe('出牌的样子', () => {
     // 落点左边紧挨着前一张牌，里面紧挨着上一行
     const sideways = (style: DiscardStyle) => c2riichi(style) && style !== 'place';
     for (const c of CASES) {
-      if (!['slide', 'stand', 'turn', 'top', 'push', 'fling'].includes(c.style)) continue;
+      // （淡的回旋不在这里：只有双立直用，那是她牌河里的头一张，左边、里面都还没有牌；路上碰不碰东西由 flingPath 管）
+      if (!['slide', 'stand', 'turn', 'top', 'push'].includes(c.style)) continue;
       for (const spin of [1, -1]) {
         const pa = path(c.style, sideways(c.style), { spin, landed: TO.clone() });
         const rest = reach(pa.to, pa.toQuat);
@@ -201,79 +205,149 @@ describe('出牌的样子', () => {
     }
   });
 
-  it('横推：匀速推过去，落在一行里越靠左推得越远、越久', () => {
+  it('横推：往回带一点再越推越快，落在一行里越靠左推得越远、越久；撞得上前一张的撞上就停', () => {
     expect(pushDistAt(5)).toBe(pushDistAt(4));
     expect(pushDistAt(0)).toBeGreaterThan(pushDistAt(2));
     expect(pushDistAt(2)).toBeGreaterThan(pushDistAt(4));
     // 放下的地方不超出这一行的右头太多：第一格推过来的那张，放下时右边还在六格以内
     expect(TILE_H / 2 + pushDistAt(0) + TILE_H / 2).toBeLessThanOrEqual(6 * (TILE_W + POND_GAP));
-    let speed = 0;
+    let last = Infinity;
     for (const col of [0, 1, 3, 5]) {
-      const p = styleParams(SLIDE_RIICHI, 'push', true, pushDistAt(col));
+      const hit = col > 0;
+      const p = styleParams(SLIDE_RIICHI, 'push', true, pushDistAt(col), hit);
       const pa = path('push', true, { landed: TO.clone() });
       const land = p.reach + p.carry;
-      // 落桌时在落点右边那么远
-      expect(sampleDiscard(p, pa, land + 1e-6).tilePos.x - TO.x).toBeCloseTo(pushDistAt(col), 4);
-      // 推的那一段每一小步走得一样远
-      const steps: number[] = [];
-      const dt = 1 / 240;
-      const from = land + 0.1 + dt;
-      const to = land + afterTime('push', p) - dt;
-      for (let t = from; t + dt <= to; t += dt) steps.push(sampleDiscard(p, pa, t).tilePos.x - sampleDiscard(p, pa, t + dt).tilePos.x);
-      expect(steps.length).toBeGreaterThan(5);
-      for (const d of steps) expect(d).toBeCloseTo(steps[0], 6);
-      // 远近都是同一个速度
-      if (speed) expect(steps[0] / dt).toBeCloseTo(speed, 4);
-      speed = steps[0] / dt;
+      const end = land + afterTime('push', p);
+      const x = (t: number) => sampleDiscard(p, pa, t).tilePos.x - TO.x;
+      // 落桌时在落点右边那么远，停一下不动
+      expect(x(land + 1e-6)).toBeCloseTo(pushDistAt(col), 4);
+      expect(x(land + 0.09)).toBeCloseTo(pushDistAt(col), 4);
+      // 先往回带一点（往右），再推过去
+      const dt = 1 / 480;
+      let back = 0;
+      let top = 0;
+      let topAt = 0;
+      const speeds: number[] = [];
+      for (let t = land + 0.1; t + dt <= end + 1e-9; t += dt) {
+        back = Math.max(back, x(t) - pushDistAt(col));
+        const v = (x(t) - x(t + dt)) / dt;
+        speeds.push(v);
+        if (v > top) [top, topAt] = [v, t];
+      }
+      expect(back).toBeGreaterThan(0.1);
+      expect(back).toBeLessThan(0.3);
+      // 不是匀速：最快的时候比平均快得多
+      const mean = (pushDistAt(col) + back) / (afterTime('push', p) - 0.1 - 0.13);
+      expect(top).toBeGreaterThan(mean * 1.7);
+      if (hit) {
+        // 撞得上：越推越快，到头最快（撞上就停）
+        expect(end - topAt).toBeLessThan(0.02);
+        expect(cues(p, 'push').map((c) => c.kind)).toEqual(['scrape', 'knock', 'declare']);
+      } else {
+        // 一行的第一张没牌可撞：到头之前自己刹住
+        expect(end - topAt).toBeGreaterThan(0.05);
+        expect(speeds.at(-1)!).toBeLessThan(top * 0.2);
+        expect(cues(p, 'push').map((c) => c.kind)).toEqual(['scrape', 'slap', 'declare']);
+      }
+      // 推到头正好在落点，不越过去
+      expect(x(end)).toBeCloseTo(0, 6);
+      for (let t = land; t <= end; t += dt) expect(x(t)).toBeGreaterThan(-1e-6);
       // 推得越远，摆好得越晚
-      expect(declareDelay('push', p)).toBeCloseTo(0.1 + pushDistAt(col) / speed, 4);
+      expect(declareDelay('push', p)).toBeLessThan(last);
+      expect(declareDelay('push', p)).toBeLessThan(0.6);
+      last = declareDelay('push', p) + 1e-9;
     }
   });
 
-  it('回旋（淡的双立直）：从右手边跟前甩出去，牌面一直朝上，转着走一道弧线，从右边滑进落点', () => {
+  it('回旋（淡的双立直）：牌面朝上放到右手边的桌角，贴着桌面转着滑一道弧线到落点', () => {
     for (const flat of [false, true]) {
       const p = styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'fling', flat);
+      const corner = new THREE.Vector3(12.9, TO.y, 12.9);
+      p.flingFrom = corner.clone();
+      p.flingVia = flingBow(corner, TO, new THREE.Vector3(0, 0, 1), 0.7);
       const pa = path('fling', true);
-      const grab = p.reach;
       const land = p.reach + p.carry;
+      const end = land + afterTime('fling', p);
       const up = (q: THREE.Quaternion) => new THREE.Vector3(0, 0, 1).applyQuaternion(q).y; // 牌面朝上是 1
-      // 带到右手边跟前：在落点右边、靠自己这边
-      const wind = sampleDiscard(p, pa, grab + p.carry * 0.3);
-      expect(wind.tilePos.x - TO.x).toBeGreaterThan(3);
-      expect(wind.tilePos.z - TO.z).toBeGreaterThan(3);
-      expect(up(wind.tileQuat)).toBeGreaterThan(0.999);
+      // 落桌：就在桌角，横着、牌面朝上
+      const start = sampleDiscard(p, pa, land);
+      expect(start.tilePos.distanceTo(corner)).toBeLessThan(1e-6);
+      expect(start.tileQuat.angleTo(SIDE)).toBeLessThan(1e-6);
+      pa.landed = TO.clone();
       let turned = 0;
-      let prev = wind;
-      let maxX = -Infinity;
-      for (let t = grab + p.carry * 0.3 + 1 / 240; t <= land + afterTime('fling', p); t += 1 / 240) {
-        if (t >= land) pa.landed = TO.clone();
+      let prev = start;
+      let step = Infinity;
+      for (let t = land + 1 / 240; t <= end; t += 1 / 240) {
         const cur = sampleDiscard(p, pa, t);
-        // 出手以后牌面一直朝上
-        expect(up(cur.tileQuat), `t=${t.toFixed(3)}`).toBeGreaterThan(0.999);
-        // 一路往左前方去：不往回走（落桌以后让牌角的那一点点不算）
-        if (t < land) {
-          expect(cur.tilePos.x).toBeLessThanOrEqual(prev.tilePos.x + 1e-6);
-          expect(cur.tilePos.z).toBeLessThanOrEqual(prev.tilePos.z + 1e-6);
-        }
-        // 弧线：往右前方鼓出去（在起点到落点那条直线的右前方）
-        maxX = Math.max(maxX, cur.tilePos.x);
+        // 一路贴着桌面、牌面朝上
+        expect(cur.tilePos.y, `t=${t.toFixed(3)}`).toBeCloseTo(TO.y, 9);
+        expect(up(cur.tileQuat)).toBeGreaterThan(0.999999);
+        // 一路往左前方去，越滑越慢
+        expect(cur.tilePos.x).toBeLessThanOrEqual(prev.tilePos.x + 1e-6);
+        expect(cur.tilePos.z).toBeLessThanOrEqual(prev.tilePos.z + 1e-6);
+        const d = cur.tilePos.distanceTo(prev.tilePos);
+        expect(d).toBeLessThanOrEqual(step + 1e-6);
+        step = d;
         turned += cur.tileQuat.angleTo(prev.tileQuat);
         prev = cur;
       }
-      // 途中转了好几圈
-      expect(turned).toBeGreaterThan(2 * Math.PI * 2.5);
-      // 弧线上的中间一点比直线靠右、靠前
-      const mid = sampleDiscard(p, { ...pa, landed: undefined }, grab + p.carry * 0.65);
-      const k = (mid.tilePos.z - TO.z) / (wind.tilePos.z - TO.z);
-      expect(mid.tilePos.x).toBeGreaterThan(TO.x + k * (wind.tilePos.x - TO.x) + 0.5);
-      // 飞过牌山的那一段够高（牌山两层高 2 个牌厚）
-      for (let t = grab + p.carry * 0.3; t < land; t += 1 / 240) {
-        const pose = sampleDiscard(p, { ...pa, landed: undefined }, t);
-        if (pose.tilePos.z > 8.5) expect(pose.tilePos.y - TILE_T / 2).toBeGreaterThan(2 * TILE_T + 0.3);
-      }
-      // 落桌时在落点右边，之后往左滑进去
-      expect(sampleDiscard(p, pa, land + 1e-6).tilePos.x).toBeGreaterThan(TO.x + 1);
+      // 途中转了三整圈，停下来正好是横的
+      expect(turned).toBeCloseTo(2 * Math.PI * 3, 1);
+      // 弧线：中间一点在起点到落点那条直线的右前方
+      const mid = flingCurve(corner, p.flingVia, TO, 0.5);
+      const k = (mid.z - TO.z) / (corner.z - TO.z);
+      expect(mid.x).toBeGreaterThan(TO.x + k * (corner.x - TO.x) + 1);
+      // 滑到位才算宣言
+      expect(declareDelay('fling', p)).toBeCloseTo(afterTime('fling', p));
+      const last = sampleDiscard(p, pa, end);
+      expect(last.tilePos.distanceTo(TO)).toBeLessThan(1e-6);
+      expect(last.tileQuat.angleTo(SIDE)).toBeLessThan(1e-6);
     }
+    // 牌桌没给起点、弧线时有默认的：落点右边、靠自己这边
+    const p = styleParams(SLIDE_RIICHI, 'fling', true);
+    const at = sampleDiscard(p, path('fling', true), p.reach + p.carry).tilePos;
+    expect(at.x - TO.x).toBeGreaterThan(8);
+    expect(at.z - TO.z).toBeGreaterThan(6);
+  });
+
+  it('回旋的路线：挑一道碰不到牌山的弧，都挡住了就没有', () => {
+    const from = new THREE.Vector3(12.9, TO.y, 12.9);
+    const T = new THREE.Vector3(0, 0, 1);
+    const lie = (x: number, z: number, yaw = 0) => tileBlock(new THREE.Vector3(x, TILE_T / 2, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw).multiply(FLAT));
+    // 自己面前的牌山（沿 x 排，z = 9.45）、右手边那家的牌山（沿 z 排，x = 9.45）：各 17 墩
+    const mine = (skip: (i: number) => boolean) => Array.from({ length: 17 }, (_, i) => i).filter((i) => !skip(i)).map((i) => lie((8 - i) * 1.02, 9.45));
+    const right = (skip: (i: number) => boolean) => Array.from({ length: 17 }, (_, i) => i).filter((i) => !skip(i)).map((i) => lie(9.45, (8 - i) * 1.02, Math.PI / 2));
+    // 躺着的牌占牌面那么大，立着的占牌底那么大
+    expect(lie(0, 0)).toMatchObject({ hx: TILE_W / 2, hz: TILE_H / 2 });
+    const stand = tileBlock(new THREE.Vector3(0, TILE_H / 2, 0), new THREE.Quaternion());
+    expect([stand.hx, stand.hz]).toEqual([TILE_W / 2, TILE_T / 2]);
+    expect(blockDistance(lie(0, 0), 0.4, 0.6)).toBe(0);
+    expect(blockDistance(lie(0, 0), 1.5, 0)).toBeCloseTo(1);
+    // 两边牌山都是满的：没有路
+    expect(planFling(from, TO, T, [...mine(() => false), ...right(() => false)], 14)).toBeNull();
+    // 桌上什么都没有：走原本想要的那一道弧
+    const free = planFling(from, TO, T, [], 14)!;
+    expect(free.distanceTo(flingBow(from, TO, T, 0.7).setY(TO.y))).toBeLessThan(1e-9);
+    // 弯到头的那一道：先笔直朝前、再拐向左；直线：控制点就在正中间
+    expect(flingBow(from, TO, T, 1).distanceTo(new THREE.Vector3(from.x, TO.y, TO.z))).toBeLessThan(1e-9);
+    expect(flingBow(from, TO, T, 0).distanceTo(from.clone().add(TO).multiplyScalar(0.5))).toBeLessThan(1e-9);
+    expect(flingBow(from, TO, T, -1).distanceTo(new THREE.Vector3(TO.x, TO.y, from.z))).toBeLessThan(1e-9);
+    // 右手边那家的牌山靠自己这头摸掉了几墩，或者自己面前的牌山右头摸掉了几墩：从缺口过去，路上不碰牌
+    for (const blocks of [
+      [...mine(() => false), ...right((i) => i < 5)],
+      [...mine((i) => i < 5), ...right(() => false)],
+      [...mine(() => false), ...right((i) => i < 4)],
+    ]) {
+      const via = planFling(from, TO, T, blocks, 14);
+      expect(via).not.toBeNull();
+      expect(flingBlocked(from, via!, TO, blocks, 14)).toBe(false);
+      for (let u = 0; u <= 1; u += 0.01) {
+        const at = flingCurve(from, via!, TO, u);
+        for (const b of blocks) expect(blockDistance(b, at.x, at.z)).toBeGreaterThanOrEqual(FLING_RADIUS);
+      }
+    }
+    // 只缺一墩，转着的牌过不去
+    expect(planFling(from, TO, T, [...mine(() => false), ...right((i) => i === 3)], 14)).toBeNull();
   });
 
   it('2.5D 平常的牌不拖沓：花样最长也在一秒以内，立直宣言两秒以内', () => {
