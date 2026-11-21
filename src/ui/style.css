@@ -1396,6 +1396,29 @@ button {
   }
 }
 
+/* 立直宣言牌 · 横推·刹车：一样横着放在旁边、往回带一点，一把推出去，快到位了刹住，轻轻停下（不撞） */
+.pond .tile.fresh.fx-brake {
+  animation:
+    drop-push-in 0.24s linear,
+    drop-brake-go var(--push-ms, 400ms) linear 0.24s;
+}
+
+/* 往回带一点；起步很快冲到最快（走掉不到三成路），之后一路刹到停 */
+@keyframes drop-brake-go {
+  0% {
+    translate: var(--push, 36px) 0;
+    animation-timing-function: ease-in-out;
+  }
+  30% {
+    translate: calc(var(--push, 36px) + 6px) 0;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.7, 0.4);
+  }
+  45% {
+    translate: calc((var(--push, 36px) + 6px) * 0.72) 0;
+    animation-timing-function: cubic-bezier(0.25, 0.65, 0.5, 1);
+  }
+}
+
 /* 撞上前一张的那一下：推过来的牌亮一下 */
 .pond .tile.fresh.fx-push.hit {
   animation:

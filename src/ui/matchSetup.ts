@@ -211,6 +211,7 @@ const ROWS: Row[] = [
       { label: '陀螺', value: 'top' },
       { label: '举高', value: 'hold' },
       { label: '横推', value: 'push' },
+      { label: '横推·刹车', value: 'brake' },
     ],
   },
   {

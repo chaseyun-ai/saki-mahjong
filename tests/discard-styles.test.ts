@@ -49,6 +49,7 @@ for (const flat of [false, true]) {
   for (const style of RIICHI_STYLES) CASES.push({ style, riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, style, flat) });
   // 横推：落在一行里靠左的格子推得远
   for (const col of [0, 2, 5]) CASES.push({ style: 'push', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'push', flat, pushDistAt(col), col > 0) });
+  for (const col of [0, 2, 5]) CASES.push({ style: 'brake', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'brake', flat, pushDistAt(col), col > 0) });
   // 大星淡的双立直
   CASES.push({ style: 'fling', riichi: true, flat, p: styleParams(flat ? SLIDE_RIICHI : RIICHI_DISCARD, 'fling', flat) });
 }
@@ -137,7 +138,7 @@ describe('出牌的样子', () => {
     const sideways = (style: DiscardStyle) => c2riichi(style) && style !== 'place';
     for (const c of CASES) {
       // （淡的回旋不在这里：只有双立直用，那是她牌河里的头一张，左边、里面都还没有牌；路上碰不碰东西由 flingPath 管）
-      if (!['slide', 'stand', 'turn', 'top', 'push'].includes(c.style)) continue;
+      if (!['slide', 'stand', 'turn', 'top', 'push', 'brake'].includes(c.style)) continue;
       for (const spin of [1, -1]) {
         const pa = path(c.style, sideways(c.style), { spin, landed: TO.clone() });
         const rest = reach(pa.to, pa.toQuat);
@@ -206,9 +207,11 @@ describe('出牌的样子', () => {
   });
 
   it('横推：往回带一点再越推越快，落在一行里越靠左推得越远、越久；撞得上前一张的撞上就停', () => {
-    expect(pushDistAt(5)).toBe(pushDistAt(4));
-    expect(pushDistAt(0)).toBeGreaterThan(pushDistAt(2));
-    expect(pushDistAt(2)).toBeGreaterThan(pushDistAt(4));
+    // 一行通常六张：最远（第一格）也只推三张牌宽，越往右越短，第六格往右都一样
+    expect(pushDistAt(0)).toBeCloseTo(3, 6);
+    for (let col = 1; col <= 5; col++) expect(pushDistAt(col)).toBeLessThan(pushDistAt(col - 1));
+    expect(pushDistAt(5)).toBeCloseTo(1.25, 6);
+    expect(pushDistAt(8)).toBe(pushDistAt(5));
     // 放下的地方不超出这一行的右头太多：第一格推过来的那张，放下时右边还在六格以内
     expect(TILE_H / 2 + pushDistAt(0) + TILE_H / 2).toBeLessThanOrEqual(6 * (TILE_W + POND_GAP));
     let last = Infinity;
@@ -256,6 +259,52 @@ describe('出牌的样子', () => {
       expect(declareDelay('push', p)).toBeLessThan(last);
       expect(declareDelay('push', p)).toBeLessThan(0.6);
       last = declareDelay('push', p) + 1e-9;
+    }
+  });
+
+  it('横推·刹车：一样横着放在右边、往回带一点，一把推出去很快到最快，之后一路刹到停在落点，不撞前一张', () => {
+    for (const col of [0, 1, 3, 5]) {
+      // 左边有没有前一张都一样：自己刹住，不撞
+      const p = styleParams(SLIDE_RIICHI, 'brake', true, pushDistAt(col), col > 0);
+      expect(p.pushHit).toBe(false);
+      const pa = path('brake', true, { landed: TO.clone() });
+      const land = p.reach + p.carry;
+      const end = land + afterTime('brake', p);
+      const x = (t: number) => sampleDiscard(p, pa, t).tilePos.x - TO.x;
+      expect(x(land + 1e-6)).toBeCloseTo(pushDistAt(col), 4);
+      expect(x(land + 0.09)).toBeCloseTo(pushDistAt(col), 4);
+      const dt = 1 / 480;
+      const go = land + 0.1 + 0.13; // 放下停完、往回带完，开始推
+      let back = 0;
+      let top = 0;
+      let topAt = 0;
+      const speeds: number[] = [];
+      for (let t = land + 0.1; t + dt <= end + 1e-9; t += dt) {
+        back = Math.max(back, x(t) - pushDistAt(col));
+        const v = (x(t) - x(t + dt)) / dt;
+        if (t >= go) speeds.push(v);
+        if (v > top) [top, topAt] = [v, t];
+      }
+      expect(back).toBeGreaterThan(0.1);
+      expect(back).toBeLessThan(0.3);
+      // 起步很快：推的这一段不到三成时间就到最快；之后一直在慢下来，到头几乎停住
+      expect((topAt - go) / (end - go)).toBeLessThan(0.3);
+      expect((topAt - go) / (end - go)).toBeGreaterThan(0.1);
+      const peak = speeds.indexOf(Math.max(...speeds));
+      for (let i = peak + 2; i < speeds.length; i++) expect(speeds[i]).toBeLessThanOrEqual(speeds[i - 1] + 1e-6);
+      expect(speeds.at(-1)!).toBeLessThan(top * 0.05);
+      // 刹车占了一大半：推到一半时间的时候已经走过大半的路，剩下的慢慢滑到
+      expect(x((go + end) / 2)).toBeLessThan(pushDistAt(col) * 0.4);
+      // 一路只往左，正好停在落点，不越过去
+      for (const v of speeds) expect(v).toBeGreaterThan(-1e-6);
+      expect(x(end)).toBeCloseTo(0, 6);
+      for (let t = land; t <= end; t += dt) expect(x(t)).toBeGreaterThan(-1e-6);
+      // 到头只有轻轻一下，没有撞
+      expect(cues(p, 'brake').map((c) => c.kind)).toEqual(['scrape', 'tap', 'declare']);
+      // 比猛推的久一点，但摆好还是在 0.6 秒以内
+      const push = styleParams(SLIDE_RIICHI, 'push', true, pushDistAt(col), col > 0);
+      expect(declareDelay('brake', p)).toBeGreaterThan(declareDelay('push', push));
+      expect(declareDelay('brake', p)).toBeLessThan(0.6);
     }
   });
 

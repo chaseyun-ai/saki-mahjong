@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { POND_GAP, TILE_H, TILE_T, TILE_W } from './tableLayout';
+import { TILE_H, TILE_T, TILE_W } from './tableLayout';
 
 // 出牌动作：给定参数和时间 t，算出这一刻手腕该在哪、伸手权重多少、牌在哪。
 // 不保存任何状态，同样的参数和时间永远得到同样的姿势，所以牌桌和动作调试场景共用它，
@@ -21,6 +21,7 @@ export interface DiscardParams {
 // 某一次出牌用的参数：在上面那些之外，还带着这一次才知道的量（styleParams 填）
 export interface DiscardMotion extends DiscardParams {
   pushDist?: number; // 横推：横着放在落点右边多远再推过来（牌宽），不给是 PUSH_SIDE。远的推得久
+  pushBrake?: boolean; // 横推·刹车：一把推出去，快到位了刹住（不撞前一张）
   pushHit?: boolean; // 横推：左边有前一张牌，推到头撞上去（越推越快，撞上就停）；没有就自己刹住
   flingFrom?: THREE.Vector3; // 回旋：牌放到桌上哪里开始滑（桌角，世界坐标），不给是落点右边、跟前的默认位置
   flingVia?: THREE.Vector3; // 回旋：弧线的控制点（二次贝塞尔，世界坐标），牌桌照着绕开牌山算好给进来；不给是默认的弧
@@ -52,14 +53,17 @@ export const SLIDE_RIICHI: DiscardParams = { ...SLIDE_DISCARD, lift: 2 };
 //   平常的牌：snap 拍（抬高了直着拍下去）、slide 滑（放在跟前往前一推）、spin 旋（手指一搓，牌在半空平着转一圈）、
 //             toss 抛（半路松手，牌翻个跟头落下去弹两下）、stand 立倒（立着放下，往前一推倒成牌面朝上）
 //   立直宣言牌：turn 转横（先竖着放下，按着转成横的）、top 陀螺（落在旁边像陀螺一样转，慢下来滑进位置）、
-//             hold 举高（举到半空停一下再砸下去）、push 横推（横着放在右边，往回带一点再猛地推过去，撞上前一张）
+//             hold 举高（举到半空停一下再砸下去）、push 横推（横着放在右边，往回带一点再猛地推过去，撞上前一张）、
+//             brake 横推·刹车（一样横着放在右边，一把推出去，快到位了刹住，轻轻停在前一张旁边，不撞）
 //   角色自己的：fling 回旋（大星淡的双立直：牌面朝上放在她右手边的桌角，贴着桌面甩出去，像陀螺一样转着走一道圆弧滑到牌河第一格）。
 //             不在设置里，也不随机抽，牌桌看是谁、是不是双立直、路上有没有牌山挡着来用
-export type DiscardStyle = 'place' | 'snap' | 'slide' | 'spin' | 'toss' | 'stand' | 'turn' | 'top' | 'hold' | 'push' | 'fling';
+export type DiscardStyle = 'place' | 'snap' | 'slide' | 'spin' | 'toss' | 'stand' | 'turn' | 'top' | 'hold' | 'push' | 'brake' | 'fling';
 // 设置里能选、随机会抽到的那些（角色自己的那一套不算）
 export type CommonStyle = Exclude<DiscardStyle, 'fling'>;
 export const NORMAL_STYLES: CommonStyle[] = ['place', 'snap', 'slide', 'spin', 'toss', 'stand'];
-export const RIICHI_STYLES: CommonStyle[] = ['place', 'turn', 'top', 'hold', 'push'];
+export const RIICHI_STYLES: CommonStyle[] = ['place', 'turn', 'top', 'hold', 'push', 'brake'];
+// 横推的两种（猛推、刹车）：横着放在右边再推过来的那一套时刻、路线是共用的
+export const isPush = (style: DiscardStyle | undefined): boolean => style === 'push' || style === 'brake';
 
 // 落桌那一下多响：soft 轻轻放下，click 平常的一声，slap 重重拍下去
 export type LandWeight = 'soft' | 'click' | 'slap';
@@ -102,9 +106,16 @@ const PUSH_PER = 0.035;
 const PUSH_POWER = 2.6;
 // 左边没有牌可撞（一行的第一张）：推到这几成开始自己刹住
 const PUSH_BRAKE = 0.72;
-// 横推的牌放下的地方照人算，不照落点算：手总是落在这一行偏右的那一格（从左数第几格，可以带小数），
-// 所以宣言牌在一行里越靠左推得越远、越久，靠右的只推一小段
-const PUSH_FROM_COL = 4.4;
+// 推多远照宣言牌落在一行里的第几格算：越靠左推得越远，第 1 格最远（PUSH_MAX 个牌宽：一行通常 6 张，
+// 推过半行就显得太长了），到第 PUSH_NEAR_COL 格（0 起）往右都只推 PUSH_SIDE
+const PUSH_MAX = 3;
+const PUSH_NEAR_COL = 5;
+// 横推·刹车：推多久 = BRAKE_BASE + 每个牌宽 BRAKE_PER（比猛推的久一点，后面一大半都在刹）；
+// 前 BRAKE_RAMP 成的时间是起步（越来越快），之后一路刹到停；刹车的劲头（指数，越大起步越冲、后面拖得越长）
+const BRAKE_BASE = 0.2;
+const BRAKE_PER = 0.05;
+const BRAKE_RAMP = 0.22;
+const BRAKE_DRAG = 2.6;
 // 回旋（淡的双立直）：牌面朝上放到右手边的桌角，贴着桌面甩出去，转着滑一道弧线到落点。
 // 贴着桌面滑多久；一共转几圈（整数圈：放下时就是横的，停下也是横的）；越滑越慢的劲头（指数）；
 // 牌桌没给起点时，起点在落点右边多远、靠自己这边多远；弧线原本想走成多弯（见 flingBow）
@@ -136,23 +147,27 @@ const STYLES: Record<DiscardStyle, StyleSpec> = {
   hold: { after: 0, land: 'slap', declare: 0, cues: [], grip: 1, room: 0 },
   // （推多久看推多远，见 specOf；这里写的是最短的那一种）
   push: { after: PUSH_BEAT + PUSH_WIND + PUSH_BASE, land: 'soft', declare: PUSH_BEAT + PUSH_WIND + PUSH_BASE, cues: [], grip: 1 + PUSH_BEAT + PUSH_WIND + PUSH_BASE, room: 0 },
+  // （和横推一样的摆法，推多久见 specOf；落到位只是轻轻一声）
+  brake: { after: PUSH_BEAT + PUSH_WIND + BRAKE_BASE, land: 'soft', declare: PUSH_BEAT + PUSH_WIND + BRAKE_BASE, cues: [], grip: 1 + PUSH_BEAT + PUSH_WIND + BRAKE_BASE, room: 0 },
   // （放到桌角算落桌；手跟着甩出去一小段才松开，牌滑到位宣言才成立）
   fling: { after: FLING_SLIDE, land: 'soft', declare: FLING_SLIDE, cues: [['scrape', 0], ['tap', FLING_SLIDE]], grip: 1.07, room: 0 },
 };
 
 // 横推猛推的那一段多久（秒）：照推多远算
-const thrustTime = (p?: DiscardMotion): number => PUSH_BASE + PUSH_PER * (p?.pushDist ?? PUSH_SIDE);
+const thrustTime = (p?: DiscardMotion): number => (p?.pushBrake ? BRAKE_BASE + BRAKE_PER * (p.pushDist ?? PUSH_SIDE) : PUSH_BASE + PUSH_PER * (p?.pushDist ?? PUSH_SIDE));
 // 横推从放下停完算起，往回带、再推到位一共多久（秒）
 const pushTime = (p?: DiscardMotion): number => PUSH_WIND + thrustTime(p);
 // 2D 牌桌用：推多远（牌宽）时，往回带、再推到位一共多久（秒），其中往回带占多久
-export const pushSeconds = (dist: number): { wind: number; all: number } => ({ wind: PUSH_WIND, all: PUSH_WIND + PUSH_BASE + PUSH_PER * dist });
+export const pushSeconds = (dist: number, brake = false): { wind: number; all: number } => ({ wind: PUSH_WIND, all: PUSH_WIND + thrustTime({ pushDist: dist, pushBrake: brake } as DiscardMotion) });
 // 横推推到第几成（x 是放下停完以后过了多久）：0 是放下的地方，1 是落点；往回带的时候是负的。
-// 撞得上前一张的越推越快、撞上就停；撞不上的（一行的第一张）推到 PUSH_BRAKE 成自己刹住
+// 撞得上前一张的越推越快、撞上就停；撞不上的（一行的第一张）推到 PUSH_BRAKE 成自己刹住。
+// 刹车的那一种：起步很快冲到最快，之后一路刹到停，正好停在落点
 export function pushProgress(p: DiscardMotion | undefined, x: number): number {
   const back = PUSH_BACK / (p?.pushDist ?? PUSH_SIDE);
   if (x <= 0) return 0;
   if (x < PUSH_WIND) return -back * smooth(x / PUSH_WIND);
   const s = clamp01((x - PUSH_WIND) / thrustTime(p));
+  if (p?.pushBrake) return -back + (1 + back) * brakeCurve(s);
   let f = s ** PUSH_POWER;
   if (!p?.pushHit) {
     const c = PUSH_BRAKE;
@@ -161,12 +176,24 @@ export function pushProgress(p: DiscardMotion | undefined, x: number): number {
   }
   return -back + (1 + back) * f;
 }
+// 刹车那一种推到第几成（s：推的这一段过了几成时间）：前 BRAKE_RAMP 成时间越来越快，之后越来越慢，
+// 两段在接头的地方一样快，到头正好停住
+export function brakeCurve(s: number): number {
+  s = clamp01(s);
+  const a = BRAKE_RAMP;
+  const n = BRAKE_DRAG;
+  const at = (n * a) / (2 * (1 - a) + n * a); // 起步那一段走了几成路
+  return s < a ? at * (s / a) ** 2 : at + (1 - at) * (1 - (1 - (s - a) / (1 - a)) ** n);
+}
 // 这一次出牌照哪一套时刻走。横推的时刻跟着推多远变，别的样子是固定的
 function specOf(style: DiscardStyle, p?: DiscardMotion): StyleSpec {
   const spec = STYLES[style];
-  if (style !== 'push') return spec;
-  const t = PUSH_BEAT + pushTime(p);
-  return { ...spec, after: t, declare: t, cues: [['scrape', PUSH_BEAT + PUSH_WIND], [p?.pushHit ? 'knock' : 'slap', t]], grip: 1 + t };
+  if (!isPush(style)) return spec;
+  const q = style === 'brake' ? ({ ...p, pushBrake: true } as DiscardMotion) : p;
+  const t = PUSH_BEAT + pushTime(q);
+  // 猛推的到头是一声重的（撞上了是撞的那一声）；刹车的滑到停只有轻轻一下
+  const end: [CueKind, number] = style === 'brake' ? ['tap', t] : [p?.pushHit ? 'knock' : 'slap', t];
+  return { ...spec, after: t, declare: t, cues: [['scrape', PUSH_BEAT + PUSH_WIND], end], grip: 1 + t };
 }
 
 export const landWeight = (style: DiscardStyle = 'place'): LandWeight => STYLES[style].land;
@@ -175,11 +202,11 @@ export const declareDelay = (style: DiscardStyle = 'place', p?: DiscardMotion): 
 export const roomNeeded = (style: DiscardStyle = 'place'): number => STYLES[style].room;
 // 贴着桌面滑的那一声要响多久（秒）
 export function scrapeTime(style: DiscardStyle = 'place', p?: DiscardMotion): number {
-  return style === 'push' ? thrustTime(p) : style === 'top' ? 0.6 : style === 'fling' ? FLING_SLIDE * 0.8 : 0.2;
+  return isPush(style) ? thrustTime(style === 'brake' ? ({ ...p, pushBrake: true } as DiscardMotion) : p) : style === 'top' ? 0.6 : style === 'fling' ? FLING_SLIDE * 0.8 : 0.2;
 }
 // 横推：宣言牌落在这一行从左数第 col 格（0 起）时，横着放在落点右边多远再推过来（牌宽）
 export function pushDistAt(col: number): number {
-  return Math.max(PUSH_SIDE, (PUSH_FROM_COL - col) * (TILE_W + POND_GAP));
+  return PUSH_SIDE + (PUSH_MAX - PUSH_SIDE) * clamp01((PUSH_NEAR_COL - col) / PUSH_NEAR_COL);
 }
 
 // 这种出牌的快慢和抬多高：在基准参数上调。flat 是 2.5D（没有人物，牌自己飞，基准抬得很低）
@@ -215,11 +242,13 @@ export function styleParams(base: DiscardParams, style: DiscardStyle = 'place', 
     p.lift = Math.max(base.lift * 1.25, 3.2);
     p.carry = flat ? base.carry * 2.1 : base.carry * 2.9;
     p.settle = flat ? 0 : base.settle + 0.05;
-  } else if (style === 'push') {
+  } else if (isPush(style)) {
     p.lift = base.lift * 0.6;
     p.carry = base.carry * 1.2;
     if (pushDist !== undefined) p.pushDist = pushDist;
-    p.pushHit = pushHit;
+    // 刹车的那一种自己停住，不撞前一张
+    p.pushBrake = style === 'brake';
+    p.pushHit = pushHit && style === 'push';
     p.settle = hand(PUSH_BEAT + pushTime(p) + 0.1);
   } else if (style === 'fling') {
     // 搬运是把牌带到右手边的桌角放下（不抬多高）；放下就甩出去，手顿一下再收
@@ -532,7 +561,7 @@ function tileAt(p: DiscardMotion, path: DiscardPath, style: DiscardStyle, tc: nu
     const u = (k - HOLD_HANG) / (1 - HOLD_HANG);
     return { pos: apex.lerp(end, u * u * u), quat: hang.slerp(toQ, clamp01(u * 1.5)) };
   }
-  if (style === 'push') {
+  if (isPush(style)) {
     // 横推：横着放在位置右边，停一下，往回带一点，再猛地推过去（撞上前一张就停）
     const side = end.clone().addScaledVector(R, p.pushDist ?? PUSH_SIDE);
     if (ta <= 0) return { pos: arc(side, p.lift), quat: turn(toQ) };

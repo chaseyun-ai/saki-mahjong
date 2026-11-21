@@ -164,7 +164,7 @@ export function varyDiscard(p: DiscardParams, amount = 1): DiscardParams {
 
 // 视觉设置里的三项。varied / char 是照各人的手风随机；其余是所有人都固定用那一种
 export type DiscardFx = 'varied' | 'place' | 'snap' | 'slide' | 'spin' | 'toss' | 'stand';
-export type RiichiFx = 'varied' | 'place' | 'turn' | 'top' | 'hold' | 'push';
+export type RiichiFx = 'varied' | 'place' | 'turn' | 'top' | 'hold' | 'push' | 'brake';
 export type PondFx = 'char' | PondStyle;
 // 牌河摆得多齐：neat 一丝不苟，natural 随手放的（原来的样子），loose 松松垮垮，messy 东倒西歪
 export type PondStyle = 'neat' | 'natural' | 'loose' | 'messy';
@@ -180,19 +180,19 @@ const HABITS = {
   // 没特别写的人：大多平放，偶尔换个花样
   plain: {
     discard: { place: 52, slide: 16, snap: 12, spin: 8, stand: 8, toss: 4 },
-    riichi: { place: 32, turn: 24, push: 16, hold: 16, top: 12 },
+    riichi: { place: 32, turn: 24, push: 10, brake: 6, hold: 16, top: 12 },
     pond: 'natural',
   },
   // 端正：规规矩矩平放，牌河一丝不苟
   neat: {
     discard: { place: 78, slide: 14, stand: 8 },
-    riichi: { turn: 46, place: 30, push: 24 },
+    riichi: { turn: 46, place: 30, brake: 16, push: 8 },
     pond: 'neat',
   },
   // 文静：轻拿轻放，推过去的多
   gentle: {
     discard: { place: 60, slide: 28, stand: 12 },
-    riichi: { turn: 42, push: 34, place: 24 },
+    riichi: { turn: 42, brake: 24, push: 10, place: 24 },
     pond: 'natural',
   },
   // 豪快：拍的、抛的多，牌河东倒西歪
@@ -210,7 +210,7 @@ const HABITS = {
   // 懒散：能推就不抬手，牌河松松垮垮
   lazy: {
     discard: { slide: 46, place: 44, toss: 10 },
-    riichi: { push: 44, turn: 36, place: 20 },
+    riichi: { push: 22, brake: 22, turn: 36, place: 20 },
     pond: 'loose',
   },
 } satisfies Record<string, Habit>;

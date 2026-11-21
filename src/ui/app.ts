@@ -74,7 +74,7 @@ import { fmtPts } from '../story/soloView';
 import { type HandEvent, recordHands } from '../story/hands';
 import { type NationalTab, saveTab, savedTab } from '../story/tabs';
 import { hash01, paceOf, pickDiscardStyle, pondJitter, pondStyleOf, vary } from './vary';
-import { type DiscardStyle, landWeight, pushDistAt, pushSeconds } from '../ui3d/discardMotion';
+import { type DiscardStyle, isPush, landWeight, pushDistAt, pushSeconds } from '../ui3d/discardMotion';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
@@ -135,20 +135,23 @@ const FRESH_2D: Record<DiscardStyle, { ms: number; sounds: [number, Fresh2dSound
   top: { ms: 950, sounds: [[110, 'click'], [130, 'scrape']] },
   hold: { ms: 900, sounds: [[845, 'slap']] },
   push: { ms: 560, sounds: [[130, 'soft'], [370, 'scrape'], [540, 'slap']] },
+  brake: { ms: 640, sounds: [[130, 'soft'], [370, 'scrape'], [625, 'soft']] },
   fling: { ms: 1200, sounds: [[140, 'soft'], [160, 'scrape'], [1180, 'click']] },
 };
 // 2D 的横推：放下、停一下一共多久（毫秒，和 style.css 的 drop-push-in 一样长），之后往回带一点、猛地推过去（多久照推多远算，和 3D 一样）
 const PUSH_2D_IN = 240;
-const push2dMs = (push: number) => Math.round(pushSeconds(push).all * 1000);
+const push2dMs = (push: number, brake = false) => Math.round(pushSeconds(push, brake).all * 1000);
 // 撞上前一张以后，前一张歪过去要多久（毫秒）；歪多少度（最少、最多）、往左让多少像素
 const KNOCK_2D_MS = 150;
 const KNOCK_2D_DEG: [number, number] = [2.2, 3.6];
 const KNOCK_2D_PX = 1.4;
 // 这一次出牌的动画多长、什么时候响哪一声：横推照推多远算（push 是推多远，牌宽），别的样子是固定的
 function fresh2d(style: DiscardStyle, push = 0): { ms: number; sounds: [number, Fresh2dSound][] } {
-  if (style !== 'push' || !push) return FRESH_2D[style];
-  const go = push2dMs(push);
-  return { ms: PUSH_2D_IN + go, sounds: [[130, 'soft'], [PUSH_2D_IN + Math.round(pushSeconds(push).wind * 1000), 'scrape'], [PUSH_2D_IN + go - 15, 'slap']] };
+  if (!isPush(style) || !push) return FRESH_2D[style];
+  const brake = style === 'brake';
+  const go = push2dMs(push, brake);
+  // 猛推的到头是重的一声；刹车的滑到停只有轻轻一下
+  return { ms: PUSH_2D_IN + go, sounds: [[130, 'soft'], [PUSH_2D_IN + Math.round(pushSeconds(push).wind * 1000), 'scrape'], [PUSH_2D_IN + go - 15, brake ? 'soft' : 'slap']] };
 }
 // 2D 的牌河里牌歪多少：牌小（28 像素宽），转角照 3D 的七成，免得挤到旁边的牌
 const POND_2D_TWIST = 0.7;
@@ -1268,10 +1271,10 @@ export class App {
       // 横推推多远看这一张落在一行里的第几格（第三行放不下的接着往右排）
       const n = Math.max(0, pond.filter((d) => !d.called).length - 1);
       const col = n - Math.min(2, Math.floor(n / 6)) * 6;
-      const push = style === 'push' ? pushDistAt(col) : 0;
+      const push = isPush(style) ? pushDistAt(col) : 0;
       this.freshDiscard = { key: `${e.seat}-${pond.length - 1}`, style, at: Date.now(), push };
-      // 横推撞上前一张：前一张歪一点（撞上的那一刻才歪）
-      if (push && col > 0) {
+      // 横推撞上前一张：前一张歪一点（撞上的那一刻才歪）。刹车的那一种自己停住，不撞
+      if (push && style === 'push' && col > 0) {
         const g = this.game!;
         if (this.knocksRound !== g.round) this.knocks2d.clear();
         this.knocksRound = g.round;
@@ -4161,12 +4164,12 @@ export class App {
           classes.push('fresh', `fx-${fresh.style}`);
           // 动画播到一半重画：从播到的地方接着播
           const t = Date.now() - fresh.at;
-          if (fresh.style === 'push' && fresh.push) {
+          if (isPush(fresh.style) && fresh.push) {
             // 横推是两段动画接起来的（放下、推过去），推多远、推多久照这一张算
-            const hit = !d.called && p.discards.slice(0, i).filter((x) => !x.called).length % 6 > 0;
+            const hit = fresh.style === 'push' && !d.called && p.discards.slice(0, i).filter((x) => !x.called).length % 6 > 0;
             if (hit) classes.push('hit');
-            css.push(`--push:${(fresh.push * POND_2D_PX).toFixed(0)}px`, `--push-ms:${push2dMs(fresh.push)}ms`);
-            const go = push2dMs(fresh.push);
+            const go = push2dMs(fresh.push, fresh.style === 'brake');
+            css.push(`--push:${(fresh.push * POND_2D_PX).toFixed(0)}px`, `--push-ms:${go}ms`);
             if (t > 30 || hit) css.push(`animation-delay:-${t}ms,${PUSH_2D_IN - t}ms${hit ? `,${PUSH_2D_IN + go - t}ms` : ''}`);
           } else if (t > 30) css.push(`animation-delay:-${t}ms`);
         }
@@ -4195,7 +4198,7 @@ export class App {
   // 2D 牌桌出牌的声音：照这种出牌动画的节奏，落桌、弹起、推到位各响一下
   private freshSounds(seat: number, style: DiscardStyle, push = 0): void {
     const pan = this.clickPan(seat);
-    const scrape = style === 'push' && push ? pushSeconds(push).all - pushSeconds(push).wind : style === 'top' ? 0.6 : style === 'fling' ? 0.85 : 0.2;
+    const scrape = isPush(style) && push ? pushSeconds(push, style === 'brake').all - pushSeconds(push).wind : style === 'top' ? 0.6 : style === 'fling' ? 0.85 : 0.2;
     for (const [ms, kind] of fresh2d(style, push).sounds) {
       const play = () => (kind === 'scrape' ? playScrape(pan, scrape) : playClick({ pan, varied: true, weight: kind }));
       if (ms <= 0) play();

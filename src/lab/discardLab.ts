@@ -32,7 +32,7 @@ function labTable(): LabTable {
   return v === '25d' || v === 'v2' ? v : '3d';
 }
 const POND_LABELS: Record<PondStyle, string> = { neat: '整齐', natural: '自然', loose: '随手', messy: '凌乱' };
-const STYLE_LABELS: Record<DiscardStyle, string> = { place: '平放', snap: '拍下', slide: '滑推', spin: '旋转', toss: '轻抛', stand: '立倒', turn: '转横', top: '陀螺', hold: '举高', push: '横推', fling: '淡 · 双立直' };
+const STYLE_LABELS: Record<DiscardStyle, string> = { place: '平放', snap: '拍下', slide: '滑推', spin: '旋转', toss: '轻抛', stand: '立倒', turn: '转横', top: '陀螺', hold: '举高', push: '横推', brake: '横推·刹车', fling: '淡 · 双立直' };
 // 比赛用的 28 毫米牌宽约 21 毫米，拿来把牌桌换算成真实尺寸
 const REAL_TILE_MM = 21;
 
