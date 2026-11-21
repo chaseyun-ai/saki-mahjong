@@ -1,9 +1,11 @@
 import type { Game } from '../engine/game';
 import { Rng } from '../engine/rng';
+import { evaluateWin } from '../engine/score';
 import { shanten, waitingKinds } from '../engine/shanten';
-import { KIND_COUNT, Kind, TileId, doraFromIndicator, kindLabel, kindOf, toCounts } from '../engine/tiles';
+import { KIND_COUNT, Kind, TileId, doraFromIndicator, isRed, kindLabel, kindOf, toCounts } from '../engine/tiles';
 import { isCornerDraw, stackAt } from '../engine/wall';
 import { seatCost } from './costs';
+import { steerAway } from './doraControl';
 import { suzuBurst } from './suzu';
 import { teruLadder } from './teru';
 import { PRIORITY, type Ability } from './types';
@@ -37,6 +39,14 @@ import { PRIORITY, type Ability } from './types';
 // - 巨引力源（10）：黑色的引力圆和四边牌山的外沿相切，罩住每边中间的几墩（墩的中心在圆里：离正中 AWAI.sourceSpan 墩以内，每边 7 墩）。
 //   这一局摸到圆里的牌时：别人控牌山的能力失效，她没听牌时必定摸进有效牌。圆外的牌照常
 //
+// 重做版和初版：选人页淡的头像旁边切换（只管玩家自己用的淡，PlayerConfig.startForm 是 true 就是初版；电脑的淡都是重做版）。
+// 重做版比初版多两条：
+// - 连招只算跳满（AWAI.comboCap）：双立直 → 转角暗杠 → 杠里 → 自摸这一套，原作里是闲家 12000、庄家 18000 上下。
+//   两立直 2 番 + 门前清自摸和 1 番 + 杠里 4 番正好 7 番，所以别的番一概不给：配牌不带别的役（断幺九、一杯口、役牌、混一色……），
+//   手里没有赤宝牌、宝牌，杠完的岭上牌不是和了牌（不开花，退相干留到下一张），新翻的杠宝牌不指向她的牌，
+//   里宝牌只有杠里那一张指向她的牌。荣和是两立直 + 杠里 6 番，也是跳满
+// - 星符汇聚约一半做得成（AWAI.starsFate）：按下时掷一次，掷不中的局字牌摸到中途星符消散，留着的字牌解锁，之后照常摸牌
+//
 // 电脑的淡：被动照常，听牌就立直（第一张就是双立直）；退相干在有人立直、牌山快见底时用；
 // 桌上有强的控场能力、自己没领先时开高维领域或巨引力源；照的连续和了爬到 3 层以上、漫爆发时开平行宇宙；
 // 落后很多的最后两局才拿字牌手（拿到就开星符汇聚），别的局都是天听
@@ -48,6 +58,11 @@ export const AWAI = {
   regen: 0,
   // 星符汇聚：玩家的淡每一局有多大概率拿到字牌手（能量不够按一次时不发）。0 是从来不发，1 是每局都发
   starsDeal: 0.05,
+  // 重做版：星符汇聚按下时掷一次，这么大概率一路摸到凑成大七星；掷不中就摸到中途星符消散（至少摸到 1 张，最多摸到还差 2 张）。
+  // 1 是每次都凑得成（初版）。别人抢先和了也算不成，所以实际做成的比这个数低
+  starsFate: 0.65,
+  // 重做版：连招（双立直、转角暗杠、杠里、自摸）只算跳满，别的役、宝牌、赤宝牌、多的里宝牌一概不给。false 是不管（初版）
+  comboCap: true,
   // 字牌手里有几种字牌：四、五、六、七种各占多少；每种有多大概率是一对
   starsKinds: [0.25, 0.3, 0.25, 0.2],
   starsPair: 0.3,
@@ -67,7 +82,7 @@ export const AWAI = {
 export type AwaiSkillId = 'stars' | 'domain' | 'decohere' | 'wave' | 'parallel' | 'accel' | 'source';
 
 export const AWAI_SKILLS: { id: AwaiSkillId; name: string; cost: number; desc: string }[] = [
-  { id: 'stars', name: '星符汇聚', cost: 30, desc: '打出第一张牌前：之后每次摸牌都是大七星（东南西北白发中各两张）还缺的字牌。约四成的局配牌偏字牌，起手字牌越多成得越快' },
+  { id: 'stars', name: '星符汇聚', cost: 30, desc: '打出第一张牌前：之后每次摸牌都是大七星（东南西北白发中各两张）还缺的字牌，约一半的时候摸到中途星符消散（初版不会）。少数局配牌偏字牌，起手字牌越多成得越快' },
   { id: 'domain', name: '高维领域', cost: 20, desc: '这一局黑暗笼罩牌桌：别人控牌山的能力失效，摸牌也变慢' },
   { id: 'decohere', name: '退相干', cost: 10, desc: '下一次摸牌必定是进张；听牌、立直时必定自摸' },
   { id: 'wave', name: '引力波', cost: 10, desc: '听牌后：牌山里所有和了牌亮出来，挑立直的时机' },
@@ -97,9 +112,19 @@ interface AwaiState {
   decohere?: boolean; // 退相干等着下一次摸牌
   last?: TileId; // 加速驱动：留给她最后摸的那张和了牌（锁住）
   starKeep?: TileId[]; // 星符汇聚：牌山里给她留着的字牌（锁住）
+  starLeft?: number; // 星符汇聚：这一局凑不成，还能摸到几张字牌（没有这一项是凑得成）
+  starOff?: boolean; // 星符消散了
+  winKeep?: TileId; // 连招只算跳满：杠完下一张要摸的和了牌（不是赤宝牌、宝牌），开局就放在转角后面她摸的位置（锁住）
 }
 
 const stateOf = (g: Game, seat: number) => g.abilityState[seat] as AwaiState;
+
+// 玩家选的是初版（选人页的切换）：连招不限点数，星符汇聚每次都凑得成
+export function awaiClassic(g: Game, seat: number): boolean {
+  return !!g.startForm[seat];
+}
+// 连招只算跳满
+const capped = (g: Game, seat: number) => AWAI.comboCap && !awaiClassic(g, seat);
 
 // 这一局杠里的里宝指示牌是第几张（没杠过是 undefined）
 export function awaiKanUra(g: Game, seat: number): number | undefined {
@@ -148,6 +173,8 @@ export function awaiWaitingForCorner(g: Game, seat: number): Kind | null {
 function dropCorner(g: Game, seat: number): void {
   const st = stateOf(g, seat);
   if (st.corner !== undefined) g.wall.locked.delete(st.corner, 'awai');
+  if (st.winKeep !== undefined) g.wall.locked.delete(st.winKeep, 'awai');
+  st.winKeep = undefined;
   st.corner = undefined;
   st.kanKind = undefined;
 }
@@ -176,7 +203,7 @@ const HONORS = [27, 28, 29, 30, 31, 32, 33];
 
 // 星符汇聚发动了，大七星还在做（没鸣过牌）
 export function awaiStarPlan(g: Game, seat: number): boolean {
-  return !!g.active(seat) && on(g, seat, 'stars') && g.players[seat].melds.length === 0;
+  return !!g.active(seat) && on(g, seat, 'stars') && !stateOf(g, seat).starOff && g.players[seat].melds.length === 0;
 }
 
 // 大七星还缺的字牌
@@ -335,6 +362,23 @@ export function awaiCornerKan(g: Game, seat: number): boolean {
   return !!st.dbl && !st.kanned && st.kanKind !== undefined && m?.type === 'ankan' && kindOf(m.tiles[0]) === st.kanKind;
 }
 
+// 连招只算跳满：连招还有戏的时候（双立直了，第四张还在牌山里、刚摸到手、已经杠了），新翻的杠宝牌不指向她的牌、她听的牌。
+// 返回每种牌要避开几张（doraControl.settleKanDora）；桌上没有这样的淡是 null
+export function awaiComboAvoid(g: Game): number[] | null {
+  for (let s = 0; s < 4; s++) {
+    if (g.abilities[s]?.id !== 'awai' || !g.active(s) || !capped(g, s) || g.quelled(s)) continue;
+    const st = stateOf(g, s);
+    const p = g.players[s];
+    const tiles = [...p.hand, ...p.melds.flatMap((m) => m.tiles)];
+    const counts = toCounts(tiles);
+    const alive = !!st.kanned || (st.kanKind !== undefined && ((st.corner !== undefined && g.wall.live.includes(st.corner)) || counts[st.kanKind] === 4));
+    if (!st.dbl || !alive) continue;
+    for (const k of curWaits(g, s)) counts[k]++;
+    return counts;
+  }
+  return null;
+}
+
 // 桌上有没有淡开着高维领域（所有人都看得到黑暗）
 export function awaiDomainOn(g: Game): boolean {
   return [0, 1, 2, 3].some((s) => g.abilities[s]?.id === 'awai' && !!g.active(s) && on(g, s, 'domain'));
@@ -398,8 +442,9 @@ function waveDraws(g: Game, seat: number): number[] {
 
 // 随机配一手听牌：一个暗刻 + 两个顺子 + 一个对子 + 一个两面搭子。暗杠以后听的牌不能变
 // accept：别人对她配牌的规矩也得满足（比如霞绝掉的花色）
-function planHand(avail: number[], rng: Rng, accept: (kinds: Kind[]) => boolean): { kinds: Kind[]; kan: Kind } | null {
-  for (let attempt = 0; attempt < 200; attempt++) {
+// bare：连招只算跳满时，这手牌不能带别的役（bareHand）
+function planHand(avail: number[], rng: Rng, accept: (kinds: Kind[]) => boolean, bare?: (hand: number[], kan: Kind, waits: Kind[]) => boolean): { kinds: Kind[]; kan: Kind } | null {
+  for (let attempt = 0; attempt < (bare ? 600 : 200); attempt++) {
     const need = new Array<number>(KIND_COUNT).fill(0);
     const kan = rng.int(KIND_COUNT);
     need[kan] = 4; // 第四张也得在牌山里
@@ -423,6 +468,7 @@ function planHand(avail: number[], rng: Rng, accept: (kinds: Kind[]) => boolean)
     const afterKan = hand.slice();
     afterKan[kan] = 0;
     if (waitingKinds(afterKan, 1).join() !== waits.join()) continue;
+    if (bare && !bare(afterKan, kan, waits)) continue;
     const kinds: Kind[] = [];
     hand.forEach((n, k) => {
       for (let i = 0; i < n; i++) kinds.push(k);
@@ -433,15 +479,85 @@ function planHand(avail: number[], rng: Rng, accept: (kinds: Kind[]) => boolean)
   return null;
 }
 
+// 连招只算跳满：暗杠以后的这手牌（hand 是门内 10 张的张数）不管自摸哪一张，都只有两立直、门前清自摸和。
+// 杠的牌没有赤宝牌，手牌和听的牌里没有开局的宝牌，每种牌用的张数不超过不带赤的那几张
+function bareHand(g: Game, seat: number, hand: number[], kan: Kind, waits: Kind[]): boolean {
+  const plain = (k: Kind) => [3, 2, 1, 0].map((i) => k * 4 + i).filter((t) => !isRed(t));
+  if (plain(kan).length < 4) return false;
+  const dora = doraFromIndicator(kindOf(g.wall.doraIndicators[0]));
+  if (dora === kan || hand[dora] > 0 || waits.includes(dora)) return false;
+  const closed: TileId[] = [];
+  for (let k = 0; k < KIND_COUNT; k++) {
+    if (hand[k] + (waits.includes(k) ? 1 : 0) > plain(k).length) return false;
+    for (let i = 0; i < hand[k]; i++) closed.push(plain(k)[i]);
+  }
+  // 第一张摸牌得有闲牌可摸（idleDraws）。有的牌型摸什么都能换着听（比如四组面子带一张单骑），那就一种闲牌都没有
+  const dealt = hand.slice();
+  dealt[kan] = 3;
+  if (idleDraws(g, dealt).filter(Boolean).length < 8) return false;
+  return waits.every((k) => {
+    const tile = plain(k)[hand[k]];
+    const r = evaluateWin({
+      closed: [...closed, tile],
+      melds: [{ type: 'ankan', tiles: plain(kan) }],
+      winTile: tile,
+      tsumo: true,
+      seatWind: g.seatWind(seat),
+      roundWind: 27 + g.roundWind,
+      isDealer: seat === g.dealer,
+      riichi: true,
+      doubleRiichi: true,
+      doraIndicators: [],
+    });
+    return !!r && r.yaku.every((y) => y.name === '两立直' || y.name === '门前清自摸和');
+  });
+}
+
+// 把指向 kan 的指示牌放到第 i 张里宝牌。牌山（from 限定哪些位置）、岭上牌、后面的里宝牌里找；
+// wide（连招只算跳满时）：都没有就拿还没翻的宝牌指示牌换，不然这一局杠里就落空了
+function kanUraIndicator(g: Game, i: number, kan: Kind, wide: boolean, from?: (j: number) => boolean): boolean {
+  const w = g.wall;
+  const ind = (t: TileId) => doraFromIndicator(kindOf(t)) === kan;
+  if (w.bringToUra(i, ind, g.rng, from)) return true;
+  if (!wide || i >= w.uraIndicators.length || w.locked.has(w.uraIndicators[i])) return false;
+  for (let j = Math.max(1, w.doraRevealed); j < w.doraIndicators.length; j++) {
+    if (!ind(w.doraIndicators[j]) || w.locked.has(w.doraIndicators[j])) continue;
+    [w.uraIndicators[i], w.doraIndicators[j]] = [w.doraIndicators[j], w.uraIndicators[i]];
+    return true;
+  }
+  return false;
+}
+
+// 连招只算跳满：第一张摸牌得是闲牌，摸进来只能原样打出去立直（换别的牌打就不听了）。
+// 不然电脑、玩家都能拿它换掉配牌里的一张，听的牌变了，赤宝牌、宝牌、别的役就混进来了。返回每种牌是不是闲牌
+function idleDraws(g: Game, hand: number[]): boolean[] {
+  const c = hand.slice();
+  const dora = doraFromIndicator(kindOf(g.wall.doraIndicators[0]));
+  return Array.from({ length: KIND_COUNT }, (_, d) => {
+    if (d === dora || c[d] >= 3) return false;
+    c[d]++;
+    let idle = true;
+    for (let x = 0; x < KIND_COUNT && idle; x++) {
+      if (x === d || c[x] === 0) continue;
+      c[x]--;
+      if (shanten(c) <= 0) idle = false;
+      c[x]++;
+    }
+    c[d]--;
+    return idle;
+  });
+}
+
 // 转角暗杠的位置（live 的下标，配牌前算）：开局后摸牌经过的第 2 个转角前、轮到她摸的那张。
 // 要在她立直之后（她至少摸过三次），杠完还得再摸一次；第 2 个转角来不及（太靠近海底）时退到第 1 个转角
-function cornerSlot(g: Game, seat: number): number | null {
+// spare：后面多留几张（连招只算跳满时：别人再开一杠，她杠完的下一张也不是海底）
+function cornerSlot(g: Game, seat: number, spare = 0): number | null {
   const sum = g.dice[0] + g.dice[1];
   const rel = (seat - g.dealer + 4) % 4;
   const corners: number[] = [];
   for (let d = 52; d <= 121; d++) if (isCornerDraw(g.dealer, sum, d)) corners.push(d);
   const near = (d: number) => {
-    for (let h = d; h > d - 4; h--) if ((h - 52) % 4 === rel && h >= 52 + 4 * 3 && h + 5 <= 121) return h;
+    for (let h = d; h > d - 4; h--) if ((h - 52) % 4 === rel && h >= 52 + 4 * 3 && h + 5 + spare <= 121) return h;
     return null;
   };
   for (const d of [corners[1], corners[0]]) {
@@ -636,6 +752,8 @@ function use(g: Game, seat: number, id: AwaiSkillId): void {
     dropCorner(g, seat);
     // 字牌手的局配牌时就留好了；天听的局现在留（牌山、王牌里还找得到的）
     if (!st.starKeep) reserveStars(g, seat, g.players[seat].hand, false);
+    // 重做版：这一次凑不凑得成现在就定。凑不成的话还能摸到几张字牌：至少 1 张，最多摸到还差 2 张
+    if (!awaiClassic(g, seat) && AWAI.starsFate < 1 && !g.rng.chance(AWAI.starsFate)) st.starLeft = 1 + g.rng.int(Math.max(1, starShort(g.players[seat].hand) - 2));
   }
   if (id === 'decohere') st.decohere = true;
   if (id === 'parallel') parallel(g, seat);
@@ -675,7 +793,10 @@ function aiPress(g: Game, seat: number): void {
   if (behind(g, seat) > 0 && strongControl(g, seat) && !on(g, seat, 'source')) try_('domain');
   if (!tenpaiNow(g, seat) && !on(g, seat, 'domain') && strongControl(g, seat) && awaiEnergy(g, seat) >= 40) try_('source');
   const threat = g.players.some((q) => q.seat !== seat && q.riichi && g.seesRiichi(q.seat, seat));
-  if (g.waits(seat).length && awaiWaitingForCorner(g, seat) === null && !stateOf(g, seat).decohere && (threat || g.wall.remaining < 30)) try_('decohere');
+  // 连招只算跳满时：刚开转角暗杠（岭上不开花）、杠完等下一张自摸（本来就是和了牌）都不用退相干
+  const st = stateOf(g, seat);
+  const combo = capped(g, seat) && (awaiCornerKan(g, seat) || (!!st.kanned && st.kanKind !== undefined));
+  if (g.waits(seat).length && awaiWaitingForCorner(g, seat) === null && !combo && !st.decohere && (threat || g.wall.remaining < 30)) try_('decohere');
 }
 
 // ---------- 能力 ----------
@@ -683,7 +804,7 @@ function aiPress(g: Game, seat: number): void {
 export const awaiAbility: Ability = {
   id: 'awai',
   name: '星空',
-  description: `星空能量开局 ${AWAI.energyStart[0]}–${AWAI.energyStart[1]} 点（随机整十），${AWAI.regen ? `每局回复 ${AWAI.regen} 点` : '用掉不回复'}。被动：时间迟滞（别人配牌 5–6 向听，挡得住或会支配牌山的人减弱）、命运支配（天听但永远不天和；双立直的话在第 2 个转角前暗杠，杠里四张都是里宝牌，下一张自摸）。主动：星符汇聚 30（打出第一张牌前按，之后摸牌凑大七星；约四成的局配牌偏字牌，字牌越多越快）、高维领域 20、退相干 10、引力波 10、平行宇宙 50、加速驱动 10、巨引力源 10（罩住每边牌山中间 7 墩）。`,
+  description: `星空能量开局 ${AWAI.energyStart[0]}–${AWAI.energyStart[1]} 点（随机整十），${AWAI.regen ? `每局回复 ${AWAI.regen} 点` : '用掉不回复'}。被动：时间迟滞（别人配牌 5–6 向听，挡得住或会支配牌山的人减弱）、命运支配（天听但永远不天和；双立直的话在第 2 个转角前暗杠，杠里四张都是里宝牌，下一张自摸）。这一套连招只算跳满（闲家 12000、庄家 18000），初版不限。主动：星符汇聚 30（打出第一张牌前按，之后摸牌凑大七星，约一半的时候摸到中途星符消散；少数局配牌偏字牌，字牌越多越快）、高维领域 20、退相干 10、引力波 10、平行宇宙 50、加速驱动 10、巨引力源 10（罩住每边牌山中间 7 墩）。`,
   priority: PRIORITY.awai,
 
   // 时间迟滞定规矩：另外三家的配牌至少 5–6 向听（减弱的人 3 向听）
@@ -711,7 +832,7 @@ export const awaiAbility: Ability = {
     if (awaiStarPlan(g, seat)) {
       const need = [...starNeed(g, seat)];
       lines.push(need.length ? `大七星还差：${need.map(kindLabel).join(' ')}` : '大七星凑齐了');
-    }
+    } else if (s.starOff) lines.push('星符消散了：这一局凑不成大七星');
     if (on(g, seat, 'domain')) lines.push('高维领域展开中');
     if (on(g, seat, 'source')) lines.push('巨引力源罩住了每边牌山中间的几墩');
     if (s.decohere) lines.push('退相干：下一次摸牌');
@@ -780,7 +901,12 @@ export const awaiAbility: Ability = {
     // 命运支配：双立直的配牌。先找一手满足别人规矩的（规矩只看牌种，所以拿每种牌里的一张代表来算）
     // 只数单拿一张也不违反别人规矩的牌（比如玄在场时赤五不算：同种的普通牌够了才行）
     const avail = toCounts(w.live.filter((t) => others.every((r) => r.bad([t]) === 0)));
-    let plan = s.starDeal ? null : planHand(avail, g.rng, (kinds) => others.every((r) => r.bad(kinds.map((k) => k * 4 + 1)) === 0));
+    const fitsOthers = (kinds: Kind[]) => others.every((r) => r.bad(kinds.map((k) => k * 4 + 1)) === 0);
+    // 重做版：先找一手不带别的役的（连招只算跳满）；找不到再照初版的找法
+    const cap = capped(g, seat);
+    const plainAvail = toCounts(w.live.filter((t) => !isRed(t) && others.every((r) => r.bad([t]) === 0)));
+    let plan = s.starDeal || !cap ? null : planHand(plainAvail, g.rng, fitsOthers, (hand, kan, waits) => bareHand(g, seat, hand, kan, waits));
+    if (!plan && !s.starDeal) plan = planHand(avail, g.rng, fitsOthers);
     // 无解时降级：不顾比她后动的人的规矩，换牌也一样
     if (!plan && !s.starDeal) plan = planHand(toCounts(w.live), g.rng, () => true);
     if (plan) {
@@ -788,20 +914,36 @@ export const awaiAbility: Ability = {
       if (placed) {
         s.tenpaiDeal = true;
         s.kanKind = plan.kan;
+        // 连招只算跳满：手里的赤宝牌换成同种的普通牌
+        if (cap) {
+          for (const i of mine) {
+            const k = kindOf(w.live[i]);
+            const same = (t: TileId) => kindOf(t) === k && !isRed(t);
+            if (isRed(w.live[i]) && !w.bringToLive(i, same, g.rng, (j) => j >= 52)) w.bringToLive(i, same, g.rng, (j) => !mineSet.has(j));
+          }
+        }
         const want = [...plan.kinds].sort((a, b) => a - b).join();
         g.addDealRule({ seat, ability: 'awai', text: '天听配牌', target: seat, bad: (hand) => ([...hand].map(kindOf).sort((a, b) => a - b).join() === want ? 0 : 1) });
         // 第四张放在第 2 个转角前她摸的位置，锁住
-        const slot = cornerSlot(g, seat);
+        const slot = cornerSlot(g, seat, cap ? 2 : 0) ?? cornerSlot(g, seat);
         const kan = plan.kan;
         const isKan = (t: TileId) => kindOf(t) === kan;
         if (slot !== null && (w.bringToLive(slot, isKan, g.rng, (j) => j >= 52) || w.bringToLive(slot, isKan, g.rng, (j) => !mineSet.has(j)))) {
           s.corner = w.live[slot];
           w.locked.add(s.corner, 'awai');
+          // 连招只算跳满：杠完她下一张摸的位置（转角后面第 4 张）先放一张不带赤的和了牌锁住，到时候不用现找
+          const hand = toCounts(plan.kinds.map((k) => k * 4));
+          const waits = waitingKinds(hand, 0);
+          if (cap && w.bringToLive(slot + 4, (t) => waits.includes(kindOf(t)) && !isRed(t), g.rng, (j) => j >= 52 && j !== slot)) {
+            s.winKeep = w.live[slot + 4];
+            w.locked.add(s.winKeep, 'awai');
+          }
         }
         // 杠里要用的指示牌先藏在后面的里宝牌里：开局时牌山里一定还有，等到转角时可能早被摸光了
-        const indicator = (t: TileId) => doraFromIndicator(kindOf(t)) === kan;
-        w.bringToUra(1, indicator, g.rng, (j) => j >= 52);
-        w.bringToUra(2, indicator, g.rng, (j) => j >= 52);
+        // 连招只算跳满时找得更宽：发完牌以后的牌山里没有，就从别人的配牌位置、没翻的宝牌指示牌里拿
+        for (const i of [1, 2]) {
+          if (!kanUraIndicator(g, i, kan, false, (j) => j >= 52) && cap) kanUraIndicator(g, i, kan, true, (j) => !mineSet.has(j));
+        }
       }
     }
     // 时间迟滞：把别人配牌里有用的牌换成没用的，换到发完牌以后的牌山里。别人的规矩（比如霞绝掉的花色）不能变差；
@@ -832,6 +974,13 @@ export const awaiAbility: Ability = {
       const p = g.players[seat];
       if (!rinshan && stateOf(g, seat).tenpaiDeal && g.noCallsYet && p.discards.length === 0) {
         const waits = g.waits(seat);
+        // 连招只算跳满：这一张还得是闲牌，不是赤宝牌
+        const idle = capped(g, seat) && stateOf(g, seat).kanKind !== undefined ? idleDraws(g, toCounts(p.hand)) : null;
+        if (waits.length) return { seat, ability: 'awai', text: '命运支配', deny: (t: TileId) => waits.includes(kindOf(t)) || (!!idle && (isRed(t) || !idle[kindOf(t)])) };
+      }
+      // 连招只算跳满：转角暗杠的岭上牌不是和了牌（不开花），下一张才自摸
+      if (rinshan && capped(g, seat) && awaiCornerKan(g, seat)) {
+        const waits = g.waits(seat);
         if (waits.length) return { seat, ability: 'awai', text: '命运支配', deny: (t: TileId) => waits.includes(kindOf(t)) };
       }
       // 双立直以后、转角暗杠之前不提前和：也定成规矩。以前只在她自己摸牌前换一下，
@@ -854,6 +1003,25 @@ export const awaiAbility: Ability = {
     const s = stateOf(g, seat);
     if (!g.manual[seat]) aiPress(g, seat);
     const waits = g.waits(seat);
+    const cap = capped(g, seat);
+    // 连招只算跳满：转角暗杠的岭上牌不是和了牌（规矩在 beforeAnyDraw 里定了），退相干留到下一张
+    if (cap && rinshan && awaiCornerKan(g, seat)) return;
+    // 杠完下一张就是和了牌：挑不是赤宝牌、不是宝牌的
+    if (cap && !rinshan && s.kanned && s.kanKind !== undefined && waits.length) {
+      const dora = new Set(g.wall.doraIndicators.slice(0, g.wall.doraRevealed).map((t) => doraFromIndicator(kindOf(t))));
+      const win = (t: TileId) => waits.includes(kindOf(t));
+      // 开局留的那一张还在牌山里就拿它（没人鸣牌的话它本来就在这个位置）
+      const keep = s.winKeep;
+      if (keep !== undefined) {
+        g.wall.locked.delete(keep, 'awai');
+        s.winKeep = undefined;
+      }
+      if ((keep !== undefined && win(keep) && g.wall.bringToLive(0, (t) => t === keep, g.rng)) || g.wall.bringToLive(0, (t) => win(t) && !isRed(t) && !dora.has(kindOf(t)), g.rng) || g.wall.bringToLive(0, win, g.rng)) {
+        s.kanKind = undefined;
+        g.emit({ type: 'ability', seat, ability: 'awai', text: '杠里' });
+        return;
+      }
+    }
     // 退相干：下一次摸牌必定进张，听牌时必定自摸
     if (s.decohere) {
       s.decohere = false;
@@ -866,8 +1034,13 @@ export const awaiAbility: Ability = {
     // 星符汇聚：摸还没凑成对子的字牌（听牌了也是：最后一张摸来就是大七星自摸）
     if (awaiStarPlan(g, seat)) {
       const need = starNeed(g, seat);
-      if (need.size) {
-        drawStar(g, seat, rinshan, need);
+      if (need.size && s.starLeft !== undefined && s.starLeft <= 0) {
+        // 这一局凑不成：星符消散，留着的字牌解锁，从这一张起照常摸牌
+        s.starOff = true;
+        releaseStars(g, seat);
+        g.emit({ type: 'ability', seat, ability: 'awai', text: '星符消散' });
+      } else if (need.size) {
+        if (drawStar(g, seat, rinshan, need) && s.starLeft !== undefined) s.starLeft--;
         return;
       }
     } else if (s.starKeep?.length && on(g, seat, 'stars')) releaseStars(g, seat);
@@ -898,7 +1071,21 @@ export const awaiAbility: Ability = {
     // 杠以后翻的那张宝牌下面的里宝牌，指向她杠的牌
     const kan = s.kanKind;
     s.kanUra = g.wall.doraRevealed - 1;
-    g.wall.bringToUra(s.kanUra, (t) => doraFromIndicator(kindOf(t)) === kan, g.rng);
+    kanUraIndicator(g, s.kanUra, kan, capped(g, seat));
+  },
+
+  // 连招只算跳满：里宝牌只有杠里那一张指向她的牌（杠的四张），别的都避开
+  claimUra(g, seat, winTile) {
+    if (!capped(g, seat) || !awaiKanUraHit(g, seat)) return;
+    const s = stateOf(g, seat);
+    const w = g.wall;
+    const p = g.players[seat];
+    const kan = p.melds.find((m) => m.type === 'ankan')!;
+    const mine = toCounts([...p.hand, ...p.melds.flatMap((m) => m.tiles), ...(winTile !== undefined ? [winTile] : [])]);
+    for (let i = 0; i < w.doraRevealed; i++) {
+      if (i === s.kanUra) kanUraIndicator(g, i, kindOf(kan.tiles[0]), true);
+      else steerAway(w.uraIndicators[i], mine, null, (pred) => w.bringToUra(i, pred, g.rng));
+    }
   },
 
   // 第一张打出去：不是双立直就不留转角暗杠

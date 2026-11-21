@@ -1,6 +1,6 @@
 import type { Game } from '../engine/game';
 import { KIND_COUNT, Kind, TileId, doraFromIndicator, kindOf, toCounts } from '../engine/tiles';
-import { awaiKanUra } from './awai';
+import { awaiComboAvoid, awaiKanUra } from './awai';
 import { SHIZUNO, shizunoDora, shizunoMist } from './shizuno';
 
 // 宝牌控制的统一入口。宝牌、杠宝牌、里宝牌分三个时刻定，每个时刻按同一张优先级表，上面的规矩下面不能违反：
@@ -9,6 +9,8 @@ import { SHIZUNO, shizunoDora, shizunoMist } from './shizuno';
 // 2b. 稳乃起雾（雾 L 级）：别家立直和牌时里宝牌按雾的浓度避开和牌那家（mistUra），淡的杠里按雾的浓度少中几张。
 //     排在和牌的人自己的控里能力后面做，所以压得过它们；immune、absolute 的人（姬子拿钥匙、涅莉押 3 点、照）不受影响
 // 3. 和牌的人自己的控里能力（Ability.claimUra：爽的海神威、涅莉押 2、3 点、稳乃、咲的自我限制）。只有和牌的那家算，所以互不冲突
+// 3b. 大星淡（重做版）的连招只算跳满：连招还有戏时新翻的杠宝牌不指向她的牌、她听的牌（awaiComboAvoid），
+//     和牌时里宝牌只有杠里那一张指向她的牌（她自己的 claimUra）。玄、满 6 个标记的稳乃在场时听她们的
 // 4. 宫永咲：她开杠翻出的杠宝牌、她和牌时的里宝牌不指向她自己的牌（岭上摸到赤宝牌照常可以）。
 //    这是她的控场能力，会被稳乃削弱；满 6 个标记的稳乃在场时直接失效（决赛大将战那次杠出了里宝牌）
 //
@@ -38,7 +40,7 @@ export function tilesOf(g: Game, seat: number, extra?: TileId): TileId[] {
 const indicatorOf = (want: Kind) => (t: TileId) => doraFromIndicator(kindOf(t)) === want;
 
 // 把一张指示牌换成“指向的牌 avoid 里越少越好、prefer 里越多越好”。现在的已经最好就不换；换不到最好的就退一步
-function steerAway(current: TileId, avoid: number[], prefer: number[] | null, bring: (pred: (t: TileId) => boolean) => boolean): void {
+export function steerAway(current: TileId, avoid: number[], prefer: number[] | null, bring: (pred: (t: TileId) => boolean) => boolean): void {
   const score = (k: Kind) => avoid[k] * 100 - (prefer ? prefer[k] : 0);
   const cur = score(doraFromIndicator(kindOf(current)));
   const kinds = Array.from({ length: KIND_COUNT }, (_, k) => k)
@@ -61,9 +63,11 @@ export function settleKanDora(g: Game, i: number, kanner: number | undefined): v
   }
   // 稳乃满 6 个标记：她在自己打牌后已经定好了还没翻的杠宝牌，咲的限制不起作用
   if (shizunoMountain(g)) return;
-  if (kanner !== undefined && g.active(kanner)?.id === 'saki' && !g.quelled(kanner) && !g.damped(kanner)) {
-    steerAway(w.doraIndicators[i], toCounts(tilesOf(g, kanner)), null, bring);
-  }
+  const avoid: number[] = new Array(KIND_COUNT).fill(0);
+  if (kanner !== undefined && g.active(kanner)?.id === 'saki' && !g.quelled(kanner) && !g.damped(kanner)) toCounts(tilesOf(g, kanner)).forEach((n, k) => (avoid[k] += n));
+  // 淡的连招只算跳满：谁开的杠都一样
+  awaiComboAvoid(g)?.forEach((n, k) => (avoid[k] += n));
+  if (avoid.some((n) => n > 0)) steerAway(w.doraIndicators[i], avoid, null, bring);
 }
 
 // 有人和牌：里宝牌这时才定。winners 按头跳顺序，winTile 是荣和的那张（自摸不给）。杠宝牌要先翻完（settleKanDora）

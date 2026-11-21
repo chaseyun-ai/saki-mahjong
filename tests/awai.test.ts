@@ -1,7 +1,7 @@
 import { kuroSeat } from '../src/abilities/doraControl';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { stackAt } from '../src/engine/wall';
-import { AWAI, awaiCanUse, awaiDomainOn, awaiEnergy, awaiStarPlan, awaiWaitingForCorner, awaiWaveTiles } from '../src/abilities/awai';
+import { AWAI, awaiCanUse, awaiClassic, awaiDomainOn, awaiEnergy, awaiKanUraHit, awaiStarPlan, awaiWaitingForCorner, awaiWaveTiles } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
 import { SAKI } from '../src/abilities/saki';
 import { suzuCounter } from '../src/abilities/suzu';
@@ -18,9 +18,11 @@ const HONOR_KINDS = [27, 28, 29, 30, 31, 32, 33];
 afterEach(() => Object.assign(AWAI, saved));
 // 字牌手默认不发（各条测试查的是天听的局）；查星符汇聚的测试自己打开
 // 开局能量默认固定 100（算扣能量的测试要整数）；查随机开局能量的测试自己改回来
+// 星符汇聚默认每次都凑得成（重做版掷不中会中途消散：有专门的测试）
 beforeEach(() => {
   AWAI.starsDeal = 0;
   AWAI.energyStart = [100, 100];
+  AWAI.starsFate = 1;
 });
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
@@ -180,6 +182,123 @@ describe('大星淡：被动', () => {
     g.act(0, discard);
     expect(awaiWaitingForCorner(g, 0)).toBeNull();
     expect(g.wall.locked.ownersOf(corner)).not.toContain('awai');
+  });
+});
+
+describe('大星淡：重做版和初版', () => {
+  // 淡和三个没有能力的人打 n 场，把连招（双立直、转角暗杠、杠里）的和牌收起来
+  const comboWins = (classic: boolean, n: number) => {
+    const out: { han: number; limit: string; yaku: string[]; dora: number; aka: number; ura: number; pts: number; dealer: boolean }[] = [];
+    for (let seed = 1; seed <= n; seed++) {
+      const seats = [0, 1, 2, 3].map((i) => byId(i === seed % 4 ? 'awai' : 'izumi'));
+      const awai = seed % 4;
+      const g = new Game({ seed, players: seats.map((c, i) => ({ name: c.id, ability: c.ability, startForm: i === awai && classic })) });
+      expect(awaiClassic(g, awai)).toBe(classic);
+      g.onEvent((e) => {
+        if (e.type !== 'roundEnd') return;
+        const w = e.result.wins.find((x) => x.seat === awai);
+        if (!w || !awaiKanUraHit(g, awai)) return;
+        const r = w.result;
+        const dealer = awai === g.dealer;
+        const pts = w.from === null ? (dealer ? 3 * r.tsumoOtherPays : r.tsumoDealerPays + 2 * r.tsumoOtherPays) : r.ron;
+        out.push({ han: r.han, limit: r.limitName, yaku: r.yaku.map((y) => y.name), dora: r.dora, aka: r.aka, ura: r.ura, pts, dealer });
+      });
+      let steps = 0;
+      while (g.phase !== 'gameEnd' && ++steps < 20000) {
+        if (g.phase === 'roundEnd') {
+          g.nextRound();
+          continue;
+        }
+        const s = g.waitingSeats()[0];
+        g.act(s, chooseAction(g, s, seats[s].ai));
+      }
+    }
+    return out;
+  };
+
+  it('重做版：双立直、转角暗杠、杠里这一套只算跳满（闲家 12000、庄家 18000），别的役、宝牌、赤宝牌、岭上开花、多的里宝牌都没有', () => {
+    const wins = comboWins(false, 12);
+    console.log({ combos: wins.length, han: wins.map((w) => w.han).join('') });
+    expect(wins.length).toBeGreaterThan(20);
+    for (const w of wins) {
+      expect(w.yaku.filter((y) => y !== '两立直' && y !== '门前清自摸和')).toEqual([]);
+      expect([w.dora, w.aka, w.ura]).toEqual([0, 0, 4]);
+      expect(w.limit).toBe('跳满');
+      expect(w.pts).toBe(w.dealer ? 18000 : 12000);
+    }
+  }, 120000);
+
+  it('初版（PlayerConfig.startForm）：连招不限点数，倍满以上的不少', () => {
+    const wins = comboWins(true, 12);
+    console.log({ combos: wins.length, han: wins.map((w) => w.han).join(' ') });
+    expect(wins.length).toBeGreaterThan(20);
+    expect(wins.filter((w) => w.han >= 8).length).toBeGreaterThan(wins.length * 0.5);
+  }, 120000);
+
+  it('重做版：星符汇聚掷不中（AWAI.starsFate）时，字牌摸到中途星符消散：留着的字牌解锁，之后照常摸牌；初版每次都凑得成', () => {
+    AWAI.starsDeal = 1;
+    AWAI.starsFate = 0;
+    for (const classic of [false, true]) {
+      let rounds = 0;
+      let yakuman = 0;
+      let faded = 0;
+      for (let seed = 1; seed <= 6; seed++) {
+        const chars = ['awai', 'izumi', 'izumi', 'izumi'].map(byId);
+        const g = new Game({ seed, players: chars.map((c, i) => ({ name: c.id, ability: c.ability, manual: i === 0, startForm: i === 0 && classic })) });
+        if (!runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0 && g.players[0].discards.length === 0)) continue;
+        rounds++;
+        const p = g.players[0];
+        const pairs = () => {
+          const c = toCounts(p.hand);
+          return HONOR_KINDS.reduce((n, k) => n + Math.min(2, c[k]), 0);
+        };
+        const short = 14 - pairs();
+        g.abilities[0]!.pressSkill!(g, 0, 'stars');
+        expect(awaiStarPlan(g, 0)).toBe(true);
+        let fade = false;
+        let won = 0;
+        let over = false;
+        g.onEvent((e) => {
+          if (e.type === 'ability' && e.seat === 0 && e.text === '星符消散') fade = true;
+          if (e.type !== 'roundEnd') return;
+          over = true;
+          won = e.result.wins.find((x) => x.seat === 0)?.result.yakuman ?? 0;
+        });
+        const start = pairs();
+        let got = 0;
+        for (let i = 0; i < 20 && !over; i++) {
+          g.act(0, chooseAction(g, 0, chars[0].ai));
+          const had = pairs();
+          if (!runUntil(g, chars, () => over || (g.phase === 'turn' && g.turn === 0 && p.drawn !== null))) break;
+          if (over) break;
+          // 消散之前每摸一张多一张用得上的字牌
+          if (!fade && had < 14) {
+            expect(pairs()).toBe(had + 1);
+            got++;
+          }
+        }
+        if (won) yakuman++;
+        if (fade) {
+          faded++;
+          // 至少摸到 1 张，最多摸到还差 2 张；消散以后不算在做大七星，留着的字牌都解锁了
+          expect(got).toBeGreaterThanOrEqual(1);
+          expect(start + got).toBeLessThanOrEqual(14 - 2);
+          expect(got).toBeLessThanOrEqual(Math.max(1, short - 2));
+          expect(awaiStarPlan(g, 0)).toBe(false);
+          expect((g.abilityState[0] as { starKeep?: number[] }).starKeep ?? []).toEqual([]);
+        }
+      }
+      console.log({ classic, rounds, faded, yakuman });
+      expect(rounds).toBeGreaterThan(3);
+      if (classic) {
+        expect(faded).toBe(0);
+        expect(yakuman).toBeGreaterThanOrEqual(rounds - 2);
+      } else {
+        // 消散以后还差两张以上，照常摸牌几乎凑不成（解锁的字牌自己摸到、别人打出来荣和，偶尔有）
+        expect(faded).toBeGreaterThanOrEqual(rounds - 1);
+        expect(yakuman).toBeLessThanOrEqual(1);
+      }
+    }
   });
 });
 
