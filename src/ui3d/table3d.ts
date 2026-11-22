@@ -8,7 +8,7 @@ import { meldLayout } from '../ui/meldLayout';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
 import { sketchFaceSvg } from '../ui/sketchArt';
 import { Avatar, modelProgress } from './avatar';
-import { LOOKS, RestPose, applyLook } from './looks';
+import { LOOKS, RestPose, applyLook, modelOf } from './looks';
 import { Dice } from './dice';
 import { Machine, type MachineCue, type MachineRect } from './machine';
 import type { Changeover } from './changeover';
@@ -1124,12 +1124,13 @@ export class Table3D {
       const ch: Character = { seat: s, seatRoot, avatar: null, pose: rel === 0 ? 'offscreen' : look.pose ?? 'edge' };
       this.characters.push(ch);
       this.seatCharacter(ch, me);
-      const url = look.model;
+      // 素材导入换了这个角色的模型就用换上的，不再染色
+      const { url, custom } = modelOf(view.ids[s]);
       this.modelUrls.push(url);
       Avatar.load(url)
         .then((av) => {
           if (gen !== this.characterGen) return;
-          applyLook(av.vrm, look);
+          if (!custom) applyLook(av.vrm, look);
           if (holder) seatRoot.remove(holder);
           ch.avatar = av;
           this.seatCharacter(ch, me);

@@ -1,0 +1,421 @@
+/* ---------- 素材导入页（src/assets/importer.ts）：上面放到哪里、拖放区，中间对照表，下面已导入的 ---------- */
+
+.imp-screen {
+  user-select: text;
+}
+
+.imp-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 20px 40px;
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.imp-body h2 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  letter-spacing: 2px;
+  color: var(--gold);
+}
+
+.imp-body h2 small {
+  margin-left: 10px;
+  font-size: 13px;
+  letter-spacing: 0;
+  color: var(--ink-quiet);
+}
+
+.imp-body code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.92em;
+}
+
+/* 放到哪里：两张卡片二选一，下面一个总开关 */
+.imp-targets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.imp-target {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+
+.imp-target input {
+  grid-row: span 2;
+  margin-top: 3px;
+  accent-color: var(--gold);
+}
+
+.imp-target b {
+  font-size: 15px;
+}
+
+.imp-target small,
+.imp-switch small {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-quiet);
+}
+
+.imp-target.on {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 10%, rgba(0, 0, 0, 0.22));
+}
+
+.imp-target.disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.imp-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+
+.imp-switch input {
+  accent-color: var(--gold);
+}
+
+/* 拖放区 */
+.imp-drop {
+  padding: 18px 20px;
+  border: 2px dashed color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.18);
+  text-align: center;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.imp-drop.drop {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 14%, rgba(0, 0, 0, 0.18));
+}
+
+.imp-drop-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  color: var(--gold);
+}
+
+.imp-drop-sub {
+  max-width: 780px;
+  margin: 0 auto 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-quiet);
+}
+
+.imp-pick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.imp-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink-quiet);
+  cursor: pointer;
+}
+
+.imp-opt input {
+  accent-color: var(--gold);
+}
+
+/* 对照表：一行一个文件 */
+.imp-rows {
+  display: grid;
+  gap: 6px;
+}
+
+.imp-row {
+  display: grid;
+  grid-template-columns: 44px 56px minmax(140px, 1.3fr) minmax(120px, 0.8fr) minmax(130px, 0.9fr) minmax(150px, 1.2fr) 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 4px solid var(--c);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.imp-row.bad {
+  border-color: rgba(255, 120, 110, 0.45);
+  border-left-color: #e0645a;
+}
+
+.imp-row.skip {
+  opacity: 0.5;
+}
+
+.imp-use {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-quiet);
+  cursor: pointer;
+}
+
+.imp-use input {
+  accent-color: var(--gold);
+}
+
+.imp-thumb {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 6px;
+  background:
+    repeating-conic-gradient(rgba(255, 255, 255, 0.06) 0 25%, transparent 0 50%) 0 0 / 12px 12px,
+    rgba(0, 0, 0, 0.3);
+}
+
+.imp-thumb img,
+.imp-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.imp-icon {
+  font-size: 18px;
+  font-weight: bold;
+  color: var(--gold);
+}
+
+.imp-file {
+  min-width: 0;
+}
+
+.imp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+}
+
+.imp-facts,
+.imp-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink-quiet);
+}
+
+.imp-meta {
+  color: color-mix(in srgb, var(--gold) 70%, var(--ink-quiet));
+}
+
+.imp-row select {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.35);
+  font: inherit;
+  font-size: 13px;
+}
+
+.imp-checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.imp-checks li::before {
+  content: '✓ ';
+  color: #7fd49a;
+}
+
+.imp-checks li.warn {
+  color: #f3cf7a;
+}
+
+.imp-checks li.warn::before {
+  content: '! ';
+  color: #f3cf7a;
+}
+
+.imp-checks li.bad {
+  color: #ff9a90;
+}
+
+.imp-checks li.bad::before {
+  content: '✕ ';
+  color: #ff9a90;
+}
+
+.imp-x,
+.imp-mini {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: var(--ink-quiet);
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.imp-mini {
+  font-size: 11px;
+  color: var(--gold);
+}
+
+.imp-x:hover {
+  color: #ff9a90;
+  border-color: #ff9a90;
+}
+
+.imp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* 已导入：一个角色一张卡片 */
+.imp-cover {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--ink-quiet);
+}
+
+.imp-cover b {
+  color: var(--gold);
+}
+
+.imp-empty {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--ink-quiet);
+}
+
+.imp-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+}
+
+.imp-card {
+  padding: 8px 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 3px solid var(--c);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.imp-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.imp-card h3 small {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-quiet);
+}
+
+.imp-face {
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--c) 40%, #000);
+}
+
+.imp-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.imp-items {
+  display: grid;
+  gap: 6px;
+}
+
+.imp-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.imp-item .imp-thumb {
+  width: 40px;
+  height: 40px;
+}
+
+.imp-item .imp-icon {
+  font-size: 14px;
+}
+
+/* 手机：对照表每行折成两行 */
+@media (max-width: 760px) {
+  .imp-body {
+    padding: 12px 12px 32px;
+  }
+
+  .imp-row {
+    grid-template-columns: 36px 48px minmax(0, 1fr) 28px;
+  }
+
+  .imp-row .imp-thumb {
+    width: 48px;
+    height: 48px;
+  }
+
+  .imp-row select {
+    grid-column: span 2;
+  }
+
+  .imp-row .imp-checks {
+    grid-column: 1 / -1;
+  }
+
+  .imp-row .imp-x {
+    grid-row: 1;
+    grid-column: 4;
+  }
+}

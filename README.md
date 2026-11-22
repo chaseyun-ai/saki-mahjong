@@ -57,6 +57,7 @@
 ```bash
 npm install
 npm run dev      # 打开终端里显示的地址
+npm run assets   # 打开素材导入页（Windows 上双击「素材导入.bat」也一样）
 npm test         # 规则和整场模拟测试
 npx vite-node scripts/balance.ts 300   # 让电脑打 300 场，统计各角色成绩
 npx vite-node scripts/focus.ts shizuno 300 south   # 单看一个角色：每场都让她上桌，另外三家随机
@@ -76,6 +77,7 @@ npx vite-node scripts/komaki-ai.ts 100 [神]   # 电脑的神代小莳：每位�
 | `src/ai` | 规则型电脑对手：牌效、简单防守、会用自己的能力 |
 | `src/ui` | 对局控制、按钮和结算界面，以及 2D 牌桌 |
 | `src/ui3d` | Three.js 3D 牌桌：立体麻将牌、牌河、副露、控制台、占位人物 |
+| `src/assets` | 素材导入：认文件、按文件名对上格子、素材包（zip）、浏览器里存的素材、导入页 |
 | `tests` | 算分、向听和整场模拟测试 |
 
 能力能挂的时机和“谁说了算”的顺序写在 `src/abilities/types.ts`：配牌之前、任何人摸牌之前（控场的人可以给这次摸牌定规矩，比如“这张不许摸”）、自己摸牌前后、打牌后，还能换里宝牌，规则引擎会算牌山转角（`Game.cornerIndices`）。锁住的牌谁都不能动；控场的人按 priority 先动，摸牌的人自己的能力最后动，后动的不能违反先定的规矩，和座位无关。配牌也一样：所有人先定配牌的规矩（`dealRules`），再依次调整牌山，任何一次换牌都不能让别人的规矩变差；能兼容的规矩一起满足，无解时降级（先动的人的规矩保住，没满足的记在 `Game.dealUnmet`），调整完 52 张配牌统一锁定再发牌。
@@ -89,6 +91,19 @@ npx vite-node scripts/komaki-ai.ts 100 [神]   # 电脑的神代小莳：每位�
 
 能力的强度参数在各自文件顶部（比如 `src/abilities/saki.ts` 的 `RINSHAN_WIN_CHANCE`），改数字就能调平衡。
 
+## 素材导入
+
+换头像、切入图、技能动画、3D 模型、手模、语音、提示音、背景音乐，不用改代码、不用手动改文件名。用不用随玩家：不打开这一页，游戏照原样。
+
+- **入口**：选人页的设置 → 视觉 → 素材 →「素材导入」；或者网址后面加 `#assets`；本地开发时双击项目里的 `素材导入.bat`（或 `npm run assets`）直接打开
+- **拖进来就行**：单个文件、整个文件夹、素材包（.zip）都可以。照文件名（连同文件夹名）认出是谁的哪一格：角色 id（`saki`）、中文名（`宫永咲`）、日文写法（`宮永咲`）、单名（`咲`）、罗马字（`Miyanaga Saki`，长音写不写都行）都认；格子认 `头像`/`face`、`立直`/`riichi`、`和牌`、`结算`、技能名（`天使和`、`治水立直`……）、台词名（`岭上开花`）等。不是 VRM 的 `.glb` 当手模，没写角色名的音频看是不是提示音（`落桌`、`立直`……）或背景音乐（`menu`、`东场`……）。试玩页的 `.glb.txt` 也认，自动解回 GLB。导入前先列一张对照表，认错的、没认出来的在下拉框里改
+- **检查**：看文件头判断真实格式（不信扩展名），格式、大小、VRM 有没有人形骨骼、语音长度（最多 12 秒）、头像是不是竖图；VRM 的名字、作者、许可列在表里。大图可以自动缩小到 2048 像素以内、转成 WebP
+- **放到哪里**：
+  - 这个浏览器：人人能用（包括发布的网页版），只影响自己，存在 IndexedDB（`src/assets/store.ts`）；「用我导入的素材」开关关掉就是原版。背景音乐和声音设置里换曲共用一份（`musicStore.ts`）
+  - 项目文件夹：只在本地 `npm run dev` 时有。写进 `public/custom/<角色>/<格子>.<扩展名>`，清单是 `public/custom/manifest.json`，提交到 Git 后打包、发布的游戏里人人都有（`scripts/vite-custom-assets.ts`）。背景音乐写成 `public/music/<格子>.mp3`，照旧不进 Git
+- **素材包**：「导出素材包」把这个浏览器（或项目文件夹）里导入的全部打成一个 zip（`manifest.json` + 文件，`src/assets/pack.ts`），换电脑、换浏览器、放进项目时「导入素材包」就全部还原。试玩页的「素材」页右上角也有「导出素材包」，在那里换过的图和语音可以这样搬到本地
+- **游戏里怎么用**：同一格有好几层时，浏览器里的 > 试玩页里的 > 项目里的 > 游戏自带的（`src/assets/layers.ts` 推给 `looks.ts`、`voice.ts`、`customSfx.ts`）。换了 3D 模型的角色不再染发色、眼睛
+
 ## 3D 人物模型
 
 四位角色暂时用 VRoid 项目公开的示例模型改色而成（`src/ui3d/looks.ts` 里设置每个角色用哪个模型、头发和眼睛的颜色）：
@@ -100,7 +115,7 @@ npx vite-node scripts/komaki-ai.ts 100 [神]   # 电脑的神代小莳：每位�
 | 松实玄 | 千駄ヶ谷篠 | `public/models/vroid-shino.v2.glb` |
 | 园城寺怜 | AvatarSample_F（ヴィータ） | `public/models/vroid-f.v2.glb` |
 
-模型作者是 VRoid プロジェクト，许可写在模型里：任何人可用、可修改、可再分发、可商用，不需要署名（[VRoid Hub 许可条款](https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=allow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=allow&sexual_expression=allow&version=1&violent_expression=allow)）。原始文件来自 [OpenGameArt 上的 VRoid Studio CC0 models](https://opengameart.org/content/vroid-studio-cc0-models)，用 `python3 scripts/shrink-vrm.py 原文件.vrm 输出.glb` 瘦身后放进项目：贴图缩小并转成 WebP，表情形变只存动了的顶点，四个模型一共约 8 MB。模型更新时换一个新文件名（`.v2`、`.v3`……），玩家浏览器里存的旧模型就不会被误用。
+模型作者是 VRoid プロジェクト，许可写在模型里：任何人可用、可修改、可再分发、可商用，不需要署名（[VRoid Hub 许可条款](https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=allow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=allow&sexual_expression=allow&version=1&violent_expression=allow)）。原始文件来自 [OpenGameArt 上的 VRoid Studio CC0 models](https://opengameart.org/content/vroid-studio-cc0-models)，用 `python3 scripts/shrink-vrm.py 原文件.vrm 输出.glb` 瘦身后放进项目：贴图缩小并转成 WebP，表情形变只存动了的顶点，四个模型一共约 8 MB。模型更新时换一个新文件名（`.v2`、`.v3`……），玩家浏览器里存的旧模型就不会被误用。自己的 VRoid 模型不用放进这里：用上面的「素材导入」，拖进 `.vrm` 就换上了。
 
 ## 牌面字体
 

@@ -22,8 +22,10 @@ function fetchModel(url: string): Promise<ArrayBuffer> {
   let p = fileCache.get(url);
   if (!p) {
     fileProgress.set(url, 0);
+    // 玩家自己导入的模型（blob: 网址）本来就在浏览器里，不用再存一份
+    const local = url.startsWith('blob:');
     p = (async () => {
-      const buf = (await loadCached(url)) ?? (await download(url));
+      const buf = (local ? null : await loadCached(url)) ?? (await download(url, !local));
       fileProgress.set(url, 1);
       return buf;
     })();
@@ -35,7 +37,7 @@ function fetchModel(url: string): Promise<ArrayBuffer> {
 }
 
 // 发布页不能直接提供 .glb，那里的模型是 base64 文本（.glb.txt），自己解码
-async function download(url: string): Promise<ArrayBuffer> {
+async function download(url: string, keep = true): Promise<ArrayBuffer> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   // 压缩传输时 Content-Length 是压缩后的大小，和读到的字节数对不上，就不算进度了
@@ -65,7 +67,7 @@ async function download(url: string): Promise<ArrayBuffer> {
     bytes = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
   }
-  void saveCached(url, bytes.buffer);
+  if (keep) void saveCached(url, bytes.buffer);
   return bytes.buffer;
 }
 

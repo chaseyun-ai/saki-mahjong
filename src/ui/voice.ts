@@ -14,19 +14,61 @@ interface Clip {
   gain: number; // 各人给的音频响度不一样，照最响处拉齐
 }
 
-// 语音包在哪（素材记录推过来的），和解码好的（照包的 id 记，换了包自然重新取）
+// 语音从三层来，同一句前面的盖过后面的：
+//   mine 玩家用素材导入存在浏览器里的、playtest 试玩页素材页放的语音包（素材记录推过来的）、project 项目里 public/custom 的。
+// 后两层以外每一句一个文件（src/assets/layers.ts 推过来）。一个角色这几层合起来是哪几句、各从哪来，
+// 拼成一个签名：解码好的照签名记，换了哪一句签名就变，自然重新取
 let refs: Record<string, VoiceRef> = {};
+export type LineSource = { sig: string; load: () => Promise<Uint8Array | null> };
+const lineLayers: { mine: Record<string, Record<string, LineSource>>; project: Record<string, Record<string, LineSource>> } = { mine: {}, project: {} };
 const packs = new Map<string, Promise<Map<string, Clip>>>();
 const ready = new Map<string, Map<string, Clip>>();
+// 试玩页的语音包取下来的样子（照包的 id 记），里面每一句都从这里拿
+const packTexts = new Map<string, Promise<Record<string, Uint8Array>>>();
 
 export function setVoiceRefs(next: Record<string, VoiceRef>): void {
   refs = next;
 }
 
-export const voiceRef = (charId: string): VoiceRef | undefined => refs[charId];
+export function setCustomVoices(layer: 'mine' | 'project', next: Record<string, Record<string, LineSource>>): void {
+  lineLayers[layer] = next;
+  // 换了素材很少见：解码好的全扔掉，下次要说时照新的重新取
+  packs.clear();
+  ready.clear();
+}
 
-// 这个角色放了哪几句
-export const voiceLinesOf = (charId: string): string[] => refs[charId]?.lines ?? [];
+function packClips(id: string): Promise<Record<string, Uint8Array>> {
+  let p = packTexts.get(id);
+  if (!p) {
+    p = (async () => {
+      const res = await fetch('/_blob/' + id);
+      if (!res.ok) return {};
+      const pack = parsePack(await res.text());
+      return Object.fromEntries(Object.entries(pack.clips).map(([k, c]) => [k, base64ToBytes(c.data)]));
+    })().catch(() => ({}));
+    packTexts.set(id, p);
+  }
+  return p;
+}
+
+// 这个角色每一句从哪来
+function sourcesOf(charId: string): Map<string, LineSource> {
+  const out = new Map<string, LineSource>();
+  for (const [k, src] of Object.entries(lineLayers.project[charId] ?? {})) out.set(k, src);
+  const ref = refs[charId];
+  if (ref) for (const k of ref.lines) out.set(k, { sig: `pack:${ref.id}`, load: () => packClips(ref.id).then((c) => c[k] ?? null) });
+  for (const [k, src] of Object.entries(lineLayers.mine[charId] ?? {})) out.set(k, src);
+  return out;
+}
+
+const sigOf = (sources: Map<string, LineSource>): string =>
+  [...sources]
+    .map(([k, s]) => `${k}=${s.sig}`)
+    .sort()
+    .join('|');
+
+// 这个角色放了哪几句（三层合起来）
+export const voiceLinesOf = (charId: string): string[] => [...sourcesOf(charId).keys()].sort();
 
 const TARGET_PEAK = 0.85;
 
@@ -42,42 +84,33 @@ async function decodeClip(a: AudioContext, bytes: Uint8Array): Promise<Clip | nu
   }
 }
 
-// 取一个包、把里面每一句解码好。取不到、坏了的就是空的
-function loadPack(id: string): Promise<Map<string, Clip>> {
-  let p = packs.get(id);
-  if (!p) {
-    p = (async () => {
-      const out = new Map<string, Clip>();
-      const a = audio();
-      if (!a) return out;
-      try {
-        const res = await fetch('/_blob/' + id);
-        if (!res.ok) return out;
-        const pack = parsePack(await res.text());
-        await Promise.all(
-          Object.entries(pack.clips).map(async ([key, c]) => {
-            const clip = await decodeClip(a, base64ToBytes(c.data));
-            if (clip) out.set(key, clip);
-          }),
-        );
-      } catch {
-        // 取不到就当没有
-      }
-      ready.set(id, out);
-      return out;
-    })();
-    packs.set(id, p);
-  }
-  return p;
+// 把一个角色的每一句取下来解码好。取不到、坏了的那句就没有；返回签名（没有语音是空字符串）
+function loadVoices(charId: string): string {
+  const sources = sourcesOf(charId);
+  const sig = sigOf(sources);
+  if (!sig || packs.has(sig)) return sig;
+  const p = (async () => {
+    const out = new Map<string, Clip>();
+    const a = audio();
+    if (!a) return out;
+    await Promise.all(
+      [...sources].map(async ([key, src]) => {
+        const bytes = await src.load().catch(() => null);
+        const clip = bytes ? await decodeClip(a, bytes) : null;
+        if (clip) out.set(key, clip);
+      }),
+    );
+    ready.set(sig, out);
+    return out;
+  })();
+  packs.set(sig, p);
+  return sig;
 }
 
 // 开局、每局开始：桌上这几个人的语音先解码好
 export function preloadVoices(charIds: (string | undefined)[]): void {
   if (audioSettings.voiceMode === 'off') return;
-  for (const id of charIds) {
-    const ref = id ? refs[id] : undefined;
-    if (ref) void loadPack(ref.id);
-  }
+  for (const id of charIds) if (id) loadVoices(id);
 }
 
 interface Speaking {
@@ -101,14 +134,10 @@ export interface SayOptions {
 export function sayVoice(charId: string, keys: string[], opts: SayOptions = {}): boolean {
   const mode = audioSettings.voiceMode;
   if (mode === 'off') return false;
-  const ref = refs[charId];
-  if (!ref) return false;
-  const clips = ready.get(ref.id);
-  if (!clips) {
-    // 还没解码好：这一次不说，先去取
-    void loadPack(ref.id);
-    return false;
-  }
+  // 还没解码好：这一次不说（loadVoices 顺便开始取）
+  const sig = loadVoices(charId);
+  const clips = sig ? ready.get(sig) : undefined;
+  if (!clips) return false;
   const key = keys.find((k) => clips.has(k) && (mode === 'on' || isCallKey(k)));
   if (!key) return false;
   const a = audio();
@@ -211,8 +240,12 @@ export function sampleVoice(): boolean {
 
 // 换了包以后，旧包解码好的那份不用留着
 export function forgetVoicePack(id: string): void {
-  packs.delete(id);
-  ready.delete(id);
+  packTexts.delete(id);
+  for (const sig of [...packs.keys()]) {
+    if (!sig.includes(`=pack:${id}`)) continue;
+    packs.delete(sig);
+    ready.delete(sig);
+  }
 }
 
 // ---------- 素材页里放进一句 ----------

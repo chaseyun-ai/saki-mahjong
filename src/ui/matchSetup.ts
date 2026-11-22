@@ -461,7 +461,11 @@ export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMod
     const f = t.id === 'auto' ? consoleShapeOf(table, 'auto') : t.id;
     return `<button class="set-theme set-shape${on ? ' on' : ''}" aria-pressed="${on}" data-ui="vis-shape" data-v="${t.id}"><i class="sh-${f}" aria-hidden="true"></i>${t.name}</button>`;
   }).join('');
-  const art = skins ? section('素材') + rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图、语音 ›</button>', '只有页面主人看得到') : '';
+  // 素材导入人人都有（存在自己的浏览器里，用不用随你）；试玩页的角色素材只有页面主人有
+  const art =
+    section('素材') +
+    rowHtml('素材导入', '<button class="set-link" data-ui="assets">换头像、模型、语音、音乐 ›</button>', '存在这个浏览器里，只影响自己；能导出成素材包带走') +
+    (skins ? rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图、语音 ›</button>', '试玩页，只有页面主人看得到') : '');
   const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌风格', tables, tableNote, 'set-themes set-tables') + rowHtml('仪表盘形状', shapes, shapeNote, 'set-themes set-shapes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand', 'slam', 'slamStyle', 'slamOrder', 'result'] : ['layout', 'result']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
   return panelHtml('visual', '视觉设置', '改了马上生效', body, '');
 }
