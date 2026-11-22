@@ -18,7 +18,7 @@ const from = Number(process.argv[5] ?? 1);
 AWAI.starsSlow = Number(process.env.SLOW ?? 0);
 AWAI.starsSwap = Number(process.env.SWAP ?? 0);
 AWAI.starsBurst = Number(process.env.BURST ?? 0);
-AWAI.starsHold = process.env.HOLD === '1';
+if (process.env.HOLD !== undefined) AWAI.starsHold = process.env.HOLD === '1';
 AWAI.starsDeal = 0;
 AWAI.aiSkills = false;
 AWAI.energyMax = 1000000;

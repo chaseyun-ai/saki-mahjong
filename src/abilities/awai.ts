@@ -68,9 +68,10 @@ export const AWAI = {
   starsSwap: 0,
   // starsBurst：按下的那一刻手里这么多张用不上的牌换成还缺的字牌（换到大七星还差 2 张为止）
   starsBurst: 0,
-  // starsHold：天听的局也在配牌时就把大七星要的字牌在牌山后面留好（锁住，别人的配牌里因此少一些字牌）；
-  // 第一张打出去还没按星符汇聚就解锁。不留的话，按下时别人手里、牌河里的字牌拿不回来，常常凑不齐
-  starsHold: false,
+  // 留字牌（starsHold）：玩家的淡天听的局、能量够按一次星符汇聚时，配牌前就把大七星要的字牌在牌山后面留好锁住
+  // （先从发完牌以后的牌山里拿，不够才从别人的配牌位置换，别人起手的字牌因此少一些）；第一张打出去还没按就解锁。
+  // 不留的话，按下时别人手里、牌河里的字牌拿不回来，常常凑不齐。电脑的淡天听的局不按星符汇聚，不留。false 是不留（初版）
+  starsHold: true,
   // 重做版：连招（双立直、转角暗杠、杠里、自摸）只算跳满，别的役、宝牌、赤宝牌、多的里宝牌一概不给。false 是不管（初版）
   comboCap: true,
   // 字牌手里有几种字牌：四、五、六、七种各占多少；每种有多大概率是一对
@@ -270,20 +271,42 @@ function dealStars(g: Game, mine: number[], fits: (t: TileId) => boolean, full: 
 // 别人摸不到、别的能力也换不走，等她按了星符汇聚一张张摸来。hand 是她的手牌（配牌时是她会拿到的那 13 张）。
 // 字牌从哪来：牌山；没有了找没用过的岭上牌、没翻的里宝牌指示牌。
 // deal：配牌时留（字牌手）。这时别人的配牌还没发，他们配牌位置上的字牌也能换过来；发了牌以后不动别人的手牌
-function reserveStars(g: Game, seat: number, hand: TileId[], deal: boolean): void {
+// lag：别人的配牌已经被时间迟滞压过了，从他们的配牌位置换走字牌时，换完还得压在定的向听上
+// 已经留着的（配牌时留了一部分）算进去，按下时只补还缺的
+function reserveStars(g: Game, seat: number, hand: TileId[], deal: boolean, lag = false): void {
   const w = g.wall;
   const st = stateOf(g, seat);
   const free = (t: TileId) => !w.locked.has(t);
   const mineSet = new Set(deal ? g.dealIndices(seat) : []);
-  const keep: TileId[] = [];
-  const have = toCounts(hand);
+  const keep: TileId[] = (st.starKeep ?? []).filter((t) => w.live.includes(t) && w.locked.has(t));
+  const have = toCounts([...hand, ...keep]);
+  // 配牌位置 j 上的牌换成 incoming 以后，那一家还压在时间迟滞定的向听上
+  const lagOk = (j: number, incoming: TileId) => {
+    if (!lag) return true;
+    const o = (g.dealer + (j % 4)) % 4;
+    const goal = st.goals?.[o];
+    if (goal === undefined) return true;
+    const idx = g.dealIndices(o);
+    const after = idx.map((i) => (i === j ? incoming : w.live[i]));
+    return shanten(toCounts(after)) >= goal;
+  };
+  // 别人已经压过向听的配牌里拿一张 k：先拿牌山里一张换进去（换完还压得住，不碰别人的规矩），k 落到牌山里，再挪到 slot
+  const fromHand = (slot: number, k: Kind): boolean => {
+    const spots = g.rng.shuffle(w.live.map((_, j) => j).filter((j) => j < 52 && !mineSet.has(j) && kindOf(w.live[j]) === k && free(w.live[j])));
+    for (const j of spots) {
+      const swapIn = (num: boolean) => (t: TileId) => kindOf(t) !== k && (!num || kindOf(t) < 27) && lagOk(j, t);
+      if (!w.bringToLive(j, swapIn(true), g.rng, (i) => i >= 52 && i !== slot) && !w.bringToLive(j, swapIn(false), g.rng, (i) => i >= 52 && i !== slot)) continue;
+      if (w.bringToLive(slot, (t) => kindOf(t) === k, g.rng, (i) => i >= 52)) return true;
+    }
+    return false;
+  };
   let slot = w.live.length - 5;
   for (const k of HONORS) {
     for (let n = have[k]; n < 2; n++) {
       while (slot >= 1 && !free(w.live[slot])) slot--;
       if (slot < (deal ? 52 : 1)) break;
       const isK = (t: TileId) => kindOf(t) === k;
-      let ok = deal ? w.bringToLive(slot, isK, g.rng, (j) => j >= 52) || w.bringToLive(slot, isK, g.rng, (j) => !mineSet.has(j)) : isK(w.live[slot]) || w.bringToLive(slot, isK, g.rng);
+      let ok = deal ? w.bringToLive(slot, isK, g.rng, (j) => j >= 52) || (lag ? fromHand(slot, k) : w.bringToLive(slot, isK, g.rng, (j) => !mineSet.has(j))) : isK(w.live[slot]) || w.bringToLive(slot, isK, g.rng);
       if (!ok) {
         for (const dead of [w.rinshan, w.uraIndicators]) {
           const j = dead.findIndex((t) => isK(t) && free(t));
@@ -802,8 +825,8 @@ function use(g: Game, seat: number, id: AwaiSkillId): void {
   st.used = [...(st.used ?? []), id];
   if (id === 'stars') {
     dropCorner(g, seat);
-    // 字牌手的局配牌时就留好了；天听的局现在留（牌山、王牌里还找得到的）
-    if (!st.starKeep) reserveStars(g, seat, g.players[seat].hand, false);
+    // 配牌时留过（字牌手、玩家的淡天听的局）的话这里只补还缺的；没留过的现在留（牌山、王牌里还找得到的）
+    reserveStars(g, seat, g.players[seat].hand, false);
     // 重做版：这一次凑不凑得成现在就定。凑不成的话还能摸到几张字牌：至少 1 张，最多摸到还差 2 张
     if (!awaiClassic(g, seat) && AWAI.starsFate < 1 && !g.rng.chance(AWAI.starsFate)) st.starLeft = 1 + g.rng.int(Math.max(1, starShort(g.players[seat].hand) - 2));
     if (AWAI.starsBurst > 0 && st.starLeft === undefined) swapStars(g, seat, AWAI.starsBurst, 2);
@@ -992,7 +1015,6 @@ export const awaiAbility: Ability = {
             w.locked.add(s.winKeep, 'awai');
           }
         }
-        if (AWAI.starsHold && awaiEnergy(g, seat) >= skillOf('stars')!.cost) reserveStars(g, seat, mine.map((i) => w.live[i]), true);
         // 杠里要用的指示牌先藏在后面的里宝牌里：开局时牌山里一定还有，等到转角时可能早被摸光了
         // 连招只算跳满时找得更宽：发完牌以后的牌山里没有，就从别人的配牌位置、没翻的宝牌指示牌里拿
         for (const i of [1, 2]) {
@@ -1006,6 +1028,10 @@ export const awaiAbility: Ability = {
       if (o === seat) continue;
       const goal = s.goals?.[o] ?? AWAI.slowShanten;
       if (!worsen(g, seat, o, goal)) g.dealFallback(seat, () => worsen(g, seat, o, goal));
+    }
+    // 留字牌：放在时间迟滞后面。从别人的配牌位置换字牌时，换完还得压在时间迟滞定的向听上
+    if (AWAI.starsHold && s.tenpaiDeal && !s.starDeal && !awaiClassic(g, seat) && g.manual[seat] && awaiEnergy(g, seat) >= skillOf('stars')!.cost) {
+      reserveStars(g, seat, mine.map((i) => w.live[i]), true, true);
     }
   },
 

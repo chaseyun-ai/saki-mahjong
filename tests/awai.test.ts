@@ -300,6 +300,44 @@ describe('大星淡：重做版和初版', () => {
       }
     }
   });
+  it('留字牌：玩家的淡天听的局，配牌时大七星要的字牌就在牌山后面留好锁住；别人的配牌照样压在时间迟滞定的向听上；没按就打出第一张会解锁', () => {
+    type St = { starKeep?: number[]; goals?: Record<number, number>; tenpaiDeal?: boolean };
+    let checked = 0;
+    let full = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const chars = ['awai', 'izumi', 'izumi', 'izumi'].map(byId);
+      const g = new Game({ seed, players: chars.map((c, i) => ({ name: c.id, ability: c.ability, manual: i === 0 })) });
+      const st = g.abilityState[0] as St;
+      if (!st.tenpaiDeal) continue;
+      checked++;
+      const keep = st.starKeep ?? [];
+      // 手里的加上留着的，每种字牌最多两张（只留还缺的）。别人的配牌压着向听，有时换不齐，差的不多；留着的都在牌山里、锁着
+      const c = toCounts([...g.players[0].hand.slice(0, 13), ...keep]);
+      expect(keep.length).toBeGreaterThan(0);
+      for (const t of keep) expect(c[kindOf(t)]).toBeLessThanOrEqual(2);
+      const miss = HONOR_KINDS.reduce((n, k) => n + Math.max(0, 2 - c[k]), 0);
+      expect(miss).toBeLessThanOrEqual(4);
+      if (miss === 0) full++;
+      for (const t of keep) {
+        expect(kindOf(t)).toBeGreaterThanOrEqual(27);
+        expect(g.wall.live.includes(t)).toBe(true);
+        expect(g.wall.locked.has(t)).toBe(true);
+      }
+      for (let o = 1; o < 4; o++) expect(shanten(toCounts(g.players[o].hand.slice(0, 13)))).toBeGreaterThanOrEqual(st.goals![o]);
+      // 不按星符汇聚，打出第一张：留着的字牌解锁
+      if (!runUntil(g, chars, () => g.players[0].discards.length > 0)) continue;
+      for (const t of keep) if (g.wall.live.includes(t)) expect(g.wall.locked.has(t)).toBe(false);
+    }
+    expect(checked).toBeGreaterThan(4);
+    expect(full).toBeGreaterThanOrEqual(2);
+    // 关掉、电脑的淡、初版：都不留
+    for (const [hold, manual, classic] of [[false, true, false], [true, false, false], [true, true, true]]) {
+      AWAI.starsHold = hold;
+      const chars = ['awai', 'izumi', 'izumi', 'izumi'].map(byId);
+      const g = new Game({ seed: 3, players: chars.map((c, i) => ({ name: c.id, ability: c.ability, manual: i === 0 && manual, startForm: i === 0 && classic })) });
+      expect((g.abilityState[0] as St).starKeep ?? []).toEqual([]);
+    }
+  });
 });
 
 describe('大星淡：星空能量', () => {
@@ -641,6 +679,8 @@ describe('大星淡：主动技能', () => {
   });
 
   it('巨引力源：引力圆只罩住每边中间 7 墩，摸到圆里的牌时别人控牌山的能力失效、她没听牌必定进张', () => {
+    // 留字牌会先挪一遍牌山，这个种子下她要的进张就全在别人手里了；这一条只看巨引力源，关掉
+    AWAI.starsHold = false;
     const { g, chars } = manualGame(['saki', 'nodoka', 'koromo'], 5);
     runUntil(g, chars, () => g.phase === 'turn' && g.turn === 0);
     g.abilities[0]!.pressSkill!(g, 0, 'source');

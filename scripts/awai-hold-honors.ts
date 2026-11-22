@@ -5,11 +5,12 @@ import { CHARACTERS } from '../src/abilities/characters';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { Rng } from '../src/engine/rng';
-import { kindOf } from '../src/engine/tiles';
+import { shanten } from '../src/engine/shanten';
+import { kindOf, toCounts } from '../src/engine/tiles';
 
 const games = Number(process.argv[2] ?? 100);
 const pool = process.argv[3] ?? 'random';
-AWAI.starsHold = process.argv[4] === '1';
+AWAI.starsHold = process.argv[4] !== '0';
 AWAI.starsDeal = 0;
 AWAI.aiSkills = false;
 AWAI.energyMax = 1000000;
@@ -17,7 +18,8 @@ AWAI.energyStart = [1000000, 1000000];
 const me = CHARACTERS.find((c) => c.id === 'awai')!;
 const plain = CHARACTERS.find((c) => c.id === 'izumi')!;
 const hist: Record<number, number> = {};
-let rounds = 0, other = 0, mineH = 0, zero = 0;
+let rounds = 0, other = 0, mineH = 0, zero = 0, sh = 0, met = 0, nn = 0;
+const shHist: Record<number, number> = {};
 for (let seed = 1; seed <= games; seed++) {
   const rng = new Rng(seed * 977);
   const others = pool === 'plain' ? [plain, plain, plain] : rng.shuffle(CHARACTERS.filter((c) => c.id !== 'awai')).slice(0, 3);
@@ -32,6 +34,11 @@ for (let seed = 1; seed <= games; seed++) {
       other += n;
       hist[n] = (hist[n] ?? 0) + 1;
       if (n === 0) zero++;
+      const goals = (g.abilityState[mine] as { goals?: Record<number, number> }).goals;
+      const x = shanten(toCounts(g.players[s].hand.slice(0, 13)));
+      sh += x; nn++;
+      shHist[x] = (shHist[x] ?? 0) + 1;
+      if (goals?.[s] === undefined || x >= goals[s]) met++;
     }
   };
   g.onEvent((e) => { if (e.type === 'roundStart') count(); });
@@ -44,4 +51,5 @@ for (let seed = 1; seed <= games; seed++) {
   }
 }
 console.log(`hold ${AWAI.starsHold}，对手 ${pool}，${games} 场 ${rounds} 局：别家每人起手字牌平均 ${(other / rounds / 3).toFixed(2)} 张，一张字牌都没有的 ${((100 * zero) / rounds / 3).toFixed(1)}%；淡自己 ${(mineH / rounds).toFixed(2)} 张`);
+console.log(`别家起手平均 ${(sh / nn).toFixed(2)} 向听，压到时间迟滞定的向听的 ${((100 * met) / nn).toFixed(1)}%`, JSON.stringify(shHist));
 console.log('别家起手字牌张数分布', JSON.stringify(Object.fromEntries(Object.entries(hist).map(([k, v]) => [k, ((100 * v) / rounds / 3).toFixed(1) + '%']))));
