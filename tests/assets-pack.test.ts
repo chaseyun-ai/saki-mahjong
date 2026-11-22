@@ -73,7 +73,7 @@ describe('素材包：zip', () => {
 
 describe('素材包：认文件', () => {
   it('游戏里的立绘、模型认得出来，宽高、VRM 版本读得对', () => {
-    const webp = sniff(new Uint8Array(readFileSync('public/portraits/saki-neutral.webp')))!;
+    const webp = sniff(new Uint8Array(readFileSync('public/portraits/awai-cutin.webp')))!;
     expect(webp.media).toBe('image');
     expect(webp.mime).toBe('image/webp');
     expect(webp.w).toBeGreaterThan(0);
