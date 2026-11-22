@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AWAI } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
-import { NELLY, nellyTier } from '../src/abilities/nelly';
+import { NELLY, NELLY_REMAKE, nellyTier } from '../src/abilities/nelly';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 
@@ -14,17 +14,19 @@ const LINEUPS = [
   ['nodoka', 'mihoko', 'hiroe', 'nelly'],
 ];
 
-// 涅莉押 3 点的开杠路线（试验）：每一局都走开杠路线，玩家每局押 3 点
+// 涅莉押 3 点的开杠路线（试验，初版涅莉）：每一局都走开杠路线，玩家每局押 3 点
 const saved = { plan: NELLY.plan, charge: NELLY.charge, kanRoute: NELLY.kanRoute };
 beforeAll(() => {
   Object.assign(AWAI, { aiSkills: false });
   NELLY.plan = null;
   NELLY.charge = null;
   NELLY.kanRoute = 1;
+  NELLY_REMAKE.on = false;
 });
 afterAll(() => {
   Object.assign(AWAI, { aiSkills: true });
   Object.assign(NELLY, saved);
+  NELLY_REMAKE.on = true;
 });
 
 describe('涅莉：开杠路线', () => {

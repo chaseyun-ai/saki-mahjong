@@ -1,5 +1,6 @@
 import './selectPage.css';
 import { CHARACTERS, type Character } from '../abilities/characters';
+import { NELLY_CLASSIC_TEXT, NELLY_REMAKE_TEXT } from '../abilities/nelly';
 import type { MatchSettings } from './matchSetup';
 import { SCHOOLS, membersOf } from './schools';
 
@@ -141,7 +142,15 @@ export function entryFormHtml(p: Pick<SelectParts, 'picked' | 'settings' | 'phot
   const c = p.picked;
   const url = p.photo(c.id);
   const region = SCHOOLS.find((s) => s.name === c.school)?.region;
-  const desc = c.ability ? c.ability.description : c.note ?? '不靠能力，只靠扎实的牌效和防守。';
+  // 涅莉：说明照选的版本（重做 / 初版）显示
+  const desc =
+    c.id === 'nelly'
+      ? p.settings.nellyClassic
+        ? `（初版）${NELLY_CLASSIC_TEXT}`
+        : `（重做）${NELLY_REMAKE_TEXT}`
+      : c.ability
+        ? c.ability.description
+        : (c.note ?? '不靠能力，只靠扎实的牌效和防守。');
   return `
     <span class="sf-clip" aria-hidden="true"></span>
     <h2 class="sf-title">个人对局 报名表</h2>

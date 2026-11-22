@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
 import { kuroSeat, settleUra, shizunoMountain, tilesOf } from '../src/abilities/doraControl';
+import { NELLY_REMAKE } from '../src/abilities/nelly';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { doraFromIndicator, kindOf, toCounts } from '../src/engine/tiles';
@@ -135,6 +136,13 @@ describe('宝牌控制：宫永咲', () => {
 });
 
 describe('宝牌控制：里宝牌按和牌的人定', () => {
+  // 押 2 点里宝牌往她最多的牌上变是初版涅莉（重做的押了就是三倍满，里宝牌只补到 11–12 番）
+  beforeAll(() => {
+    NELLY_REMAKE.on = false;
+  });
+  afterAll(() => {
+    NELLY_REMAKE.on = true;
+  });
   it('涅莉押 2 点和爽的海神威同桌：谁和牌里宝牌就听谁的（押 3 点另有 11–12 番的定法）', () => {
     let checks = 0;
     let hits = 0;

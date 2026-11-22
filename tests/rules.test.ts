@@ -95,7 +95,7 @@ describe('对局规则', () => {
 
 describe('设置弹窗', () => {
   it('默认：半庄、25000、30000、击飞开、四赤、食断开、一番缚、不公开手牌', () => {
-    expect(DEFAULT_SETTINGS).toEqual({ length: 'south', start: 25000, target: 30000, tobi: true, red: 4, kuitan: true, minHan: 1, open: false, drawPath: 'on', vary: true, discardFx: 'varied', riichiFx: 'varied', pondFx: 'char', spotlight: false, winZoom: false, awaiCutIn: true, opponents: ['', '', ''], chisui: false, sakiStrong: false, awaiClassic: false, layout: 'classic', hand: 'B', result: 'classic', slam: 'hand', slamOrder: 'first', slamStyle: 'slap', xfade: 'random' });
+    expect(DEFAULT_SETTINGS).toEqual({ length: 'south', start: 25000, target: 30000, tobi: true, red: 4, kuitan: true, minHan: 1, open: false, drawPath: 'on', vary: true, discardFx: 'varied', riichiFx: 'varied', pondFx: 'char', spotlight: false, winZoom: false, awaiCutIn: true, opponents: ['', '', ''], chisui: false, sakiStrong: false, awaiClassic: false, nellyClassic: false, layout: 'classic', hand: 'B', result: 'classic', slam: 'hand', slamOrder: 'first', slamStyle: 'slap', xfade: 'random' });
   });
 
   it('选对手：选了的照坐，随机、重复的、选了自己的从剩下的抽', () => {

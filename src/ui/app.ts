@@ -8,7 +8,7 @@ import { teruMirrors } from './teruFx';
 import { tornado2d } from './tornado2d';
 import { flapPages } from '../ui3d/flapBoard';
 import { DARK, FLICK, FLICKER } from '../ui3d/lamp';
-import { nellyBlocked, nellySenses, nellySensesTenpai } from '../abilities/nelly';
+import { nellyBlocked, nellyPlanNote, nellySenses, nellySensesTenpai } from '../abilities/nelly';
 import { CUTIN, CUTIN_TIME, playAwaiCutIn, preloadAwaiCutIn } from '../ui3d/awaiCutIn';
 import { awaiCornerKan, awaiDomainOn, awaiFields, awaiKanUra, awaiKanUraHit, awaiSourceOn, awaiStars, awaiWaveTiles } from '../abilities/awai';
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
@@ -571,7 +571,7 @@ export class App {
       picked: this.pickedChar(),
       settings: this.settings,
       photo: (id: string) => this.cardPortrait(id),
-      badge: (id: string) => (id === 'toka' && this.settings.chisui ? '治水' : id === 'saki' && this.settings.sakiStrong ? '加强' : id === 'awai' && this.settings.awaiClassic ? '初版' : ''),
+      badge: (id: string) => (id === 'toka' && this.settings.chisui ? '治水' : id === 'saki' && this.settings.sakiStrong ? '加强' : id === 'awai' && this.settings.awaiClassic ? '初版' : id === 'nelly' && this.settings.nellyClassic ? '初版' : ''),
       extras: (id: string) => this.formToggleHtml(id),
     };
   }
@@ -688,23 +688,25 @@ export class App {
     return id === 'toka' && this.settings.chisui ? powerPortraitUrl(id) : portraitUrl(id, 'neutral');
   }
 
-  // 报名表本人底下：透华常态 / 治水、咲标准 / 加强、淡重做 / 初版（手写两个字，选中的红笔圈起来）；白水哩是番缚设置
+  // 报名表本人底下：透华常态 / 治水、咲标准 / 加强、淡重做 / 初版、涅莉重做 / 初版（手写两个字，选中的红笔圈起来）；白水哩是番缚设置
   private formToggleHtml(id: string): string {
     if (id === 'rii') return `<button class="sf-rii" data-ui="rii-set">${GEAR_SVG}番缚设置：锁链、头像锁、音效</button>`;
-    if (id !== 'toka' && id !== 'saki' && id !== 'awai') return '';
-    const on = id === 'saki' ? this.settings.sakiStrong : id === 'awai' ? this.settings.awaiClassic : this.settings.chisui;
+    if (id !== 'toka' && id !== 'saki' && id !== 'awai' && id !== 'nelly') return '';
+    const on = id === 'saki' ? this.settings.sakiStrong : id === 'awai' ? this.settings.awaiClassic : id === 'nelly' ? this.settings.nellyClassic : this.settings.chisui;
     const btn = (v: boolean, label: string, note: string) =>
       `<button class="${on === v ? 'on' : ''}" aria-pressed="${on === v}" data-ui="${id}-form" data-v="${v}" title="${note}">${label}</button>`;
     // 宫永咲：标准 / 加强（MatchSettings.sakiStrong），只管自己用的咲
     if (id === 'saki') return `<div class="sf-form">形态：${btn(false, '标准', '5 费魔物的强度')}${btn(true, '加强', '更容易成刻、开花、连杠')}</div>`;
     // 大星淡：重做 / 初版（MatchSettings.awaiClassic），只管自己用的淡
     if (id === 'awai') return `<div class="sf-form">版本：${btn(false, '重做', '连招只算跳满（12000 / 18000），星符汇聚约一半做得成')}${btn(true, '初版', '重做之前的淡：连招不限点数，星符汇聚每次都凑得成')}</div>`;
+    // 涅莉：重做 / 初版（MatchSettings.nellyClassic），只管自己用的涅莉
+    if (id === 'nelly') return `<div class="sf-form">版本：${btn(false, '重做', '开场 3 点运势，押了的局第 7 巡一发自摸三倍满（叠着押每点晚 6 巡），役种换着做')}${btn(true, '初版', '重做之前的涅莉：开场 10 点，押 1/2/3 点做 3 番–满贯/跳满/三倍满')}</div>`;
     return `<div class="sf-form">开局：${btn(false, '常态', '点数变动 10 万后治水')}${btn(true, '治水', '开局就是治水')}</div>`;
   }
 
-  // 透华的常态 / 治水、咲的标准 / 加强、淡的重做 / 初版：v 没给就来回切
-  private toggleForm(id: 'toka' | 'saki' | 'awai', v?: string): void {
-    const key = id === 'saki' ? 'sakiStrong' : id === 'awai' ? 'awaiClassic' : 'chisui';
+  // 透华的常态 / 治水、咲的标准 / 加强、淡和涅莉的重做 / 初版：v 没给就来回切
+  private toggleForm(id: 'toka' | 'saki' | 'awai' | 'nelly', v?: string): void {
+    const key = id === 'saki' ? 'sakiStrong' : id === 'awai' ? 'awaiClassic' : id === 'nelly' ? 'nellyClassic' : 'chisui';
     this.settings[key] = v === undefined ? !this.settings[key] : v === 'true';
     saveSettings(this.settings);
     this.refreshSelect();
@@ -823,7 +825,7 @@ export class App {
     const st = this.settings;
     const chisui = opts.chisui ?? st.chisui;
     const firstDealer = opts.dealer ?? Math.floor(Math.random() * 4);
-    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer, players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !opts.auto, startForm: i === this.me && ((c.id === 'toka' && chisui) || (c.id === 'saki' && !stage && st.sakiStrong) || (c.id === 'awai' && !stage && st.awaiClassic)) })), stage }));
+    this.beginGame([mine, ...others], new Game({ seed, format: st.length, startScore: st.start, rules: rulesOf(st), firstDealer, players: [mine, ...others].map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !opts.auto, startForm: i === this.me && ((c.id === 'toka' && chisui) || (c.id === 'saki' && !stage && st.sakiStrong) || (c.id === 'awai' && !stage && st.awaiClassic) || (c.id === 'nelly' && st.nellyClassic)) })), stage }));
   }
 
   // 公开手牌：单人对局按设置，团体赛不公开
@@ -2823,8 +2825,8 @@ export class App {
       el.textContent = open ? '收起' : '全文';
       return;
     }
-    if (el.dataset.ui === 'toka-form' || el.dataset.ui === 'saki-form' || el.dataset.ui === 'awai-form') {
-      this.toggleForm(el.dataset.ui === 'saki-form' ? 'saki' : el.dataset.ui === 'awai-form' ? 'awai' : 'toka', el.dataset.v);
+    if (el.dataset.ui === 'toka-form' || el.dataset.ui === 'saki-form' || el.dataset.ui === 'awai-form' || el.dataset.ui === 'nelly-form') {
+      this.toggleForm(el.dataset.ui === 'saki-form' ? 'saki' : el.dataset.ui === 'awai-form' ? 'awai' : el.dataset.ui === 'nelly-form' ? 'nelly' : 'toka', el.dataset.v);
       return;
     }
     if (el.dataset.ui === 'setup-opt' && el.dataset.k && el.dataset.v) {
@@ -2837,8 +2839,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、咲的标准 / 加强、动画开关是别处的设置，留着
-      const { chisui, sakiStrong, awaiClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, slam, slamOrder, slamStyle, xfade } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, awaiClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, slam, slamOrder, slamStyle, xfade };
+      const { chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, slam, slamOrder, slamStyle, xfade } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, slam, slamOrder, slamStyle, xfade };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -4560,7 +4562,7 @@ export class App {
     return `<div class="modal"><div class="result predeal" style="--c:${this.chars[this.me].color}">
         <h2>分配运势</h2>
         ${this.seatMapHtml()}
-        <p class="pd-sub">把运势分到这一场的各局（每局最多 3 点），开局排好就不能改：1 点朝 3 番到满贯，2 点朝跳满，3 点朝三倍满、和牌挡不住。连庄、流局重打的本场不再用；比赛提前结束，排在后面的就浪费了。先按电脑的排法填好了，可以改。</p>
+        <p class="pd-sub">${nellyPlanNote(g, this.me)}</p>
         <div class="pd-steps${opts.length > 4 ? ' two' : ''}">${rows}</div>
         <p class="pd-check-msg${err ? ' bad' : ''}">${err ?? '可以了'}</p>
         <button class="primary" data-ui="pd-go" ${err ? 'disabled' : ''}>开始</button>

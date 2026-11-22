@@ -43,6 +43,8 @@ export interface MatchSettings {
   sakiStrong: boolean;
   // 自己用大星淡时用初版（连招不限点数、星符汇聚每次都凑得成）：选人页淡头像旁边的“重做 / 初版”切换
   awaiClassic: boolean;
+  // 自己用涅莉时用初版（开场 10 点运势，押 1/2/3 点做 3 番–满贯/跳满/三倍满）：选人页涅莉头像旁边的“重做 / 初版”切换
+  nellyClassic: boolean;
   // 2.5D 牌桌的布局：classic 是原版；improved 是参考雀魂的试做版（只在改良里改，原版不动，试砸了就换回原版）
   layout: 'classic' | 'improved';
   // 改良布局里自己手牌的画法：B 没有透视、单独一层（雀魂那样）；C 同 B，牌往前倾、牌顶露得多
@@ -82,6 +84,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   chisui: false,
   sakiStrong: false,
   awaiClassic: false,
+  nellyClassic: false,
   layout: 'classic',
   hand: 'B',
   result: 'classic',
@@ -306,6 +309,7 @@ function sanitize(s: MatchSettings): MatchSettings {
   out.chisui = s.chisui === true;
   out.sakiStrong = s.sakiStrong === true;
   out.awaiClassic = s.awaiClassic === true;
+  out.nellyClassic = s.nellyClassic === true;
   return out;
 }
 

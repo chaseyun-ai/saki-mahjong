@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AWAI } from '../src/abilities/awai';
 import { CHARACTERS } from '../src/abilities/characters';
-import { NELLY, nellyAiBet, nellyAiCharge, nellyAiPlan, nellyBlocked, nellyPool, nellySenses, nellySensesTenpai, nellySisters, nellyTier } from '../src/abilities/nelly';
+import { NELLY, NELLY_REMAKE, nellyAiBet, nellyAiCharge, nellyAiPlan, nellyBlocked, nellyPool, nellySenses, nellySensesTenpai, nellySisters, nellyTier } from '../src/abilities/nelly';
 import { teruWinValue } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
@@ -10,9 +10,15 @@ import { toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
 
-// 电脑的淡不放主动技能，免得测出来的是淡的效果
-beforeAll(() => Object.assign(AWAI, { aiSkills: false }));
-afterAll(() => Object.assign(AWAI, { aiSkills: true }));
+// 电脑的淡不放主动技能，免得测出来的是淡的效果；这个文件测的是初版涅莉（重做的在 nelly-remake.test.ts）
+beforeAll(() => {
+  Object.assign(AWAI, { aiSkills: false });
+  NELLY_REMAKE.on = false;
+});
+afterAll(() => {
+  Object.assign(AWAI, { aiSkills: true });
+  NELLY_REMAKE.on = true;
+});
 
 const LINEUPS = [
   ['nelly', 'saki', 'nodoka', 'kuro'],

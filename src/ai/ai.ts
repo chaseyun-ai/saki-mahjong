@@ -23,7 +23,7 @@ import { yuukiActive } from '../abilities/yuuki';
 import { makoDanger, makoSuit } from '../abilities/mako';
 import { KYOUKO, kyoukoTargets } from '../abilities/kyouko';
 import { takamiHarvest, takamiSeeds } from '../abilities/takami';
-import { NELLY, nellyBigDiscard, nellyBigReady, nellyDue, nellyFlush, nellyLiveWaits, nellySealedWaits, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier, nellyTurn } from '../abilities/nelly';
+import { NELLY, nellyBig, nellyBigDiscard, nellyBigReady, nellyDrawsLeft, nellyDrawsToWin, nellyRecipePlan, nellyRemade, nellyDue, nellyFlush, nellyLiveWaits, nellySealedWaits, nellySenses, nellySensesTenpai, nellySuit, nellyTarget, nellyTier, nellyTurn } from '../abilities/nelly';
 import { sawayaActive, sawayaFocus } from '../abilities/sawaya';
 import { harvestShanten, komakiActiveGod, komakiHarvestSuit } from '../abilities/komaki';
 import { toyoneLurks, toyoneMode } from '../abilities/toyone';
@@ -369,7 +369,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   }
 
   const kyuushu = find('kyuushu');
-  if (kyuushu && kokushiShanten(toCounts(p.hand)) > 2) return kyuushu;
+  // 涅莉（重做）押了运势的局：三倍满定好了，不流局
+  const nellyHand = !!style.waves && nellyRemade(g, seat) && nellyBig(g, seat) && !g.isSealed(seat);
+  if (kyuushu && kokushiShanten(toCounts(p.hand)) > 2 && !nellyHand) return kyuushu;
 
   const counts = toCounts(p.hand);
   const cur = shanten(counts, p.melds.length);
@@ -377,8 +379,8 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
   const koromoNoKan =
     !!style.haitei && !g.isSealed(seat) && koromoHaiteiOn(g, seat) && !(koromoRouteSet(g, seat) && !koromoRouteOn(g, seat) && g.wall.live.length % 4 === 1);
   for (const a of legal) {
-    // 透华治水：自己也不杠
-    if ((a.type === 'ankan' || a.type === 'kakan') && (tokaChisui(g, seat) || koromoNoKan)) continue;
+    // 透华治水：自己也不杠。涅莉（重做）押了运势的局立直之前不杠（照定好的那手做，立直以后开杠路线照杠）
+    if ((a.type === 'ankan' || a.type === 'kakan') && (tokaChisui(g, seat) || koromoNoKan || (nellyHand && !p.riichi))) continue;
     if (a.type === 'ankan') {
       // 初美：风牌能杠就杠（配牌的暗刻摸到第四张、鸣出东北以后）
       if (style.rinshan) {
@@ -784,11 +786,14 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const value = new Map(live.map((x) => [x, ronValue(g, seat, p.hand.filter((t) => t !== x.a.tile), true)]));
     if (live.length > 1) best = live.sort((x, y) => value.get(y)! - value.get(x)! || cands.indexOf(x) - cands.indexOf(y))[0];
   }
-  // 涅莉押 3 点：能听牌就挑最接近三倍满的打法
-  if (style.waves && !sealed && nellyTier(g, seat) >= 3) {
+  // 涅莉押 3 点（重做押了就是）：能听牌就挑最接近三倍满的打法（赤宝牌和普通的五分开挑）
+  let nellyPinned = false;
+  if (style.waves && !sealed && nellyBig(g, seat)) {
     const d = nellyBigDiscard(g, seat);
-    const pick = d === null ? undefined : cands.find((x) => kindOf(x.a.tile) === kindOf(d));
+    const pick = d === null ? undefined : (cands.find((x) => x.a.tile === d) ?? cands.find((x) => kindOf(x.a.tile) === kindOf(d) && isRed(x.a.tile) === isRed(d)) ?? cands.find((x) => kindOf(x.a.tile) === kindOf(d)));
     if (pick) best = pick;
+    // 重做：照定好的那手打，不失误
+    nellyPinned = !!pick && nellyRemade(g, seat);
   }
 
   // 尧深：第一巡打一张孤张字牌种下（先挑种过、还没满三张的三元牌，再挑别的三元牌、别的字牌），不退向听才打
@@ -858,7 +863,7 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     }
   }
 
-  const slipped = slip ?? (cands.length > 1 && g.rng.chance(mistakeRate));
+  const slipped = !nellyPinned && (slip ?? (cands.length > 1 && g.rng.chance(mistakeRate)));
   // 读得出别人听什么时，失误也不会失误到放铳的牌上
   // 玄失误也不会失误到宝牌上
   const doraSlip = style.keepDora && isDoraTile(g, cands[1]?.a.tile ?? -1) && !isDoraTile(g, best.a.tile);
@@ -872,7 +877,18 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     const danger = nellySealedWaits(g, seat);
     if (danger.size && danger.has(kindOf(best.a.tile))) {
       const ok = (x: Cand) => !danger.has(kindOf(x.a.tile));
-      const alt = cands.find((x) => ok(x) && x.sh <= best.sh) ?? cands.find((x) => ok(x) && x.sh <= best.sh + 1) ?? [...cands].sort((x, y) => x.hit - y.hit || x.risk - y.risk).find(ok);
+      const rec = nellyRecipePlan(g, seat);
+      let alt: Cand | undefined;
+      if (rec) {
+        // 重做押了运势：躲的时候少拆定好的那手（先拆摸得回来的，不拆最后自摸的那种）；
+        // 下一次摸牌就该自摸了，拆了就做不成，照打
+        const held = toCounts(p.hand);
+        const harm = (x: Cand) => {
+          const k = kindOf(x.a.tile);
+          return held[k] > rec.plan[k] ? 0 : k === rec.win ? 2 : 1;
+        };
+        if (nellyDrawsToWin(g, seat) > 1) alt = cands.filter(ok).sort((x, y) => harm(x) - harm(y) || x.sh - y.sh || cands.indexOf(x) - cands.indexOf(y))[0];
+      } else alt = cands.find((x) => ok(x) && x.sh <= best.sh) ?? cands.find((x) => ok(x) && x.sh <= best.sh + 1) ?? [...cands].sort((x, y) => x.hit - y.hit || x.risk - y.risk).find(ok);
       if (alt) best = alt;
     }
   }
@@ -917,6 +933,11 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
       return forecastIppatsu(g, seat, riichi.tile) ? riichi : best.a;
     }
     if (style.keepDora && !kuroMustRiichi(g, seat, p.hand.filter((t) => t !== best.a.tile))) return best.a;
+    // 涅莉（重做）押了运势的局：该和的前一巡立直（下一巡一发自摸三倍满），之前默听
+    if (style.waves && nellyRemade(g, seat) && nellyBig(g, seat) && !g.isSealed(seat)) {
+      if (nellyDrawsToWin(g, seat) > 1) return best.a;
+      return nellyBigReady(g, seat, p.hand.filter((t) => t !== best.a.tile)) ? riichi : best.a;
+    }
     // 涅莉押了运势的局：离该和的那一巡还早就默听，手牌留着往大里做；该和的前一巡再立直（下一巡一发自摸；押 2、3 点立直以后里宝牌往她手里变）。
     // 听的牌牌山里不到两张也先默听换听
     if (style.waves && nellyTier(g, seat) > 0 && !g.isSealed(seat) && g.wall.remaining > NELLY.late) {
@@ -1228,6 +1249,14 @@ const foresees = (g: Game, seat: number) => g.abilities[seat]?.foresightOn?.(g, 
 // 涅莉押了运势的局：装装样子，该和的那一巡（押 3 点第 7 巡、2 点第 12 巡、1 点第 15 巡）之前不和（荣和可以早一巡）；
 // 到了那一巡牌还不够大（不到押的那一档），再等几巡接着做大。牌山快摸完了、有人逼近了就有什么和什么
 function nellyHolds(g: Game, seat: number, tsumo: boolean): boolean {
+  // 重做：该和的那一次摸牌之前不和（荣和也不和）；到了不到三倍满，后面还摸得到牌就先不和
+  if (nellyRemade(g, seat) && nellyBig(g, seat)) {
+    if (g.isSealed(seat)) return false;
+    if (nellyDrawsToWin(g, seat) > 0) return true;
+    const tile = tsumo ? g.players[seat].drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
+    const r = g.winResult(seat, tile, tsumo);
+    return !!r && nellyDrawsLeft(g, seat) > 0 && teruWinValue(r, tsumo, seat === g.dealer) < nellyTarget(g, seat);
+  }
   if (nellyTier(g, seat) <= 0 || g.isSealed(seat) || g.wall.remaining <= NELLY.late) return false;
   const p = g.players[seat];
   const turn = p.discards.length + 1;
