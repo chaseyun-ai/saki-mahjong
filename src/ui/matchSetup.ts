@@ -281,7 +281,8 @@ const ROWS: Row[] = [
 
 // 两个面板各管哪几项（存在同一份设置里）
 const MATCH_KEYS: (keyof MatchSettings)[] = ['length', 'start', 'target', 'tobi', 'red', 'kuitan', 'minHan', 'open'];
-const VISUAL_KEYS: (keyof MatchSettings)[] = ['xfade', 'drawPath', 'vary', 'discardFx', 'riichiFx', 'pondFx', 'spotlight', 'winZoom', 'awaiCutIn'];
+// 出牌动作（discardFx）的那一行已经拿掉了，这里也不能再列它
+const VISUAL_KEYS: (keyof MatchSettings)[] = ['xfade', 'drawPath', 'vary', 'riichiFx', 'pondFx', 'spotlight', 'winZoom', 'awaiCutIn'];
 
 // 按钮上写的值换回设置里的值
 export function setOption(s: MatchSettings, key: string, value: string): void {
@@ -356,7 +357,9 @@ export function rowHtml(name: string, body: string, note?: string, cls = ''): st
 export function settingRows(s: MatchSettings, keys: (keyof MatchSettings)[]): string {
   return keys
     .map((k) => {
-      const r = ROWS.find((x) => x.key === k)!;
+      const r = ROWS.find((x) => x.key === k);
+      // ROWS 里拿掉了的项跳过，别让整个面板画不出来
+      if (!r) return '';
       const body =
         r.key === 'target'
           ? `<input class="setup-input" id="setup-target" type="text" inputmode="numeric" value="${s.target}" aria-label="一位必要点数" /><span class="setup-unit">点</span>`
