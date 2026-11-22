@@ -2,7 +2,7 @@ import './codex.css';
 import { CHARACTERS, type Character } from '../abilities/characters';
 import { POSITIONS } from '../team/team';
 import { portraitUrl } from '../ui3d/looks';
-import { type HomeTod, TODS, timeOfDay } from './home';
+import { type HomeTod, TODS, imgOf, timeOfDay } from './home';
 import { SCHOOLS, membersOf } from './schools';
 import { playFlip } from './sound';
 
@@ -66,7 +66,7 @@ export function mountCodex(root: HTMLElement, exit: () => void): void {
   const tod = todNow();
   let school = SCHOOLS[0]?.name ?? '';
   let picked = membersOf(school)[0]?.id ?? CHARACTERS[0].id;
-  root.innerHTML = `<div class="codex" data-tod="${tod}" style="--bg:url('home/${tod}.webp')">
+  root.innerHTML = `<div class="codex" data-tod="${tod}" style="--bg:url('${imgOf(tod)}')">
     <div class="cx-backdrop" aria-hidden="true"></div>
     <header class="cx-top">
       <button class="cx-back" data-codex="back">← 回部室</button>

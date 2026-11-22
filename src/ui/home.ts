@@ -44,7 +44,9 @@ function saveTod(t: HomeTod): void {
     // 存不了就只管这一次
   }
 }
-const imgOf = (t: HomeTod) => `home/${t}.webp`;
+// 给完整网址：写进 CSS 变量（--bg）的 url() 是按用到它的样式表的位置找的，
+// 打包后样式表在 assets/ 下面，写相对路径就会去找 assets/home/…，图出不来
+export const imgOf = (t: HomeTod) => new URL(`home/${t}.webp`, document.baseURI).href;
 
 type Pt = [number, number];
 // 图里几样东西的位置（原图像素）
