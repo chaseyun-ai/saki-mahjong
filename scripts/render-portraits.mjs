@@ -9,7 +9,7 @@ import { chromium } from 'playwright-core';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = path.join(root, 'public/portraits');
-const ids = process.argv.slice(2).length ? process.argv.slice(2) : ['saki', 'nodoka', 'kuro', 'toki'];
+const ids = process.argv.slice(2).length ? process.argv.slice(2) : ['nodoka', 'kuro', 'toki'];
 
 const server = await createServer({ root, logLevel: 'error', server: { port: 5199, strictPort: false } });
 await server.listen();

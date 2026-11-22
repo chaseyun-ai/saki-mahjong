@@ -4,6 +4,8 @@ name: pages
 #   git tag v0.2 && git push origin v0.2
 # 推标签以后这里会建好网页、发到 Pages，再给这个标签建一个 Release。
 # 想不打新标签重发一次，就在 GitHub 的 Actions 页里选 pages，点 Run workflow（选要发的分支或标签）。
+# 仓库设置要配好两处：Pages 的 Source 选 GitHub Actions；Environments → github-pages 的
+# Deployment branches and tags 里加一条 Tag 规则 v*（GitHub 默认只让 main 发布，不加的话标签发布会被挡下）。
 on:
   push:
     tags: ['v*']

@@ -187,17 +187,17 @@ export const handOverride = (): string | null => handLayers.mine ?? handLayers.p
 export const FACES = ['neutral', 'happy', 'sad', 'surprised', 'serious'] as const;
 export type Face = (typeof FACES)[number];
 
-// 头像和切入立绘的默认图片（scripts/render-portraits.mjs 用模型渲染出来的，咲的换成了手绘）。
-// 借模型占位的角色没有默认图，是空字符串：<img src=""> 会马上触发 onerror 被拿掉，露出名字的最后一个字
-const hasArt = (id: string): boolean => !LOOKS[id]?.borrowed;
+// 头像和切入立绘的默认图片（scripts/render-portraits.mjs 用模型渲染出来的）。
+// 没有默认图的是空字符串：<img src=""> 会马上触发 onerror 被拿掉，露出名字的最后一个字。
+// 借模型占位的角色没有默认图；咲也空着（她原来的立绘像动画截图，公开发布前拿掉了），想用自己的图在“素材”页里换
+const NO_ART: ReadonlySet<string> = new Set(['saki']);
+const hasArt = (id: string): boolean => !LOOKS[id]?.borrowed && !NO_ART.has(id);
 export const defaultPortraitUrl = (id: string, face: Face): string => (hasArt(id) ? `portraits/${id}-${face}.webp` : '');
 export const cutinUrl = (id: string): string => (hasArt(id) ? `portraits/${id}-cutin.webp` : '');
 
 // 有手绘的角色，立直、鸣牌、和牌的切入（和结算画面）换成手绘图：立直用“认真”，鸣牌和和牌用“和牌”。
-// 手绘图是横图，wide 为 true；没有手绘的用上面模型渲染的竖图
-const CUTIN_ART: Record<string, { riichi?: string; win?: string }> = {
-  saki: { riichi: 'portraits/saki-cutin-riichi.webp', win: 'portraits/saki-cutin-win.webp' },
-};
+// 手绘图是横图，wide 为 true；没有手绘的用上面模型渲染的竖图。现在没有内置的手绘图
+const CUTIN_ART: Record<string, { riichi?: string; win?: string }> = {};
 export function defaultCutinArt(id: string, kind: string): { url: string; wide: boolean } {
   const art = CUTIN_ART[id];
   const k = kind === 'result' ? 'win' : kind;
