@@ -1,5 +1,5 @@
 // 从天听的配牌（不是字牌手）按星符汇聚，做成大七星的有几成，按配牌里的字牌分组：
-// npx vite-node scripts/awai-stars-deal.ts [场数] [对手：random|plain|a,b,c] [starsFate，默认用现在的；1 是不掷] [起始种子]
+// [SLOW=… SWAP=… BURST=…] npx vite-node scripts/awai-stars-deal.ts [场数] [对手：random|plain|a,b,c] [starsFate，默认用现在的；1 是不掷] [起始种子]
 // 她当成玩家的淡，不发字牌手，能量给够，每一局第一次轮到自己就按星符汇聚，别的主动技能不按。
 // 配牌是开局发的 13 张；天听的配牌里字牌只会是那个暗刻、那个对子
 import { AWAI, awaiCanUse } from '../src/abilities/awai';
@@ -8,12 +8,17 @@ import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import { Rng } from '../src/engine/rng';
 import { shanten } from '../src/engine/shanten';
-import { kindOf, toCounts } from '../src/engine/tiles';
+import { kindLabel, kindOf, toCounts } from '../src/engine/tiles';
 
 const games = Number(process.argv[2] ?? 100);
 const pool = process.argv[3] ?? 'random';
 if (process.argv[4] !== undefined && process.argv[4] !== '-') AWAI.starsFate = Number(process.argv[4]);
 const from = Number(process.argv[5] ?? 1);
+// 试验开关：环境变量 SLOW=0.5 SWAP=1 BURST=3（见 AWAI.starsSlow / starsSwap / starsBurst）
+AWAI.starsSlow = Number(process.env.SLOW ?? 0);
+AWAI.starsSwap = Number(process.env.SWAP ?? 0);
+AWAI.starsBurst = Number(process.env.BURST ?? 0);
+AWAI.starsHold = process.env.HOLD === '1';
 AWAI.starsDeal = 0;
 AWAI.aiSkills = false;
 AWAI.energyMax = 1000000;
@@ -69,6 +74,10 @@ for (let seed = from; seed < from + games; seed++) {
     else if (w) r.small++;
     else if (e.result.kind === 'win') { r.other++; if (e.result.wins.some((x) => x.from === mine)) r.dealIn++; }
     else r.draw++;
+    if (process.env.DBG && group === '没有字牌' && !w?.result.yakuman) {
+      const st = (g.abilityState[mine] ?? {}) as { starKeep?: number[]; starOff?: boolean };
+      console.log('  DBG', seed, g.roundLabel(), e.result.kind, w ? '她和了 ' + w.result.yaku.map((y) => y.name).join(' ') : '', '手牌', [...g.players[mine].hand].sort((a, b) => a - b).map((t) => kindLabel(kindOf(t))).join(' '), '牌河', g.players[mine].discards.map((d) => kindLabel(kindOf(d.tile))).join(' '), '剩', g.wall.remaining, 'keep', JSON.stringify(st.starKeep?.map((t) => kindLabel(kindOf(t)))));
+    }
   });
   let steps = 0;
   while (g.phase !== 'gameEnd' && ++steps < 100000) {
@@ -86,7 +95,7 @@ for (let seed = from; seed < from + games; seed++) {
 }
 const pc = (a: number, b: number) => (b ? ((100 * a) / b).toFixed(1) + '%' : '-');
 const avg = (a: number[]) => (a.length ? (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1) : '-');
-console.log(`starsFate ${AWAI.starsFate}，对手 ${pool}，${games} 场 ${rounds} 局（没按或配牌不听的 ${skipped} 局）`);
+console.log(`starsFate ${AWAI.starsFate} slow ${AWAI.starsSlow} swap ${AWAI.starsSwap} burst ${AWAI.starsBurst} hold ${AWAI.starsHold}，对手 ${pool}，${games} 场 ${rounds} 局（没按或配牌不听的 ${skipped} 局）`);
 for (const k of ['没有字牌', '只有字牌对子', '只有字牌刻子', '字牌刻子＋字牌对子', '别的']) {
   const r = rows[k];
   if (!r) continue;

@@ -61,6 +61,16 @@ export const AWAI = {
   // 重做版：星符汇聚按下时掷一次，这么大概率一路摸到凑成大七星；掷不中就摸到中途星符消散（至少摸到 1 张，最多摸到还差 2 张）。
   // 1 是每次都凑得成（初版）。别人抢先和了也算不成，所以实际做成的比这个数低
   starsFate: 0.67,
+  // 试验中的几种抢时间的办法（默认都关着，和现在一样）。只在一路凑得成的局里起作用（掷中 starsFate 的局）
+  // starsSlow：按下以后别人每次摸牌有这么大概率摸不到进张（和高维领域一样）
+  starsSlow: 0,
+  // starsSwap：她每摸一张字牌，手里再有这么多张用不上的牌（数牌、字牌第三张）换成还缺的字牌
+  starsSwap: 0,
+  // starsBurst：按下的那一刻手里这么多张用不上的牌换成还缺的字牌（换到大七星还差 2 张为止）
+  starsBurst: 0,
+  // starsHold：天听的局也在配牌时就把大七星要的字牌在牌山后面留好（锁住，别人的配牌里因此少一些字牌）；
+  // 第一张打出去还没按星符汇聚就解锁。不留的话，按下时别人手里、牌河里的字牌拿不回来，常常凑不齐
+  starsHold: false,
   // 重做版：连招（双立直、转角暗杠、杠里、自摸）只算跳满，别的役、宝牌、赤宝牌、多的里宝牌一概不给。false 是不管（初版）
   comboCap: true,
   // 字牌手里有几种字牌：四、五、六、七种各占多少；每种有多大概率是一对
@@ -292,6 +302,19 @@ function reserveStars(g: Game, seat: number, hand: TileId[], deal: boolean): voi
   st.starKeep = keep;
 }
 
+// 别人要摸的下一张是给她留着的字牌：往牌山后面挪（和后面一张没锁的牌对调，锁跟着牌走）。
+// 不挪的话，牌山摸到后面，留着的字牌会被别人摸走，她最后几张字牌就落空了
+function guardStars(g: Game, seat: number): void {
+  const w = g.wall;
+  const keep = stateOf(g, seat).starKeep;
+  if (!keep?.length || !keep.includes(w.live[0])) return;
+  for (let j = w.live.length - 5; j >= 1; j--) {
+    if (w.locked.has(w.live[j])) continue;
+    [w.live[0], w.live[j]] = [w.live[j], w.live[0]];
+    return;
+  }
+}
+
 // 大七星不做了（鸣了牌，或者字牌手没按星符汇聚就打出了第一张）：留着的字牌解锁
 function releaseStars(g: Game, seat: number): void {
   const st = stateOf(g, seat);
@@ -305,7 +328,8 @@ function drawStar(g: Game, seat: number, rinshan: boolean, need: Set<Kind>): boo
   const w = g.wall;
   const kept = (st.starKeep ?? []).filter((t) => w.live.includes(t));
   st.starKeep = kept;
-  const pick = kept.find((t) => need.has(kindOf(t)));
+  // 离摸牌的位置最近的先拿（留着的牌在牌山后面，摸到后来会轮到别人摸）
+  const pick = kept.filter((t) => need.has(kindOf(t))).sort((a, b) => w.live.indexOf(a) - w.live.indexOf(b))[0];
   if (pick !== undefined) {
     w.locked.delete(pick, 'awai');
     const ok = rinshan ? w.bringToRinshan((t) => t === pick, g.rng) : w.bringToLive(0, (t) => t === pick, g.rng);
@@ -316,6 +340,33 @@ function drawStar(g: Game, seat: number, rinshan: boolean, need: Set<Kind>): boo
     w.locked.add(pick, 'awai');
   }
   return bring(g, rinshan, (t) => need.has(kindOf(t)));
+}
+
+// 试验：手里 n 张用不上的牌换成还缺的字牌（先拿留着的，再从牌山里找）。至少留 floor 张没凑齐
+function swapStars(g: Game, seat: number, n: number, floor: number): number {
+  const w = g.wall;
+  const st = stateOf(g, seat);
+  const p = g.players[seat];
+  let done = 0;
+  for (let i = 0; i < n; i++) {
+    if (starShort(p.hand) - (p.hand.length === 13 ? 1 : 0) <= floor) break;
+    const need = starNeed(g, seat);
+    const extra = awaiStarsExtra(g, seat).filter((t) => t !== p.drawn);
+    if (!need.size || !extra.length) break;
+    const out = extra[extra.length - 1];
+    const kept = (st.starKeep ?? []).filter((t) => w.live.includes(t) && need.has(kindOf(t)));
+    let j = kept.length ? w.live.indexOf(kept[0]) : -1;
+    if (j >= 0) {
+      w.locked.delete(kept[0], 'awai');
+      st.starKeep = st.starKeep!.filter((t) => t !== kept[0]);
+    } else j = w.live.findIndex((t, k) => k >= 1 && need.has(kindOf(t)) && !w.locked.has(t));
+    if (j < 0) break;
+    const h = p.hand.indexOf(out);
+    [p.hand[h], w.live[j]] = [w.live[j], p.hand[h]];
+    done++;
+  }
+  if (done) g.emit({ type: 'ability', seat, ability: 'awai', text: '星符置换' });
+  return done;
 }
 
 // 大七星用不上的牌（数牌，字牌第三、四张）：电脑的淡先打它们
@@ -755,6 +806,7 @@ function use(g: Game, seat: number, id: AwaiSkillId): void {
     if (!st.starKeep) reserveStars(g, seat, g.players[seat].hand, false);
     // 重做版：这一次凑不凑得成现在就定。凑不成的话还能摸到几张字牌：至少 1 张，最多摸到还差 2 张
     if (!awaiClassic(g, seat) && AWAI.starsFate < 1 && !g.rng.chance(AWAI.starsFate)) st.starLeft = 1 + g.rng.int(Math.max(1, starShort(g.players[seat].hand) - 2));
+    if (AWAI.starsBurst > 0 && st.starLeft === undefined) swapStars(g, seat, AWAI.starsBurst, 2);
   }
   if (id === 'decohere') st.decohere = true;
   if (id === 'parallel') parallel(g, seat);
@@ -940,6 +992,7 @@ export const awaiAbility: Ability = {
             w.locked.add(s.winKeep, 'awai');
           }
         }
+        if (AWAI.starsHold && awaiEnergy(g, seat) >= skillOf('stars')!.cost) reserveStars(g, seat, mine.map((i) => w.live[i]), true);
         // 杠里要用的指示牌先藏在后面的里宝牌里：开局时牌山里一定还有，等到转角时可能早被摸光了
         // 连招只算跳满时找得更宽：发完牌以后的牌山里没有，就从别人的配牌位置、没翻的宝牌指示牌里拿
         for (const i of [1, 2]) {
@@ -968,6 +1021,7 @@ export const awaiAbility: Ability = {
 
   // 别人摸牌：加速驱动让他们摸进她的铳牌；高维领域让他们摸不到进张
   beforeAnyDraw(g, seat, drawer, rinshan) {
+    if (drawer !== seat && !rinshan) guardStars(g, seat);
     const accel = on(g, seat, 'accel') && g.waits(seat).length > 0 && g.canWin(seat);
     if (accel && !rinshan) keepLast(g, seat, drawer);
     if (drawer === seat) {
@@ -998,6 +1052,7 @@ export const awaiAbility: Ability = {
       return { seat, ability: 'awai', text: '加速驱动', deny: (t: TileId) => !waits.includes(kindOf(t)) };
     }
     if (on(g, seat, 'domain') && g.rng.chance(AWAI.domainSlow)) return { seat, ability: 'awai', text: '高维领域', deny: useful(g, drawer) };
+    if (AWAI.starsSlow > 0 && awaiStarPlan(g, seat) && stateOf(g, seat).starLeft === undefined && g.rng.chance(AWAI.starsSlow)) return { seat, ability: 'awai', text: '星符汇聚', deny: useful(g, drawer) };
   },
 
   beforeDraw(g, seat, rinshan) {
@@ -1041,7 +1096,9 @@ export const awaiAbility: Ability = {
         releaseStars(g, seat);
         g.emit({ type: 'ability', seat, ability: 'awai', text: '星符消散' });
       } else if (need.size) {
-        if (drawStar(g, seat, rinshan, need) && s.starLeft !== undefined) s.starLeft--;
+        if (AWAI.starsSwap > 0 && s.starLeft === undefined) swapStars(g, seat, AWAI.starsSwap, 0);
+        const left = starNeed(g, seat);
+        if (drawStar(g, seat, rinshan, left.size ? left : need) && s.starLeft !== undefined) s.starLeft--;
         return;
       }
     } else if (s.starKeep?.length && on(g, seat, 'stars')) releaseStars(g, seat);

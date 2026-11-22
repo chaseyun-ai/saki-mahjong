@@ -349,8 +349,9 @@ function chooseTurn(g: Game, seat: number, legal: Action[], style: AiStyle): Act
 
   // 淡的星符汇聚：往大七星做，先打用不上的牌（数牌、字牌第三张），不立直
   if (style.cornerKan && awaiStarPlan(g, seat)) {
+    // 只和大七星：差一对时手里的数牌对子会先凑成七对子，别为它停下（牌山快摸完了才收）
     const win = find('tsumo');
-    if (win) return win;
+    if (win && (g.wall.remaining < 4 || g.winResult(seat, p.drawn!, true)?.yakuman)) return win;
     const visible = visibleCounts(g, seat);
     const risk = (t: TileId) => Math.max(0, ...threats(g, seat).map((o) => danger(g, seat, o, kindOf(t), visible)));
     const extra = awaiStarsExtra(g, seat).sort((a, b) => risk(a) - risk(b));
@@ -1485,7 +1486,10 @@ function chooseCall(g: Game, seat: number, legal: Action[], style: AiStyle): Act
     return ron && yukikoRonOk(g, seat, g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile) ? ron : pass;
   }
   // 淡的星符汇聚：门清做大七星，不鸣牌
-  if (style.cornerKan && awaiStarPlan(g, seat)) return legal.find((a) => a.type === 'ron') ?? pass;
+  if (style.cornerKan && awaiStarPlan(g, seat)) {
+    const ron = legal.find((a) => a.type === 'ron');
+    return ron && (g.wall.remaining < 4 || g.winResult(seat, g.lastDiscard!.tile, false)?.yakuman) ? ron : pass;
+  }
   const ron = legal.find((a) => a.type === 'ron');
   // 淡：等转角暗杠自摸，不荣和
   if (ron && !(style.cornerKan && awaiWaitingForCorner(g, seat) !== null) && !(style.streak && teruWaits(g, seat, false)) && !(style.waves && nellyHolds(g, seat, false)) && !growHolds(g, seat, style, false) && !seraHolds(g, seat, style, false) && !koromoHolds(g, seat, style, false) && !hatsumiHolds(g, seat, style, false) && !sumireSkips(g, seat, style) && !allLastHold(g, seat, false)) return ron;
