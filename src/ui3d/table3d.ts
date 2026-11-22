@@ -54,6 +54,7 @@ import { teruTwister } from '../abilities/teru';
 import type { WinResult } from '../engine/score';
 import { StarSky } from './starFx';
 import { SpaceWarp } from './warpFx';
+import { MAYOIGA_FX, MayoigaFx } from './mayoigaFx';
 import { type AwaiFieldView, type AwaiStarView, awaiCornerKan, awaiKanUra, awaiKanUraHit } from '../abilities/awai';
 import { AwaiFx } from './awaiFx';
 import { DORA_FLIP_TIME, DORA_TURN_TIME, doraFlipPose } from './doraFlip';
@@ -483,7 +484,7 @@ export interface SyncView {
   airDraw?: TileId | null; // 自己立直后摸到、和不了的那张：不进手牌，停在手牌上方的空中，接着直接打进牌河（摸牌路径关掉时没有）
   tintBacks?: Set<TileId>; // 美穗子睁眼：这些牌的牌背按花色上色（万红、筒蓝、索绿、字牌白）
   deadly?: Set<TileId>; // 龙华的无极天：自己手里打出去会放铳的牌，牌身染红
-  ripple?: TileId | null; // 白望的迷途之家：应该打的那张牌，底下一圈圈白色水波纹
+  ripple?: TileId | null; // 白望的迷途之家：应该打的那张牌，脚下一圈圈透明的水波纹
   akaBacks?: Set<TileId>; // 丰音的赤口：没公开的赤宝牌（别人手里、牌山里），牌背发金红光
   waveBacks?: Set<TileId>; // 淡的引力波：牌山里她的和了牌，牌背发紫光
   kanSeen?: Set<TileId>; // 宫永咲的王牌感知：牌山里她杠材的第四张，一直是透明的，牌山前面投影出牌面
@@ -677,8 +678,11 @@ export class Table3D {
   private handClearSent: number | null = null;
   // 标记用的小三角，按需要的个数建，多出来的藏起来
   private marks: THREE.Mesh[] = [];
-  // 迷途之家的水波纹：几圈白环贴着桌面往外扩（用到时才建）
-  private ripples: THREE.Mesh[] = [];
+  // 迷途之家的水波纹：牌脚下一汪透明的水（mayoigaFx.ts，用到时才建）。at 是牌脚在桌面上的位置，a 显出来多少（0–1）
+  private mayoiga: MayoigaFx | null = null;
+  private mayoigaAt = new THREE.Vector3();
+  private mayoigaR = 1;
+  private mayoigaA = 0;
   // 初美的里鬼门：绕着牌桌打转的紫色的风（用到时才建）
   private gale: Gale | null = null;
   private roomBase = new THREE.Color(); // 房间本来的颜色（手绘板会换）
@@ -850,6 +854,7 @@ export class Table3D {
     this.water?.dispose();
     this.machine?.dispose();
     this.warp?.dispose();
+    this.mayoiga?.dispose();
     this.shift?.dispose();
     this.stamps?.dispose();
     this.awaiFx?.dispose();
@@ -5472,11 +5477,13 @@ export class Table3D {
 
   // 用主镜头画桌子。巨引力源开着时接着把引力圆那一块扭一遍。
   // 自己立着的手牌在画面上压着引力圆靠自己这边的边，但它们其实在圆外面，不该跟着扭：
-  // 先不画它们，扭完再用同一个镜头补画上去（深度留着，前后遮挡照旧）。改良布局单独一层的手牌本来就在这之后画
+  // 先不画它们，扭完再用同一个镜头补画上去（深度留着，前后遮挡照旧）。改良布局单独一层的手牌本来就在这之后画。
+  // 白望的迷途之家：桌子画好以后在那张牌脚下铺一汪透明的水（drawMayoiga），在补画手牌之前
   private renderMain(): void {
     const r = this.renderer;
     if (this.gravityA <= 0 && !this.waves.length) {
       r.render(this.scene, this.camera);
+      this.drawMayoiga(true);
       return;
     }
     const sync = this.lastSync;
@@ -5488,14 +5495,17 @@ export class Table3D {
       });
     }
     r.render(this.scene, this.camera);
-    const warp = (this.warp ??= new SpaceWarp());
-    if (this.gravityA > 0) {
-      const { center, rx, rz } = this.gravityShape();
-      warp.lens(r, this.camera, center, rx, rz, this.now, this.gravityA, this.gravityKick);
+    if (this.gravityA > 0 || this.waves.length) {
+      const warp = (this.warp ??= new SpaceWarp());
+      if (this.gravityA > 0) {
+        const { center, rx, rz } = this.gravityShape();
+        warp.lens(r, this.camera, center, rx, rz, this.now, this.gravityA, this.gravityKick);
+      }
+      // 引力波：一道波三圈，各落后 0.3 秒
+      const speed = this.waveSpeed();
+      for (const w of this.waves) warp.ripple(r, this.camera, w.origin, (this.now - w.at) * speed, speed * 0.3, this.dim.tableHalf * 0.085, w.a);
     }
-    // 引力波：一道波三圈，各落后 0.3 秒
-    const speed = this.waveSpeed();
-    for (const w of this.waves) warp.ripple(r, this.camera, w.origin, (this.now - w.at) * speed, speed * 0.3, this.dim.tableHalf * 0.085, w.a);
+    this.drawMayoiga(false);
     if (!front.length) return;
     const auto = r.autoClear;
     const shadows = r.shadowMap.autoUpdate;
@@ -5893,7 +5903,7 @@ export class Table3D {
     // 王牌感知浮在牌山上、牌山前面的那些牌面：牌山还没升到顶就先不出来
     if (riding || forming) for (const gr of this.projections.values()) gr.visible = false;
     this.updateMarks();
-    this.updateRipple();
+    this.updateRipple(dt);
     for (const c of this.characters) c.avatar?.update(dt);
     this.updateLoading();
   }
@@ -5913,37 +5923,32 @@ export class Table3D {
     if (this.loadingEl.textContent !== text) this.loadingEl.textContent = text;
   }
 
-  // 标记的牌上方各放一个朝下的小三角，跟着牌走（鼠标移上去牌抬起来，三角也跟着抬），总是正对镜头
-  private updateRipple(): void {
-    const id = this.lastSync?.view.ripple ?? null;
-    const on = id !== null && this.tiles[id].group.visible;
-    if (on && this.ripples.length === 0) {
-      // 用到时才建（建材质会用掉随机数，提前建会让桌布的花纹和以前不一样）
-      const geo = new THREE.RingGeometry(0.82, 1, 48);
-      for (let i = 0; i < RIPPLE_RINGS; i++) {
-        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
-        m.rotation.x = -Math.PI / 2;
-        m.renderOrder = 2;
-        this.scene.add(m);
-        this.ripples.push(m);
-      }
-    }
-    if (!on) {
-      for (const m of this.ripples) m.visible = false;
-      return;
-    }
-    const g = this.tiles[id].group;
-    // 牌立着：中心往下半个牌高就是桌面
-    const y = Math.max(0.006, g.position.y - (TILE_H / 2) * g.scale.x + 0.006);
-    this.ripples.forEach((m, i) => {
-      const k = (this.now / RIPPLE_PERIOD + i / RIPPLE_RINGS) % 1;
-      m.visible = true;
-      m.position.set(g.position.x, y, g.position.z);
-      m.scale.setScalar(TILE_W * g.scale.x * (0.3 + 0.85 * k));
-      (m.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - k) * Math.min(1, k * 6);
-    });
+  // 迷途之家：牌脚下的水。和桌子比远近，手牌、别的东西挡在前面的地方照样挡着
+  // withHand：刚才画的画面里有没有自己的手牌（有的话水里不折牌面）
+  private drawMayoiga(withHand: boolean): void {
+    if (this.mayoigaA <= 0) return;
+    const sync = this.lastSync;
+    const hand = withHand && sync ? sync.g.players[sync.view.me].hand.map((id) => this.tiles[id].group).filter((g) => g.visible && g.layers.test(this.camera.layers)) : [];
+    (this.mayoiga ??= new MayoigaFx()).draw(this.renderer, this.camera, this.scene, hand, this.mayoigaAt, this.mayoigaR, this.now, this.mayoigaA);
   }
 
+  // 迷途之家：应该打的那张牌脚下的水跟着牌走，出现、消失都淡一下（画在 renderMain 里）
+  private updateRipple(dt: number): void {
+    const id = this.lastSync?.view.ripple ?? null;
+    const on = id !== null && this.tiles[id].group.visible;
+    this.mayoigaA = THREE.MathUtils.clamp(this.mayoigaA + (on ? dt : -dt) / MAYOIGA_FX.fade, 0, 1);
+    if (!on) return;
+    const g = this.tiles[id].group;
+    // 鼠标移上去牌抬起来时，水留在桌上（照牌放下时的位置）
+    const rest = id === this.hovered && this.hoverRest?.id === id ? this.hoverRest.at : { pos: g.position, scale: g.scale.x };
+    // 牌立着：中心往下半个牌高就是桌面
+    const y = Math.max(0.006, rest.pos.y - (TILE_H / 2) * rest.scale + 0.006);
+    this.mayoigaAt.set(rest.pos.x, y, rest.pos.z);
+    // 改良布局：自己的手牌另外画在最上面一层，把牌脚这一圈都盖住了，水荡得远一点，从手牌上面露出来
+    this.mayoigaR = TILE_W * rest.scale * MAYOIGA_FX.radius * (this.orthoOn() ? MAYOIGA_FX.orthoRadius : 1);
+  }
+
+  // 标记的牌上方各放一个朝下的小三角，跟着牌走（鼠标移上去牌抬起来，三角也跟着抬），总是正对镜头
   private updateMarks(): void {
     const ids = [...(this.lastSync?.view.marked ?? [])].filter((id) => this.tiles[id].group.visible);
     while (this.marks.length < ids.length) {
@@ -5965,10 +5970,6 @@ export class Table3D {
   }
 
 }
-
-// 迷途之家的水波纹：几圈、多久扩一次（秒）
-const RIPPLE_RINGS = 3;
-const RIPPLE_PERIOD = 1.8;
 
 // 朝下的小三角，尖在原点
 function markGeometry(): THREE.ShapeGeometry {

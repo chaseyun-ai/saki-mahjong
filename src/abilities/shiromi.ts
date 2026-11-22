@@ -8,7 +8,7 @@ import type { Ability } from './types';
 // 每次要打牌时（摸牌后、鸣牌后）有 chance 的概率发动：照着牌山此刻的样子，
 // 假设这一局没人鸣牌、开杠，算出她接下来摸到的牌（live[3]、live[7]……），
 // 找出靠这些牌最早能自摸和出的最终牌型（同样早的挑点数最高的），
-// 再看现在手里哪张牌用不上，就是“应该打的牌”——玩家操作时牌底下泛起白色水波纹，电脑的白望直接打它。
+// 再看现在手里哪张牌用不上，就是“应该打的牌”——玩家操作时牌脚下泛起透明的水波纹，电脑的白望直接打它。
 // 这一局怎么摸都和不了的时候不出水波纹。
 // 发不发动不用 g.rng：按种子和这一回合算一个固定的数，看不看、什么时候看都不会改变牌局（怜的演算、能力记录器照旧逐字一致）
 export const SHIROMI = {
@@ -223,7 +223,7 @@ export function shiromiPlan(g: Game, seat: number): MayoigaPlan | null {
   return plan && g.players[seat].hand.includes(plan.tile) ? plan : null;
 }
 
-// 应该打的那张牌（牌底下的白色水波纹）
+// 应该打的那张牌（牌脚下的水波纹）
 export function shiromiRipple(g: Game, seat: number): TileId | null {
   return shiromiPlan(g, seat)?.tile ?? null;
 }
@@ -231,7 +231,7 @@ export function shiromiRipple(g: Game, seat: number): TileId | null {
 export const shiromiAbility: Ability = {
   id: 'shiromi',
   name: '迷途之家',
-  description: `每次要打牌时有 ${SHIROMI.chance * 100}% 的概率发动：照牌山此刻的样子，算出这一局她靠自摸最早能和出的最终牌型，应该打的那张牌底下泛起白色水波纹。不动牌山；有人鸣牌、开杠，或者别人的能力换了牌，算好的路就会变。`,
+  description: `每次要打牌时有 ${SHIROMI.chance * 100}% 的概率发动：照牌山此刻的样子，算出这一局她靠自摸最早能和出的最终牌型，应该打的那张牌脚下泛起透明的水波纹。不动牌山；有人鸣牌、开杠，或者别人的能力换了牌，算好的路就会变。`,
 
   skill(g, seat) {
     const plan = shiromiPlan(g, seat);

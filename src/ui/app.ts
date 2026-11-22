@@ -14,6 +14,7 @@ import { awaiCornerKan, awaiDomainOn, awaiFields, awaiKanUra, awaiKanUraHit, awa
 import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abilities/saki';
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
+import { MAYOIGA_FX } from '../ui3d/mayoigaFx';
 import { shizunoMist } from '../abilities/shizuno';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
 import { MYEONGHWA, myeonghwaCut, myeonghwaSecondSong, myeonghwaSinging, myeonghwaSong, myeonghwaWinds } from '../abilities/myeonghwa';
@@ -3295,7 +3296,7 @@ export class App {
     return toyoneRedHidden(g, this.me);
   }
 
-  // 白望的迷途之家：这一次发动了，应该打的那张牌底下泛白色水波纹
+  // 白望的迷途之家：这一次发动了，应该打的那张牌脚下泛起透明的水波纹
   private rippleTile(): TileId | null {
     const g = this.game!;
     if (this.vision || this.chars[this.me]?.id !== 'shiromi') return null;
@@ -4308,9 +4309,13 @@ export class App {
     const flip = cover ? ' rii-cover' : uncover ? ' rii-uncover' : '';
     const flipStyle = cover || uncover ? ` style="--rcd:${(-flipAge).toFixed(3)}s"` : '';
     const covered = (t: TileId) => (cover ? [...classes(t), 'covered'] : classes(t));
-    const hand = sorted.map((t) => tileHtml(t, { classes: covered(t), data: { tile: t } })).join('');
+    // 迷途之家的水波纹：三圈接着荡，重画手牌时照着时间接着放，不从头来
+    const period = MAYOIGA_FX.period;
+    const pool = ripple === null ? '' : `<span class="mayo" style="--mp:${period}s;--mt:${(-((Date.now() / 1000) % period)).toFixed(3)}s"><i></i><i></i><i></i></span>`;
+    const after = (t: TileId) => (t === ripple ? pool : undefined);
+    const hand = sorted.map((t) => tileHtml(t, { classes: covered(t), data: { tile: t }, after: after(t) })).join('');
     const drawn =
-      p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn, { classes: covered(p.drawn), data: { tile: p.drawn } })}</div>` : '';
+      p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn, { classes: covered(p.drawn), data: { tile: p.drawn }, after: after(p.drawn) })}</div>` : '';
     const ghosts = cover && withHand ? `<div class="rii-ghosts${riiLook.proj === 'out' ? ' out' : ''}">${sorted.map((t) => tileHtml(t)).join('')}${p.drawn !== null ? `<div class="drawn">${tileHtml(p.drawn)}</div>` : ''}</div>` : '';
 
     const buttons: string[] = [];
