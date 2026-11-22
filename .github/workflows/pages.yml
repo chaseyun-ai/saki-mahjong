@@ -1,0 +1,66 @@
+name: pages
+
+# 发布网页版到 GitHub Pages。平时推 main 不发布，只有推版本标签（v0.1、v0.2……）的时候才发：
+#   git tag v0.2 && git push origin v0.2
+# 推标签以后这里会建好网页、发到 Pages，再给这个标签建一个 Release。
+# 想不打新标签重发一次，就在 GitHub 的 Actions 页里选 pages，点 Run workflow（选要发的分支或标签）。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 两次发布同时跑的话排队，不互相打断
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    # 只有推标签触发的才建 Release；已经有了（比如手动建过）就不再建
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $TAG 已经有了"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \
+              --notes "网页版（打开就能玩）：https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
+          fi
