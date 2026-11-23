@@ -79,7 +79,7 @@ import { hash01, paceOf, pickDiscardStyle, pondJitter, pondStyleOf, vary } from 
 import { type DiscardStyle, isPush, landWeight, pushDistFor, pushSeconds } from '../ui3d/discardMotion';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
-import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
+import { FACES, Face, cutinArt, modelUrls, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
 import { TileSize, backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
 import { FlowPage, PointSeat, ResultFlow, animatePoints, drawBannerHtml, pointsPageHtml, ranksOf } from './resultFlow';
 import { meldLayout } from './meldLayout';
@@ -87,6 +87,8 @@ import { WaitInfo, drawWaits, hanLabel, waitInfo, waitStatus } from './waitInfo'
 import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
+import { AssetImporter } from '../assets/importer';
+import { onCustomAssets } from '../assets/layers';
 import { preloadVoices, sayVoice, stopVoices } from './voice';
 import { VoiceCue, cueKeys } from './voiceLines';
 import { TeamFlow } from './teamFlow';
@@ -384,6 +386,11 @@ export class App {
       if (this.game) this.render();
       else if (this.root.querySelector('.sel-board, .select-screen')) this.renderSelect();
     });
+    // 素材导入换了素材（或者拨了“用我导入的素材”）：一样重画
+    onCustomAssets(() => {
+      if (this.game) this.render();
+      else if (this.root.querySelector('.sel-board, .select-screen')) this.renderSelect();
+    });
     // 调试用：?debug 时可以在控制台里直接触发牌局事件看特效
     if (location.search.includes('debug')) Object.assign(window, { app: this, chooseAction });
   }
@@ -530,7 +537,7 @@ export class App {
     this.teamFlow = null;
     this.auto = false;
     // 3D 牌桌要用的人物模型现在就开始在后台下载
-    if (this.mode === '3d') preloadModels(MODEL_URLS);
+    if (this.mode === '3d') preloadModels(modelUrls());
     // 部室白板上的名册 + 报名表（selectPage.ts）。右上角便签是设置（对局、视觉、声音三页），蓝磁铁「…」里放动作调试
     const more = `<details class="sel-more sb-more"><summary aria-label="更多" title="动作调试">${MORE_SVG}</summary><div class="sel-more-menu"><button data-ui="lab">动作调试</button></div></details>`;
     this.root.innerHTML = selectBoardHtml({ ...this.selectParts(), more }) + '<div id="setup"></div>';
@@ -2867,7 +2874,7 @@ export class App {
     if (el.dataset.ui === 'vis-mode' && TABLE_MODES.some((m) => m.id === el.dataset.v)) {
       this.mode = el.dataset.v as TableMode;
       saveTableMode(this.mode);
-      if (this.mode === '3d') preloadModels(MODEL_URLS);
+      if (this.mode === '3d') preloadModels(modelUrls());
       this.renderPanel();
       return;
     }
@@ -2971,6 +2978,14 @@ export class App {
     if (el.dataset.ui === 'skins') {
       this.panel = null;
       new SkinEditor(this.root, () => this.renderSelect());
+      return;
+    }
+    // 素材导入：主页的拉门、设置里的「素材导入」。从主页（包括主页上开的设置）进来的，返回回主页
+    if (el.dataset.ui === 'assets') {
+      const fromHome = !!el.closest('.home-room');
+      this.panel = null;
+      if (fromHome) transition(() => new AssetImporter(this.root, () => transition(() => this.renderTitle())));
+      else new AssetImporter(this.root, () => this.renderSelect());
       return;
     }
     if (el.dataset.ui === 'school' && el.dataset.school) {

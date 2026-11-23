@@ -216,6 +216,11 @@
   transform: translateY(-10px) scale(1.06);
   filter: drop-shadow(0 0 12px rgba(255, 214, 120, 0.95)) drop-shadow(0 16px 18px rgba(0, 0, 0, 0.4)) brightness(1.08);
 }
+/* 拉门太大，浮起来不好看：原地亮一点、门框描一圈暖光 */
+.hr-pop.hr-door-pop.on {
+  transform: none;
+  filter: drop-shadow(0 0 10px rgba(255, 214, 120, 0.9)) brightness(1.1);
+}
 
 /* ---------- 白板上的纸：三种玩法 ---------- */
 .hr-paper {

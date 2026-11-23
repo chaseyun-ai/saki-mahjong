@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TILE_H, TILE_T, TILE_W } from './tableLayout';
-import { EASE, HAND_URL, HOOK, HandPose, HandRig, REST, buildHand, loadHand, mixPose, poseHand } from './awaiCutIn';
+import { EASE, HOOK, HandPose, HandRig, REST, buildHand, handUrl, loadHand, mixPose, poseHand } from './awaiCutIn';
 
 // 试用：出牌的时候用淡的特写那只手模（public/models/hand-awai.glb）搬牌，看看效果。
 // 不改出牌动作本身：手跟着 discardMotion 算出来的「手指捏住牌的点」走，中指指尖按在牌顶上；
@@ -61,7 +61,7 @@ export class TestHand {
   }
 
   load(): Promise<void> {
-    this.loading ??= loadHand(HAND_URL)
+    this.loading ??= loadHand(handUrl())
       .then((src) => {
         // 淡的大袖口从牌桌上方看会挡住一大片，还露出切口：换成一截细的袖子，一直伸到画面外面
         const sleeves = new Set<THREE.BufferGeometry>();

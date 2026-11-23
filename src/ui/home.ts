@@ -8,10 +8,11 @@ import { transition } from './transition';
 // - 白板上那张纸写着三种玩法（个人对局、团体赛、全国大赛），点一行，红笔圈一下再进去
 // - 便签上画一个小齿轮：设置（对局、视觉、声音三页在一个面板里）
 // - 收音机：角色图鉴；中间的麻将桌：随机出场（坐下就打）；窗户：换个时间（清晨 → 白天 → 黄昏 → 夜晚）
+// - 左边的拉门：素材导入（换头像、模型、语音、音乐，见 src/assets/importer.ts）
 //
 // 整张图按原图像素排在一个 2752×1536 的舞台上，再整体缩放铺满屏幕；纸和便签上的字用 matrix3d 贴到图里纸的四个角上，
 // 所以斜着、近大远小都对得上。屏幕比图窄很多（手机竖屏、平板）时不硬裁，改成左右拖着看，一开始停在白板那边。
-// 点击走 App.onClick（data-ui：home-go、open-settings、codex），换时间在这里自己处理。
+// 点击走 App.onClick（data-ui：home-go、open-settings、codex、assets），换时间在这里自己处理。
 
 export type HomeTod = 'dawn' | 'day' | 'dusk' | 'night';
 export const TODS: HomeTod[] = ['dawn', 'day', 'dusk', 'night'];
@@ -85,6 +86,15 @@ const TABLE: Pt[] = [
   [400, 1250],
 ];
 const WINDOW = { x: 958, y: 0, w: 935, h: 880 };
+// 左边的拉门（两扇）：右边缘停在收音机那张小桌子前面，右下角被麻将桌挡住的那块让出来
+const DOOR: Pt[] = [
+  [0, 205],
+  [505, 185],
+  [505, 995],
+  [320, 1118],
+  [320, 1398],
+  [0, 1418],
+];
 const CUP: Pt = [553, 1000];
 const FELT: Pt = [1010, 1062];
 
@@ -164,6 +174,8 @@ export function homeHtml(): string {
             <div class="hr-dial" style="left:${RADIO.x + 150}px;top:${RADIO.y + 52}px"></div>
           </div>
           <button class="hr-hot hr-window" data-hot="window" style="left:${WINDOW.x}px;top:${WINDOW.y}px;width:${WINDOW.w}px;height:${WINDOW.h}px" aria-label="换个时间（现在是${TOD_NAME[tod]}）"></button>
+          <div class="hr-pop hr-door-pop" data-pop="door" aria-hidden="true"><i style="clip-path:${poly(DOOR)}"></i></div>
+          <button class="hr-hot hr-door" data-ui="assets" data-hot="door" style="clip-path:${poly(DOOR)}" aria-label="素材导入：换头像、模型、语音、音乐"></button>
           <button class="hr-hot hr-table" data-ui="home-go" data-v="random" data-hot="table" style="clip-path:${poly(TABLE)}" aria-label="随机出场：随便抽一位坐下就打"></button>
           <div class="hr-pop" data-pop="radio" style="transform-origin:${RADIO.x + RADIO.w / 2}px ${RADIO.y + RADIO.h}px" aria-hidden="true">
             <i style="clip-path:${radioClip}"></i><i style="clip-path:${poly(ANTENNA)}"></i>
@@ -195,12 +207,14 @@ const TIPS: Record<string, string> = {
   window: '换个时间',
   table: '随机出场 · 坐下就打',
   radio: '角色图鉴',
+  door: '素材导入 · 换头像、模型、声音',
 };
-// 提示冒在哪（原图像素）：收音机、桌子的正上方，窗户中间
+// 提示冒在哪（原图像素）：收音机、桌子的正上方，窗户中间，拉门上半截的玻璃上
 const TIP_AT: Record<string, Pt> = {
   window: [1425, 330],
   table: [990, 940],
   radio: [712, 690],
+  door: [255, 330],
 };
 
 // 主页摆好以后：铺满屏幕、悬停提示、换时间、拖着看、开场
@@ -274,7 +288,7 @@ export function mountHome(room: HTMLElement): void {
   // 玩家自己拖过一次，「左右拖动」的提示就收起来
   for (const ev of ['pointerdown', 'wheel', 'touchstart']) view.addEventListener(ev, () => room.classList.add('panned'), { passive: true, once: true });
 
-  // 悬停：收音机、便签浮起来，桌子、窗户冒一句提示
+  // 悬停：收音机、便签浮起来，拉门亮一下，桌子、窗户、拉门冒一句提示
   const pops = new Map<string, HTMLElement>();
   for (const p of room.querySelectorAll<HTMLElement>('.hr-pop')) pops.set(p.dataset.pop!, p);
   const showTip = (el: HTMLElement | null): void => {

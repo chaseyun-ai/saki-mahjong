@@ -160,8 +160,28 @@ export const LOOKS: Record<string, Look> = {
   sae: { model: 'models/vroid-e.v2.glb', hair: '#4a3226', eyes: '#6a4a36', hairContrast: 0.6, reveal: 'wave', pose: 'crossed', borrowed: true },
 };
 
-// 牌桌上要用到的全部模型文件
+// 牌桌上要用到的全部模型文件（游戏自带的）
 export const MODEL_URLS = [...new Set(Object.values(LOOKS).map((l) => l.model))];
+
+// 素材导入换上的 3D 模型（src/assets/layers.ts 推过来）：项目里 public/custom 的，和玩家自己导入的（盖过项目的）。
+// 换了模型的角色不再染发色、眼睛（自己的模型本来就是对的颜色）
+const modelLayers: { mine: Record<string, string>; project: Record<string, string> } = { mine: {}, project: {} };
+export function setModelOverrides(layer: 'mine' | 'project', next: Record<string, string>): void {
+  modelLayers[layer] = next;
+}
+export function modelOf(id: string): { url: string; custom: boolean } {
+  const own = modelLayers.mine[id] ?? modelLayers.project[id];
+  return own ? { url: own, custom: true } : { url: (LOOKS[id] ?? LOOKS.saki).model, custom: false };
+}
+// 先下载好的模型：自带的，加上项目里换上的（玩家自己导入的本来就在浏览器里，不用下载）
+export const modelUrls = (): string[] => [...new Set([...MODEL_URLS, ...Object.values(modelLayers.project)])];
+
+// 手模（淡的连招特写、出牌试用手模）：素材导入换了就用换上的
+const handLayers: { mine: string | null; project: string | null } = { mine: null, project: null };
+export function setHandOverride(layer: 'mine' | 'project', url: string | null): void {
+  handLayers[layer] = url;
+}
+export const handOverride = (): string | null => handLayers.mine ?? handLayers.project;
 
 // 头像的五种表情：平常、开心、难过、吃惊、认真
 export const FACES = ['neutral', 'happy', 'sad', 'surprised', 'serious'] as const;
@@ -185,7 +205,9 @@ export function defaultCutinArt(id: string, kind: string): { url: string; wide: 
   return url ? { url, wide: true } : { url: cutinUrl(id), wide: false };
 }
 
-// 试玩页“素材”页面里换上的图（src/ui/skins.ts 读写），盖过上面的默认图。
+// 换上的图，盖过上面的默认图。有三层，前面的盖过后面的：
+//   mine 玩家自己用素材导入存在浏览器里的、playtest 试玩页“素材”页面里页面主人换的（src/ui/skins.ts 读写）、
+//   project 项目里 public/custom 的（素材导入在本地开发时写进项目，src/assets/layers.ts 读）
 // face 头像框平时的头像，blank 放铳和终局没拿第一时的“懵逼”，riichi 立直切入，call 鸣牌（吃碰杠）切入，
 // win 和牌切入，ability 能力发动切入，result 结算画面，power 能力发动时的头像（怜演算时眼睛发光）；
 // skill-<技能 id> 是单个技能发动时放的动画（只有 Character.skillArts 里列的技能有，比如爽的每朵云、每个神威）
@@ -196,12 +218,23 @@ export interface SkinArt {
   h: number;
   video?: boolean; // 视频（MP4、WebM），不是图
 }
-let skins: Record<string, Partial<Record<SkinSlot, SkinArt>>> = {};
-export function setSkins(next: typeof skins): void {
-  skins = next;
+export type Skins = Record<string, Partial<Record<SkinSlot, SkinArt>>>;
+export type SkinLayer = 'mine' | 'playtest' | 'project';
+const SKIN_ORDER: SkinLayer[] = ['mine', 'playtest', 'project'];
+const skinLayers: Record<SkinLayer, Skins> = { mine: {}, playtest: {}, project: {} };
+export function setSkinLayer(layer: SkinLayer, next: Skins): void {
+  skinLayers[layer] = next;
+}
+// 试玩页的素材页用这个
+export function setSkins(next: Skins): void {
+  setSkinLayer('playtest', next);
 }
 export function skinOf(id: string, slot: SkinSlot): SkinArt | undefined {
-  return skins[id]?.[slot];
+  for (const layer of SKIN_ORDER) {
+    const art = skinLayers[layer][id]?.[slot];
+    if (art) return art;
+  }
+  return undefined;
 }
 
 export function portraitUrl(id: string, face: Face): string {

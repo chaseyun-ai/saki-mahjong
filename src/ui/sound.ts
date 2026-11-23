@@ -1,6 +1,7 @@
 // 用 WebAudio 合成的简单音效，不需要音频文件。全部接在音效总线上（audioBus.ts），音量归声音设置里的「音效」管
 import { audio, bus } from './audioBus';
 import { vary } from './vary';
+import { playCustomSfx } from './customSfx';
 
 export { audio };
 
@@ -44,6 +45,8 @@ function clickHit(a: AudioContext, freq: number, q: number, vol: number, seconds
 // 打牌落桌的“啪”。pan 是左右声道（-1 左到 1 右，下家在右、上家在左）；varied 为 true 时随机微变化；
 // weight 是出牌的样子定的轻重（不给就是平常的一声，三种音色轮着来）
 export function playClick(opts: { pan?: number; varied?: boolean; weight?: ClickWeight } = {}): void {
+  // 素材导入换了落桌声：放换上的（轻放小声、重拍大声一点）
+  if (playCustomSfx('click', { pan: opts.varied && vary.on ? opts.pan : 0, vol: opts.weight === 'slap' ? 1.3 : opts.weight === 'soft' ? 0.6 : 1 })) return;
   const a = audio();
   if (!a) return;
   const on = !!opts.varied && vary.on;
@@ -90,6 +93,7 @@ export function playScrape(pan = 0, seconds = 0.2): void {
 
 // 能力发动的提示音。vol：角色同时说了台词时压低一点（下面吃碰杠、立直、和牌的也一样）
 export function playChime(vol = 1): void {
+  if (playCustomSfx('chime', { vol })) return;
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
@@ -122,6 +126,7 @@ function tone(a: AudioContext, f: number, start: number, dur: number, vol: numbe
 
 // 吃碰杠：短促有力的两声
 export function playCall(vol = 1): void {
+  if (playCustomSfx('call', { vol })) return;
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
@@ -132,6 +137,7 @@ export function playCall(vol = 1): void {
 
 // 立直：低音加上扬的滑音
 export function playRiichi(vol = 1): void {
+  if (playCustomSfx('riichi', { vol })) return;
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
@@ -151,6 +157,7 @@ export function playRiichi(vol = 1): void {
 
 // 和牌：上行琶音
 export function playWin(vol = 1): void {
+  if (playCustomSfx('win', { vol })) return;
   const a = audio();
   if (!a) return;
   const now = a.currentTime;

@@ -202,7 +202,7 @@ describe('涅莉·薇萨拉兹', () => {
     }
   }, 120000);
 
-  it('押了运势：配牌照常发，到那一巡左右才和（3 点 7 巡、2 点 12 巡、1 点 15 巡），档越高和得越大，3 点大多和出三倍满', () => {
+  it('押了运势：配牌照常发，到那一巡左右才和（3 点 7 巡、2 点 12 巡、1 点 15 巡），档越高和得越大，3 点大多和出三倍满', async () => {
     const stat = [0, 1, 2, 3].map(() => ({ rounds: 0, wins: 0, value: 0, big: 0, early: 0, turns: 0, sh: 0, over: 0 }));
     for (let seed = 1; seed <= 24; seed++) {
       for (const pick of [1, 2, 3]) {
@@ -239,6 +239,8 @@ describe('涅莉·薇萨拉兹', () => {
           { pick, format: 'team' },
         );
       }
+      // 一个种子打完歇一下，让测试进程能回应主进程（一口气跑一分钟以上会被当成卡死，见 brawl.test.ts）
+      await new Promise((r) => setTimeout(r, 0));
     }
     const avg = (a: number, b: number) => a / Math.max(1, b);
     console.log(stat.map((s, i) => `${i}: ${s.rounds} 局 和${s.wins} 平均${Math.round(avg(s.value, s.wins))} 够大${s.big} 平均第${avg(s.turns, s.wins).toFixed(1)}巡 提早${s.early} 配牌向听${avg(s.sh, s.rounds).toFixed(2)} 超过12番${s.over}`));
