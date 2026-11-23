@@ -4,6 +4,9 @@ import { SkinSlot, cutinArt, defaultCutinArt, defaultPortraitUrl, defaultPowerPo
 import { VOICE_MAX_SECONDS, VoiceFileError, clipFromFile, forgetVoicePack, previewVoiceBytes, setVoiceRefs } from './voice';
 import { matchVoiceFile, voiceSlotsOf } from './voiceLines';
 import { VoicePack, VoiceRef, base64ToBytes, emptyPack, packLines, packText, parsePack, withClip } from './voicePack';
+import { sniff } from '../assets/sniff';
+import { fileOf } from '../assets/slots';
+import { type PackFile, buildPack, downloadZip, packName } from '../assets/pack';
 
 // 素材页：页面主人在试玩页里给每个角色换头像、切入图、结算图，不用改代码。
 // 图存在试玩页自己的存储里（assets），哪个格子用哪张图记在 db 的 skins/<角色 id> 里：
@@ -195,6 +198,7 @@ export class SkinEditor {
           <button class="lab-entry" data-skin-back>← 返回</button>
           <h1>素材</h1>
           <p class="skin-status" role="status"></p>
+          <button class="skin-btn" data-skin-export title="这里换过的图、动画、语音打成一个素材包，在本地的「素材导入」里导入">导出素材包</button>
         </header>
         <div class="skin-body">
           <nav class="skin-list" aria-label="角色">
@@ -374,8 +378,12 @@ export class SkinEditor {
   }
 
   private onClick(e: Event): void {
-    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-skin-back],[data-skin-reset],[data-skin-tab],[data-skin-step],[data-voice-play],[data-voice-clear]');
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-skin-back],[data-skin-reset],[data-skin-tab],[data-skin-step],[data-voice-play],[data-voice-clear],[data-skin-export]');
     if (!el) return;
+    if (el.dataset.skinExport !== undefined) {
+      void this.exportPack();
+      return;
+    }
     if (el.dataset.voicePlay) {
       const [id, key] = el.dataset.voicePlay.split(':');
       void this.playVoice(id, key);
@@ -587,6 +595,48 @@ export class SkinEditor {
           : code === 'quota_or_state'
             ? '试玩页的存储满了，先清掉不用的图或语音再试。'
             : `语音没存成（${code ?? '语音包取不到'}），过一会儿再试一次。`;
+    }
+    this.busy = false;
+    this.refresh();
+  }
+
+  // 搬到本地：这里换过的图、动画和语音（每一句拆成一个文件）打成素材包，在本地游戏的「素材导入」里导入
+  private async exportPack(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    this.status = '正在打包……';
+    this.refresh();
+    const files: PackFile[] = [];
+    let lost = 0;
+    try {
+      for (const [id, doc] of Object.entries(docs)) {
+        for (const [slot, v] of Object.entries(doc) as [string, Stored | undefined][]) {
+          if (slot === 'voice' || !v?.id) continue;
+          const r = await fetch('/_blob/' + v.id).catch(() => null);
+          const s = r?.ok ? sniff(new Uint8Array(await r.arrayBuffer())) : null;
+          if (!s) {
+            lost++;
+            continue;
+          }
+          files.push({ owner: id, slot, entry: { file: fileOf(id, slot, s.ext), mime: s.mime, media: s.media, size: s.bytes.length, w: v.w, h: v.h }, data: s.bytes });
+        }
+        if (doc.voice?.id) {
+          const pack = await this.packOf(id).catch(() => emptyPack());
+          for (const [key, clip] of Object.entries(pack.clips)) {
+            const s = sniff(base64ToBytes(clip.data));
+            if (!s || s.media !== 'audio') {
+              lost++;
+              continue;
+            }
+            const slot = `voice-${key}`;
+            files.push({ owner: id, slot, entry: { file: fileOf(id, slot, s.ext), mime: s.mime, media: 'audio', size: s.bytes.length }, data: s.bytes });
+          }
+        }
+      }
+      if (files.length) downloadZip(buildPack(files), packName());
+      this.status = files.length ? `打包了 ${files.length} 个${lost ? `（${lost} 个取不到，没打进去）` : ''}。在本地游戏的视觉设置 →「素材导入」里点「导入素材包」放进去。` : '这里还没换过素材，没什么可导出的。';
+    } catch {
+      this.status = '没打包成，过一会儿再试一次。';
     }
     this.busy = false;
     this.refresh();

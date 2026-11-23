@@ -2670,6 +2670,10 @@ button {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.skin-head .skin-btn {
+  flex: none;
+}
+
 .skin-head .lab-entry {
   flex: none;
   margin: 0;

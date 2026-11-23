@@ -1,7 +1,10 @@
 import { defineConfig } from 'vitest/config';
+import { customAssets } from './scripts/vite-custom-assets';
 
 export default defineConfig({
   base: './',
+  // 素材导入的「写进项目」（只在 npm run dev 时有，见 scripts/vite-custom-assets.ts）
+  plugins: [customAssets()],
   test: {
     globals: true,
     setupFiles: ['tests/setup.ts'],
