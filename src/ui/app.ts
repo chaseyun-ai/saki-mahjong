@@ -2980,9 +2980,12 @@ export class App {
       new SkinEditor(this.root, () => this.renderSelect());
       return;
     }
+    // 素材导入：主页的拉门、设置里的「素材导入」。从主页（包括主页上开的设置）进来的，返回回主页
     if (el.dataset.ui === 'assets') {
+      const fromHome = !!el.closest('.home-room');
       this.panel = null;
-      new AssetImporter(this.root, () => this.renderSelect());
+      if (fromHome) transition(() => new AssetImporter(this.root, () => transition(() => this.renderTitle())));
+      else new AssetImporter(this.root, () => this.renderSelect());
       return;
     }
     if (el.dataset.ui === 'school' && el.dataset.school) {
