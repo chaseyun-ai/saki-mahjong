@@ -16,9 +16,9 @@ describe('素材导入：说明和建议文件名', () => {
     for (const k of KINDS) expect(kindCount(k.id, CHARACTERS).total).toBeGreaterThan(0);
   });
 
-  it('要几个：头像每人 3 张、切入每人 5 张、提示音和背景音乐各 5 个', () => {
+  it('要几个：头像每人 3 张、切入每人 6 张、提示音和背景音乐各 5 个', () => {
     expect(kindAmount('portrait', CHARACTERS)).toBe('每个角色 3 张');
-    expect(kindAmount('cutin', CHARACTERS)).toBe('每个角色 5 张');
+    expect(kindAmount('cutin', CHARACTERS)).toBe('每个角色 6 张');
     expect(kindAmount('model', CHARACTERS)).toBe('每个角色 1 个');
     expect(kindAmount('sfx', CHARACTERS)).toBe('5 个');
     expect(kindAmount('music', CHARACTERS)).toBe('5 首');
@@ -44,6 +44,7 @@ describe('素材导入：说明和建议文件名', () => {
     const f = (owner: string, slot: string) => suggestedFile(owner, slotsFor(owner, CHARACTERS).find((d) => d.slot === slot)!, CHARACTERS);
     expect(f('awai', 'face')).toBe('大星淡/头像.png');
     expect(f('awai', 'riichi')).toBe('大星淡/立直切入.png');
+    expect(f('awai', 'eyes')).toBe('大星淡/睁眼特写.png');
     expect(f('awai', 'voice-riichi')).toBe('大星淡/语音-立直.mp3');
     expect(f('awai', 'model')).toBe('大星淡/3D模型.vrm');
     expect(f(GLOBAL, 'sfx-click')).toBe('提示音/落桌声.wav');

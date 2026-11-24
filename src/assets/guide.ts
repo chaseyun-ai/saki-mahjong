@@ -37,9 +37,9 @@ export const KINDS: KindInfo[] = [
   {
     id: 'cutin',
     name: '切入图',
-    where: '立直、吃碰杠、和牌、能力发动时从座位那边滑进来的大图，和结算画面左边的图',
-    spec: '竖图 3:4（横图 4:3 也行），建议 1200×1600（高至少 1000），透明背景的 PNG / WebP 最好',
-    fallback: '自带立绘的只有几个人，其他人只有一条色带和名字的最后一个字',
+    where: '立直、吃碰杠、和牌、能力发动时从座位那边滑进来的大图，能力发动时的睁眼特写，和结算画面左边的图',
+    spec: '竖图 3:4（横图 4:3 也行），建议 1200×1600（高至少 1000），透明背景的 PNG / WebP 最好；睁眼特写是横图 16:5，建议 1600×500',
+    fallback: '自带立绘的只有几个人，其他人只有一条色带和名字的最后一个字；睁眼特写不换就用游戏现画的眼睛',
     tip: '最值得换「和牌切入」：鸣牌、结算没换时都用它',
     global: false,
     accept: 'image/*',
@@ -131,9 +131,10 @@ export function kindAmount(k: Kind, who: Who[]): string {
 
 // 一句话回答“到底要准备多少”：最少、全套
 export function summary(who: Who[]): string {
-  const img = kindCount('portrait', who).min + kindCount('cutin', who).min;
+  const portrait = kindCount('portrait', who).min;
+  const cutin = kindCount('cutin', who).min;
   const v = kindCount('voice', who);
-  return `想让每个角色有自己的样子，最少每人 2 张图（头像、和牌切入）；全套是每人 ${img} 张图（头像 3、切入 5）、1 个 3D 模型、${v.min}～${v.max} 句语音，有技能动画的 ${kindCount('skill', who).owners} 个人再加几段动画；不分角色的是 ${kindCount('sfx', who).total} 个提示音、${kindCount('music', who).total} 首背景音乐、1 个手模。`;
+  return `想让每个角色有自己的样子，最少每人 2 张图（头像、和牌切入）；全套是每人 ${portrait + cutin} 张图（头像 ${portrait}、切入 ${cutin}）、1 个 3D 模型、${v.min}～${v.max} 句语音，有技能动画的 ${kindCount('skill', who).owners} 个人再加几段动画；不分角色的是 ${kindCount('sfx', who).total} 个提示音、${kindCount('music', who).total} 首背景音乐、1 个手模。`;
 }
 
 // 有没有自带的头像、立绘（scripts/render-portraits.mjs 用模型渲染的那几张）
@@ -184,6 +185,8 @@ function fallbackOf(owner: string, d: SlotDef, who: Who[]): string {
     case 'ability':
     case 'win':
       return art ? '用自带的立绘' : `只有色带和${glyph}`;
+    case 'eyes':
+      return '用游戏现画的眼睛（这个人的瞳色、发色）';
     case 'call':
     case 'result':
       return '用「和牌切入」';
@@ -196,7 +199,7 @@ function fallbackOf(owner: string, d: SlotDef, who: Who[]): string {
 function specOf(d: SlotDef): string {
   const k = kindOf(d);
   if (k === 'portrait') return '竖图 3:4，建议 600×800';
-  if (k === 'cutin') return d.slot === 'result' ? '竖图或横图，建议 1200×1600，透明背景' : '竖图 3:4，建议 1200×1600，透明背景';
+  if (k === 'cutin') return d.slot === 'result' ? '竖图或横图，建议 1200×1600，透明背景' : d.slot === 'eyes' ? '横图 16:5，建议 1600×500，眼睛放中间；或 MP4 / WebM' : '竖图 3:4，建议 1200×1600，透明背景';
   if (k === 'skill') return 'GIF / MP4 / WebM，最长 6 秒';
   if (k === 'model') return '.vrm，建议 10 MB 以内';
   if (k === 'voice') return `一句，最长 ${VOICE_MAX_SECONDS} 秒`;

@@ -211,9 +211,9 @@ export function defaultCutinArt(id: string, kind: string): { url: string; wide: 
 //   mine 玩家自己用素材导入存在浏览器里的、playtest 试玩页“素材”页面里页面主人换的（src/ui/skins.ts 读写）、
 //   project 项目里 public/custom 的（素材导入在本地开发时写进项目，src/assets/layers.ts 读）
 // face 头像框平时的头像，blank 放铳和终局没拿第一时的“懵逼”，riichi 立直切入，call 鸣牌（吃碰杠）切入，
-// win 和牌切入，ability 能力发动切入，result 结算画面，power 能力发动时的头像（怜演算时眼睛发光）；
+// win 和牌切入，ability 能力发动切入，eyes 能力发动的睁眼特写（不换就用 eyeDraw.ts 的眼睛模板现画），result 结算画面，power 能力发动时的头像（怜演算时眼睛发光）；
 // skill-<技能 id> 是单个技能发动时放的动画（只有 Character.skillArts 里列的技能有，比如爽的每朵云、每个神威）
-export type SkinSlot = 'face' | 'blank' | 'power' | 'riichi' | 'call' | 'win' | 'ability' | 'result' | `skill-${string}`;
+export type SkinSlot = 'face' | 'blank' | 'power' | 'riichi' | 'call' | 'win' | 'ability' | 'eyes' | 'result' | `skill-${string}`;
 export interface SkinArt {
   url: string;
   w: number;

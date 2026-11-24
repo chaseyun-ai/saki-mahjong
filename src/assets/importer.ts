@@ -11,6 +11,7 @@ import { playCall, playChime, playClick, playRiichi, playWin } from '../ui/sound
 import { type SfxName, withSynthSfx } from '../ui/customSfx';
 import { type Sniffed, sizeLabel, sniff } from './sniff';
 import { guessSlot } from './match';
+import { eyeTemplateUrl } from '../ui/eyeShot';
 import { GLOBAL, MAX_BYTES, MAX_VOICE_BYTES, MEDIA_LABEL, MUSIC, type Entry, type SlotDef, fileOf, slotDef, slotsFor } from './slots';
 import { type PackFile, buildPack, downloadZip, isZip, packName, readPack } from './pack';
 import { clearMine, deleteMine, mineAvailable, mineEnabled, putMine, setMineEnabled } from './store';
@@ -755,6 +756,7 @@ export class AssetImporter {
     if (d.slot === 'face') return defaultPortraitUrl(owner, 'neutral');
     if (d.slot === 'blank') return defaultPortraitUrl(owner, 'surprised');
     if (d.slot === 'power') return defaultPowerPortraitUrl(owner);
+    if (d.slot === 'eyes') return eyeTemplateUrl(owner, CHARACTERS.find((c) => c.id === owner)?.color ?? '');
     if (d.group === 'cutin') return defaultCutinArt(owner, d.slot).url;
     if (d.group === 'skill') return defaultCutinArt(owner, d.slot.endsWith('-win') ? 'win' : 'ability').url;
     return '';
@@ -795,7 +797,7 @@ export class AssetImporter {
     const status = done ? '已换' : stand.via ? stand.via : (audioKind && k !== 'sfx' && !(mine && musicDefault)) || (!audioKind && k !== 'model' && k !== 'hand' && !stand.url) ? '空着' : '原版';
     const what = done ? `换上的：${p?.entry.name ?? (owner === MUSIC && mine ? (slotMeta(d.slot as MusicSlot).custom ?? '') : `public/music/${d.slot}.mp3`)}${p?.entry.size ? ` · ${sizeLabel(p.entry.size)}` : ''}` : `不换：${g.fallback}`;
     const label = d.group === 'music' ? (MUSIC_SLOTS.find((m) => m.id === d.slot)?.name ?? d.label) : d.group === 'voice' ? d.label.replace(/^语音 · /, '') : d.label;
-    const accept = kindInfo(k).accept;
+    const accept = d.media.includes('video') && !kindInfo(k).accept.includes('video') ? `${kindInfo(k).accept},video/*` : kindInfo(k).accept;
     const put = `<label class="skin-btn imp-put"${this.busy ? ' aria-disabled="true"' : ''}>${done ? '换一个' : '放进来'}<input type="file" accept="${accept}" data-imp-put="${key}"${this.busy ? ' disabled' : ''} /></label>`;
     const del = done ? `<button class="skin-btn ghost" data-imp-del="${key}"${this.busy ? ' disabled' : ''} title="删掉换上的，回到原版">换回原版</button>` : '';
     // 试听：换上的；没换的提示音放合成的；背景音乐放项目、网页自带的那首

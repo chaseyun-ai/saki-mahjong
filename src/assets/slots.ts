@@ -37,7 +37,15 @@ export const CUTIN_SLOTS: SlotDef[] = [
   { slot: 'riichi', label: '立直切入', hint: '立直时滑进来的图，透明背景最好', media: ['image'], group: 'cutin', words: RIICHI },
   { slot: 'call', label: '鸣牌切入', hint: '吃碰杠时滑进来的图，不换就用“和牌切入”', media: ['image'], group: 'cutin', words: [...CALL, 'pon', 'chi', 'kan', '碰', '吃', '杠', '槓'] },
   { slot: 'win', label: '和牌切入', hint: '荣和、自摸时滑进来的图', media: ['image'], group: 'cutin', words: [...WIN, 'ron', 'tsumo', 'cutin', 'cut-in', '荣和', '榮和', '自摸', 'ツモ', 'ロン', '切入'] },
-  { slot: 'ability', label: '能力发动切入', hint: '发动能力时滑进来的图（比如岭上开花、宝牌聚集、一巡先见）', media: ['image'], group: 'cutin', words: ABILITY },
+  { slot: 'ability', label: '能力发动切入', hint: '发动能力时滑进来的图（比如岭上开花、宝牌聚集、一巡先见）。设置里关了“睁眼特写”才放', media: ['image'], group: 'cutin', words: ABILITY },
+  {
+    slot: 'eyes',
+    label: '睁眼特写',
+    hint: '发动能力时斜着的长条格子里的眼睛特写：两只眼睛睁开的横图（16:5），放进来以后从中间一条缝张开；也可以是一段从闭眼到睁眼的视频。不换就用游戏现画的眼睛',
+    media: ['image', 'video'],
+    group: 'cutin',
+    words: ['eyes', 'eye-shot', 'eyeshot', '睁眼', '睜眼', '睁眼特写', '睜眼特寫', '眼部特写', '眼睛特写', '眼睛'],
+  },
   { slot: 'result', label: '结算图', hint: '结算画面左边的图，不换就用“和牌切入”', media: ['image'], group: 'cutin', words: ['result', 'score', '结算', '結算', '精算'] },
 ];
 

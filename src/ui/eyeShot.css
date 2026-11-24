@@ -1,0 +1,249 @@
+/* ---------- 能力发动的睁眼特写：斜着的长条格子，一人一格（src/ui/eyeShot.ts） ---------- */
+
+.eye-shots {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 8;
+}
+
+.eye-shot {
+  --k: 40px; /* 平行四边形斜边错开多少 */
+  position: absolute;
+  rotate: var(--tilt);
+  transition:
+    left 0.24s ease-out,
+    top 0.24s ease-out,
+    width 0.24s ease-out,
+    height 0.24s ease-out;
+}
+
+/* 后面错开一点的色块，像漫画分镜的阴影 */
+.eye-shot .es-back {
+  position: absolute;
+  inset: 0;
+  translate: 10px 9px;
+  clip-path: polygon(var(--k) 0, 100% 0, calc(100% - var(--k)) 100%, 0 100%);
+  background: color-mix(in srgb, var(--c) 75%, #000);
+  opacity: 0.85;
+  animation: es-in 0.26s cubic-bezier(0.2, 0.9, 0.3, 1) 0.03s both;
+}
+
+/* 白边框，里面是眼睛 */
+.eye-shot .es-frame {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(var(--k) 0, 100% 0, calc(100% - var(--k)) 100%, 0 100%);
+  background: linear-gradient(100deg, #fff 0%, color-mix(in srgb, var(--glow) 55%, #fff) 50%, #fff 100%);
+  box-shadow: 0 0 0 1px #fff;
+  animation: es-in 0.24s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.eye-shot canvas,
+.eye-shot video {
+  position: absolute;
+  inset: 4px;
+  width: calc(100% - 8px);
+  height: calc(100% - 8px);
+  clip-path: polygon(calc(var(--k) - 3px) 0, 100% 0, calc(100% - var(--k) + 3px) 100%, 0 100%);
+  object-fit: cover;
+  background: #0b0810;
+}
+
+.eye-shot:not(.own-video) video {
+  display: none;
+}
+
+.eye-shot.own-video canvas {
+  display: none;
+}
+
+.eye-shot.from-right .es-frame,
+.eye-shot.from-right .es-back {
+  animation-name: es-in-right;
+}
+
+/* 名字：左上角一块斜着的小牌子 */
+.eye-shot .es-tag {
+  position: absolute;
+  left: calc(var(--k) * 0.6);
+  top: 0;
+  translate: 0 -62%;
+  padding: 0.12em 0.9em;
+  font-size: clamp(11px, 1.8vh, 15px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #fff;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--c) 82%, #000);
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  animation: es-fade-in 0.2s ease-out 0.12s both;
+}
+
+/* 能力名：右下角压在框上的大字 */
+.eye-shot .es-word {
+  position: absolute;
+  right: calc(var(--k) * 0.4);
+  bottom: 0;
+  translate: 0 46%;
+  font-family: 'Ma Shan Zheng', 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
+  white-space: nowrap;
+}
+
+.eye-shot .es-word span {
+  display: inline-block;
+  font-size: clamp(20px, 5.4vh, 54px);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  color: #fff;
+  -webkit-text-stroke: 1.5px color-mix(in srgb, var(--glow) 45%, #000);
+  text-shadow:
+    0 0 12px var(--glow),
+    0 0 28px var(--glow),
+    0 3px 0 color-mix(in srgb, var(--glow) 45%, #000);
+  animation: fx-slam 0.32s cubic-bezier(0.2, 1.6, 0.4, 1) 0.36s both;
+}
+
+/* 退场：整组一起往前滑一点淡掉，一格格错开 */
+.eye-shot.out .es-frame,
+.eye-shot.out .es-back {
+  animation: es-out 0.3s ease-in var(--d, 0s) forwards;
+}
+
+.eye-shot.from-right.out .es-frame,
+.eye-shot.from-right.out .es-back {
+  animation-name: es-out-left;
+}
+
+.eye-shot.out .es-tag,
+.eye-shot.out .es-word span {
+  animation: es-fade-out 0.2s ease-in var(--d, 0s) forwards;
+}
+
+@keyframes es-in {
+  from {
+    opacity: 0;
+    translate: -38% 0;
+    scale: 1 0.25;
+  }
+}
+
+@keyframes es-in-right {
+  from {
+    opacity: 0;
+    translate: 38% 0;
+    scale: 1 0.25;
+  }
+}
+
+@keyframes es-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes es-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes es-out {
+  to {
+    opacity: 0;
+    translate: 10% 0;
+  }
+}
+
+@keyframes es-out-left {
+  to {
+    opacity: 0;
+    translate: -10% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eye-shot .es-frame,
+  .eye-shot .es-back,
+  .eye-shot .es-tag,
+  .eye-shot .es-word span {
+    animation: none;
+  }
+
+  .eye-shot.out {
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+}
+
+/* ---------- 预览页（网址后面加 #eyes，src/ui/eyeGallery.ts） ---------- */
+
+.eye-gallery {
+  min-height: 100vh;
+  padding: 16px 20px 40px;
+  background: #15121c;
+  color: #eee;
+}
+
+.eye-gallery header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.eye-gallery h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.eye-gallery p {
+  margin: 8px 0 16px;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.eye-gallery button {
+  font: inherit;
+  color: inherit;
+  background: #2a2434;
+  border: 1px solid #4a405a;
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.eye-gallery .eg-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.eg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.eg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px !important;
+}
+
+.eg-card canvas {
+  width: 100%;
+  border-radius: 3px;
+}
+
+.eg-card span {
+  font-size: 13px;
+}
+
+.eg-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+}

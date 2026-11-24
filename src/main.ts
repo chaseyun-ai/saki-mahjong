@@ -11,6 +11,7 @@ import { installSoundPanel } from './ui/soundPanel';
 import { installSoundtrack, stopMusic } from './ui/soundtrack';
 import { startCustomAssets } from './assets/layers';
 import { AssetImporter } from './assets/importer';
+import { EyeGallery } from './ui/eyeGallery';
 
 applyTheme();
 // 声音设置面板：选人页顶栏和对局里的喇叭按钮都开它
@@ -24,8 +25,9 @@ let root = document.getElementById('app')!;
 
 // 游戏和出牌动作调试场景来回切换：换一个新的 #app，旧的连同上面的点击监听一起扔掉，两边互不干扰。
 // 不靠改网址再刷新页面，嵌在别的页面里（比如试玩页）也能切
-type Page = 'game' | 'lab' | 'bracket' | 'solo' | 'assets';
-const pageOf = (hash: string): Page => (hash === '#lab' ? 'lab' : hash === '#bracket' ? 'bracket' : hash === '#solo' ? 'solo' : hash === '#assets' ? 'assets' : 'game');
+type Page = 'game' | 'lab' | 'bracket' | 'solo' | 'assets' | 'eyes';
+const pageOf = (hash: string): Page =>
+  hash === '#lab' ? 'lab' : hash === '#bracket' ? 'bracket' : hash === '#solo' ? 'solo' : hash === '#assets' ? 'assets' : hash === '#eyes' ? 'eyes' : 'game';
 
 function show(page: Page): void {
   const fresh = root.cloneNode(false) as HTMLElement;
@@ -45,6 +47,8 @@ function show(page: Page): void {
   else if (page === 'solo') new IndividualFlow(root, { exit: () => show('game'), switchTab: () => show('bracket') });
   // 素材导入单独打开（网址加 #assets，素材导入.bat 就开这里）
   else if (page === 'assets') new AssetImporter(root, () => show('game'));
+  // 能力发动的睁眼特写预览（网址加 #eyes）：每个角色的眼睛，点一个放一次
+  else if (page === 'eyes') new EyeGallery(root, () => show('game'));
   else new App(root, () => show('lab'));
 }
 

@@ -35,6 +35,8 @@ export interface MatchSettings {
   winZoom: boolean;
   // 试做：大星淡连招自摸（双立直、转角暗杠、杠里）时，画面一角切进来一个漫画式的三角窗，特写她的手把整排牌逆着翻起来
   awaiCutIn: boolean;
+  // 能力发动时的睁眼特写：斜着的长条格子里，这个人的眼睛猛地睁开（三种视角都放，几个人一起发动一人一格）。关了照旧：2.5D 放立绘切入，3D、2D 出字
+  eyeShot: boolean;
   // 对手：下家、对家、上家坐谁（角色 id），空的是随机
   opponents: string[];
   // 自己用龙门渊透华时开局就是治水（不用等点数变动 10 万）：选人页透华头像旁边的“常态 / 治水”切换
@@ -84,6 +86,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   spotlight: false,
   winZoom: false,
   awaiCutIn: true,
+  eyeShot: true,
   opponents: ['', '', ''],
   chisui: false,
   sakiStrong: false,
@@ -229,6 +232,7 @@ const ROWS: Row[] = [
   { key: 'spotlight', name: '和牌聚光灯', options: onOff, note: '3D、2.5D 牌桌：手牌一倒，上方几盏灯照着和了的牌，四周暗一点' },
   { key: 'winZoom', name: '和牌转镜头', options: onOff, note: '3D、2.5D 牌桌：别家和牌时镜头推过去看他的手牌' },
   { key: 'awaiCutIn', name: '淡的连招特写', options: onOff, note: '试做：大星淡连招自摸（双立直、转角暗杠、杠里）时，画面一角切进来漫画式的三角窗，特写她的手把整排牌逆着翻起来' },
+  { key: 'eyeShot', name: '能力发动睁眼特写', options: onOff, note: '发动能力时斜着切进来一格眼睛特写，几个人一起发动就一人一格；关了照旧放立绘切入（2.5D）或出字' },
   {
     key: 'layout',
     name: '2.5D 布局',
@@ -334,7 +338,7 @@ export function viewKeys(mode: TableMode, s: MatchSettings): (keyof MatchSetting
 // 两个面板各管哪几项（存在同一份设置里）
 const MATCH_KEYS: (keyof MatchSettings)[] = ['length', 'start', 'target', 'tobi', 'red', 'kuitan', 'minHan', 'open'];
 // 出牌动作（discardFx）的那一行已经拿掉了，这里也不能再列它
-const VISUAL_KEYS: (keyof MatchSettings)[] = ['xfade', 'drawPath', 'vary', 'riichiFx', 'pondFx', 'spotlight', 'winZoom', 'awaiCutIn'];
+const VISUAL_KEYS: (keyof MatchSettings)[] = ['xfade', 'drawPath', 'vary', 'riichiFx', 'pondFx', 'spotlight', 'winZoom', 'awaiCutIn', 'eyeShot'];
 
 // 按钮上写的值换回设置里的值
 export function setOption(s: MatchSettings, key: string, value: string): void {

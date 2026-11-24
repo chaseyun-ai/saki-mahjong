@@ -88,6 +88,7 @@ import { meldLayout } from './meldLayout';
 import { WaitInfo, drawWaits, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
+import { EyeShots } from './eyeShot';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { AssetImporter } from '../assets/importer';
 import { onCustomAssets } from '../assets/layers';
@@ -280,6 +281,8 @@ export class App {
   private faceTimer: number | null = null;
   // 2.5D 的切入演出；能力的切入每局每种只放第一次（宝牌聚集这种一局会发动好多次），之后只出小字
   private cutins: Cutins | null = null;
+  // 能力发动的睁眼特写（eyeShot.ts），和切入共用一层
+  private eyeShots: EyeShots | null = null;
   // 新结算（视觉设置「结算画面：新」）：正在放的几页；流局大字之后挂「听牌 / 不听」的计时器
   private flow: ResultFlow | null = null;
   private flowTimer: number | null = null;
@@ -414,6 +417,7 @@ export class App {
     this.game = null;
     stopVoices();
     this.cutins?.clear();
+    this.eyeShots?.clear();
     this.table3d?.dispose();
     this.table3d = null;
     this.resetNet();
@@ -944,6 +948,7 @@ export class App {
       this.root.innerHTML = `<div class="stage3d${this.flat ? ' flat' : ''}${v2 ? ' v2' : ''}${top ? ' top' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div><div class="rf-layer" id="rf"></div>${tip}</div>`;
       // 切入演出只在 2.5D 放；3D、2D 只放素材页换上的技能动画
       this.cutins = new Cutins(document.getElementById('cutins')!);
+      this.eyeShots = new EyeShots(document.getElementById('cutins')!);
       this.cutinSeen.clear();
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.flat ? '25d' : '3d', v2, top);
       // 改良布局的手牌画法：照视觉设置（B / C）；网址后面加 ?hand=A 到 F 可以临时换成别的几种看
@@ -1011,6 +1016,7 @@ export class App {
       const bar = this.netView ? `<div class="net-bar"><span class="nb-dots"><i></i><i></i><i></i></span><b>オンライン麻雀</b><span class="nb-room">${this.team ? '団体戦' : '段位戦'}</span><span class="nb-user">のどっち · オンライン</span></div>` : '';
       this.root.innerHTML = `<div class="stage${this.netView ? ' net' : ''}">${bar}<div class="table"><div id="table" style="display: contents"></div><div id="toasts"></div></div></div><div class="cutin-layer" id="cutins"></div><div class="rotate-tip">手机横过来玩，牌会更大</div>`;
       this.cutins = new Cutins(document.getElementById('cutins')!);
+      this.eyeShots = new EyeShots(document.getElementById('cutins')!);
       this.cutinSeen.clear();
       this.fit();
     }
@@ -1265,6 +1271,7 @@ export class App {
   // 拆了牌桌照牌局重建（和天使和换网麻一样，不补开局动画）
   private rebuildView(): void {
     this.cutins?.clear();
+    this.eyeShots?.clear();
     this.table3d?.dispose();
     this.table3d = null;
     this.buildTable(true);
@@ -1567,8 +1574,11 @@ export class App {
       const art = skill && skillArt(c.id, skill.id);
       if (art && this.cutins?.show({ pos: POS[e.seat], id: c.id, color: c.color, word: e.text, kind: 'ability', art, glyph: c.name.slice(-1) })) return;
       const key = `${e.seat}-${e.text}`;
-      if (!(!this.cutinSeen.has(key) && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
+      const first = !this.cutinSeen.has(key);
       this.cutinSeen.add(key);
+      // 这一局第一次：睁眼特写（三种视角都放，几个人一起发动就一人一格）；设置里关了就照旧，2.5D 放立绘切入
+      if (first && this.eyeShot(e.seat, e.text)) return;
+      if (!(first && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
     } else if (e.type === 'roundEnd') {
       // 和牌的人喊「荣和」「自摸」：一炮多响时错开；她刚说完和牌的能力台词（岭上开花、海底捞月）就不再补
       let voiced = false;
@@ -2466,6 +2476,7 @@ export class App {
     }
     this.netView = on;
     this.cutins?.clear();
+    this.eyeShots?.clear();
     this.table3d?.dispose();
     this.table3d = null;
     this.buildTable(true);
@@ -2850,6 +2861,13 @@ export class App {
     else this.toast(seat, word, true, kind);
   }
 
+  // 能力发动的睁眼特写：放了返回 true。设置里关了、这个座位已经有一格在放，就不放
+  private eyeShot(seat: number, word: string): boolean {
+    const c = this.chars[seat];
+    if (!this.settings.eyeShot || !this.eyeShots || !c) return false;
+    return this.eyeShots.show({ seat, pos: POS[seat], id: c.id, name: c.name, color: c.color, word });
+  }
+
   private cutin(seat: number, word: string, kind: CutinKind): boolean {
     if (!this.flat) return false;
     const c = this.chars[seat];
@@ -2987,8 +3005,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、咲的标准 / 加强、动画开关是别处的设置，留着
-      const { chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, topHand, topTilt, topAlpha, slam, slamOrder, slamStyle, xfade } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, topHand, topTilt, topAlpha, slam, slamOrder, slamStyle, xfade };
+      const { chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, eyeShot, layout, hand, topHand, topTilt, topAlpha, slam, slamOrder, slamStyle, xfade } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, eyeShot, layout, hand, topHand, topTilt, topAlpha, slam, slamOrder, slamStyle, xfade };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -3838,6 +3856,7 @@ export class App {
     this.vision = null;
     this.riichiMode = false;
     this.cutins?.clear();
+    this.eyeShots?.clear();
     this.render();
     this.table3d?.restore();
     this.step();
