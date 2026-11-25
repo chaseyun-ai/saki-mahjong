@@ -4,6 +4,7 @@ import { LOOKS } from '../ui3d/looks';
 // 天麻的画风很统一，所以所有人共用一个眼睛模板（eyeDraw.ts），每人只换这几样：
 // 瞳色、发色（前发和眉毛）、肤色、瞳孔、高光、眼型、发动时的光和光尾。
 // 瞳色、发色默认取 3D 模型染色用的那一份（looks.ts 的 LOOKS），这里只写和默认不一样的。
+// 对着动画截图核过颜色的几个人（咲、照、衣、淡、和、优希）瞳色、发色直接写动画里的。
 
 // 瞳孔：round 圆、slit 竖瞳、ring 瞳孔外一圈光环、star 星形、reticle 准星、spiral 漩涡、none 没有瞳孔（被神附身那种空洞的眼）
 export type Pupil = 'round' | 'slit' | 'ring' | 'star' | 'reticle' | 'spiral' | 'none';
@@ -27,6 +28,8 @@ export interface EyeLook {
   only?: 'left' | 'right';
   // 戴眼镜：发动时镜片反一道白光（染谷真子、船久保浩子、辻垣内智叶）
   glasses?: boolean;
+  // 瞳孔里的星星（star、sparkle 高光）的颜色，不写是白的
+  spark?: string;
 }
 
 const SKIN = '#f6e0d2';
@@ -34,23 +37,23 @@ const SKIN = '#f6e0d2';
 // 和默认不一样的地方。想调哪个人的眼睛就改这里（打开网址后面加 #eyes 的预览页对着看）
 const OVERRIDES: Record<string, Partial<EyeLook>> = {
   // 宫永咲：岭上开花，高光是一朵小花
-  saki: { glint: 'flower', glow: '#ffb3c8', trail: true },
-  // 宫永照：照魔镜、连和的龙卷风，瞳孔里一个漩涡，眼尾上挑
-  teru: { pupil: 'spiral', shape: 'sharp', glow: '#ff7a45', trail: true },
-  // 大星淡：星星
-  awai: { pupil: 'star', glint: 'star', glow: '#ffe27a', trail: true },
-  // 天江衣：满月，红眼睛亮起来、高光是月牙
-  koromo: { pupil: 'ring', glint: 'moon', glow: '#ff4a4a', trail: true },
+  saki: { iris: '#c2254f', hair: '#8e5a4c', glint: 'flower', glow: '#ffb3c8', trail: true },
+  // 宫永照：眼尾上挑，红眼睛、红发（动画里她的眼睛就是普通的画法，不画漩涡）
+  teru: { iris: '#d8402c', hair: '#a8375e', shape: 'sharp', glow: '#ff9a6a', trail: true },
+  // 大星淡：青绿色的眼睛，瞳孔外一圈亮环，发动时瞳孔里两颗黄色的四角星
+  awai: { iris: '#2f9fc0', pupil: 'ring', glint: 'star', spark: '#ffe24d', glow: '#ffe27a', trail: true },
+  // 天江衣：蓝眼睛，垂眼，高光是月牙（满月）
+  koromo: { iris: '#3a66d8', shape: 'droopy', glint: 'moon', glow: '#ffe69a', trail: true },
   // 园城寺怜：一巡先见
   toki: { pupil: 'ring', glow: '#8fd8ff', trail: true },
   // 福路美穗子：平时眯着眼，发动时睁开右眼（蓝色）
   mihoko: { only: 'right', shape: 'droopy', glow: '#7ab8ff' },
   // 原村和：天使和
-  nodoka: { glint: 'sparkle', glow: '#ffc4e4' },
+  nodoka: { iris: '#4a74cc', glint: 'sparkle', glow: '#ffc4e4' },
   // 石户霞：降神
   kasumi: { pupil: 'slit', shape: 'droopy', glow: '#b48cff', trail: true },
-  // 神代小莳：神降下来时眼睛是空的
-  komaki: { pupil: 'none', glint: 'none', glow: '#e9f2ff', trail: true },
+  // 神代小莳：神降下来时出神的眼睛，没有瞳孔，垂眼
+  komaki: { pupil: 'none', glint: 'single', shape: 'droopy', glow: '#e9f2ff', trail: true },
   // 薄墨初美：里鬼门
   hatsumi: { pupil: 'slit', shape: 'sharp', glow: '#a24bff' },
   // 弘世堇：狙击
@@ -80,7 +83,7 @@ const OVERRIDES: Record<string, Partial<EyeLook>> = {
   hisa: { shape: 'sharp' },
   hiroe: { shape: 'sharp' },
   // 片冈优希、池田华菜：圆眼睛闪闪的
-  yuuki: { glint: 'sparkle' },
+  yuuki: { iris: '#2f9aa6', glint: 'sparkle' },
   kana: { pupil: 'slit', glint: 'sparkle', glow: '#ffcf6b' },
   // 松实玄：宝牌聚集
   kuro: { glow: '#ff8a5c' },
