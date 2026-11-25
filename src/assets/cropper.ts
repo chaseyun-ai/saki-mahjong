@@ -1,8 +1,10 @@
 import './cropper.css';
-import { type Box, type Handle, clampBox, fitBox, fromCorner, moveBox, outSize, ratioText, reshapeBox, resizeBox, scaleBox } from './cropMath';
+import { type Box, type Handle, boxCovered, carryBox, clampBox, coverBox, fitBox, fromCorner, moveBox, outSize, ratioText, reshapeBox, resizeBox, rotatedSize, scaleBox } from './cropMath';
 
 // 放图之前裁一下：弹一个框，原图上一个裁剪框（拖着挪、拉四个角改大小、滚轮缩放、框外拖一下重画），
 // 右边小预览是游戏里大概的样子（睁眼特写的斜长条、头像框）。比例按格子来，也能换成不限。
+// 图能转：左转、右转 90°（横着拍的竖过来），拉条微调 ±45°（歪着的头摆正）。框跟着图上同一个地方走；
+// 转出来的角是透明的，框到了会提醒，一下就能缩到没有空角。图本身不改，存的时候一次转好、裁好（cropMath.ts 管坐标）。
 // 素材导入页（格子上放图、对照表、已换的重新裁）和睁眼特写预览页的「导入头像图」都用它。
 // 裁好的存成 WebP（浏览器不会存 WebP 就存 PNG），透明背景留着；长边不超过格子建议的大小，不放大。
 
@@ -25,11 +27,16 @@ export interface CropOptions {
   skip?: string; // 有这个就多一个“不裁，原图放进去”（只对自己选的文件）
   extra?: { label: string; checked: boolean }; // 多一个勾选（只对自己选的文件），结果里带回去
   color?: string;
+  angle?: number; // 一开始转多少度（顺时针；接着裁同一张图时沿用上一次的）
 }
 
+// angle：裁的时候转了多少度（顺时针）
 export type CropResult =
-  | { kind: 'crop'; blob: Blob; w: number; h: number; name: string; from: CropSource; extra: boolean }
-  | { kind: 'skip'; from: CropSource; extra: boolean };
+  | { kind: 'crop'; blob: Blob; w: number; h: number; name: string; from: CropSource; extra: boolean; angle: number }
+  | { kind: 'skip'; from: CropSource; extra: boolean; angle: 0 };
+
+// 微调最多转多少度
+const TILT = 45;
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const HANDLES: Handle[] = ['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'];
@@ -47,6 +54,13 @@ export function croppedName(name: string, ext: string): string {
   return `${stem}（裁过）.${ext}`;
 }
 
+// 微调的角度：±45° 以内，半度一格
+function clampTilt(a: number): number {
+  const m = ((((a + 180) % 360) + 360) % 360) - 180;
+  const q = Math.round(m / 90) * 90;
+  return Math.round(Math.max(-TILT, Math.min(TILT, m - q)) * 2) / 2;
+}
+
 export function cropImage(o: CropOptions): Promise<CropResult | null> {
   return new Promise((resolve) => new Cropper(o, resolve));
 }
@@ -54,14 +68,21 @@ export function cropImage(o: CropOptions): Promise<CropResult | null> {
 class Cropper {
   private el: HTMLElement;
   private stage: HTMLElement;
-  private img: HTMLImageElement;
+  private view: HTMLCanvasElement; // 左边显示的（转过的）图
+  private src: HTMLImageElement | null = null; // 读进来的原图
   private boxEl: HTMLElement;
   private preview: HTMLCanvasElement;
   private sources: CropSource[];
   private made: string[] = []; // 这里自己建的 blob 网址，关的时候收回
   private cur = -1;
+  // IW×IH 原图大小；W×H 转过以后外接框的大小（框的坐标都在这里面）
+  private IW = 0;
+  private IH = 0;
   private W = 0;
   private H = 0;
+  // 转了几个 90°（0～3）、再微调多少度
+  private quarter = 0;
+  private tilt = 0;
   private box: Box = { x: 0, y: 0, w: 0, h: 0 };
   private r: number | null;
   private drag: { mode: 'move' | 'resize' | 'draw'; handle?: Handle; px: number; py: number; start: Box; moved: boolean } | null = null;
@@ -89,7 +110,7 @@ class Cropper {
         <div class="crop-main">
           <div class="crop-wrap">
             <div class="crop-stage" hidden>
-              <img alt="" draggable="false" />
+              <canvas class="crop-view"></canvas>
               <div class="crop-box" tabindex="0" role="group" aria-label="裁剪框：拖着挪位置，拉角改大小，方向键微调，加减号缩放">
                 <i class="crop-third"></i>${HANDLES.map((h) => `<b class="crop-h ${h}" data-h="${h}"></b>`).join('')}
               </div>
@@ -98,12 +119,20 @@ class Cropper {
           </div>
           <aside class="crop-side">
             <div class="crop-ratios" role="radiogroup" aria-label="比例">${o.ratios.map((x, i) => `<button class="crop-ratio${i === 0 ? ' on' : ''}" data-ratio="${i}" role="radio" aria-checked="${i === 0}">${esc(x.label)}</button>`).join('')}</div>
+            <div class="crop-rot">
+              <span class="crop-rot-head">旋转</span>
+              <button class="crop-ratio" data-turn="-1" title="向左转 90°" aria-label="向左转 90°">左转 90°</button>
+              <button class="crop-ratio" data-turn="1" title="向右转 90°" aria-label="向右转 90°">右转 90°</button>
+              <button class="crop-ratio ghost" data-crop="unrotate" title="转回原来的样子" hidden>转回去</button>
+              <label class="crop-tilt"><span>微调</span><input type="range" min="${-TILT}" max="${TILT}" step="0.5" value="0" data-crop-tilt aria-label="微调角度" /><output>0°</output></label>
+            </div>
             <figure class="crop-look ${look}">
               <div class="crop-look-frame"><canvas></canvas></div>
               <figcaption>${look === 'eyes' ? '游戏里大概这样（斜着的长条）' : look === 'face' ? '头像框里大概这样' : '裁出来是这样'}</figcaption>
             </figure>
             <p class="crop-info" role="status"></p>
-            <p class="crop-tips">拖框挪位置，拉四个角改大小，滚轮缩放；在框外按住拖一下，重新画一个框。</p>
+            <button class="crop-btn ghost crop-cover" data-crop="cover" hidden>缩到没有空角</button>
+            <p class="crop-tips">拖框挪位置，拉四个角改大小，滚轮缩放；在框外按住拖一下，重新画一个框。图是歪的、横的，用上面的「旋转」摆正。</p>
             ${o.extra ? `<label class="crop-extra" hidden><input type="checkbox" data-crop-extra${o.extra.checked ? ' checked' : ''} /> ${esc(o.extra.label)}</label>` : ''}
           </aside>
         </div>
@@ -119,11 +148,15 @@ class Cropper {
       </div>`;
     document.body.appendChild(this.el);
     this.stage = this.el.querySelector('.crop-stage')!;
-    this.img = this.stage.querySelector('img')!;
+    this.view = this.stage.querySelector('canvas')!;
     this.boxEl = this.stage.querySelector('.crop-box')!;
     this.preview = this.el.querySelector('.crop-look canvas')!;
     this.el.addEventListener('click', (e) => this.click(e));
     this.el.addEventListener('change', (e) => this.change(e));
+    this.el.addEventListener('input', (e) => {
+      const t = e.target as HTMLInputElement;
+      if (t.dataset.cropTilt !== undefined) this.rotate(this.quarter, Number(t.value));
+    });
     this.el.addEventListener('dragover', (e) => {
       if (![...(e.dataTransfer?.types ?? [])].includes('Files')) return;
       e.preventDefault();
@@ -186,11 +219,18 @@ class Cropper {
       return;
     }
     if (ticket !== this.loading) return;
+    // 第一张照选项里给的角度转好（接着裁同一张图），换别的图就转回 0
+    const first = this.cur < 0;
+    const a = first ? (this.o.angle ?? 0) : 0;
     this.cur = i;
-    this.W = img.naturalWidth;
-    this.H = img.naturalHeight;
-    this.img.src = s.url;
-    this.box = fitBox(this.W, this.H, this.r, this.o.focusY ?? 0.5);
+    this.src = img;
+    this.IW = img.naturalWidth;
+    this.IH = img.naturalHeight;
+    this.quarter = (((Math.round((a - clampTilt(a)) / 90) % 4) + 4) % 4) as number;
+    this.tilt = clampTilt(a);
+    this.measure();
+    this.box = this.maxBox();
+    this.syncTilt();
     this.stage.hidden = false;
     (this.el.querySelector('.crop-empty') as HTMLElement).hidden = true;
     this.renderSources();
@@ -219,14 +259,78 @@ class Cropper {
     const aw = Math.max(120, wrap.clientWidth - 8);
     const ah = Math.max(120, wrap.clientHeight - 8);
     const k = Math.min(aw / this.W, ah / this.H, 4);
-    this.img.style.width = `${Math.round(this.W * k)}px`;
-    this.img.style.height = `${Math.round(this.H * k)}px`;
+    const w = Math.max(1, Math.round(this.W * k));
+    const h = Math.max(1, Math.round(this.H * k));
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.view.style.width = `${w}px`;
+    this.view.style.height = `${h}px`;
+    this.view.width = Math.round(w * dpr);
+    this.view.height = Math.round(h * dpr);
+    this.region(this.view.getContext('2d')!, { x: 0, y: 0, w: this.W, h: this.H }, 0, 0, this.view.width, this.view.height);
+  }
+
+  // ---------- 转 ----------
+
+  private deg(): number {
+    return this.quarter * 90 + this.tilt;
+  }
+
+  // 最大的框：没微调过（只转了 90° 的倍数）就是整张；微调过的到没有空角为止
+  private maxBox(): Box {
+    return this.tilt ? coverBox(this.IW, this.IH, this.deg(), this.r) : fitBox(this.W, this.H, this.r, this.o.focusY ?? 0.5);
+  }
+
+  // 转过以后外接框多大
+  private measure(): void {
+    const R = rotatedSize(this.IW, this.IH, this.deg());
+    this.W = R.w;
+    this.H = R.h;
+  }
+
+  // 转到 quarter 个 90° 加 tilt 度：框的中心跟着图上同一个地方走
+  private rotate(quarter: number, tilt: number): void {
+    if (!this.src) return;
+    const from = this.deg();
+    this.quarter = ((quarter % 4) + 4) % 4;
+    this.tilt = clampTilt(tilt);
+    this.box = carryBox(this.box, this.IW, this.IH, from, this.deg());
+    this.measure();
+    this.box = clampBox(this.box, this.W, this.H);
+    this.syncTilt();
+    this.fit();
+    this.sync();
+    this.draw();
+  }
+
+  private syncTilt(): void {
+    const range = this.el.querySelector<HTMLInputElement>('[data-crop-tilt]')!;
+    range.value = String(this.tilt);
+    this.el.querySelector('.crop-tilt output')!.textContent = `${this.tilt > 0 ? '+' : ''}${this.tilt}°`;
+    (this.el.querySelector('[data-crop="unrotate"]') as HTMLElement).hidden = !this.deg();
+  }
+
+  // 转过的图上的 b 这一块画到 ctx 的 (dx, dy, dw, dh)：原图不改，每次照角度现转现画
+  private region(ctx: CanvasRenderingContext2D, b: Box, dx: number, dy: number, dw: number, dh: number): void {
+    if (!this.src) return;
+    ctx.save();
+    ctx.clearRect(dx, dy, dw, dh);
+    ctx.beginPath();
+    ctx.rect(dx, dy, dw, dh);
+    ctx.clip();
+    ctx.translate(dx, dy);
+    ctx.scale(dw / b.w, dh / b.h);
+    ctx.translate(-b.x + this.W / 2, -b.y + this.H / 2);
+    ctx.rotate((this.deg() * Math.PI) / 180);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(this.src, -this.IW / 2, -this.IH / 2);
+    ctx.restore();
   }
 
   // ---------- 框 ----------
 
   private scale(): number {
-    return this.img.getBoundingClientRect().width / this.W || 1;
+    return this.view.getBoundingClientRect().width / this.W || 1;
   }
 
   // 最小的框：屏幕上 28 像素
@@ -235,7 +339,7 @@ class Cropper {
   }
 
   private at(e: PointerEvent): { x: number; y: number } {
-    const rc = this.img.getBoundingClientRect();
+    const rc = this.view.getBoundingClientRect();
     return { x: Math.max(0, Math.min(this.W, ((e.clientX - rc.left) / rc.width) * this.W)), y: Math.max(0, Math.min(this.H, ((e.clientY - rc.top) / rc.height) * this.H)) };
   }
 
@@ -337,11 +441,15 @@ class Cropper {
     const s = Math.max(c.width / b.w, c.height / b.h);
     const sw = c.width / s;
     const sh = c.height / s;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(this.img, b.x + (b.w - sw) / 2, b.y + (b.h - sh) / 2, sw, sh, 0, 0, c.width, c.height);
+    this.region(ctx, { x: b.x + (b.w - sw) / 2, y: b.y + (b.h - sh) / 2, w: sw, h: sh }, 0, 0, c.width, c.height);
     const out = outSize(b, this.o.long);
     const small = Math.max(out.w, out.h) < this.o.long * 0.5;
-    this.info(`裁出来 ${out.w}×${out.h}（${ratioText(b.w, b.h)}）· 原图 ${this.W}×${this.H}${small ? '。有点小，游戏里放大了会糊，能找到大一点的图更好' : ''}`, small);
+    // 转过的图：框到了转出来的空角（透明）就提醒，给一个“缩到没有空角”
+    const gap = !!this.deg() && !boxCovered(b, this.IW, this.IH, this.deg());
+    const turned = this.deg() ? ` · 转了 ${this.deg() > 180 ? this.deg() - 360 : this.deg()}°` : '';
+    const notes = [small ? '有点小，游戏里放大了会糊，能找到大一点的图更好' : '', gap ? '框到了转出来的空角，那里会是透明的' : ''].filter(Boolean);
+    this.info(`裁出来 ${out.w}×${out.h}（${ratioText(b.w, b.h)}）· 原图 ${this.IW}×${this.IH}${turned}${notes.length ? `。${notes.join('；')}` : ''}`, notes.length > 0);
+    (this.el.querySelector('[data-crop="cover"]') as HTMLElement).hidden = !gap;
   }
 
   private info(text: string, warn = false): void {
@@ -356,7 +464,8 @@ class Cropper {
     const ok = this.el.querySelector<HTMLButtonElement>('[data-crop="ok"]')!;
     ok.disabled = !this.W;
     const skip = this.el.querySelector<HTMLElement>('[data-crop="skip"]');
-    if (skip) skip.hidden = !s?.file;
+    // 转过了就不能“原图放进去”（原图没转）
+    if (skip) skip.hidden = !s?.file || !!this.deg();
     const extra = this.el.querySelector<HTMLElement>('.crop-extra');
     if (extra) extra.hidden = !s?.file;
     (this.el.querySelector('[data-crop="reset"]') as HTMLElement).hidden = !this.W;
@@ -382,17 +491,28 @@ class Cropper {
   private click(e: Event): void {
     const t = e.target as HTMLElement;
     if (t === this.el) return; // 点到外面的暗处不关（免得拖框拖出去松手就没了）
-    const el = t.closest<HTMLElement>('[data-crop],[data-ratio],[data-src]');
+    const el = t.closest<HTMLElement>('[data-crop],[data-ratio],[data-src],[data-turn]');
     if (!el) return;
     if (el.dataset.ratio) this.setRatio(Number(el.dataset.ratio));
+    else if (el.dataset.turn) this.rotate(this.quarter + Number(el.dataset.turn), this.tilt);
+    else if (el.dataset.crop === 'unrotate') this.rotate(0, 0);
+    else if (el.dataset.crop === 'cover' && this.W) {
+      // 中心不动、比例不变，缩到四个角都在图上；中心本身在空角里就放回图的正中间
+      const b = this.box;
+      let c = coverBox(this.IW, this.IH, this.deg(), this.r ?? b.w / b.h, [b.x + b.w / 2, b.y + b.h / 2]);
+      if (c.w < this.min()) c = coverBox(this.IW, this.IH, this.deg(), this.r ?? b.w / b.h);
+      this.box = c;
+      this.draw();
+    }
     else if (el.dataset.src) void this.use(Number(el.dataset.src));
     else if (el.dataset.crop === 'cancel') this.close(null);
     else if (el.dataset.crop === 'reset' && this.W) {
-      this.box = fitBox(this.W, this.H, this.r, this.o.focusY ?? 0.5);
+      // 转过的图：最大到没有空角为止
+      this.box = this.maxBox();
       this.draw();
     } else if (el.dataset.crop === 'skip') {
       const s = this.sources[this.cur];
-      if (s?.file) this.close({ kind: 'skip', from: s, extra: this.extra() });
+      if (s?.file) this.close({ kind: 'skip', from: s, extra: this.extra(), angle: 0 });
     } else if (el.dataset.crop === 'ok') void this.ok();
   }
 
@@ -417,16 +537,14 @@ class Cropper {
     const c = document.createElement('canvas');
     c.width = out.w;
     c.height = out.h;
-    const ctx = c.getContext('2d')!;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(this.img, b.x, b.y, b.w, b.h, 0, 0, out.w, out.h);
+    this.region(c.getContext('2d')!, b, 0, 0, out.w, out.h);
     let blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/webp', 0.92));
     if (!blob || blob.type !== 'image/webp') blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/png'));
     if (!blob) {
       this.info('没裁成（浏览器存不出图），再试一次。', true);
       return;
     }
-    this.close({ kind: 'crop', blob, w: out.w, h: out.h, name: croppedName(s.name, blob.type === 'image/webp' ? 'webp' : 'png'), from: s, extra: this.extra() });
+    this.close({ kind: 'crop', blob, w: out.w, h: out.h, name: croppedName(s.name, blob.type === 'image/webp' ? 'webp' : 'png'), from: s, extra: this.extra(), angle: this.deg() });
   }
 
   private close(r: CropResult | null): void {

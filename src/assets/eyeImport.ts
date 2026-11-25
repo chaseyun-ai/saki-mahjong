@@ -65,6 +65,8 @@ export async function importEyes(owner: string, target: Target, save: SaveSlot, 
         color: c.color,
         skip: '不裁，原图当头像',
         ok: '裁好了，当头像',
+        // 刚才转正了的图，接着裁头像时照样转好
+        angle: r.angle,
       });
       const fb = f && (await bytesOf(f));
       if (fb && (await save('face', fb.bytes, fb.name))) done.push('face');

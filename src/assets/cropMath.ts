@@ -134,3 +134,84 @@ export function ratioText(w: number, h: number): string {
   const hit = common.find(([v]) => Math.abs(r / v - 1) < 0.03);
   return hit ? hit[1] : `${Math.round(w)}×${Math.round(h)}`;
 }
+
+// ---------- 旋转：原图 W×H 绕自己的中心顺时针转 deg 度，转过的图放在一个刚好装得下的外接框里（框外是透明的空角） ----------
+
+// 正好 90° 的倍数时 cos、sin 取整，免得 1e-17 这种零头让尺寸多出一点
+function trig(deg: number): [number, number] {
+  const t = (deg * Math.PI) / 180;
+  const snap = (v: number) => (Math.abs(v) < 1e-12 ? 0 : Math.abs(Math.abs(v) - 1) < 1e-12 ? Math.sign(v) : v);
+  return [snap(Math.cos(t)), snap(Math.sin(t))];
+}
+
+export function rotatedSize(W: number, H: number, deg: number): { w: number; h: number } {
+  const [c, s] = trig(deg);
+  return { w: Math.abs(W * c) + Math.abs(H * s), h: Math.abs(W * s) + Math.abs(H * c) };
+}
+
+// 原图上的一点 → 转过的图上的一点
+export function toRotated(x: number, y: number, W: number, H: number, deg: number): [number, number] {
+  const [c, s] = trig(deg);
+  const R = rotatedSize(W, H, deg);
+  const dx = x - W / 2;
+  const dy = y - H / 2;
+  return [dx * c - dy * s + R.w / 2, dx * s + dy * c + R.h / 2];
+}
+
+// 转过的图上的一点 → 原图上的一点
+export function fromRotated(x: number, y: number, W: number, H: number, deg: number): [number, number] {
+  const [c, s] = trig(deg);
+  const R = rotatedSize(W, H, deg);
+  const dx = x - R.w / 2;
+  const dy = y - R.h / 2;
+  return [dx * c + dy * s + W / 2, -dx * s + dy * c + H / 2];
+}
+
+// 框整个等比缩到放得下，再挪进来（换比例、换角度时不改框的形状）
+export function fitInside(b: Box, W: number, H: number): Box {
+  const k = Math.min(1, W / b.w, H / b.h);
+  const w = b.w * k;
+  const h = b.h * k;
+  return clampBox({ x: b.x + (b.w - w) / 2, y: b.y + (b.h - h) / 2, w, h }, W, H);
+}
+
+// 换角度：框的中心跟着原图上的同一个点走（框着眼睛转，转完还框着眼睛），大小不变，放不下就缩
+export function carryBox(b: Box, W: number, H: number, from: number, to: number): Box {
+  const [ox, oy] = fromRotated(b.x + b.w / 2, b.y + b.h / 2, W, H, from);
+  const [cx, cy] = toRotated(ox, oy, W, H, to);
+  const R = rotatedSize(W, H, to);
+  return fitInside({ x: cx - b.w / 2, y: cy - b.h / 2, w: b.w, h: b.h }, R.w, R.h);
+}
+
+// 框是不是整个落在图上（没框到转出来的透明空角）：四个角转回原图都在原图里
+export function boxCovered(b: Box, W: number, H: number, deg: number): boolean {
+  const e = 0.5;
+  const corners: [number, number][] = [
+    [b.x, b.y],
+    [b.x + b.w, b.y],
+    [b.x, b.y + b.h],
+    [b.x + b.w, b.y + b.h],
+  ];
+  return corners.every(([x, y]) => {
+    const [px, py] = fromRotated(x, y, W, H, deg);
+    return px >= -e && py >= -e && px <= W + e && py <= H + e;
+  });
+}
+
+// 不留空角时框最大多大：比例 r 的框放在转过的图正中间，四个角都落在原图上（二分找）
+export function coverBox(W: number, H: number, deg: number, r: number | null, focus?: [number, number]): Box {
+  const R = rotatedSize(W, H, deg);
+  const ratio = r ?? W / H;
+  const [fx, fy] = focus ?? [R.w / 2, R.h / 2];
+  let lo = 0;
+  let hi = Math.min(R.w, R.h * ratio);
+  for (let i = 0; i < 40; i++) {
+    const w = (lo + hi) / 2;
+    const h = w / ratio;
+    const b = clampBox({ x: fx - w / 2, y: fy - h / 2, w, h }, R.w, R.h);
+    if (boxCovered(b, W, H, deg)) lo = w;
+    else hi = w;
+  }
+  const h = lo / ratio;
+  return clampBox({ x: fx - lo / 2, y: fy - h / 2, w: lo, h }, R.w, R.h);
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { type Box, clampBox, fitBox, fromCorner, moveBox, outSize, ratioText, reshapeBox, resizeBox, scaleBox } from '../src/assets/cropMath';
+import { type Box, boxCovered, carryBox, clampBox, coverBox, fitBox, fromCorner, fromRotated, moveBox, outSize, ratioText, reshapeBox, resizeBox, rotatedSize, scaleBox, toRotated } from '../src/assets/cropMath';
 import { canCrop, croppedName } from '../src/assets/cropper';
 import { cropOf, ratioWarn } from '../src/assets/guide';
 import { GLOBAL, slotsFor } from '../src/assets/slots';
@@ -82,6 +82,56 @@ describe('素材导入：裁剪框', () => {
     expect(ratioText(1600, 500)).toBe('16:5');
     expect(ratioText(600, 800)).toBe('3:4');
     expect(ratioText(700, 300)).toBe('700×300');
+  });
+
+  it('旋转：90° 宽高对调，转过去再转回来是同一个点，框跟着图上同一个地方走', () => {
+    expect(rotatedSize(1600, 900, 90)).toEqual({ w: 900, h: 1600 });
+    expect(rotatedSize(1600, 900, 180)).toEqual({ w: 1600, h: 900 });
+    expect(rotatedSize(1600, 900, -90)).toEqual({ w: 900, h: 1600 });
+    const r45 = rotatedSize(1000, 1000, 45);
+    expect(r45.w).toBeCloseTo(1000 * Math.SQRT2);
+    // 顺时针转 90°：原图左上角跑到右上角
+    const [x, y] = toRotated(0, 0, 1600, 900, 90);
+    expect(x).toBeCloseTo(900);
+    expect(y).toBeCloseTo(0);
+    for (const deg of [-45, -18, 7.5, 90, 135, 270]) {
+      const [rx, ry] = toRotated(300, 200, 1600, 900, deg);
+      const [ox, oy] = fromRotated(rx, ry, 1600, 900, deg);
+      expect(ox).toBeCloseTo(300);
+      expect(oy).toBeCloseTo(200);
+    }
+    // 框着原图上 (400, 300) 这一块，转 -18° 以后框的中心还对着它
+    const b: Box = { x: 300, y: 250, w: 200, h: 100 };
+    const t = carryBox(b, 1600, 900, 0, -18);
+    const [cx, cy] = fromRotated(t.x + t.w / 2, t.y + t.h / 2, 1600, 900, -18);
+    expect(cx).toBeCloseTo(400);
+    expect(cy).toBeCloseTo(300);
+    expect(t.w).toBeCloseTo(200);
+    // 转四次 90° 回到原样
+    let q = b;
+    for (let i = 1; i <= 4; i++) q = carryBox(q, 1600, 900, (i - 1) * 90, i * 90);
+    expect(q.x).toBeCloseTo(b.x);
+    expect(q.y).toBeCloseTo(b.y);
+  });
+
+  it('旋转：框到转出来的空角会认出来，缩到没有空角的框四个角都在图上', () => {
+    const R = rotatedSize(1024, 1024, -18);
+    expect(boxCovered({ x: 0, y: 0, w: R.w, h: R.h }, 1024, 1024, -18)).toBe(false);
+    expect(boxCovered({ x: R.w / 2 - 50, y: R.h / 2 - 50, w: 100, h: 100 }, 1024, 1024, -18)).toBe(true);
+    expect(boxCovered(fitBox(1024, 1024, null), 1024, 1024, 0)).toBe(true);
+    for (const [deg, r] of [
+      [-18, 16 / 5],
+      [30, 3 / 4],
+      [45, 1],
+      [-7, null],
+    ] as [number, number | null][]) {
+      const c = coverBox(1024, 768, deg, r);
+      expect(boxCovered(c, 1024, 768, deg)).toBe(true);
+      if (r) expect(c.w / c.h).toBeCloseTo(r);
+      // 再大一点就有空角了（是最大的）
+      const big = { x: c.x - c.w * 0.01, y: c.y - c.h * 0.01, w: c.w * 1.02, h: c.h * 1.02 };
+      expect(boxCovered(big, 1024, 768, deg)).toBe(false);
+    }
   });
 
   it('每个放图的格子都有裁剪比例：头像 3:4、睁眼特写 16:5，模型和声音没有', () => {

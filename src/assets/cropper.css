@@ -95,7 +95,7 @@
   display: none;
 }
 
-.crop-stage img {
+.crop-stage .crop-view {
   display: block;
   pointer-events: none;
 }
@@ -230,6 +230,53 @@
   border-color: var(--c);
   background: color-mix(in srgb, var(--c) 22%, rgba(0, 0, 0, 0.3));
   color: #fff;
+}
+
+/* 旋转：左转、右转 90°、转回去，下面一条拉条微调 */
+.crop-rot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.crop-rot-head {
+  font-size: 12px;
+  color: var(--ink-quiet, #aaa);
+}
+
+.crop-ratio[hidden] {
+  display: none;
+}
+
+.crop-ratio.ghost {
+  color: var(--ink-quiet, #bbb);
+}
+
+.crop-tilt {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-quiet, #aaa);
+}
+
+.crop-tilt input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--c);
+}
+
+.crop-tilt output {
+  width: 4.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink, #eee);
+}
+
+.crop-cover {
+  align-self: flex-start;
 }
 
 .crop-look {
