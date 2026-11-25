@@ -1,0 +1,452 @@
+/* ---------- 放图之前的裁剪框（src/assets/cropper.ts）：素材导入页、睁眼特写预览页共用 ---------- */
+
+.crop-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(6, 4, 10, 0.72);
+  color: var(--ink, #eee);
+  font-size: 14px;
+  user-select: none;
+}
+
+.crop-modal.drop .crop-dialog {
+  outline: 2px dashed var(--c);
+  outline-offset: 4px;
+}
+
+.crop-dialog {
+  width: min(1040px, 100%);
+  max-height: calc(100vh - 32px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+  border-radius: 12px;
+  background: #1a1620;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.crop-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.crop-head h2 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 1px;
+  color: var(--c);
+}
+
+.crop-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ink-quiet, #aaa);
+}
+
+.crop-x {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.crop-main {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 14px;
+}
+
+/* 左边：原图和裁剪框 */
+.crop-wrap {
+  position: relative;
+  min-height: 260px;
+  height: min(60vh, 560px);
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  /* 棋盘格：看得出透明的地方 */
+  background: repeating-conic-gradient(#2a2532 0% 25%, #221e29 0% 50%) 50% / 20px 20px;
+  overflow: hidden;
+}
+
+.crop-stage {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.crop-stage[hidden] {
+  display: none;
+}
+
+.crop-stage img {
+  display: block;
+  pointer-events: none;
+}
+
+.crop-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 0 9999px rgba(8, 6, 12, 0.62);
+  cursor: move;
+  outline: none;
+}
+
+.crop-box:focus-visible {
+  border-color: var(--c);
+}
+
+/* 三等分的细线，好对眼睛、脸 */
+.crop-third {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, transparent calc(33.33% - 0.5px), rgba(255, 255, 255, 0.35) 0 calc(33.33% + 0.5px), transparent 0 calc(66.67% - 0.5px), rgba(255, 255, 255, 0.35) 0 calc(66.67% + 0.5px), transparent 0),
+    linear-gradient(to bottom, transparent calc(33.33% - 0.5px), rgba(255, 255, 255, 0.35) 0 calc(33.33% + 0.5px), transparent 0 calc(66.67% - 0.5px), rgba(255, 255, 255, 0.35) 0 calc(66.67% + 0.5px), transparent 0);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.crop-stage.dragging .crop-third,
+.crop-box:hover .crop-third {
+  opacity: 1;
+}
+
+.crop-h {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: -9px;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  background: var(--c);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  touch-action: none;
+}
+
+.crop-h.nw { left: 0; top: 0; cursor: nwse-resize; }
+.crop-h.ne { right: 0; top: 0; cursor: nesw-resize; }
+.crop-h.sw { left: 0; bottom: 0; cursor: nesw-resize; }
+.crop-h.se { right: 0; bottom: 0; cursor: nwse-resize; }
+.crop-h.n { left: 50%; top: 0; cursor: ns-resize; }
+.crop-h.s { left: 50%; bottom: 0; cursor: ns-resize; }
+.crop-h.e { right: 0; top: 50%; cursor: ew-resize; }
+.crop-h.w { left: 0; top: 50%; cursor: ew-resize; }
+
+/* 锁了比例只拉四个角；不限比例四条边也能拉 */
+.crop-box:not(.free) .crop-h:is(.n, .s, .e, .w) {
+  display: none;
+}
+
+.crop-h:is(.n, .s, .e, .w) {
+  width: 12px;
+  height: 12px;
+  margin: -7px;
+  border-radius: 50%;
+}
+
+.crop-empty {
+  display: grid;
+  gap: 6px;
+  place-items: center;
+  padding: 40px 60px;
+  border: 2px dashed color-mix(in srgb, var(--c) 55%, transparent);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.crop-empty[hidden] {
+  display: none;
+}
+
+.crop-empty b {
+  font-size: 17px;
+  color: var(--c);
+}
+
+.crop-empty span {
+  color: var(--ink-quiet, #aaa);
+}
+
+.crop-empty input,
+.crop-src.pick input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* 右边：比例、预览、尺寸 */
+.crop-side {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.crop-ratios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.crop-ratio,
+.crop-btn {
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.crop-ratio.on {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 22%, rgba(0, 0, 0, 0.3));
+  color: #fff;
+}
+
+.crop-look {
+  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 14px 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.crop-look figcaption {
+  font-size: 12px;
+  color: var(--ink-quiet, #aaa);
+}
+
+.crop-look canvas {
+  display: block;
+}
+
+.crop-look.plain .crop-look-frame {
+  background: repeating-conic-gradient(#2a2532 0% 25%, #221e29 0% 50%) 50% / 12px 12px;
+}
+
+/* 头像框：圆角、描边 */
+.crop-look.face .crop-look-frame {
+  border: 3px solid var(--c);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0d0b10;
+}
+
+/* 睁眼特写：和对局里一样斜 6°、平行四边形、白边 */
+.crop-look.eyes .crop-look-frame {
+  --k: 18px;
+  rotate: -6deg;
+  margin: 10px 0 6px;
+  padding: 3px;
+  clip-path: polygon(var(--k) 0, 100% 0, calc(100% - var(--k)) 100%, 0 100%);
+  background: #fff;
+  filter: drop-shadow(6px 6px 0 color-mix(in srgb, var(--c) 75%, #000));
+}
+
+.crop-look.eyes canvas {
+  clip-path: polygon(calc(var(--k) - 2px) 0, 100% 0, calc(100% - var(--k) + 2px) 100%, 0 100%);
+  background: #08060c;
+}
+
+.crop-info {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.crop-info.warn {
+  color: #f3b35b;
+}
+
+.crop-tips {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-quiet, #aaa);
+}
+
+.crop-extra {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.crop-extra[hidden] {
+  display: none;
+}
+
+.crop-extra input {
+  margin-top: 3px;
+  accent-color: var(--c);
+}
+
+/* 下面：用哪张图、按钮 */
+.crop-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.crop-sources {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.crop-src-head {
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-quiet, #aaa);
+}
+
+.crop-src {
+  position: relative;
+  flex: none;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: 64px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.crop-src.on {
+  border-color: var(--c);
+  box-shadow: 0 0 0 1px var(--c);
+}
+
+.crop-src img,
+.crop-src.pick b {
+  width: 56px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 3px;
+  background: #0d0b10;
+}
+
+.crop-src.pick b {
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  color: var(--c);
+}
+
+.crop-src span {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.crop-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.crop-btn[hidden] {
+  display: none;
+}
+
+.crop-btn.ghost {
+  color: var(--ink-quiet, #bbb);
+}
+
+.crop-btn.crop-ok {
+  border-color: var(--c);
+  background: var(--c);
+  color: #1a1620;
+  font-weight: 600;
+}
+
+.crop-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (max-width: 760px) {
+  .crop-modal {
+    padding: 0;
+  }
+
+  .crop-dialog {
+    max-height: 100vh;
+    height: 100%;
+    border-radius: 0;
+    padding: 10px 12px;
+    overflow-y: auto;
+    grid-template-rows: auto auto auto;
+  }
+
+  /* 一列往下排，整个框自己滚 */
+  .crop-main {
+    min-height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .crop-side {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .crop-wrap {
+    height: 48vh;
+    min-height: 220px;
+  }
+
+  .crop-tips {
+    display: none;
+  }
+
+  .crop-look {
+    padding: 8px;
+  }
+}

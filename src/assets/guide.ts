@@ -208,6 +208,42 @@ function specOf(d: SlotDef): string {
   return '带骨骼的右手 .glb';
 }
 
+// 放图时的裁剪框（cropper.ts）：可选的比例（第一个是一开始的）、存多大（长边，不放大）、框一开始上下放在哪、
+// 右边的小预览照什么样子画。不是图的格子（模型、声音）没有
+export interface CropSpec {
+  ratios: { label: string; r: number | null }[];
+  long: number;
+  focusY: number;
+  look: 'face' | 'eyes' | 'plain';
+  hint: string; // 裁剪框上面的一句：框住什么
+}
+
+const FREE_CROP = { label: '不限', r: null };
+// 还没对上格子的图（对照表里）：不限比例
+export const PLAIN_CROP: CropSpec = { ratios: [FREE_CROP, { label: '3:4 竖', r: 3 / 4 }, { label: '4:3 横', r: 4 / 3 }], long: 1600, focusY: 0.5, look: 'plain', hint: '' };
+
+export function cropOf(d: SlotDef): CropSpec | null {
+  if (!d.media.includes('image')) return null;
+  const tall = { label: '3:4 竖', r: 3 / 4 };
+  const wide = { label: '4:3 横', r: 4 / 3 };
+  const k = kindOf(d);
+  if (k === 'portrait')
+    return { ratios: [{ label: '3:4 头像框', r: 3 / 4 }, { label: '1:1 方', r: 1 }, FREE_CROP], long: 800, focusY: 0.4, look: 'face', hint: '框住脸，头顶留一点。头像框会铺满这个框' };
+  if (d.slot === 'eyes')
+    return { ratios: [{ label: '16:5 睁眼特写', r: 16 / 5 }, FREE_CROP], long: 1600, focusY: 0.42, look: 'eyes', hint: '框住两只眼睛（眉毛到下眼睑），左右留一点。能力发动时从中间一条缝张开' };
+  if (d.slot === 'result') return { ...PLAIN_CROP, hint: '结算画面左边的图，竖的横的都行' };
+  if (k === 'cutin') return { ratios: [tall, wide, FREE_CROP], long: 1600, focusY: 0.45, look: 'plain', hint: '人放中间，透明背景最好' };
+  return PLAIN_CROP;
+}
+
+// 这一格的图比例差太多（游戏里会被裁掉一大块）时提醒一句；差不多就是 null。切入、结算横竖都行，不管
+export function ratioWarn(d: SlotDef, w: number, h: number): string | null {
+  const r = w / h;
+  if (kindOf(d) === 'portrait' && (r > 1.05 || r < 0.5)) return '和头像框（3:4）差得多，游戏里会裁掉一大块';
+  if (d.slot === 'eyes' && (r < 2.4 || r > 4.2)) return '和睁眼特写的长条（16:5）差得多，游戏里只露出中间一条';
+  return null;
+}
+
 export function slotGuide(owner: string, d: SlotDef, who: Who[]): SlotGuide {
   return { when: d.hint, fallback: fallbackOf(owner, d, who), spec: specOf(d), file: suggestedFile(owner, d, who), key: KEY_SLOTS.has(d.slot) };
 }

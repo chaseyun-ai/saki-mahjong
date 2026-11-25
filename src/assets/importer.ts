@@ -17,15 +17,19 @@ import { type PackFile, buildPack, downloadZip, isZip, packName, readPack } from
 import { clearMine, deleteMine, mineAvailable, mineEnabled, putMine, setMineEnabled } from './store';
 import { type Placed, mineAssets, mineRecords, onCustomAssets, projectAssets, reloadMine, reloadProject } from './layers';
 import { devAvailable, devDelete, devMusic, devPut } from './devApi';
-import { KINDS, type Kind, checklistCsv, kindAmount, kindCount, kindInfo, kindOf, ownersOfKind, slotGuide, slotsOfKind, summary } from './guide';
+import { type CropSpec, KINDS, type Kind, PLAIN_CROP, checklistCsv, cropOf, kindAmount, kindCount, kindInfo, kindOf, ownersOfKind, ratioWarn, slotGuide, slotsOfKind, summary } from './guide';
+import { type CropOptions, type CropResult, type CropSource, canCrop, cropImage, croppedName } from './cropper';
+import { importEyes } from './eyeImport';
+import { avatarSources, entryOf } from './quickPut';
 
 // 素材导入页。从上到下：
 //   放到哪里：这个浏览器（store.ts，人人都能用，只影响自己），或者项目文件夹（只在本地开发时有，devApi.ts →
 //            scripts/vite-custom-assets.ts，写进 public/custom/）；
 //   一共能换这些：八类素材各一张卡片，写着用在哪、要几个、什么规格、已经换了几个（说明的字在 guide.ts）；
 //   逐个格子看：左边角色名单（带进度），右边这个角色的每一格，现在用的是什么（原版的图能看、声音能试听），
-//              点「放进来」或者把文件拖到格子上就换上；
-//   一次放很多：文件、整个文件夹、素材包拖进来，照文件名对上是谁的哪一格，先列一张对照表给人看、能改，确认了再存。
+//              点「放进来」或者把文件拖到格子上就换上；图先弹出裁剪框（cropper.ts）按格子的比例裁，也可以不裁；
+//              换上的图能再裁；「睁眼特写」那格能直接拿头像图框住眼睛裁（eyeImport.ts）；
+//   一次放很多：文件、整个文件夹、素材包拖进来，照文件名对上是谁的哪一格，先列一张对照表给人看、能改（图能裁），确认了再存。
 // 用不用全看玩家：不打开这一页，游戏照原样。
 
 type Target = 'mine' | 'project';
@@ -42,6 +46,7 @@ interface Pending {
   thumb: string | null;
   seconds?: number; // 音频有声的长度（只量语音、提示音）
   include: boolean;
+  cropped?: boolean; // 在对照表里裁过
 }
 
 interface Check {
@@ -352,28 +357,89 @@ export class AssetImporter {
     this.pending.push(await this.makePending(path, bytes, known));
   }
 
-  // 点格子上的「放进来」、或者把文件拖到格子上：直接放进这一格（有问题就在格子上说，不放）
+  // 格子上那一句（换上了 / 为什么没放进去）
+  private tell(key: string, c: Check): void {
+    this.slotMsg.set(key, c);
+    this.renderHave();
+  }
+
+  // 裁剪框：比例、大小照这一格（cropOf）
+  private crop(owner: string, d: SlotDef, sources: CropSource[], more: Partial<CropOptions> = {}): Promise<CropResult | null> {
+    const spec: CropSpec = cropOf(d) ?? PLAIN_CROP;
+    return cropImage({
+      title: `裁一下：${slotName(owner, d.slot)}`,
+      hint: spec.hint,
+      sources,
+      ratios: spec.ratios,
+      long: spec.long,
+      focusY: spec.focusY,
+      look: spec.look,
+      color: ownerColor(owner),
+      ...more,
+    });
+  }
+
+  // 点格子上的「放进来」、或者把文件拖到格子上：静态图先裁（可以不裁），再放进这一格（有问题就在格子上说，不放）
   private async putOne(owner: string, slot: string, file: File): Promise<void> {
     if (this.busy) return;
     const key = keyOf(owner, slot);
-    const tell = (c: Check) => {
-      this.slotMsg.set(key, c);
-      this.renderHave();
-    };
     let bytes: Uint8Array;
     try {
       bytes = new Uint8Array(await file.arrayBuffer());
     } catch {
-      return tell({ level: 'bad', text: '读不出这个文件' });
+      return this.tell(key, { level: 'bad', text: '读不出这个文件' });
     }
-    if (isZip(bytes)) return tell({ level: 'bad', text: '这是素材包（zip），拖到最下面「一次放很多」那里' });
-    const p = await this.makePending(file.name, bytes, { owner, slot, why: '放进这一格' });
+    if (isZip(bytes)) return this.tell(key, { level: 'bad', text: '这是素材包（zip），拖到最下面「一次放很多」那里' });
+    let name = file.name;
+    const def = slotDef(owner, slot, WHO);
+    const s = sniff(bytes);
+    if (def && cropOf(def) && s?.media === 'image' && canCrop(s.mime, s.animated)) {
+      const url = URL.createObjectURL(file);
+      // 睁眼特写：下面一排还列上这个人现有的头像、立绘，可以改用它们
+      const sources: CropSource[] = [{ label: '你选的图', url, name, file }, ...(slot === 'eyes' ? avatarSources(owner, this.target) : [])];
+      const r = await this.crop(owner, def, sources, { skip: '不裁，原图放进去' });
+      URL.revokeObjectURL(url);
+      if (!r) return this.say(`${slotName(owner, slot)}没换：裁剪取消了。`);
+      const got = await this.bytesOf(r);
+      if (!got) return;
+      ({ bytes, name } = got);
+    }
+    await this.putBytes(owner, slot, bytes, name);
+  }
+
+  private async bytesOf(r: CropResult): Promise<{ bytes: Uint8Array; name: string } | null> {
+    if (r.kind === 'crop') return { bytes: new Uint8Array(await r.blob.arrayBuffer()), name: r.name };
+    return r.from.file ? { bytes: new Uint8Array(await r.from.file.arrayBuffer()), name: r.from.file.name } : null;
+  }
+
+  // 换上的图再裁一下：在现在换上的那张上重新挑，存回同一格
+  private async recrop(owner: string, slot: string): Promise<void> {
+    const d = slotDef(owner, slot, WHO);
+    const p = this.placed().get(keyOf(owner, slot));
+    if (this.busy || !d || !p || p.entry.media !== 'image') return;
+    const r = await this.crop(owner, d, [{ label: '现在换上的', url: p.url, name: p.entry.name ?? p.entry.file }], { ok: '裁好了，存回去' });
+    if (r?.kind !== 'crop') return;
+    await this.putBytes(owner, slot, new Uint8Array(await r.blob.arrayBuffer()), r.name);
+  }
+
+  // 睁眼特写「用头像图裁」：现有的头像、立绘，或者换一张图，框住眼睛（eyeImport.ts）
+  private async eyesFromAvatar(owner: string): Promise<void> {
+    if (this.busy) return;
+    const done = await importEyes(owner, this.target, (slot, bytes, name) => this.putBytes(owner, slot, bytes, name));
+    if (done.length > 1) this.say(`${ownerName(owner)}的睁眼特写和头像都换上了。`);
+  }
+
+  // 放进这一格（格子上放、裁好的都走这里）。返回存成了没有
+  private async putBytes(owner: string, slot: string, bytes: Uint8Array, name: string): Promise<boolean> {
+    const key = keyOf(owner, slot);
+    const p = await this.makePending(name, bytes, { owner, slot, why: '放进这一格' });
     const checks = this.checks(p);
     const bad = checks.find((c) => c.level === 'bad');
     if (bad) {
       if (p.thumb) URL.revokeObjectURL(p.thumb);
       this.say(`${slotName(owner, slot)}没放进去：${bad.text}`);
-      return tell(bad);
+      this.tell(key, bad);
+      return false;
     }
     const warn = checks.find((c) => c.level === 'warn');
     const { ok, failed } = await this.store([p]);
@@ -381,10 +447,42 @@ export class AssetImporter {
     // 存的时候对照表的按钮暂时停用了，放好了恢复
     this.renderReview();
     const where = this.target === 'mine' ? '这个浏览器' : '项目文件夹';
-    this.say(ok ? `${slotName(owner, slot)}换上了：${file.name}（存在${where}）${this.target === 'mine' && !mineEnabled() ? '。「用我导入的素材」关着，打开才看得到' : ''}` : `没放进去：${failed.join('；')}`);
+    this.say(ok ? `${slotName(owner, slot)}换上了：${name}（存在${where}）${this.target === 'mine' && !mineEnabled() ? '。「用我导入的素材」关着，打开才看得到' : ''}` : `没放进去：${failed.join('；')}`);
     // 换上了不用再说（格子上已经写着换上的文件），只留要注意的
     if (ok && !warn) this.slotMsg.delete(key);
-    tell(ok ? (warn ?? { level: 'ok', text: '' }) : { level: 'bad', text: failed[0] ?? '没存成' });
+    this.tell(key, ok ? (warn ?? { level: 'ok', text: '' }) : { level: 'bad', text: failed[0] ?? '没存成' });
+    return !!ok;
+  }
+
+  // 对照表里裁一张：裁好的换掉这一行的文件（还没导入）
+  private async cropRow(n: string): Promise<void> {
+    const p = this.find(n);
+    if (this.busy || !p?.s || !p.thumb) return;
+    const d = p.owner && p.slot ? slotDef(p.owner, p.slot, WHO) : undefined;
+    const spec = (d && cropOf(d)) ?? PLAIN_CROP;
+    const base = p.path.split(' › ').pop()?.split(/[\\/]/).pop() ?? p.path;
+    const r = await cropImage({
+      title: `裁一下：${d && p.owner ? slotName(p.owner, d.slot) : base}`,
+      hint: spec.hint,
+      sources: [{ label: '这一张', url: p.thumb, name: base }],
+      ratios: spec.ratios,
+      long: spec.long,
+      focusY: spec.focusY,
+      look: spec.look,
+      color: p.owner ? ownerColor(p.owner) : undefined,
+      ok: '裁好了',
+    });
+    if (r?.kind !== 'crop' || !this.pending.includes(p)) return;
+    const bytes = new Uint8Array(await r.blob.arrayBuffer());
+    const s = sniff(bytes);
+    if (!s) return;
+    URL.revokeObjectURL(p.thumb);
+    p.s = s;
+    p.size = bytes.length;
+    p.thumb = URL.createObjectURL(r.blob);
+    p.cropped = true;
+    p.include = true;
+    this.renderReview();
   }
 
   // ---------- 对照表 ----------
@@ -406,7 +504,8 @@ export class AssetImporter {
       else if (p.seconds > VOICE_MAX_SECONDS + 2) out.push({ level: 'bad', text: `太长了，一句最多 ${VOICE_MAX_SECONDS} 秒` });
     }
     if (def.group === 'sfx' && p.seconds !== undefined && p.seconds > 4) out.push({ level: 'warn', text: '提示音一般一两秒，这段有点长' });
-    if (def.group === 'portrait' && s.w && s.h && s.w > s.h * 1.2) out.push({ level: 'warn', text: '头像最好是竖图，横图会被裁掉两边' });
+    const off = s.media === 'image' && s.w && s.h ? ratioWarn(def, s.w, s.h) : null;
+    if (off) out.push({ level: 'warn', text: canCrop(s.mime, s.animated) ? `${off}，点「裁剪」自己挑裁哪里` : off });
     if ((def.group === 'portrait' || def.group === 'cutin') && s.w && s.h && Math.max(s.w, s.h) < (def.group === 'portrait' ? 300 : 700)) out.push({ level: 'warn', text: `图有点小（${s.w}×${s.h}），放大了会糊` });
     const dup = this.pending.find((o) => o !== p && o.include && o.owner === p.owner && o.slot === p.slot);
     if (dup && p.include) out.push({ level: 'warn', text: dup.n > p.n ? `和第 ${dup.n} 行是同一格，后面那个会盖过这个` : `和第 ${dup.n} 行是同一格，这个会盖过那个` });
@@ -451,12 +550,14 @@ export class AssetImporter {
         const level = !p.include ? 'skip' : checks.some((c) => c.level === 'bad') ? 'bad' : checks.some((c) => c.level === 'warn') ? 'warn' : 'ok';
         const s = p.s;
         const thumb = s?.media === 'video' ? `<video src="${p.thumb}" muted autoplay loop playsinline></video>` : s?.media === 'image' ? `<img src="${p.thumb}" alt="" />` : `<span class="imp-icon">${s?.media === 'model' ? '3D' : s?.media === 'audio' ? '♪' : '?'}</span>`;
-        const facts = [sizeLabel(p.size), s ? `${MEDIA_LABEL[s.media]} ${s.ext.toUpperCase()}` : '', s?.w && s.h ? `${s.w}×${s.h}` : '', p.seconds !== undefined ? `${p.seconds.toFixed(1)} 秒` : '', s?.decoded ? '从 .txt 解码' : ''].filter(Boolean).join(' · ');
+        const facts = [sizeLabel(p.size), s ? `${MEDIA_LABEL[s.media]} ${s.ext.toUpperCase()}` : '', s?.w && s.h ? `${s.w}×${s.h}` : '', p.cropped ? '裁过' : '', p.seconds !== undefined ? `${p.seconds.toFixed(1)} 秒` : '', s?.decoded ? '从 .txt 解码' : ''].filter(Boolean).join(' · ');
+        // 静态图能裁：比例照对上的那一格
+        const cut = s?.media === 'image' && canCrop(s.mime, s.animated) ? `<button class="imp-cut" data-imp-crop-row="${p.n}"${this.busy ? ' disabled' : ''} title="在这张图上框出要的部分">裁剪</button>` : '';
         const meta = s?.model && (s.model.title || s.model.author || s.model.license) ? `<div class="imp-meta">${esc([s.model.title, s.model.author && `作者 ${s.model.author}`, s.model.license && `许可 ${s.model.license}`].filter(Boolean).join(' · '))}</div>` : '';
         return `
           <div class="imp-row ${level}" data-imp-row="${p.n}" style="--c:${p.owner ? ownerColor(p.owner) : '#9aa7b0'}">
             <label class="imp-use" title="导入这一个"><input type="checkbox" data-imp-use="${p.n}"${p.include ? ' checked' : ''}${s ? '' : ' disabled'} /><span>${p.n}</span></label>
-            <div class="imp-thumb">${thumb}</div>
+            <div class="imp-thumb">${thumb}${cut}</div>
             <div class="imp-file"><div class="imp-name" title="${esc(p.path)}">${esc(p.path)}</div><div class="imp-facts">${esc(facts)}</div>${meta}</div>
             <select data-imp-owner="${p.n}" aria-label="是谁的"${s ? '' : ' disabled'}>${this.ownerOptions(p)}</select>
             <select data-imp-slot="${p.n}" aria-label="哪一格"${s && p.owner ? '' : ' disabled'}>${this.slotOptions(p)}</select>
@@ -503,15 +604,8 @@ export class AssetImporter {
       if (this.shrink && s.media === 'image') s = await shrinkImage(s);
       const owner = p.owner!;
       const slot = p.slot!;
-      const entry: Entry = {
-        file: fileOf(owner, slot, s.ext),
-        mime: s.mime,
-        media: s.media,
-        size: s.bytes.length,
-        ...(s.w && s.h ? { w: s.w, h: s.h } : {}),
-        ...(s.model?.vrm != null ? { vrm: s.model.vrm } : {}),
-        name: p.path.split(/[\\/]| › /).pop(),
-      };
+      const base = p.path.split(/[\\/]| › /).pop() ?? '';
+      const entry: Entry = entryOf(owner, slot, s, p.cropped ? croppedName(base, s.ext) : base);
       try {
         if (this.target === 'project') await devPut(owner, slot, entry, s.bytes);
         else if (owner === MUSIC) await setCustomTrack(slot as MusicSlot, entry.name ?? '', s.bytes.slice().buffer);
@@ -800,6 +894,10 @@ export class AssetImporter {
     const accept = d.media.includes('video') && !kindInfo(k).accept.includes('video') ? `${kindInfo(k).accept},video/*` : kindInfo(k).accept;
     const put = `<label class="skin-btn imp-put"${this.busy ? ' aria-disabled="true"' : ''}>${done ? '换一个' : '放进来'}<input type="file" accept="${accept}" data-imp-put="${key}"${this.busy ? ' disabled' : ''} /></label>`;
     const del = done ? `<button class="skin-btn ghost" data-imp-del="${key}"${this.busy ? ' disabled' : ''} title="删掉换上的，回到原版">换回原版</button>` : '';
+    // 换上的静态图能再裁；睁眼特写能拿头像图裁
+    const cut = done && p?.entry.media === 'image' && canCrop(p.entry.mime) ? `<button class="skin-btn ghost" data-imp-recrop="${key}"${this.busy ? ' disabled' : ''} title="在换上的图上重新挑裁哪里">裁剪</button>` : '';
+    const eyes = d.slot === 'eyes' ? `<button class="skin-btn" data-imp-eyes="${owner}"${this.busy ? ' disabled' : ''} title="拿这个人的头像、立绘（或者再选一张头像图）框住眼睛裁一条">导入头像图</button>` : '';
+    const peek = d.slot === 'eyes' ? `<a class="imp-peek" href="#eyes" title="去睁眼特写预览页，点一下放一次">看效果 ›</a>` : '';
     // 试听：换上的；没换的提示音放合成的；背景音乐放项目、网页自带的那首
     const playable = audioKind && (done || k === 'sfx' || (owner === MUSIC && musicDefault));
     const playing = this.player?.key === key;
@@ -833,7 +931,7 @@ export class AssetImporter {
           <p class="imp-what">${esc(what)}</p>
           <code class="imp-fname" title="照这个起名，拖进来会自动对上这一格">${esc(g.file)}</code>
           ${note}
-          <div class="imp-slot-acts">${put}${del}</div>
+          <div class="imp-slot-acts">${eyes}${put}${cut}${del}${peek}</div>
         </div>
       </div>`;
   }
@@ -915,7 +1013,7 @@ export class AssetImporter {
 
   private onClick(e: Event): void {
     const el = (e.target as HTMLElement).closest<HTMLElement>(
-      '[data-imp-back],[data-imp-go],[data-imp-cancel],[data-imp-drop-row],[data-imp-del],[data-imp-export],[data-imp-clear],[data-imp-kind],[data-imp-sel],[data-imp-listen],[data-imp-csv],[data-imp-jump]',
+      '[data-imp-back],[data-imp-go],[data-imp-cancel],[data-imp-drop-row],[data-imp-del],[data-imp-export],[data-imp-clear],[data-imp-kind],[data-imp-sel],[data-imp-listen],[data-imp-csv],[data-imp-jump],[data-imp-crop-row],[data-imp-recrop],[data-imp-eyes]',
     );
     if (!el) return;
     const d = el.dataset;
@@ -931,6 +1029,13 @@ export class AssetImporter {
       if (p?.thumb) URL.revokeObjectURL(p.thumb);
       this.pending = this.pending.filter((x) => x !== p);
       this.renderReview();
+    } else if (d.impCropRow) {
+      void this.cropRow(d.impCropRow);
+    } else if (d.impRecrop) {
+      const [owner, slot] = d.impRecrop.split(':');
+      void this.recrop(owner, slot);
+    } else if (d.impEyes) {
+      void this.eyesFromAvatar(d.impEyes);
     } else if (d.impDel) {
       const [owner, slot] = d.impDel.split(':');
       void this.remove(owner, slot);

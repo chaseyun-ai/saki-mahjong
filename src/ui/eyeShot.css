@@ -241,6 +241,79 @@
   font-size: 13px;
 }
 
+/* 每个人下面：导入头像图、用现有头像、换回现画 */
+.eg-item {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.eg-item .eg-card {
+  width: 100%;
+}
+
+.eg-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.eye-gallery .eg-btn {
+  position: relative;
+  padding: 3px 9px;
+  border: 1px solid #4a405a;
+  border-radius: 999px;
+  background: #221d2b;
+  color: #ddd;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.eye-gallery .eg-btn.main {
+  border-color: var(--c);
+  color: #fff;
+  background: color-mix(in srgb, var(--c) 28%, #221d2b);
+}
+
+.eye-gallery .eg-btn.ghost {
+  color: #aaa;
+}
+
+.eye-gallery .eg-btn:disabled,
+.eye-gallery .eg-btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.eg-btn input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.eg-btn:focus-within {
+  outline: 2px solid var(--c);
+  outline-offset: 2px;
+}
+
+.eye-gallery .eg-status {
+  min-height: 1.4em;
+  margin: -6px 0 12px;
+  color: #f0c35a;
+  opacity: 1;
+}
+
+.eye-gallery .eg-link {
+  margin-left: auto;
+  font-size: 13px;
+  color: #f0c35a;
+  text-decoration: none;
+}
+
 .eg-layer {
   position: fixed;
   inset: 0;
