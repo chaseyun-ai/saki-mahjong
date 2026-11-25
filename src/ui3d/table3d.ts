@@ -5,9 +5,9 @@ import type { Game, GameEvent } from '../engine/game';
 import { riichiSideIndex } from '../engine/pond';
 import { TILE_COUNT, TileId, WIND_CN, kindOf } from '../engine/tiles';
 import { meldLayout } from '../ui/meldLayout';
-import { FELT_SIZE, pixelCanvas, pixelFelt } from '../pixel/felt';
+import { BLOCK_COLORS, feltTexture16, plankTexture, stoneTexture } from '../pixel/blocks';
+import { blockCell, blockTexture, buildBlockTable, worldUV } from './blockTable';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
-import { PixelGrade, pixelStep } from './pixelPass';
 import { sketchFaceSvg } from '../ui/sketchArt';
 import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook, modelOf } from './looks';
@@ -38,7 +38,7 @@ import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, POND_ROWS, TILE_H, TILE_T, TILE_W, REF_SIT_HEIGHT, TableDims, TableLayout, WALL_Z, clampLayout, fitScale, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
 import { CueKind, DEFAULT_DISCARD, DiscardMotion, DiscardParams, DiscardPath, DiscardPose, DiscardStyle, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, afterTime, declareDelay, dueCues, dueMarkers, gripAt, isPush, pushDistFor, sampleDiscard, scrapeTime, styleParams, totalTime } from './discardMotion';
-import { CONSOLE_SCALE, type FeltPattern, type PixelGrain, TableColors, currentPixelGrain, tableColors } from '../ui/theme';
+import { CONSOLE_SCALE, type FeltPattern, TableColors, tableColors } from '../ui/theme';
 import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, outline, sealSpot, skinSignColors } from './consoleLooks';
 import { type DiscardFx, POND_LOOKS, type PondFx, type PondStyle, type RiichiFx, hash01, pickDiscardStyle, pondStyleOf, varyDiscard, vary } from '../ui/vary';
 import { type Block, planFling, tileBlock } from './flingPath';
@@ -560,9 +560,6 @@ export class Table3D {
   // 淡的巨引力源：桌面上的黑色引力圆（用到时才建）
   // 巨引力源、平行宇宙：整幅画面扭一下（warpFx）
   private warp: SpaceWarp | null = null;
-  // 像素牌桌：画完一帧再过一遍色阶抖动、描边（pixelPass.ts）；grain 是像素颗粒（视觉设置里调，下一次调尺寸时照新的算）
-  private pixelGrade: PixelGrade | null = null;
-  pixelGrain: PixelGrain = currentPixelGrain();
   private gravityOn = false;
   private gravityA = 0;
   private gravityKick = 0;
@@ -826,17 +823,10 @@ export class Table3D {
   ) {
     if (this.v2) this.view25 = { ...DEFAULT_VIEW_25D_V2 };
     else if (this.topView) this.view25 = { ...DEFAULT_VIEW_TOP };
-    // 像素牌桌：不抗锯齿（边上就该是一级级的台阶），低分辨率画、canvas 不插值放大（resize 里照像素颗粒算像素比），影子是硬的
-    const pixel = !!this.colors.pixel;
-    this.renderer = new THREE.WebGLRenderer({ antialias: !pixel });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = pixel ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
-    if (pixel) {
-      this.pixelGrade = new PixelGrade();
-      this.renderer.domElement.classList.add('px-canvas');
-      this.renderer.domElement.style.imageRendering = 'pixelated';
-    }
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     container.appendChild(this.renderer.domElement);
@@ -896,7 +886,6 @@ export class Table3D {
     this.water?.dispose();
     this.machine?.dispose();
     this.warp?.dispose();
-    this.pixelGrade?.dispose();
     this.mayoiga?.dispose();
     this.shift?.dispose();
     this.stamps?.dispose();
@@ -929,23 +918,28 @@ export class Table3D {
     // 桌框、包边的质感：牌桌风格里有写就照写的（原木是不反光的木头，翻牌屏是铝），没写是原来的黑色亮面和金属包边
     const [frameRough, frameMetal] = this.colors.frameFinish ?? [0.32, 0.25];
     const [trimRough, trimMetal] = this.colors.trimFinish ?? [0.3, 0.8];
-    const frameMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.frame, roughness: frameRough, metalness: frameMetal }));
+    // 像素牌桌（方块世界那种）：桌框、桌腿是木板方块，地上铺深色木板，都是 16×16 的小图不插值放大，一点都不反光
+    const pixel = !!this.colors.pixel;
+    const blockMat = (px: Uint32Array) => new THREE.MeshStandardMaterial({ map: blockTexture(px), roughness: 1, metalness: 0 });
+    const frameMat = wet(pixel ? blockMat(plankTexture(BLOCK_COLORS.plank)) : new THREE.MeshStandardMaterial({ color: this.colors.frame, roughness: frameRough, metalness: frameMetal }));
     const trimMat = wet(new THREE.MeshStandardMaterial({ color: this.colors.trim, roughness: trimRough, metalness: trimMetal }));
     this.tableMats = {
       frame: frameMat,
       trim: trimMat,
-      body: new THREE.MeshStandardMaterial({ color: '#1e2227', roughness: 0.36, metalness: 0.1 }),
-      floor: new THREE.MeshStandardMaterial({ color: this.colors.room, roughness: 1 }),
+      body: pixel ? blockMat(plankTexture(BLOCK_COLORS.plankDark, 19)) : new THREE.MeshStandardMaterial({ color: '#1e2227', roughness: 0.36, metalness: 0.1 }),
+      floor: pixel ? blockMat(plankTexture(BLOCK_COLORS.plankDark, 29)) : new THREE.MeshStandardMaterial({ color: this.colors.room, roughness: 1 }),
     };
     // 机身在桌框下面的阴影里，只靠灯光几乎全黑；给它一点房间的反光，弧面才看得出来
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    const room = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    pmrem.dispose();
-    for (const [m, k] of [[this.tableMats.body, 0.5], [frameMat, 0.35]] as const) {
-      (m as THREE.MeshStandardMaterial).envMap = room;
-      (m as THREE.MeshStandardMaterial).envMapIntensity = k;
+    if (!pixel) {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      const room = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      pmrem.dispose();
+      for (const [m, k] of [[this.tableMats.body, 0.5], [frameMat, 0.35]] as const) {
+        (m as THREE.MeshStandardMaterial).envMap = room;
+        (m as THREE.MeshStandardMaterial).envMapIntensity = k;
+      }
     }
-    this.feltMat = wet(new THREE.MeshStandardMaterial({ map: feltTexture(this.colors, this.v2 ? this.dim.tableHalf : 0), roughness: 0.95 }));
+    this.feltMat = wet(new THREE.MeshStandardMaterial({ map: feltTexture(this.colors, this.v2 ? this.dim.tableHalf : 0), roughness: pixel ? 1 : 0.95 }));
     this.keyLight = key;
     if (this.colors.machine) {
       this.machine = new Machine();
@@ -978,7 +972,11 @@ export class Table3D {
 
     // 中央控制台：顶面画点数和局数
     const consoleMats = [
-      wet(new THREE.MeshStandardMaterial({ color: this.colors.consoleBody ?? '#0c0d0f', roughness: 0.25, metalness: 0.3 })),
+      wet(
+        pixel
+          ? new THREE.MeshStandardMaterial({ map: blockTexture(stoneTexture(BLOCK_COLORS.stone)), roughness: 1, metalness: 0 })
+          : new THREE.MeshStandardMaterial({ color: this.colors.consoleBody ?? '#0c0d0f', roughness: 0.25, metalness: 0.3 }),
+      ),
       // 顶面的点数、局数是自己发光的屏幕，淹在水里也照样看得清（不泡水）；木牌、皮面这种不是屏幕的，发光弱一点
       new THREE.MeshStandardMaterial({ map: this.consoleTex, roughness: 0.2, emissive: '#ffffff', emissiveMap: this.consoleTex, emissiveIntensity: this.colors.consoleGlow ?? 0.35 }),
     ];
@@ -1011,7 +1009,11 @@ export class Table3D {
     let body: THREE.BufferGeometry;
     let top: THREE.BufferGeometry = new THREE.PlaneGeometry(T * 2, T * 2);
     const extras: THREE.Mesh[] = [];
-    if (form === 'plate') {
+    if (this.colors.pixel && (form === 'box' || form === 'plate')) {
+      // 像素牌桌：一块石头方块，直角；贴图按世界坐标铺，一格和桌框的方块一样大
+      const { c } = blockCell(this.dim);
+      body = worldUV(new THREE.BoxGeometry(H * 2, h, H * 2).translate(0, h / 2, 0), c / 2, new THREE.Vector3(-H, 0, -H));
+    } else if (form === 'plate') {
       // 矮木牌：棱角只倒一点
       body = new RoundedBoxGeometry(H * 2, h, H * 2, 2, Math.min(0.05, h / 2));
       body.translate(0, h / 2, 0);
@@ -1079,6 +1081,15 @@ export class Table3D {
       this.water.dispose();
       this.water = null;
     }
+    // 像素牌桌：方块搭的桌子，桌布也在里面（blockTable.ts）
+    if (this.colors.pixel) {
+      const mats = this.tableMats!;
+      const group = buildBlockTable(d, FRAME_TOP, { frame: mats.frame, leg: mats.body, felt: this.feltMat!, floor: mats.floor });
+      this.tableGroup = group;
+      this.scene.add(group);
+      this.fitShadow();
+      return;
+    }
     const group = buildTableModel(d, FRAME_TOP, this.tableMats!, this.colors.form);
     // 全自动麻将机：桌布在四家牌山底下挖洞，洞里是升降板（machine.ts）
     let feltGeo: THREE.BufferGeometry;
@@ -1092,9 +1103,13 @@ export class Table3D {
     group.add(felt);
     this.tableGroup = group;
     this.scene.add(group);
-    // 影子要盖住整张桌子
+    this.fitShadow();
+  }
+
+  // 影子要盖住整张桌子
+  private fitShadow(): void {
     const sc = this.keyLight!.shadow.camera;
-    const half = Math.max(16, d.bodyHalf + 1);
+    const half = Math.max(16, this.dim.bodyHalf + 1);
     sc.left = -half;
     sc.right = half;
     sc.top = half;
@@ -1104,8 +1119,9 @@ export class Table3D {
 
   private buildTiles(): void {
     for (let i = 0; i < FACE_TOTAL; i++) this.faceGeoms.push(this.atlas.faceGeometry(i, TILE_W * 0.9, TILE_H * 0.9));
-    const bodyGeom = new RoundedBoxGeometry(TILE_W, TILE_H, TILE_T * 0.62, 3, 0.12);
-    const backGeom = new RoundedBoxGeometry(TILE_W, TILE_H, TILE_T * 0.42, 3, 0.12);
+    // 像素牌桌：牌也是直角的方块
+    const bodyGeom = this.colors.pixel ? new THREE.BoxGeometry(TILE_W, TILE_H, TILE_T * 0.62) : new RoundedBoxGeometry(TILE_W, TILE_H, TILE_T * 0.62, 3, 0.12);
+    const backGeom = this.colors.pixel ? new THREE.BoxGeometry(TILE_W, TILE_H, TILE_T * 0.42) : new RoundedBoxGeometry(TILE_W, TILE_H, TILE_T * 0.42, 3, 0.12);
     // 2.5D 时自己的手牌几乎正对镜头，灯又在镜头这边，亮面会把牌面照白一片，所以磨砂一点
     const matte = this.style === '25d' ? 0.62 : 0;
     // 牌桌风格自己的牌（沙滩的沙子牌、草甸的花瓣牌）：牌身颜色、细纹理、粗糙度，牌背正中压的花样（tileLooks.ts）。
@@ -4872,11 +4888,6 @@ export class Table3D {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     if (!w || !h) return;
-    // 像素牌桌：一格像素是整数个屏幕像素，画面按格子数来画
-    if (this.pixelGrade) {
-      const dpr = window.devicePixelRatio || 1;
-      this.renderer.setPixelRatio(dpr / pixelStep(h, dpr, this.pixelGrain));
-    }
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     if (this.style === '25d') {
@@ -5630,14 +5641,6 @@ export class Table3D {
         (this.warp ??= new SpaceWarp()).rush(this.renderer, at.x * 0.5 + 0.5, at.y * 0.5 + 0.5, k);
       }
     }
-    // 像素牌桌：全部画完（连扭画面的技能）以后再过一遍色阶抖动、描边
-    this.pixelGrade?.apply(this.renderer);
-  }
-
-  // 视觉设置里换了像素颗粒：照新的重新算画面大小
-  setPixelGrain(g: PixelGrain): void {
-    this.pixelGrain = g;
-    this.resize();
   }
 
   // 用主镜头画桌子。巨引力源开着时接着把引力圆那一块扭一遍。
@@ -6423,16 +6426,8 @@ function feltPattern(ctx: CanvasRenderingContext2D, pattern: FeltPattern): void 
 
 // zones：改良布局时桌子的半宽，从控制台四角往桌角画四条细线，把桌面分成四家的地盘（雀魂那样）；0 是原版的一圈方框
 function feltTexture(colors: TableColors, zones = 0): THREE.CanvasTexture {
-  if (colors.pattern === 'pixel') {
-    // 像素牌桌：256 见方一格格画的桌布（pixel/felt.ts），不插值。改良布局的四条斜线从仪表盘的角画到桌角
-    const form = colors.shape ?? 'box';
-    const corner = form === 'disc' ? CONSOLE_HALF / Math.SQRT2 : form === 'chamfer' ? CONSOLE_HALF - CONSOLE_CUT / 2 : form === 'cushion' ? CONSOLE_HALF - CONSOLE_CUSHION_R * (1 - Math.SQRT1_2) : CONSOLE_HALF;
-    const px = pixelFelt({ felt: colors.felt, line: colors.feltLine, zones: zones ? ((corner + 0.25) * FELT_SIZE) / 2 / zones : 0 });
-    const t = new THREE.CanvasTexture(pixelCanvas(px, FELT_SIZE, FELT_SIZE));
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.magFilter = THREE.NearestFilter;
-    return t;
-  }
+  // 像素牌桌：一块 16×16 的羊毛毡，桌布按方块一格格铺（blockTable.ts 里按世界坐标算贴图坐标）
+  if (colors.pattern === 'pixel') return blockTexture(feltTexture16(colors.felt[1]));
   const c = document.createElement('canvas');
   c.width = 1024;
   c.height = 1024;

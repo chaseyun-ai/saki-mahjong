@@ -1,7 +1,7 @@
 import './home.css';
 import { pixelatedUrl } from '../pixel/pixelate';
 import { playClick, playFlip } from './sound';
-import { currentPixelGrain, currentTheme } from './theme';
+import { currentTheme } from './theme';
 import { transition } from './transition';
 
 // 主页：麻将部的部室（用户用 Gemini 画的图，public/home/ 下清晨、白天、黄昏、夜晚各一张，构图一样）。
@@ -51,12 +51,11 @@ function saveTod(t: HomeTod): void {
 // 打包后样式表在 assets/ 下面，写相对路径就会去找 assets/home/…，图出不来
 export const imgOf = (t: HomeTod) => new URL(`home/${t}.webp`, document.baseURI).href;
 
-// 像素皮肤：部室的图现做成像素画（pixel/pixelate.ts）：缩小到几个原图像素一格（照像素颗粒），挑 40 种颜色，两色之间抖一点网点
-const HOME_BLOCK = { fine: 4, mid: 6, coarse: 8 } as const;
+// 像素皮肤：部室的图现做成方块马赛克（pixel/pixelate.ts）：缩小到 8 个原图像素一格，挑 32 种颜色，不抖网点（一块块是纯色）
 const pixelHome = () => currentTheme() === 'pixel';
 function homeSrc(t: HomeTod): Promise<string> {
   if (!pixelHome()) return Promise.resolve(imgOf(t));
-  return pixelatedUrl(imgOf(t), { block: HOME_BLOCK[currentPixelGrain()], colors: 40, dither: 0.6 }).catch(() => imgOf(t));
+  return pixelatedUrl(imgOf(t), { block: 8, colors: 32, dither: 0 }).catch(() => imgOf(t));
 }
 
 type Pt = [number, number];

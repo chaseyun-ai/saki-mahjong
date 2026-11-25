@@ -94,7 +94,7 @@ import { onCustomAssets } from '../assets/layers';
 import { preloadVoices, sayVoice, stopVoices } from './voice';
 import { VoiceCue, cueKeys } from './voiceLines';
 import { TeamFlow } from './teamFlow';
-import { CONSOLE_SHAPES, type ConsoleShapeId, type PixelGrain, TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentConsoleShape, currentPixelGrain, currentTableStyle, currentTheme, pixelOn, setConsoleShape, setPixelGrain, setTableStyle, setTheme, tableColors } from './theme';
+import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentConsoleShape, currentTableStyle, currentTheme, pixelOn, setConsoleShape, setTableStyle, setTheme, tableColors } from './theme';
 import { PixelFxLayer } from '../pixel/layer';
 import { lastDeltas, lastWinners, winCounts } from './winTally';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
@@ -681,7 +681,7 @@ export class App {
       this.panel === 'match'
         ? matchPanelHtml(this.settings)
         : this.panel === 'visual'
-          ? visualPanelHtml(this.settings, currentTheme(), this.mode, this.canSkins, currentTableStyle(), currentConsoleShape(), currentPixelGrain())
+          ? visualPanelHtml(this.settings, currentTheme(), this.mode, this.canSkins, currentTableStyle(), currentConsoleShape())
           : this.panel === 'rii'
             ? riiSetPanelHtml()
             : this.panel === 'riiTest'
@@ -3027,14 +3027,6 @@ export class App {
     // 牌桌风格：下一局建牌桌时用（2D 牌桌马上换）；面板右边出预览
     if (el.dataset.ui === 'vis-table' && TABLE_STYLES.some((t) => t.id === el.dataset.v)) {
       setTableStyle(el.dataset.v as TableStyleId);
-      tablePreview.show();
-      this.renderPanel();
-      return;
-    }
-    // 像素颗粒：开着的牌桌（预览、对局里的）马上照新的颗粒画
-    if (el.dataset.ui === 'vis-grain' && (['fine', 'mid', 'coarse'] as const).some((g) => g === el.dataset.v)) {
-      setPixelGrain(el.dataset.v as PixelGrain);
-      this.table3d?.setPixelGrain(el.dataset.v as PixelGrain);
       tablePreview.show();
       this.renderPanel();
       return;

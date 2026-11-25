@@ -2,12 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { KIND_COUNT } from '../src/engine/tiles';
 import { BAYER, Frame, Painter, composite, hex, rampOf, rng } from '../src/pixel/core';
 import { type PixelFxKind, makePixelFx } from '../src/pixel/effects';
-import { FELT_SIZE, MARK_H, MARK_W, pixelBackMark, pixelFelt } from '../src/pixel/felt';
+import { BLOCK, MARK_H, MARK_W, feltTexture16, grainTexture16, pixelBackMark, plankTexture, stoneTexture } from '../src/pixel/blocks';
 import { PFACE_H, PFACE_W, pixelFace } from '../src/pixel/faces';
 import { PIXEL_GLYPHS } from '../src/pixel/glyphs';
 import { medianCut, quantize } from '../src/pixel/pixelate';
-import { pixelStep } from '../src/ui3d/pixelPass';
-import { PIXEL_GRAINS, PIXEL_ROWS, TABLE_STYLES, THEMES, consoleShapeOf, skinTableColors, tableColors } from '../src/ui/theme';
+import { TABLE_STYLES, THEMES, consoleShapeOf, skinTableColors, tableColors } from '../src/ui/theme';
 
 // 像素风格（像素皮肤、像素牌桌）：牌面、桌布、牌背、特效、主页像素化、颜色登记。画面在浏览器里截图看过，这里管不会画错、不会崩
 
@@ -41,28 +40,25 @@ describe('像素牌面', () => {
 });
 
 describe('像素桌布、牌背', () => {
-  it('桌布 256 见方，中间比四角亮，金线画上了', () => {
-    const px = pixelFelt({ felt: ['#3a9a6e', '#2c7c58', '#1d5841'], line: '#f4d35e' });
-    expect(px.length).toBe(FELT_SIZE * FELT_SIZE);
+  it('方块贴图都是 16×16、不透明，每张只用几种颜色，同一个种子画出来一样', () => {
+    const list = [plankTexture('#a8743f'), feltTexture16('#3f8f4a'), stoneTexture('#8c8a86'), grainTexture16()];
+    for (const px of list) {
+      expect(px.length).toBe(BLOCK * BLOCK);
+      expect(Array.from(px).every((c) => c >>> 24 === 255)).toBe(true);
+      const n = new Set(Array.from(px)).size;
+      expect(n).toBeGreaterThan(1);
+      expect(n).toBeLessThanOrEqual(5);
+    }
+    expect(Array.from(plankTexture('#a8743f'))).toEqual(Array.from(plankTexture('#a8743f')));
+  });
+
+  it('木板：每块板最下面一行是暗缝，比板面暗', () => {
+    const px = plankTexture('#a8743f');
     const lum = (c: number) => (c & 255) * 0.3 + ((c >>> 8) & 255) * 0.59 + ((c >>> 16) & 255) * 0.11;
-    const mid = FELT_SIZE / 2;
-    expect(lum(px[mid * FELT_SIZE + mid])).toBeGreaterThan(lum(px[3 * FELT_SIZE + 3]));
-    expect(Array.from(px)).toContain(hex('#f4d35e'));
+    for (const y of [3, 7, 11, 15]) expect(lum(px[y * BLOCK + 5])).toBeLessThan(lum(px[(y - 2) * BLOCK + 5]) + 0.001);
   });
 
-  it('改良布局：不画一圈方框，从仪表盘角斜着画线', () => {
-    const plain = pixelFelt({ felt: ['#3a9a6e', '#2c7c58', '#1d5841'], line: '#f4d35e' });
-    const zones = pixelFelt({ felt: ['#3a9a6e', '#2c7c58', '#1d5841'], line: '#f4d35e', zones: 30 });
-    const line = hex('#f4d35e');
-    // 方框那条边的正中间：原版有线，改良布局没有
-    expect(plain[37 * FELT_SIZE + 128]).toBe(line);
-    expect(zones[37 * FELT_SIZE + 128]).not.toBe(line);
-    // 斜线经过 (128 - 60, 128 - 60) 附近
-    const near = [-1, 0, 1].some((d) => zones[(68 + d) * FELT_SIZE + 68] === line);
-    expect(near).toBe(true);
-  });
-
-  it('牌背宝石：20×27，中间有亮有暗，四角空着', () => {
+  it('牌背宝石：16×22（和牌身颗粒一格对一格），中间有亮有暗，四角空着', () => {
     const m = pixelBackMark();
     expect(m.length).toBe(MARK_W * MARK_H * 4);
     const a = (x: number, y: number) => m[(y * MARK_W + x) * 4 + 3];
@@ -177,25 +173,12 @@ describe('像素皮肤、像素牌桌的登记', () => {
     expect(skinTableColors('broadcast').pixel).toBeFalsy();
   });
 
-  it('像素牌桌：像素桌布、像素仪表盘、牌背宝石，切角的仪表盘', () => {
+  it('像素牌桌：方块桌布、像素仪表盘、方块颗粒的牌、牌背宝石，直角方盒仪表盘', () => {
     const k = tableColors('pixel', 'skin', 'auto');
     expect(k.pattern).toBe('pixel');
     expect(k.look).toBe('pixel');
     expect(k.tile?.mark).toBe('pixel');
-    expect(consoleShapeOf('pixel', 'auto')).toBe('chamfer');
-  });
-
-  it('像素颗粒：一格是整数个屏幕像素，至少两个；粗的不比细的小', () => {
-    for (const h of [360, 720, 1080, 1440]) {
-      let prev = 0;
-      for (const g of PIXEL_GRAINS) {
-        const s = pixelStep(h, 1, g.id);
-        expect(Number.isInteger(s)).toBe(true);
-        expect(s).toBeGreaterThanOrEqual(Math.max(2, PIXEL_ROWS[g.id].min));
-        expect(s).toBeGreaterThanOrEqual(prev);
-        prev = s;
-      }
-    }
-    expect(pixelStep(1440, 2, 'mid')).toBeGreaterThan(pixelStep(720, 1, 'mid'));
+    expect(k.tile?.grain).toBe('block');
+    expect(consoleShapeOf('pixel', 'auto')).toBe('box');
   });
 });

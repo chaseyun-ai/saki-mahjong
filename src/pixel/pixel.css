@@ -1,11 +1,10 @@
 /* ======================================================================
-   像素皮肤（<html data-theme='pixel'>）和像素牌桌（<html data-table='pixel'>）
+   像素皮肤（<html data-theme='pixel'>）和像素牌桌（<html data-table='pixel'>）：方块世界那种画法
    像素字：Fusion Pixel 12px（OFL-1.1）取了游戏里用到的字和常用汉字，改名 Saki Pixel 12（见 THIRD_PARTY_NOTICES.md）。
    点阵是 12px 一格，写 12、24、36、48px 才是清清楚楚的一格格；这里的字号都尽量是 12 的倍数。
-   像素画的规矩：没有圆角（四角各缺一格就是“圆角”）、没有模糊的影子（影子是往右下挪一格的实色）、
-   渐变是几级色阶加网点，不是平滑过渡；图片放大不插值。
-   一格像素的边框用四个方向各挪 2px 的实色影子拼（--px-frame），四个角正好缺一格。
-   颜色都从下面这一组色阶里取，3D 牌桌（theme.ts 的 PIXEL_TABLE）用的是同一组
+   方块界面的规矩：没有圆角；面板、按钮是一格深色外框加一圈立体边（左上亮、右下暗）；按钮面是 16×16 的石头小图放大 4 倍
+   （pixel/dom.ts 现画好放进 --px-tex-*，和 3D 牌桌的方块是同一套图，pixel/blocks.ts）；白字往右下错一格是深色影子；
+   图片放大不插值。浅色的大面板（设置、报名表）是浅石头色、深色字，对局里的小面板是半透明的黑底白字
    ====================================================================== */
 
 @font-face {
@@ -32,36 +31,37 @@ canvas.px-fx {
   image-rendering: crisp-edges;
 }
 
-/* ---------- 色阶、字体 ---------- */
+/* ---------- 颜色、字体 ---------- */
 
 :root[data-theme='pixel'] {
   --px-font: 'Saki Pixel 12', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --px-0: #120d22;
-  --px-1: #1d1632;
-  --px-2: #2b2145;
-  --px-3: #3b2a4f;
-  --px-line: #5a4a8a;
-  --px-text: #fdf6e3;
-  --px-quiet: #bcaee0;
-  --px-gold: #f4d35e;
-  --px-gold-d: #c0902a;
-  --px-hot: #ff7a59;
-  --px-red: #d9573b;
-  --px-green: #3a9a6e;
-  --px-cyan: #5fd3e8;
-  --px-cream: #fbf6e6;
-  --px-paper: #f3e6c4;
-  --px-paper-d: #d9c48f;
-  --px-brown: #4a3226;
-  /* 网点：4×4 格里两点（25% 的网点），2px 一格 */
-  --px-dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect width='1' height='1' fill='%23fff' fill-opacity='.07'/%3E%3Crect x='2' y='2' width='1' height='1' fill='%23fff' fill-opacity='.07'/%3E%3C/svg%3E") 0 0 / 4px 4px;
-  --px-dots-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect width='1' height='1' fill='%23000' fill-opacity='.08'/%3E%3Crect x='2' y='2' width='1' height='1' fill='%23000' fill-opacity='.08'/%3E%3C/svg%3E") 0 0 / 4px 4px;
+  --px-0: #1b1a19;
+  --px-1: #2b2a28;
+  --px-2: #3d3b38;
+  --px-3: #5d5a55;
+  --px-line: #8c8a86;
+  --px-text: #ffffff;
+  --px-quiet: #d4d0c8;
+  --px-gold: #ffd83d;
+  --px-gold-d: #b8901a;
+  --px-hot: #ff8a3d;
+  --px-red: #d0603a;
+  --px-green: #5bbf4a;
+  --px-cyan: #6fd3ff;
+  --px-cream: #f6f1e4;
+  --px-paper: #cfc9bd;
+  --px-paper-d: #8e887c;
+  --px-brown: #6e4a2a;
+  --px-ink: #3a3834;
+  /* 空的一层：好几处写成 background: var(--px-dots), 颜色，方块界面不铺花纹 */
+  --px-dots: linear-gradient(transparent, transparent);
+  --px-dots-dark: linear-gradient(transparent, transparent);
   --gold: var(--px-gold);
   --ink: var(--px-text);
   --ink-quiet: var(--px-quiet);
-  --felt: #2c7c58;
-  --felt-dark: #1d5841;
-  --tile-back: #d9573b;
+  --felt: #3f8f4a;
+  --felt-dark: #2f6e38;
+  --tile-back: #d0603a;
   --t-bg: var(--px-1);
   --t-panel: var(--px-2);
   --t-panel-2: var(--px-3);
@@ -69,17 +69,17 @@ canvas.px-fx {
   --t-hot: var(--px-hot);
   --t-cyan: var(--px-cyan);
   --t-on-bright: var(--px-1);
-  --t-plus: #7ee08a;
+  --t-plus: #7be36a;
   --t-num: var(--px-font);
   --t-title: var(--px-font);
   --t-body: var(--px-font);
   color-scheme: dark;
 }
 
-/* 一格像素的框：颜色 --px-c 每个元素自己能换，所以要在每个元素上重新算 */
+/* 方块的框：一格深色外框（颜色 --px-c 每个元素自己能换，所以要在每个元素上重新算），里面一圈立体边：左上亮、右下暗 */
 :root[data-theme='pixel'] * {
-  --px-frame: 0 -2px 0 0 var(--px-c, #5a4a8a), 0 2px 0 0 var(--px-c, #5a4a8a), -2px 0 0 0 var(--px-c, #5a4a8a), 2px 0 0 0 var(--px-c, #5a4a8a);
-  --px-drop: 4px 4px 0 0 rgba(8, 4, 18, 0.55);
+  --px-frame: 0 0 0 2px var(--px-c, #1b1a19), inset 2px 2px 0 0 rgba(255, 255, 255, 0.32), inset -2px -2px 0 0 rgba(0, 0, 0, 0.32);
+  --px-drop: 4px 4px 0 0 rgba(0, 0, 0, 0.3);
 }
 
 /* 整个界面换像素字；字的边不要糊（macOS 上关掉次像素平滑） */
@@ -92,7 +92,8 @@ canvas.px-fx {
 }
 
 :root[data-theme='pixel'] body {
-  background: var(--px-1);
+  background: var(--px-tex-plank-dark, var(--px-1)) 0 0 / 64px 64px, var(--px-1);
+  image-rendering: pixelated;
 }
 
 /* 选中、悬停的焦点框也是一格格的实线 */
@@ -239,17 +240,18 @@ canvas.px-fx {
 }
 
 /* ======================================================================
-   个人对局页（selectPage.css 的白板和报名表）：白板换成深紫的像素墙，纸是米黄的像素面板，不歪
+   个人对局页（selectPage.css 的白板和报名表）：白板换成一块块深色木板，纸是浅石头色的方块面板（一圈立体边），不歪
    ====================================================================== */
 
 :root[data-theme='pixel'] .sel-board {
-  --ink-d: #2a1d2e;
-  --ink-m: #5b4658;
-  --ink-l: #6a5566;
+  --ink-d: #2b2a28;
+  --ink-m: #4a4743;
+  --ink-l: #5d5a55;
   --red: #c4372c;
   --paper: var(--px-paper);
-  background: var(--px-dots), linear-gradient(var(--px-2) 0 25%, #271e40 25% 50%, #231b3a 50% 75%, var(--px-1) 75%);
-  box-shadow: inset 0 0 0 8px var(--px-0), inset 0 0 0 12px var(--px-line);
+  background: var(--px-tex-plank-dark, none) 0 0 / 64px 64px, var(--px-brown);
+  image-rendering: pixelated;
+  box-shadow: inset 0 0 0 4px var(--px-0), inset 6px 6px 0 4px rgba(255, 255, 255, 0.12), inset -6px -6px 0 4px rgba(0, 0, 0, 0.3);
 }
 
 :root[data-theme='pixel'] .sb-note {
@@ -290,18 +292,18 @@ canvas.px-fx {
   box-shadow: var(--px-frame), var(--px-drop);
 }
 
-/* 名册、报名表：米黄纸，深色一格的边，右下一格影子；不歪 */
+/* 名册、报名表：浅石头色的面板，深色一格的边、里面一圈立体边，右下一格影子；不歪 */
 :root[data-theme='pixel'] .sr,
 :root[data-theme='pixel'] .sf {
   --px-c: var(--px-0);
   border-radius: 0;
   background-color: var(--px-paper);
-  box-shadow: var(--px-frame), 8px 8px 0 0 rgba(8, 4, 18, 0.5), inset 0 4px 0 #fff6dc, inset 0 -4px 0 var(--px-paper-d);
+  box-shadow: 0 0 0 2px var(--px-0), inset 4px 4px 0 0 #f2eee6, inset -4px -4px 0 0 var(--px-paper-d), 8px 8px 0 0 rgba(0, 0, 0, 0.35);
   transform: none;
 }
 
 :root[data-theme='pixel'] .sf {
-  background-image: repeating-linear-gradient(to bottom, transparent 0 34px, #e2d2a6 34px 36px);
+  background-image: repeating-linear-gradient(to bottom, transparent 0 34px, #b9b3a7 34px 36px);
 }
 
 :root[data-theme='pixel'] .sb-magnet {
@@ -349,7 +351,7 @@ canvas.px-fx {
 
 :root[data-theme='pixel'] .sr-card:hover {
   transform: translateY(-4px);
-  box-shadow: var(--px-frame), 6px 8px 0 0 rgba(8, 4, 18, 0.5);
+  box-shadow: var(--px-frame), 6px 8px 0 0 rgba(0, 0, 0, 0.5);
 }
 
 :root[data-theme='pixel'] .sr-card.on {
@@ -445,7 +447,7 @@ canvas.px-fx {
 }
 
 /* ======================================================================
-   设置面板（setPaper.css）：米黄的像素纸
+   设置面板（setPaper.css）：浅石头色的方块面板
    ====================================================================== */
 
 :root[data-theme='pixel'] .set-modal .setup.set-paper {
@@ -454,7 +456,7 @@ canvas.px-fx {
   --red: #c4372c;
   border-radius: 0;
   background: var(--px-paper);
-  box-shadow: var(--px-frame), 10px 10px 0 0 rgba(8, 4, 18, 0.6), inset 0 4px 0 #fff6dc, inset 0 -4px 0 var(--px-paper-d);
+  box-shadow: 0 0 0 2px var(--px-0), inset 4px 4px 0 0 #f2eee6, inset -4px -4px 0 0 var(--px-paper-d), 10px 10px 0 0 rgba(0, 0, 0, 0.45);
 }
 
 :root[data-theme='pixel'] .set-modal .setup.set-paper h2 {
@@ -466,12 +468,29 @@ canvas.px-fx {
   border-radius: 0 !important;
 }
 
+/* 选项按钮：灰石头按钮、白字带影子；选中的外框变白、字变金色，往下按进去一格 */
 :root[data-theme='pixel'] .set-modal .setup.set-paper :is(.setup-opts button, .set-theme) {
-  box-shadow: none;
+  --px-c: var(--px-0);
+  border: none;
+  background-color: #8f8b84;
+  background-image: var(--px-tex-grain, none);
+  background-size: 64px 64px;
+  background-blend-mode: multiply;
+  image-rendering: pixelated;
+  color: #ffffff;
+  text-shadow: 2px 2px 0 #3a3834;
+  box-shadow: var(--px-frame);
+}
+
+:root[data-theme='pixel'] .set-modal .setup.set-paper :is(.setup-opts button, .set-theme):hover {
+  background-color: #a09c94;
 }
 
 :root[data-theme='pixel'] .set-modal .setup.set-paper :is(.setup-opts button.on, .set-theme.on) {
-  box-shadow: 0 0 0 2px var(--red), 3px 3px 0 2px rgba(0, 0, 0, 0.2);
+  --px-c: #ffffff;
+  background-color: #6f6b65;
+  color: var(--px-gold);
+  box-shadow: 0 0 0 2px #ffffff, inset 2px 2px 0 0 rgba(0, 0, 0, 0.35), inset -2px -2px 0 0 rgba(255, 255, 255, 0.18);
 }
 
 :root[data-theme='pixel'] .set-modal .tp-side,
@@ -520,22 +539,24 @@ canvas.px-fx {
 :root[data-theme='pixel'] .seat-info {
   border: none;
   border-radius: 0;
-  background: var(--px-1);
+  background: rgba(16, 16, 16, 0.66);
   font-size: 12px;
-  box-shadow: 0 0 0 2px var(--c), 4px 4px 0 2px rgba(0, 0, 0, 0.55);
+  text-shadow: 2px 2px 0 #3a3a3a;
+  box-shadow: inset 0 -2px 0 var(--c);
 }
 
 :root[data-theme='pixel'] .seat-frame.active .seat-info {
   background: var(--px-gold);
   color: var(--px-1);
-  box-shadow: 0 0 0 2px #fff, 4px 4px 0 2px rgba(0, 0, 0, 0.55);
+  text-shadow: none;
+  box-shadow: 0 0 0 2px var(--px-0);
 }
 
 :root[data-theme='pixel'] .act {
-  --px-c: var(--px-text);
+  --px-c: var(--px-0);
   border: none;
   border-radius: 0;
-  background: var(--px-3);
+  background: #7a766f;
   color: #fff;
   font-size: 24px;
   font-weight: 400;
@@ -549,7 +570,7 @@ canvas.px-fx {
 
 :root[data-theme='pixel'] .act:active {
   transform: translate(2px, 2px);
-  box-shadow: var(--px-frame), 2px 2px 0 0 rgba(8, 4, 18, 0.55);
+  box-shadow: var(--px-frame), 2px 2px 0 0 rgba(0, 0, 0, 0.55);
 }
 
 :root[data-theme='pixel'] .act.ron,
@@ -586,7 +607,7 @@ canvas.px-fx {
   --px-c: var(--px-gold);
   border: none;
   border-radius: 0;
-  background: rgba(18, 13, 34, 0.96);
+  background: rgba(16, 16, 16, 0.96);
   box-shadow: var(--px-frame), var(--px-drop);
 }
 
@@ -603,7 +624,7 @@ canvas.px-fx {
   --px-c: var(--px-line);
   padding: 4px 12px;
   border-radius: 0;
-  background: rgba(18, 13, 34, 0.9);
+  background: rgba(16, 16, 16, 0.9);
   color: #fff;
   font-size: 12px;
   text-shadow: none;
@@ -645,11 +666,11 @@ canvas.px-fx {
 }
 
 :root[data-theme='pixel'] :is(.ability-panel, .nameplate) {
-  --px-c: var(--px-line);
   border: none;
   border-radius: 0;
-  background: rgba(18, 13, 34, 0.95);
-  box-shadow: var(--px-frame), var(--px-drop);
+  background: rgba(16, 16, 16, 0.72);
+  box-shadow: inset 0 2px 0 var(--c, var(--px-line));
+  text-shadow: 2px 2px 0 #3a3a3a;
 }
 
 :root[data-theme='pixel'] .ability-panel .ab-name {
@@ -658,15 +679,16 @@ canvas.px-fx {
 }
 
 :root[data-theme='pixel'] .modal {
-  background: var(--px-dots), rgba(18, 13, 34, 0.78);
+  background: rgba(0, 0, 0, 0.55);
 }
 
 :root[data-theme='pixel'] .result {
-  --px-c: var(--px-text);
+  --px-c: var(--px-0);
   border: none;
   border-radius: 0;
-  background: var(--px-1);
-  box-shadow: var(--px-frame), 0 0 0 10px rgba(0, 0, 0, 0.35);
+  background: var(--px-tex-stone-dark, none) 0 0 / 64px 64px, var(--px-2);
+  box-shadow: var(--px-frame), 8px 8px 0 0 rgba(0, 0, 0, 0.35);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
 }
 
 :root[data-theme='pixel'] .result h2 {
@@ -707,7 +729,7 @@ canvas.px-fx {
 :root[data-theme='pixel'] .rbn-band {
   border-top: 4px solid var(--px-gold);
   border-bottom: 4px solid var(--px-gold);
-  background: var(--px-dots), rgba(18, 13, 34, 0.94);
+  background: var(--px-dots), rgba(16, 16, 16, 0.94);
   -webkit-mask-image: none;
   mask-image: none;
 }
@@ -748,7 +770,7 @@ canvas.px-fx {
 :root[data-theme='pixel'] .toast:not(.fx) {
   --px-c: color-mix(in srgb, var(--c) 55%, #fff);
   border-radius: 0;
-  background: color-mix(in srgb, var(--c) 70%, #120d22);
+  background: color-mix(in srgb, var(--c) 70%, #1b1a19);
   font-size: 24px;
   font-weight: 400;
   box-shadow: var(--px-frame), var(--px-drop);
@@ -761,7 +783,7 @@ canvas.px-fx {
   font-size: 72px;
   letter-spacing: 4px;
   -webkit-text-stroke: 0;
-  text-shadow: 4px 0 0 #120d22, -4px 0 0 #120d22, 0 4px 0 #120d22, 0 -4px 0 #120d22, 8px 8px 0 color-mix(in srgb, var(--fx) 60%, #000);
+  text-shadow: 4px 0 0 #1b1a19, -4px 0 0 #1b1a19, 0 4px 0 #1b1a19, 0 -4px 0 #1b1a19, 8px 8px 0 color-mix(in srgb, var(--fx) 60%, #000);
   animation: px-pop 0.3s steps(3) both, fx-out 0.4s steps(4) 1s forwards;
 }
 
@@ -778,7 +800,7 @@ canvas.px-fx {
   background-clip: text;
   color: transparent;
   text-shadow: none;
-  filter: drop-shadow(4px 0 0 #120d22) drop-shadow(-4px 0 0 #120d22) drop-shadow(0 4px 0 #120d22) drop-shadow(0 -4px 0 #120d22);
+  filter: drop-shadow(4px 0 0 #1b1a19) drop-shadow(-4px 0 0 #1b1a19) drop-shadow(0 4px 0 #1b1a19) drop-shadow(0 -4px 0 #1b1a19);
   animation: px-pop 0.3s steps(3) both, fx-out 0.5s steps(4) 2s forwards;
 }
 
@@ -816,7 +838,7 @@ canvas.px-fx {
     inset 0 2px 0 #fffdf4,
     0 3px 0 #c9bb98,
     0 5px 0 #6e5f45,
-    3px 6px 0 rgba(8, 4, 18, 0.35);
+    3px 6px 0 rgba(0, 0, 0, 0.35);
 }
 
 .tile.px .face svg,
@@ -833,77 +855,78 @@ canvas.px-fx {
 
 /* ======================================================================
    2D 像素牌桌（<html data-table='pixel'>，像素皮肤跟皮肤走时也挂这个）：
-   翠绿的桌布是几级色阶一圈圈往外暗下去，铺一层网点；中间那块是深紫的像素面板、像素字；牌背是橘红的一格格宝石
+   桌布是一块块绿色羊毛毡（16×16 的小图放大 4 倍，和 3D 牌桌同一张），四周一圈木板方块的桌框；
+   中间那块是深色石头方块，白字带影子；牌背是橘红的方块牌背，正中一颗宝石
    ====================================================================== */
 
 :root[data-table='pixel'][data-theme] .stage:not(.net) .table:not(.sketch) {
-  --felt: #2c7c58;
-  --felt-dark: #1d5841;
-  --tile-back: #d9573b;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6' shape-rendering='crispEdges'%3E%3Crect x='0' y='2' width='1' height='1' fill='%23000' fill-opacity='.14'/%3E%3Crect x='3' y='5' width='1' height='1' fill='%23000' fill-opacity='.14'/%3E%3C/svg%3E") 0 0 / 12px 12px,
-    radial-gradient(closest-side, #3a9a6e 0 30%, #33895f 30% 52%, #2c7c58 52% 72%, #24694b 72% 88%, #1d5841 88%);
-  box-shadow: inset 0 0 0 6px #3b2a4f, inset 0 0 0 10px #f4d35e, inset 0 0 0 14px #1d1632;
+  --felt: #3f8f4a;
+  --felt-dark: #2f6e38;
+  --tile-back: #d0603a;
+  background: var(--px-tex-felt, none) 0 0 / 64px 64px, #3f8f4a;
+  box-shadow: inset 0 0 0 4px #3e2a17, inset 0 0 0 16px #a8743f, inset 0 0 0 18px #6e4a2a, inset 0 0 0 20px rgba(0, 0, 0, 0.25);
   image-rendering: pixelated;
   font-family: 'Saki Pixel 12', 'Noto Sans SC', sans-serif;
 }
 
 :root[data-table='pixel'][data-theme] .stage:not(.net) .table:not(.sketch) .center {
-  --ink: #fdf6e3;
-  --ink-quiet: #bcaee0;
-  --gold: #f4d35e;
+  --ink: #ffffff;
+  --ink-quiet: #d4d0c8;
+  --gold: #ffd83d;
   --diff-plus: #7ec8ff;
   --diff-minus: #ff8a7a;
   border: none;
   border-radius: 0;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect width='1' height='1' fill='%23fff' fill-opacity='.06'/%3E%3Crect x='2' y='2' width='1' height='1' fill='%23fff' fill-opacity='.06'/%3E%3C/svg%3E") 0 0 / 4px 4px, #2b2145;
-  color: #fdf6e3;
+  background: var(--px-tex-stone-dark, none) 0 0 / 64px 64px, #4d4b49;
+  color: #ffffff;
   font-family: 'Saki Pixel 12', 'Noto Sans SC', sans-serif;
-  box-shadow: 0 -4px 0 0 #f4d35e, 0 4px 0 0 #f4d35e, -4px 0 0 0 #f4d35e, 4px 0 0 0 #f4d35e, 8px 8px 0 0 rgba(8, 4, 18, 0.5);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 2px #1b1a19, inset 4px 4px 0 0 rgba(255, 255, 255, 0.18), inset -4px -4px 0 0 rgba(0, 0, 0, 0.35), 8px 8px 0 0 rgba(0, 0, 0, 0.3);
 }
 
 :root[data-table='pixel'][data-theme] .stage:not(.net) .table:not(.sketch) .center .round {
-  color: #fdf6e3;
+  color: #ffffff;
   font-size: 24px;
   font-weight: 400;
 }
 
 :root[data-table='pixel'][data-theme] .stage:not(.net) .table:not(.sketch) .center :is(.remain, .sticks) {
-  color: #bcaee0;
+  color: #d4d0c8;
   font-size: 12px;
 }
 
 :root[data-table='pixel'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .wind {
   border-radius: 0;
-  background: #3b2a4f;
+  background: #2b2a28;
   box-shadow: inset 0 -4px 0 var(--c);
-  color: #fdf6e3;
+  color: #ffffff;
   font-weight: 400;
 }
 
 :root[data-table='pixel'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score .pts {
-  color: #fdf6e3;
+  color: #ffffff;
   font-family: 'Saki Pixel 12', monospace;
   font-size: 24px;
   font-weight: 400;
 }
 
 :root[data-table='pixel'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .wind {
-  background: #ff7a59;
-  color: #1d1632;
+  background: #ffd83d;
+  color: #2b2a28;
+  text-shadow: none;
 }
 
 :root[data-table='pixel'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active .pts {
-  color: #ff7a59;
+  color: #ffd83d;
 }
 
 :root[data-table='pixel'][data-theme] .stage:not(.net) .table:not(.sketch) .center .score.active::after {
-  border-color: #ff7a59;
+  border-color: #ffd83d;
   border-style: dashed;
 }
 
 :root[data-table='pixel'][data-theme] .stage:not(.net) .table:not(.sketch) .center .kan-peek {
-  color: #f4d35e;
+  color: #ffd83d;
 }
 
 /* 牌背：橘红底，正中一颗菱形宝石（和 3D 的 tileLooks.ts 'pixel' 一样：左上亮、右下暗、一圈暗边、一格高光），四周一圈暗框 */
@@ -911,10 +934,27 @@ canvas.px-fx {
   border-radius: 0;
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 27' shape-rendering='crispEdges'%3E%3Crect x='2' y='2' width='16' height='23' fill='none' stroke='%23000' stroke-opacity='.3' stroke-width='1'/%3E%3Cpath d='M10 5 L16 13.5 L10 22 L4 13.5 Z' fill='%23000' fill-opacity='.45'/%3E%3Cpath d='M10 7 L14.5 13.5 L10 13.5 L5.5 13.5 Z' fill='%23fff' fill-opacity='.45'/%3E%3Cpath d='M5.5 13.5 L14.5 13.5 L10 20 Z' fill='%23000' fill-opacity='.18'/%3E%3Crect x='8' y='9' width='2' height='1' fill='%23fff'/%3E%3C/svg%3E") center / 100% 100% no-repeat,
-    #d9573b;
+    #d0603a;
   box-shadow:
-    inset 0 2px 0 #ef8a5f,
-    0 3px 0 #8f3322,
-    0 5px 0 #4a1a12;
+    inset 0 2px 0 #e88a62,
+    0 3px 0 #8a3a22,
+    0 5px 0 #3e1a10;
   image-rendering: pixelated;
+}
+
+/* ======================================================================
+   石头按钮：按钮的底色上乘一张 16×16 的浅色石头小图（放大 4 倍，--px-tex-grain，pixel/dom.ts），
+   灰按钮就是一块石头，金色、橘色的按钮也是带颗粒的方块；白字往右下错一格是影子
+   ====================================================================== */
+
+:root[data-theme='pixel'] :is(.act, .primary, .auto-btn, .assist-bar button, .sel-board .sb-more summary, .sf-stamp, .set-modal .setup.set-paper .setup-actions button) {
+  background-image: var(--px-tex-grain, none);
+  background-size: 64px 64px;
+  background-blend-mode: multiply;
+  image-rendering: pixelated;
+}
+
+:root[data-theme='pixel'] :is(.act, .auto-btn, .assist-bar button):hover {
+  filter: brightness(1.12);
+  --px-c: #ffffff;
 }

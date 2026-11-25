@@ -1,7 +1,7 @@
 import { type Col, type Painter, at } from './core';
 
 // 像素字：用像素字体（Saki Pixel 12）按 12px 写进一张小画布，透明度过一道门槛变成一格格的点阵（不留半透明的毛边），
-// 再在帧上放大 k 倍画：外面一圈深色描边、往右下一格影子，字身从上到下按色阶分几段（像素游戏标题字的画法）
+// 再在帧上放大 k 倍画：往右下错一格（放大后的一格）是深色影子，要的话外面再描一圈；字身可以从上到下按色阶分几段
 
 export const PIXEL_FAMILY = "'Saki Pixel 12','Noto Sans SC',sans-serif";
 
@@ -66,8 +66,8 @@ export interface TextStyle {
   k: number;
   // 字身的色阶（从上到下：亮到暗，按行分段）
   fill: Col[];
-  // 描边、影子的颜色
-  edge: Col;
+  // 描边的颜色（不写就不描边）、影子的颜色（不写就没有影子）
+  edge?: Col;
   shadow?: Col;
   a?: number;
 }
@@ -82,15 +82,16 @@ export function drawText(p: Painter, text: string, x: number, y: number, s: Text
   const top = Math.round(y - H / 2);
   const a = s.a ?? 1;
   const on = (cx: number, cy: number) => cx >= 0 && cy >= 0 && cx < m.w && cy < m.h && m.on[cy * m.w + cx] === 1;
-  // 影子（往右下 k 格），描边（字身四周一格，按放大后的格子算，粗细是 1 格不是 k 格）
+  // 影子（往右下错放大后的一格），描边（字身四周一格，按帧上的格子算，粗细是 1 格不是 k 格）
   if (s.shadow) {
-    for (let cy = 0; cy < m.h; cy++) for (let cx = 0; cx < m.w; cx++) if (on(cx, cy)) p.rect(left + cx * k + k, top + cy * k + k + 1, k, k, s.shadow, a);
+    for (let cy = 0; cy < m.h; cy++) for (let cx = 0; cx < m.w; cx++) if (on(cx, cy)) p.rect(left + cx * k + k, top + cy * k + k, k, k, s.shadow, a);
   }
-  for (let cy = 0; cy < m.h; cy++)
-    for (let cx = 0; cx < m.w; cx++) {
-      if (!on(cx, cy)) continue;
-      p.rect(left + cx * k - 1, top + cy * k - 1, k + 2, k + 2, s.edge, a);
-    }
+  if (s.edge !== undefined)
+    for (let cy = 0; cy < m.h; cy++)
+      for (let cx = 0; cx < m.w; cx++) {
+        if (!on(cx, cy)) continue;
+        p.rect(left + cx * k - 1, top + cy * k - 1, k + 2, k + 2, s.edge, a);
+      }
   for (let cy = 0; cy < m.h; cy++) {
     const c = at(s.fill, cy / m.h);
     for (let cx = 0; cx < m.w; cx++) if (on(cx, cy)) p.rect(left + cx * k, top + cy * k, k, k, c, a);

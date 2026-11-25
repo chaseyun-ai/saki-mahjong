@@ -43,7 +43,7 @@ git push origin v0.2
 | `src/ai` | 规则型电脑对手：牌效、简单防守、会用自己的能力 |
 | `src/ui` | 对局控制、按钮和结算界面，以及 2D 牌桌 |
 | `src/ui3d` | Three.js 3D 牌桌：立体麻将牌、牌河、副露、控制台、占位人物 |
-| `src/pixel` | 像素皮肤：点阵画布和色阶（`core.ts`）、像素牌面、桌布、像素字、牌桌上的像素特效层、主页图片变像素画；3D 牌桌的像素后期在 `src/ui3d/pixelPass.ts` |
+| `src/pixel` | 像素皮肤（方块世界那种）：16×16 的方块小图（`blocks.ts`，3D 牌桌和界面共用）、像素牌面、像素字、牌桌上的方块粒子特效层、主页图片变像素画；方块搭的 3D 牌桌在 `src/ui3d/blockTable.ts` |
 | `src/assets` | 素材导入：认文件、按文件名对上格子、素材包（zip）、浏览器里存的素材、导入页 |
 | `src/story` | 全国大赛（团体赛、个人赛）：晋级表、赛程和其他桌的模拟 |
 | `src/team` | 团体赛：选人、布阵、队伍点数接力 |
@@ -99,4 +99,4 @@ git push origin v0.2
 
 薄墨初美里鬼门的紫色旋风（`src/ui3d/gale.ts`）参考了 [Humpalumps/ultra-elements](https://github.com/Humpalumps/ultra-elements)（MIT）：风丝照它 `Ribbons.js` 的做法在顶点着色器里按时间算出位置、朝镜头展开，细到不足 1.5 个像素时变暗而不再变细；和牌时地上那一圈冲击波的半径照它 `Shockwaves.js` 的 t^0.4 爆炸波曲线。牌桌上的通用特效（`src/ui3d/effects.ts`：立直、鸣牌、杠、和牌）也照它的手法重做：冲击波照 `Shockwaves.js` 前沿锐利、后面拖着尾迹；火花照 `Particles.js` 按速度拉成流光、从白热冷成本色，阻力和重力在着色器里按时间直接算；和牌的闪电照 `Bolts.js` 和 `lightning.js`，分形折线，先导一步步摸下来、回击打亮、复击时主干不变只换分叉、余辉冷却成一串珠子；特效亮起时有一盏灯把牌桌照亮一下。和牌不再放光柱，手牌一倒，上方几盏舞台聚光灯一盏接一盏打开，均匀照在和了的那副牌上（`src/ui3d/winSpots.ts`）。2D 的大字特效（`src/ui/style.css`）也换成同样的冲击波、火星和快起慢落的闪光。白水哩番缚的锁链（`src/ui3d/chains.ts`）也照它的思路：一条锁链一个 InstancedMesh、碎片按初速度、自转和重力解析地算位置（`Spikes.js`、`frozen-lightning`），碎片冲上天拖着的光、消散的粒子参考 `Particles.js`。代码是照这些思路重写的，没有整段照搬；版权声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-像素皮肤的特效（`src/pixel/effects.ts`、`layer.ts`）参考了 [pixelfx](https://patch-gg.github.io/pixelfx/)（MIT）的做法：先在一张低分辨率的帧上画，再按最近邻放大；颜色和透明度分开，半透明用 4×4 Bayer 网点抖出来而不是混色，发光另画在一张叠加的光层上；每种颜色是一条色相会偏的色阶（亮处偏暖、暗处偏冷）；粒子按种子随机、位置按时间解析地算。3D 牌桌的像素化（`src/ui3d/pixelPass.ts`）是同样的思路：按低分辨率渲染、关抗锯齿，再过一道提饱和、压色阶、网点抖动、描暗边的后期。这部分代码同样是照思路重写的。
+像素皮肤的特效层（`src/pixel/core.ts`、`effects.ts`、`layer.ts`）参考了 [pixelfx](https://patch-gg.github.io/pixelfx/)（MIT）的做法：先在一张低分辨率的帧上画，再按最近邻放大；半透明用 4×4 Bayer 网点抖出来而不是混色，发光另画在一张叠加的光层上；粒子按种子随机、位置按时间解析地算。特效本身是方块世界那种：实心小方块受重力往下掉、快没了缩小一圈，大字是实色像素字加一格影子。这部分代码同样是照思路重写的。

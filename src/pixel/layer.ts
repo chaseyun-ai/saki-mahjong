@@ -8,8 +8,8 @@ import { PIXEL_FAMILY } from './text';
 
 type Pos = 'bottom' | 'right' | 'top' | 'left';
 const AT: Record<Pos, [number, number]> = { bottom: [0.5, 0.74], right: [0.8, 0.46], top: [0.5, 0.24], left: [0.2, 0.46] };
-// 一屏横着大约多少格像素
-const COLS = 440;
+// 一屏横着大约多少格像素（1280 宽时一格 4 个屏幕像素，方块粒子 2、3 格就是 8～12 个屏幕像素）
+const COLS = 320;
 
 interface Running {
   fx: PixelFx;

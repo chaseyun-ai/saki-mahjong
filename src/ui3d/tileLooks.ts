@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MARK_H, MARK_W, pixelBackMark, pixelCanvas } from '../pixel/felt';
+import { MARK_H, MARK_W, grainTexture16, pixelBackMark, pixelCanvas } from '../pixel/blocks';
 import type { TileLook } from '../ui/theme';
 import { TILE_H, TILE_W } from './tableLayout';
 
@@ -21,6 +21,16 @@ type Grain = NonNullable<TileLook['grain'] | TileLook['backGrain']>;
 export function grainTexture(kind: Grain = 'sand'): THREE.CanvasTexture {
   const hit = grains.get(kind);
   if (hit) return hit;
+  if (kind === 'block') {
+    // 像素牌桌：16×16 一格格的颗粒，一张牌宽正好 16 格，放大不插值
+    const t = new THREE.CanvasTexture(pixelCanvas(grainTexture16(), 16, 16));
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestMipmapLinearFilter;
+    grains.set(kind, t);
+    return t;
+  }
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const ctx = c.getContext('2d')!;
@@ -141,7 +151,7 @@ function markTexture(kind: NonNullable<TileLook['mark']>): THREE.CanvasTexture {
   const hit = marks.get(kind);
   if (hit) return hit;
   if (kind === 'pixel') {
-    // 像素牌桌：一颗菱形宝石，一格格画的（pixel/felt.ts），贴上去不插值
+    // 像素牌桌：一颗菱形宝石，一格格画的（pixel/blocks.ts），贴上去不插值
     const t = new THREE.CanvasTexture(pixelCanvas(pixelBackMark(), MARK_W, MARK_H));
     t.magFilter = THREE.NearestFilter;
     t.minFilter = THREE.NearestFilter;

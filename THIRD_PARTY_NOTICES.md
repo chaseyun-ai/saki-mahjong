@@ -50,7 +50,7 @@ The `hash12` function in `src/ui3d/water.ts`.
 
 https://github.com/patch-gg/pixelfx
 
-The pixel skin and pixel table (`src/pixel/`, `src/ui3d/pixelPass.ts`) follow techniques from pixelfx: effects drawn into a low-resolution frame with two buffers (a colour buffer whose alpha is decided by a 4×4 Bayer ordered-dither threshold instead of blending, and an additive light buffer composited over it), hue-shifted palette ramps where a shade is picked as one step of the ramp rather than interpolated, seeded random numbers so an effect replays identically, and nearest-neighbour upscaling of the frame. The 3D table is rendered at a low resolution and graded with the same ideas (palette steps, a narrow Bayer-dithered band between steps, a dark outline). The code was rewritten for this project; no pixelfx effect or asset was copied.
+The pixel skin's effect layer (`src/pixel/core.ts`, `effects.ts`, `layer.ts`) follows techniques from pixelfx: effects drawn into a low-resolution frame that is upscaled with nearest-neighbour sampling, a colour buffer whose partial alpha is decided by a 4×4 Bayer ordered-dither threshold instead of blending plus an additive light buffer composited over it, particles whose positions are computed analytically from time, and seeded random numbers so an effect replays identically. The code was rewritten for this project; no pixelfx effect or asset was copied.
 
 ```
 MIT License

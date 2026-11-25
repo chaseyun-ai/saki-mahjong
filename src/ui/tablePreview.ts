@@ -3,7 +3,7 @@ import { CHARACTERS } from '../abilities/characters';
 import { Game } from '../engine/game';
 import { type SyncView, Table3D } from '../ui3d/table3d';
 import { playFlapTicks, playMachine, playShift, playStamp } from './sound';
-import { CONSOLE_SHAPES, TABLE_STYLES, currentConsoleShape, currentPixelGrain, currentTableStyle, currentTheme, tableColors } from './theme';
+import { CONSOLE_SHAPES, TABLE_STYLES, currentConsoleShape, currentTableStyle, currentTheme, tableColors } from './theme';
 
 // 视觉设置里的牌桌预览：点了「牌桌风格」（或「仪表盘形状」）以后，设置面板右边出一张小照片，
 // 用真的 2.5D 牌桌摆一局打到一半的样子（桌布、桌框、仪表盘、牌背都是选中的那套）。
@@ -64,7 +64,7 @@ class TablePreview {
     const card = this.ensureCard();
     this.fill(card);
     this.place();
-    const key = `${currentTheme()}|${currentTableStyle()}|${currentConsoleShape()}|${currentPixelGrain()}`;
+    const key = `${currentTheme()}|${currentTableStyle()}|${currentConsoleShape()}`;
     if (key !== this.key || !this.table) this.rebuild(key);
   }
 

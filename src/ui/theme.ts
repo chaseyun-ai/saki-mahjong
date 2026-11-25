@@ -2,8 +2,9 @@
 // 3D/2.5D 牌桌的桌布、牌背、桌框颜色在建牌桌时从这里取（tableColors）。
 // 牌桌风格：桌面和中央仪表盘配成一套，跟皮肤分开选（视觉设置里的「牌桌风格」）；默认跟皮肤走，就是原来的样子。
 // 2D 牌桌按 <html data-table> 换桌布和中间那块（src/ui/tableStyles.css）
-// 像素：既是一套皮肤（界面、主页、特效都换成像素画，src/pixel/pixel.css），也是一套牌桌风格（别的皮肤也能配像素牌桌）。
-// 用像素牌桌时 3D、2.5D 的整幅画面按低分辨率画、再色阶抖动描边（src/ui3d/pixelPass.ts），牌面换成一格格画的像素牌面（src/pixel/faces.ts）
+// 像素（方块世界那种画法）：既是一套皮肤（界面是石头按钮、像素字，主页、特效都换成像素画，src/pixel/pixel.css），
+// 也是一套牌桌风格（别的皮肤也能配像素牌桌）。用像素牌桌时 3D、2.5D 的桌子是一个个方块搭的（src/ui3d/blockTable.ts），
+// 桌布、桌框、牌身贴 16×16 的方块小图（src/pixel/blocks.ts），牌面换成一格格画的像素牌面（src/pixel/faces.ts）
 
 export type ThemeId = 'classic' | 'broadcast' | 'washi' | 'awaken' | 'porcelain' | 'neon' | 'manga' | 'arcade' | 'pixel';
 
@@ -60,7 +61,7 @@ export interface TableColors {
   seals?: boolean;
   // 仪表盘中间是一块表盘，一圈刻度上两根指针头指着现在几点（只有深夜有）
   clock?: boolean;
-  // 像素牌桌（只有像素有）：整幅画面按低分辨率画、色阶抖动、描一圈暗边，牌面是像素牌面，桌布、牌背、仪表盘都是一格格的
+  // 像素牌桌（只有像素有）：方块搭的桌子、16×16 小图贴的桌布和地板、直角方块牌，牌面是像素牌面
   pixel?: boolean;
 }
 
@@ -68,7 +69,7 @@ export interface TileLook {
   // 牌身（牌面那半）的颜色
   body: string;
   // 牌身、牌背上的细纹理：sand 一粒粒的沙（沙滩），fiber 一丝丝花瓣的纹路（草甸）；不写就是光面
-  grain?: 'sand' | 'fiber';
+  grain?: 'sand' | 'fiber' | 'block';
   // 牌背单独的纹理：bamboo 顺着牌长的一丝丝竹纤维（原木的竹背牌，牌身是光面的骨白）；不写就和牌身一样
   backGrain?: 'bamboo';
   // 牌身、牌背的粗糙度（沙子一点都不反光，花瓣有一点点光泽）
@@ -99,25 +100,25 @@ export interface TableForm {
   line: 'single' | 'double' | 'corners' | 'none';
 }
 
-// 像素牌桌：皮肤自带的和牌桌风格里的是同一套。翠绿桌布（一格格抖动出来的明暗），橘红牌背上一颗菱形宝石，
-// 深紫的切角桌框、金色台阶包边；仪表盘是深紫底、像素字，轮到谁亮一块橘红。颜色都取自同一组色阶（src/pixel/pixel.css 的 --px-*）
+// 像素牌桌（方块世界那种）：皮肤自带的和牌桌风格里的是同一套。桌子是一个个方块搭的（ui3d/blockTable.ts）：
+// 木板方块的桌框、四根方块桌腿、一块块绿色羊毛毡拼的桌布、深色木板地面，天是浅蓝的；牌是直角的小方块，
+// 牌身、牌背上一格格的颗粒，牌背正中一颗像素菱形宝石；仪表盘是一块石头方块。贴图都是 16×16 的小图（pixel/blocks.ts）
 const PIXEL_TABLE: TableColors = {
-  felt: ['#3a9a6e', '#2c7c58', '#1d5841'],
+  felt: ['#4fa35a', '#3f8f4a', '#2f6e38'],
   feltLine: '#f4d35e',
-  back: '#d9573b',
-  tile: { body: '#fbf6e6', mark: 'pixel' },
-  frame: '#3b2a4f',
+  back: '#d0603a',
+  tile: { body: '#f6f1e4', grain: 'block', mark: 'pixel', rough: 1 },
+  frame: '#a8743f',
   trim: '#f4d35e',
-  room: '#1a1430',
-  console: { bg: ['#2b2145', '#1d1632'], line: '#f4d35e', ink: '#fdf6e3', dim: '#bcaee0', accent: '#ff7a59', title: "400 1em 'Saki Pixel 12','Noto Sans SC',sans-serif" },
+  room: '#8fbfee',
+  console: { bg: ['#4a4845', '#232220'], line: '#9c9890', ink: '#ffffff', dim: '#c9c5bd', accent: '#ffd83d', title: "400 1em 'Saki Pixel 12','Noto Sans SC',sans-serif" },
   pattern: 'pixel',
   look: 'pixel',
-  frameFinish: [0.85, 0],
+  frameFinish: [1, 0],
   trimFinish: [0.6, 0.2],
-  consoleBody: '#151026',
-  consoleGlow: 0.35,
-  // 切角的桌框（像素画里斜着的边就是一级级台阶）、低一级的金色台阶包边；仪表盘是切角方盒；桌布上的线自己用像素画
-  form: { corner: 'chamfer', bevel: 0.02, trim: 'step', console: 'chamfer', line: 'none' },
+  consoleBody: '#4d4b49',
+  consoleGlow: 0.3,
+  form: { corner: 'square', bevel: 0, trim: 'none', console: 'box', line: 'none' },
   pixel: true,
 };
 
@@ -348,7 +349,7 @@ export const TABLE_STYLES: { id: TableStyleId; name: string; note: string }[] = 
   { id: 'flap', name: '翻转', note: '藏青亚麻桌布、切角铝框钉一排铆钉；仪表盘是切角铝盒，点数像车站的翻牌显示屏，一位数一块牌，字变了就一页页翻过去；牌背是一块橙色翻牌。换局时整张桌子像翻牌屏换一屏：桌上的牌一排排翻下去，桌面的翻板跟着一块块翻个面，新牌山再一墩墩翻上来' },
   { id: 'beach', name: '沙滩', note: '浅色细沙桌面、海水色桌框绕一圈白船绳；牌是沙子捏的，牌背压一个贝壳印；仪表盘是一汪深海水，白字，轮到谁亮一块阳光黄。换局时一个浪打过来把牌冲散，退潮后沙子聚成新牌山' },
   { id: 'meadow', name: '草甸', note: '灰绿草地桌面、浅橡木桌框；牌是花瓣捏的，叶绿牌背上斜躺着一片叶子；仪表盘是一块米白亚麻布，深绿字，轮到谁亮一块叶绿。换局时一阵风把牌吹成花瓣飘走，花瓣再飘回来落成新牌山' },
-  { id: 'pixel', name: '像素', note: '整张牌桌像老游戏机的画面：一格格的像素、抖动出来的明暗、一圈暗描边。翠绿桌布、深紫切角桌框，牌面是一格格画的像素牌，橘红牌背上一颗菱形宝石；仪表盘是像素字。像素颗粒的粗细在下面一行调' },
+  { id: 'pixel', name: '像素', note: '方块世界那种：桌子是一个个木板方块搭的，桌布是一块块绿色羊毛毡，地上铺木板，天是浅蓝的；牌是直角的小方块，牌面一格格画的，橘红牌背上一颗宝石；贴图都是 16×16 的小图，放大不糊' },
 ];
 
 const STYLE_KEY = 'saki-table-style';
@@ -470,51 +471,9 @@ export function applyTheme(): void {
   const table = currentStyle === 'skin' && current === 'pixel' ? 'pixel' : currentStyle;
   if (table === 'skin') delete root.dataset.table;
   else root.dataset.table = table;
-  // 像素颗粒：2D 牌桌、像素皮肤的界面按这个放大（1、2、3 倍的像素）
-  root.dataset.pxgrain = currentGrain;
   // 2D 中间那块的形状：单独选了才挂（跟牌桌走时照牌桌风格、皮肤自己的）
   if (currentShape === 'auto') delete root.dataset.console;
   else root.dataset.console = currentShape;
-}
-
-// ---------- 像素颗粒 ----------
-
-// 像素牌桌一格像素多大：细、中、粗。3D、2.5D 牌桌按画面高度折成多少行像素来画（PIXEL_ROWS 的 rows），
-// 一格是整数个屏幕像素，至少 min 个（太细就看不出是像素画了）
-export type PixelGrain = 'fine' | 'mid' | 'coarse';
-
-export const PIXEL_GRAINS: { id: PixelGrain; name: string; note: string }[] = [
-  { id: 'fine', name: '细', note: '一格像素小一点，牌上的字最清楚' },
-  { id: 'mid', name: '中', note: '老游戏机那种颗粒感，牌面照样认得清' },
-  { id: 'coarse', name: '粗', note: '一格格很明显，像更早的游戏机' },
-];
-
-// 画面高度折成多少行像素（3D、2.5D），一格至少几个屏幕像素
-export const PIXEL_ROWS: Record<PixelGrain, { rows: number; min: number }> = { fine: { rows: 600, min: 2 }, mid: { rows: 420, min: 2 }, coarse: { rows: 300, min: 3 } };
-
-const GRAIN_KEY = 'saki-pixel-grain';
-
-let currentGrain: PixelGrain = (() => {
-  try {
-    const v = localStorage.getItem(GRAIN_KEY);
-    return PIXEL_GRAINS.some((g) => g.id === v) ? (v as PixelGrain) : 'mid';
-  } catch {
-    return 'mid';
-  }
-})();
-
-export function currentPixelGrain(): PixelGrain {
-  return currentGrain;
-}
-
-export function setPixelGrain(id: PixelGrain): void {
-  currentGrain = id;
-  try {
-    localStorage.setItem(GRAIN_KEY, id);
-  } catch {
-    // 存不下来就只管这一次
-  }
-  applyTheme();
 }
 
 // 现在用不用像素牌桌（皮肤是像素、跟皮肤走，或者牌桌风格选了像素）
