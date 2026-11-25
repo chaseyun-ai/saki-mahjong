@@ -186,8 +186,8 @@ export function queueOf(h: Sticks): number[] {
 
 // 点棒怎么走的时间表（毫秒，从这一页放进去算）：每一笔隔一会儿开始，几笔可以同时走；
 // 一笔里先是付的人的棒一根接一根沿弧线走过去，最后一根到了，找零的棒再一根接一根沿原路走回来。
-// fly：一根走完这条路要多久；step：一根接一根隔多久（横着的棒顺着路走时要隔开一根的长度，不然叠在一起）
-export const STICK_T = { first: 700, apart: 520, step: 80, gap: 160, fly: 1000 };
+// fly：一根走完这条路要多久；step：一根接一根隔多久
+export const STICK_T = { first: 650, apart: 380, step: 40, gap: 110, fly: 620 };
 export interface StickRun {
   move: number;
   give: { start: number; arrive: number }; // 第一根出发、最后一根到
@@ -309,40 +309,49 @@ export function animatePoints(el: HTMLElement, seats: PointSeat[], sticks?: Stic
   });
   // 走的棒半根多长（手机上短一点，CSS 里定的 --rw）
   const runHalf = () => (parseFloat(getComputedStyle(el).getPropertyValue('--rw')) || 112) / 2;
-  // 走多久跟着路有多长（一秒走 650 像素左右）
-  const flyOf = (i: number) => Math.min(1300, Math.max(750, (paths[i]?.len ?? 600) / 0.65));
-  // 一根接一根隔多久：横着的棒沿路往前走，前后两根在走的方向上要让开「棒在这个方向上占的长度」再空一点
+  // 走多久跟着路有多长（一秒走 1200 像素左右）
+  const flyOf = (i: number) => Math.min(760, Math.max(380, (paths[i]?.len ?? 600) / 1.2));
+  // 一根接一根隔多久：棒横在路上，前后两根在走的方向上只占一根棒的粗细，隔开粗细再多一点
   const stepOf = (i: number) => {
     const path = paths[i];
     if (!path) return STICK_T.step;
-    const w = runHalf() * 2;
-    const h = w * 0.11;
-    let need = 0;
-    for (let k = 0; k <= 10; k++) {
-      const v = path.dir(k / 10);
-      const len = Math.hypot(v.x, v.y) || 1;
-      need = Math.max(need, (Math.abs(v.x) / len) * w + (Math.abs(v.y) / len) * h);
-    }
-    const speed = path.len / flyOf(i);
-    return Math.max(STICK_T.step, (need + Math.max(10, h * 1.6)) / speed);
+    const h = runHalf() * 2 * 0.11;
+    return Math.max(STICK_T.step, (h + 16) / (path.len / flyOf(i)));
   };
   const { runs, end } = stickTimeline(sticks.moves, flyOf, stepOf);
 
-  // 一根棒沿路走一趟（reverse：找零，从收的人走回付的人）。棒一直横着放（像摆在桌上那样），一根根排成队往前走；
-  // 落在下面的影子在外层，所以不管往哪走影子都往下
+  // 一根棒沿路走一趟（reverse：找零，从收的人走回付的人）。棒的中心走在路上，棒身横在路上（跟走的方向垂直），
+  // 路弯过去棒也跟着转；一根根排成一列往前走。外面一层管位置和影子（影子总往下落），里面的棒跟着路转
   const runStick = (d: number, path: NonNullable<(typeof paths)[number]>, ms: number, reverse: boolean) => {
     const node = document.createElement('span');
     node.className = 'rf-run';
     node.innerHTML = `<i class="tb tb-${DENOMS[d]}"></i>`;
     el.appendChild(node);
+    const bar = node.firstElementChild as HTMLElement;
     const move: Keyframe[] = [];
+    const turn: Keyframe[] = [];
     const N = 24;
+    let last = 0;
     for (let k = 0; k <= N; k++) {
-      const p = path.at(reverse ? 1 - k / N : k / N);
+      const u = reverse ? 1 - k / N : k / N;
+      const p = path.at(u);
+      const v = path.dir(u);
+      // 横在路上：棒的长边和走的方向垂直。角度和上一帧接上（不绕一大圈），第一帧收在 -90..90，棒上的花样不倒过来
+      let a = (Math.atan2(v.y, v.x) * 180) / Math.PI + 90;
+      if (k === 0) {
+        while (a > 90) a -= 180;
+        while (a < -90) a += 180;
+      } else {
+        while (a - last > 90) a -= 180;
+        while (a - last < -90) a += 180;
+      }
+      last = a;
       move.push({ transform: `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px)`, opacity: k === 0 || k === N ? 0 : 1, offset: k / N });
+      turn.push({ transform: `translate(-50%, -50%) rotate(${a.toFixed(1)}deg)`, offset: k / N });
     }
     // 匀速走，排的队间隔一样
-    anims.push(node.animate(move, { duration: ms, easing: 'linear', fill: 'forwards' }));
+    const opt: KeyframeAnimationOptions = { duration: ms, easing: 'linear', fill: 'forwards' };
+    anims.push(node.animate(move, opt), bar.animate(turn, opt));
     later(ms + 20, () => node.remove());
   };
   // 路中间的点数牌子（往外让开一点，不压着走过的棒）
@@ -361,8 +370,8 @@ export function animatePoints(el: HTMLElement, seats: PointSeat[], sticks?: Stic
       nx = -nx;
       ny = -ny;
     }
-    // 牌子让到横着的棒外面：法线方向上棒占多宽，再空一点
-    const off = (change ? -1 : 1) * (Math.abs(nx) * half + Math.abs(ny) * half * 0.11 + 18);
+    // 牌子让到横在路上的棒外面：棒两边各伸出半根
+    const off = (change ? -1 : 1) * (half + 16);
     node.style.left = `${(p.x + nx * off).toFixed(1)}px`;
     node.style.top = `${(p.y + ny * off).toFixed(1)}px`;
     el.appendChild(node);
