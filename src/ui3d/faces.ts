@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { KIND_COUNT, TileId, isRed, kindOf } from '../engine/tiles';
+import { PFACE_H, PFACE_W, putPixelFace } from '../pixel/faces';
 import { FACE_H, FACE_W, faceSvg } from '../ui/tileArt';
 
 // 把 34 种牌加 3 张赤牌的 SVG 牌面画进一张贴图，每张牌的正面用自己那一格的 UV
@@ -24,19 +25,42 @@ export class FaceAtlas {
   readonly texture: THREE.CanvasTexture;
   private canvas: HTMLCanvasElement;
 
-  // make：画一张牌面的 SVG（默认是普通牌面，爱丽丝的手绘板用 sketchFaceSvg）
-  constructor(private make: (kind: number, red: boolean) => string = faceSvg) {
+  // make：画一张牌面的 SVG（默认是普通牌面，爱丽丝的手绘板用 sketchFaceSvg）。
+  // pixel：像素牌桌，牌面是一格格画的像素牌面（pixel/faces.ts），不插值放大进格子里；贴图放大时也不插值，一格还是一格
+  constructor(
+    private make: (kind: number, red: boolean) => string = faceSvg,
+    private pixel = false,
+  ) {
     this.canvas = document.createElement('canvas');
     this.canvas.width = COLS * CELL_W;
     this.canvas.height = ROWS * CELL_H;
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.anisotropy = 8;
+    if (pixel) this.texture.magFilter = THREE.NearestFilter;
   }
 
   // SVG 转成图片是异步的，画完后刷新贴图
   async draw(): Promise<void> {
     const ctx = this.canvas.getContext('2d')!;
+    if (this.pixel) {
+      // 像素牌面：先画在 25×35 的小画布上，再不插值放大到和普通牌面一样的位置、大小
+      const one = document.createElement('canvas');
+      one.width = PFACE_W;
+      one.height = PFACE_H;
+      const oc = one.getContext('2d')!;
+      ctx.imageSmoothingEnabled = false;
+      for (let i = 0; i < FACE_COUNT; i++) {
+        const { kind, red } = faceKind(i);
+        oc.clearRect(0, 0, PFACE_W, PFACE_H);
+        putPixelFace(oc, kind, red, 0, 0);
+        const x = (i % COLS) * CELL_W;
+        const y = Math.floor(i / COLS) * CELL_H;
+        ctx.drawImage(one, x + CELL_W * 0.06, y + CELL_H * 0.06, CELL_W * 0.88, CELL_H * 0.88);
+      }
+      this.texture.needsUpdate = true;
+      return;
+    }
     await Promise.all(
       Array.from({ length: FACE_COUNT }, async (_, i) => {
         const { kind, red } = faceKind(i);

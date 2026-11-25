@@ -1000,4 +1000,102 @@ const linen: Look = {
   },
 };
 
-const LOOKS: Record<string, Look> = { led, plaque, flat, flap, tide, linen };
+// ---------- 像素：深紫底子抖动出来的明暗、切角的块，像素字；轮到谁亮一块橘红 ----------
+
+// 像素字（src/pixel/pixel.css 里的 Saki Pixel 12）：点阵 12px 一格，画的时候放大整数倍才清楚。
+// 512 坐标放大 4 倍到 2048，所以 12px 的字在这里写 12 的倍数、坐标对齐 1 格（= 4 个贴图像素）不会糊
+const PIXEL_FONT = "'Saki Pixel 12','Noto Sans SC',sans-serif";
+const PXU = 4;
+
+// 一块切角的方块（四个角各缺一格，像素画的“圆角”），对齐到格子
+function pxBlock(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill: string, cut = PXU): void {
+  x = Math.round(x / PXU) * PXU;
+  y = Math.round(y / PXU) * PXU;
+  w = Math.round(w / PXU) * PXU;
+  h = Math.round(h / PXU) * PXU;
+  c.fillStyle = fill;
+  c.fillRect(x + cut, y, w - cut * 2, h);
+  c.fillRect(x, y + cut, w, h - cut * 2);
+}
+
+// 带一圈边的切角方块：外圈 edge，里面 fill，上沿一格亮边、下沿一格暗边（像素画的立体感）
+function pxPanel(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill: string, edge: string, hi?: string, lo?: string): void {
+  pxBlock(c, x, y, w, h, edge);
+  pxBlock(c, x + PXU, y + PXU, w - PXU * 2, h - PXU * 2, fill);
+  if (hi) {
+    c.fillStyle = hi;
+    c.fillRect(Math.round(x / PXU) * PXU + PXU * 2, Math.round(y / PXU) * PXU + PXU, Math.round(w / PXU) * PXU - PXU * 4, PXU);
+  }
+  if (lo) {
+    c.fillStyle = lo;
+    c.fillRect(Math.round(x / PXU) * PXU + PXU * 2, Math.round((y + h) / PXU) * PXU - PXU * 2, Math.round(w / PXU) * PXU - PXU * 4, PXU);
+  }
+}
+
+const pixel: Look = {
+  base(c, k) {
+    // 底子：中心 bg[0]、外面 bg[1]，中间用 4×4 网点抖过去，一格 4 个坐标
+    const [a, b] = k.console.bg;
+    c.fillStyle = b;
+    c.fillRect(0, 0, S, S);
+    c.fillStyle = a;
+    const B = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+    const n = S / PXU;
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++) {
+        const d = Math.max(Math.abs(x + 0.5 - n / 2), Math.abs(y + 0.5 - n / 2)) / (n / 2);
+        const t = 1 - d * 1.15;
+        if (t > (B[(y & 3) * 4 + (x & 3)] + 0.5) / 16) c.fillRect(x * PXU, y * PXU, PXU, PXU);
+      }
+    // 外圈两格宽的线（照仪表盘的形状），中间方屏是一块深色的切角面板
+    c.strokeStyle = k.console.line;
+    c.lineWidth = PXU * 2;
+    outline(c, k, 12, 12);
+    c.stroke();
+    pxPanel(c, M - 124, M - 124, 248, 248, '#140f24', k.console.line, 'rgba(255,255,255,0.12)', 'rgba(0,0,0,0.35)');
+  },
+  center(c, k, info, tile) {
+    c.font = `48px ${PIXEL_FONT}`;
+    c.fillStyle = k.console.ink;
+    c.fillText(`${info.wind}${'一二三四'[info.no - 1] ?? info.no}局`, M, M - 66);
+    infoRow(c, info, M - 4, k.console.dim, `24px ${PIXEL_FONT}`, k.console.line);
+    doraRow(c, k, info, M + 22, tile);
+    if (info.sticks) {
+      // 供托：一根像素立直棒（白条、中间一格红点）加“×几”
+      pxBlock(c, M - 60, M + 88, 64, 12, '#fbf6e6');
+      c.fillStyle = '#d9573b';
+      c.fillRect(M - 32, M + 92, 8, 4);
+      c.font = `36px ${PIXEL_FONT}`;
+      c.fillStyle = k.console.ink;
+      c.textAlign = 'left';
+      c.fillText(`×${info.sticks}`, M + 12, M + 96);
+      c.textAlign = 'center';
+    }
+  },
+  seat(c, k, s) {
+    const disc = isDisc(k);
+    const [bx, by, bw] = disc ? [-128, 148, 48] : [-156, 164, 52];
+    // 风位：一块切角面板，轮到这家是橘红的；下面一小条角色色
+    pxPanel(c, bx, by, bw, bw, s.active ? k.console.accent : '#2b2145', s.active ? '#fdf6e3' : k.console.line);
+    c.fillStyle = s.color;
+    c.fillRect(Math.round(bx / PXU) * PXU + PXU, Math.round((by + bw) / PXU) * PXU + PXU, Math.round(bw / PXU) * PXU - PXU * 2, PXU);
+    c.font = `${disc ? 36 : 36}px ${PIXEL_FONT}`;
+    c.fillStyle = s.active ? '#1d1632' : k.console.ink;
+    c.fillText(s.wind, bx + bw / 2, by + bw / 2 + 2);
+    const [text, ink] = scoreFace(s, k.console.ink, '#7ec8ff', '#ff8a7a');
+    const [sx, sy, sw] = disc ? [-68, 176, 184] : [-80, 192, 212];
+    c.font = `48px ${PIXEL_FONT}`;
+    c.fillStyle = ink;
+    c.textAlign = 'left';
+    c.fillText(text, sx, sy, sw);
+    c.textAlign = 'center';
+    if (s.active) {
+      // 轮到这家：点数下面一排虚线（一格亮一格空）
+      c.fillStyle = k.console.accent;
+      const y0 = disc ? 208 : 224;
+      for (let x = sx; x < sx + (disc ? 176 : 212); x += PXU * 2) c.fillRect(Math.round(x / PXU) * PXU, y0, PXU, PXU);
+    }
+  },
+};
+
+const LOOKS: Record<string, Look> = { led, plaque, flat, flap, tide, linen, pixel };

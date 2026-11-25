@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { MARK_H, MARK_W, pixelBackMark, pixelCanvas } from '../pixel/felt';
 import type { TileLook } from '../ui/theme';
 import { TILE_H, TILE_W } from './tableLayout';
 
@@ -139,6 +140,15 @@ function moonCircle(w: number, h: number): [number, number, number] {
 function markTexture(kind: NonNullable<TileLook['mark']>): THREE.CanvasTexture {
   const hit = marks.get(kind);
   if (hit) return hit;
+  if (kind === 'pixel') {
+    // 像素牌桌：一颗菱形宝石，一格格画的（pixel/felt.ts），贴上去不插值
+    const t = new THREE.CanvasTexture(pixelCanvas(pixelBackMark(), MARK_W, MARK_H));
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    t.generateMipmaps = false;
+    marks.set(kind, t);
+    return t;
+  }
   const W = 200;
   const H = Math.round((W * TILE_H) / TILE_W);
   const c = document.createElement('canvas');

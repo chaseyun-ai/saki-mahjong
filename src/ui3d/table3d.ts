@@ -5,7 +5,9 @@ import type { Game, GameEvent } from '../engine/game';
 import { riichiSideIndex } from '../engine/pond';
 import { TILE_COUNT, TileId, WIND_CN, kindOf } from '../engine/tiles';
 import { meldLayout } from '../ui/meldLayout';
+import { FELT_SIZE, pixelCanvas, pixelFelt } from '../pixel/felt';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
+import { PixelGrade, pixelStep } from './pixelPass';
 import { sketchFaceSvg } from '../ui/sketchArt';
 import { Avatar, modelProgress } from './avatar';
 import { LOOKS, RestPose, applyLook, modelOf } from './looks';
@@ -36,7 +38,7 @@ import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, POND_ROWS, TILE_H, TILE_T, TILE_W, REF_SIT_HEIGHT, TableDims, TableLayout, WALL_Z, clampLayout, fitScale, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
 import { CueKind, DEFAULT_DISCARD, DiscardMotion, DiscardParams, DiscardPath, DiscardPose, DiscardStyle, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, afterTime, declareDelay, dueCues, dueMarkers, gripAt, isPush, pushDistFor, sampleDiscard, scrapeTime, styleParams, totalTime } from './discardMotion';
-import { CONSOLE_SCALE, type FeltPattern, TableColors, tableColors } from '../ui/theme';
+import { CONSOLE_SCALE, type FeltPattern, type PixelGrain, TableColors, currentPixelGrain, tableColors } from '../ui/theme';
 import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, outline, sealSpot, skinSignColors } from './consoleLooks';
 import { type DiscardFx, POND_LOOKS, type PondFx, type PondStyle, type RiichiFx, hash01, pickDiscardStyle, pondStyleOf, varyDiscard, vary } from '../ui/vary';
 import { type Block, planFling, tileBlock } from './flingPath';
@@ -542,7 +544,8 @@ export class Table3D {
   // 大小按手牌那一排离镜头的距离定，手牌在画面上的位置和用主镜头画的一样，只是每张牌没有透视
   private orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
   private orthoDepth = 1; // 手牌那一排离镜头多远（沿视线）
-  private atlas = new FaceAtlas();
+  // 像素牌桌的牌面是像素牌面
+  private atlas = new FaceAtlas(undefined, !!tableColors().pixel);
   private tiles: TileObj[] = [];
   private backMat: THREE.Material | null = null;
   private tintMats: THREE.Material[] = [];
@@ -557,6 +560,9 @@ export class Table3D {
   // 淡的巨引力源：桌面上的黑色引力圆（用到时才建）
   // 巨引力源、平行宇宙：整幅画面扭一下（warpFx）
   private warp: SpaceWarp | null = null;
+  // 像素牌桌：画完一帧再过一遍色阶抖动、描边（pixelPass.ts）；grain 是像素颗粒（视觉设置里调，下一次调尺寸时照新的算）
+  private pixelGrade: PixelGrade | null = null;
+  pixelGrain: PixelGrain = currentPixelGrain();
   private gravityOn = false;
   private gravityA = 0;
   private gravityKick = 0;
@@ -820,10 +826,17 @@ export class Table3D {
   ) {
     if (this.v2) this.view25 = { ...DEFAULT_VIEW_25D_V2 };
     else if (this.topView) this.view25 = { ...DEFAULT_VIEW_TOP };
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // 像素牌桌：不抗锯齿（边上就该是一级级的台阶），低分辨率画、canvas 不插值放大（resize 里照像素颗粒算像素比），影子是硬的
+    const pixel = !!this.colors.pixel;
+    this.renderer = new THREE.WebGLRenderer({ antialias: !pixel });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = pixel ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    if (pixel) {
+      this.pixelGrade = new PixelGrade();
+      this.renderer.domElement.classList.add('px-canvas');
+      this.renderer.domElement.style.imageRendering = 'pixelated';
+    }
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     container.appendChild(this.renderer.domElement);
@@ -883,6 +896,7 @@ export class Table3D {
     this.water?.dispose();
     this.machine?.dispose();
     this.warp?.dispose();
+    this.pixelGrade?.dispose();
     this.mayoiga?.dispose();
     this.shift?.dispose();
     this.stamps?.dispose();
@@ -4858,6 +4872,11 @@ export class Table3D {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     if (!w || !h) return;
+    // 像素牌桌：一格像素是整数个屏幕像素，画面按格子数来画
+    if (this.pixelGrade) {
+      const dpr = window.devicePixelRatio || 1;
+      this.renderer.setPixelRatio(dpr / pixelStep(h, dpr, this.pixelGrain));
+    }
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     if (this.style === '25d') {
@@ -5611,6 +5630,14 @@ export class Table3D {
         (this.warp ??= new SpaceWarp()).rush(this.renderer, at.x * 0.5 + 0.5, at.y * 0.5 + 0.5, k);
       }
     }
+    // 像素牌桌：全部画完（连扭画面的技能）以后再过一遍色阶抖动、描边
+    this.pixelGrade?.apply(this.renderer);
+  }
+
+  // 视觉设置里换了像素颗粒：照新的重新算画面大小
+  setPixelGrain(g: PixelGrain): void {
+    this.pixelGrain = g;
+    this.resize();
   }
 
   // 用主镜头画桌子。巨引力源开着时接着把引力圆那一块扭一遍。
@@ -6396,6 +6423,16 @@ function feltPattern(ctx: CanvasRenderingContext2D, pattern: FeltPattern): void 
 
 // zones：改良布局时桌子的半宽，从控制台四角往桌角画四条细线，把桌面分成四家的地盘（雀魂那样）；0 是原版的一圈方框
 function feltTexture(colors: TableColors, zones = 0): THREE.CanvasTexture {
+  if (colors.pattern === 'pixel') {
+    // 像素牌桌：256 见方一格格画的桌布（pixel/felt.ts），不插值。改良布局的四条斜线从仪表盘的角画到桌角
+    const form = colors.shape ?? 'box';
+    const corner = form === 'disc' ? CONSOLE_HALF / Math.SQRT2 : form === 'chamfer' ? CONSOLE_HALF - CONSOLE_CUT / 2 : form === 'cushion' ? CONSOLE_HALF - CONSOLE_CUSHION_R * (1 - Math.SQRT1_2) : CONSOLE_HALF;
+    const px = pixelFelt({ felt: colors.felt, line: colors.feltLine, zones: zones ? ((corner + 0.25) * FELT_SIZE) / 2 / zones : 0 });
+    const t = new THREE.CanvasTexture(pixelCanvas(px, FELT_SIZE, FELT_SIZE));
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.magFilter = THREE.NearestFilter;
+    return t;
+  }
   const c = document.createElement('canvas');
   c.width = 1024;
   c.height = 1024;

@@ -1,5 +1,7 @@
 import { TileId, isRed, kindOf } from '../engine/tiles';
+import { pixelFaceSvg } from '../pixel/faces';
 import { sketchFaceSvg } from './sketchArt';
+import { pixelOn } from './theme';
 import { faceSvg } from './tileArt';
 
 // top：2D 牌桌上别家立着的手牌，从上往下看只看得到牌的顶边（牌背一半、牌面一半）
@@ -24,14 +26,15 @@ export function setSketchTiles(on: boolean): void {
   sketchAll = on;
 }
 
-// 34 种牌 × 是否赤牌，SVG 只生成一次
+// 34 种牌 × 是否赤牌，SVG 只生成一次。像素皮肤、像素牌桌用像素牌面（pixel/faces.ts）
 const faceCache = new Map<number, string>();
 
 function face(id: TileId, sketch: boolean): string {
-  const key = kindOf(id) * 2 + (isRed(id) ? 1 : 0) + (sketch ? 1000 : 0);
+  const pixel = !sketch && pixelOn();
+  const key = kindOf(id) * 2 + (isRed(id) ? 1 : 0) + (sketch ? 1000 : 0) + (pixel ? 2000 : 0);
   let svg = faceCache.get(key);
   if (!svg) {
-    svg = (sketch ? sketchFaceSvg : faceSvg)(kindOf(id), isRed(id));
+    svg = (sketch ? sketchFaceSvg : pixel ? pixelFaceSvg : faceSvg)(kindOf(id), isRed(id));
     faceCache.set(key, svg);
   }
   return svg;
@@ -41,6 +44,7 @@ export function tileHtml(id: TileId, opts: TileOpts = {}): string {
   const sketch = opts.sketch ?? sketchAll;
   const cls = ['tile', `t-${opts.size ?? 'hand'}`, ...(opts.classes ?? [])];
   if (sketch) cls.push('sketch');
+  else if (pixelOn()) cls.push('px');
   if (isRed(id)) cls.push('red');
   if (opts.sideways) cls.push('sideways');
   const data = Object.entries(opts.data ?? {})

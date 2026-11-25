@@ -2,17 +2,21 @@ import './ui/style.css';
 import './ui/themes.css';
 import './ui/themes2.css';
 import './ui/tableStyles.css';
+import './pixel/pixel.css';
 import { App } from './ui/app';
 import { DiscardLab } from './lab/discardLab';
 import { NationalFlow } from './story/national';
 import { IndividualFlow } from './story/individual';
 import { applyTheme } from './ui/theme';
+import { installPixelDefs } from './pixel/dom';
 import { installSoundPanel } from './ui/soundPanel';
 import { installSoundtrack, stopMusic } from './ui/soundtrack';
 import { startCustomAssets } from './assets/layers';
 import { AssetImporter } from './assets/importer';
 
 applyTheme();
+// 像素皮肤用的 SVG 滤镜（头像、主页纸上的字一块块取色）
+installPixelDefs();
 // 声音设置面板：选人页顶栏和对局里的喇叭按钮都开它
 installSoundPanel();
 // 背景音乐、按钮的点击声：等玩家第一次点了才出声

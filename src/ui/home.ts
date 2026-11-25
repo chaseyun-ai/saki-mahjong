@@ -1,5 +1,7 @@
 import './home.css';
+import { pixelatedUrl } from '../pixel/pixelate';
 import { playClick, playFlip } from './sound';
+import { currentPixelGrain, currentTheme } from './theme';
 import { transition } from './transition';
 
 // 主页：麻将部的部室（用户用 Gemini 画的图，public/home/ 下清晨、白天、黄昏、夜晚各一张，构图一样）。
@@ -48,6 +50,14 @@ function saveTod(t: HomeTod): void {
 // 给完整网址：写进 CSS 变量（--bg）的 url() 是按用到它的样式表的位置找的，
 // 打包后样式表在 assets/ 下面，写相对路径就会去找 assets/home/…，图出不来
 export const imgOf = (t: HomeTod) => new URL(`home/${t}.webp`, document.baseURI).href;
+
+// 像素皮肤：部室的图现做成像素画（pixel/pixelate.ts）：缩小到几个原图像素一格（照像素颗粒），挑 40 种颜色，两色之间抖一点网点
+const HOME_BLOCK = { fine: 4, mid: 6, coarse: 8 } as const;
+const pixelHome = () => currentTheme() === 'pixel';
+function homeSrc(t: HomeTod): Promise<string> {
+  if (!pixelHome()) return Promise.resolve(imgOf(t));
+  return pixelatedUrl(imgOf(t), { block: HOME_BLOCK[currentPixelGrain()], colors: 40, dither: 0.6 }).catch(() => imgOf(t));
+}
 
 type Pt = [number, number];
 // 图里几样东西的位置（原图像素）
@@ -343,7 +353,16 @@ export function mountHome(room: HTMLElement): void {
   // 开场：一打开就是部室（不用先点一下）；图读好以前先黑着，读好了淡进来。
   // 声音照旧要等玩家第一次点（浏览器的规矩，music.ts 第一下点击时解锁）
   const ready = (): void => room.classList.remove('loading');
-  if (bg.complete && bg.naturalWidth) ready();
+  if (pixelHome()) {
+    // 像素皮肤：像素画做好了再换上、再淡进来（不先闪一下原图）
+    room.classList.add('px-home');
+    void homeSrc(room.dataset.tod as HomeTod).then((url) => {
+      if (!alive()) return;
+      bg.src = url;
+      room.style.setProperty('--bg', `url('${url}')`);
+      ready();
+    });
+  } else if (bg.complete && bg.naturalWidth) ready();
   else {
     bg.addEventListener('load', ready, { once: true });
     bg.addEventListener(
@@ -361,17 +380,20 @@ function setTod(room: HTMLElement, t: HomeTod): void {
   saveTod(t);
   const old = room.querySelector<HTMLImageElement>('.hr-bg');
   if (!old) return;
-  const img = old.cloneNode() as HTMLImageElement;
-  img.src = imgOf(t);
-  img.classList.add('in');
-  old.after(img);
-  const done = (): void => {
-    room.dataset.tod = t;
-    room.style.setProperty('--bg', `url('${imgOf(t)}')`);
-    setTimeout(() => old.remove(), 650);
-  };
-  if (img.complete) done();
-  else img.addEventListener('load', done, { once: true });
+  void homeSrc(t).then((src) => {
+    if (!old.isConnected) return;
+    const img = old.cloneNode() as HTMLImageElement;
+    img.src = src;
+    img.classList.add('in');
+    old.after(img);
+    const done = (): void => {
+      room.dataset.tod = t;
+      room.style.setProperty('--bg', `url('${src}')`);
+      setTimeout(() => old.remove(), 650);
+    };
+    if (img.complete) done();
+    else img.addEventListener('load', done, { once: true });
+  });
 }
 
 // 纸上那一行：红笔画一圈（手画的样子：转一圈多一点，起笔收笔不重合），画完再换页

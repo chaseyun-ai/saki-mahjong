@@ -4,7 +4,7 @@ import type { Rules } from '../engine/game';
 import type { Rng } from '../engine/rng';
 import { SCHOOLS, membersOf } from './schools';
 import type { DiscardFx, PondFx, RiichiFx } from './vary';
-import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, type ThemeId, consoleShapeOf, skinTableColors } from './theme';
+import { CONSOLE_SHAPES, type ConsoleShapeId, PIXEL_GRAINS, type PixelGrain, TABLE_STYLES, THEMES, type TableStyleId, type ThemeId, consoleShapeOf, skinTableColors, tableColors } from './theme';
 
 // 选人页右上角的两个设置面板：对局设置（规则、对手）和视觉设置（皮肤、牌桌视角、动画）。
 // 改了马上记在浏览器里，点头像、按出场都照这里的设置开局
@@ -490,7 +490,7 @@ export function saveTableMode(m: TableMode): void {
 }
 
 // 视觉设置：界面皮肤（带桌布和牌背的小色样）、牌桌风格（桌面和仪表盘一套）、仪表盘形状、牌桌视角、摸牌路径、微变化、和牌聚光灯和转镜头；页面主人多一行素材
-export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMode, skins: boolean, table: TableStyleId, shape: ConsoleShapeId = 'auto'): string {
+export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMode, skins: boolean, table: TableStyleId, shape: ConsoleShapeId = 'auto', grain: PixelGrain = 'mid'): string {
   const themes = THEMES.map((t) => {
     const c = skinTableColors(t.id);
     const on = t.id === theme;
@@ -513,11 +513,18 @@ export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMod
     const f = t.id === 'auto' ? consoleShapeOf(table, 'auto') : t.id;
     return `<button class="set-theme set-shape${on ? ' on' : ''}" aria-pressed="${on}" data-ui="vis-shape" data-v="${t.id}"><i class="sh-${f}" aria-hidden="true"></i>${t.name}</button>`;
   }).join('');
+  // 像素颗粒：只有用像素皮肤、像素牌桌时才有这一行
+  const pixel = theme === 'pixel' || !!tableColors(theme, table).pixel;
+  const grains = PIXEL_GRAINS.map((g) => {
+    const on = g.id === grain;
+    return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="vis-grain" data-v="${g.id}">${g.name}</button>`;
+  }).join('');
+  const grainRow = pixel ? rowHtml('像素颗粒', grains, PIXEL_GRAINS.find((g) => g.id === grain)?.note) : '';
   // 素材导入人人都有（存在自己的浏览器里，用不用随你）；试玩页的角色素材只有页面主人有
   const art =
     section('素材') +
     rowHtml('素材导入', '<button class="set-link" data-ui="assets">换头像、模型、语音、音乐 ›</button>', '存在这个浏览器里，只影响自己；能导出成素材包带走') +
     (skins ? rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图、语音 ›</button>', '试玩页，只有页面主人看得到') : '');
-  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌风格', tables, '点一下看预览', 'set-themes set-tables') + '<div class="tp-inline"></div>' + rowHtml('仪表盘形状', shapes, shapeNote, 'set-themes set-shapes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, viewKeys(mode, s)) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
+  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌风格', tables, '点一下看预览', 'set-themes set-tables') + '<div class="tp-inline"></div>' + rowHtml('仪表盘形状', shapes, shapeNote, 'set-themes set-shapes') + grainRow + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, viewKeys(mode, s)) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
   return panelHtml('visual', '视觉设置', '改了马上生效', body, '', true, '<aside class="tp-side" aria-label="牌桌预览"></aside>');
 }

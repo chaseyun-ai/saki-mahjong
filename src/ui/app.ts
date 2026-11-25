@@ -94,7 +94,8 @@ import { onCustomAssets } from '../assets/layers';
 import { preloadVoices, sayVoice, stopVoices } from './voice';
 import { VoiceCue, cueKeys } from './voiceLines';
 import { TeamFlow } from './teamFlow';
-import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentConsoleShape, currentTableStyle, currentTheme, setConsoleShape, setTableStyle, setTheme, tableColors } from './theme';
+import { CONSOLE_SHAPES, type ConsoleShapeId, type PixelGrain, TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentConsoleShape, currentPixelGrain, currentTableStyle, currentTheme, pixelOn, setConsoleShape, setPixelGrain, setTableStyle, setTheme, tableColors } from './theme';
+import { PixelFxLayer } from '../pixel/layer';
 import { lastDeltas, lastWinners, winCounts } from './winTally';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TEAM_START, TeamRun } from '../team/team';
@@ -280,6 +281,9 @@ export class App {
   private faceTimer: number | null = null;
   // 2.5D 的切入演出；能力的切入每局每种只放第一次（宝牌聚集这种一局会发动好多次），之后只出小字
   private cutins: Cutins | null = null;
+  // 像素皮肤、像素牌桌：立直、鸣牌、和牌、技能放像素特效（pixel/layer.ts），盖在牌桌上
+  private pxFx: PixelFxLayer | null = null;
+  private pxHost: HTMLElement | null = null;
   // 新结算（视觉设置「结算画面：新」）：正在放的几页；流局大字之后挂「听牌 / 不听」的计时器
   private flow: ResultFlow | null = null;
   private flowTimer: number | null = null;
@@ -677,7 +681,7 @@ export class App {
       this.panel === 'match'
         ? matchPanelHtml(this.settings)
         : this.panel === 'visual'
-          ? visualPanelHtml(this.settings, currentTheme(), this.mode, this.canSkins, currentTableStyle(), currentConsoleShape())
+          ? visualPanelHtml(this.settings, currentTheme(), this.mode, this.canSkins, currentTableStyle(), currentConsoleShape(), currentPixelGrain())
           : this.panel === 'rii'
             ? riiSetPanelHtml()
             : this.panel === 'riiTest'
@@ -1567,7 +1571,10 @@ export class App {
       const art = skill && skillArt(c.id, skill.id);
       if (art && this.cutins?.show({ pos: POS[e.seat], id: c.id, color: c.color, word: e.text, kind: 'ability', art, glyph: c.name.slice(-1) })) return;
       const key = `${e.seat}-${e.text}`;
-      if (!(!this.cutinSeen.has(key) && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
+      // 像素皮肤、像素牌桌：这一局第一次放像素的魔法阵（脚下一圈阵、头顶一块写着技能名的牌子），之后出小字
+      const px = this.cutinSeen.has(key) ? null : this.pixelFx();
+      if (px) px.play('ability', POS[e.seat] as 'bottom', e.text, c.color);
+      else if (!(!this.cutinSeen.has(key) && this.cutin(e.seat, e.text, 'ability'))) this.toast(e.seat, e.text, false);
       this.cutinSeen.add(key);
     } else if (e.type === 'roundEnd') {
       // 和牌的人喊「荣和」「自摸」：一炮多响时错开；她刚说完和牌的能力台词（岭上开花、海底捞月）就不再补
@@ -2844,8 +2851,26 @@ export class App {
       <div class="gb-versus"><b>国标 ${gb.total} 番</b><span class="gb-slash">/</span><span>日麻 ${pts.toLocaleString('en-US')} 点</span></div></div>`;
   }
 
-  // 立直、鸣牌、和牌的大字：2.5D 放带立绘的切入，3D、2D 还是原来的大字特效
+  // 像素特效那一层：像素皮肤、像素牌桌才有；换了牌桌（2D、3D 换来换去）跟着换到新的牌桌上
+  private pixelFx(): PixelFxLayer | null {
+    if (!pixelOn()) return null;
+    const host = this.fxHost();
+    if (!host) return null;
+    if (!this.pxFx || this.pxHost !== host) {
+      this.pxFx?.dispose();
+      this.pxFx = new PixelFxLayer(host);
+      this.pxHost = host;
+    }
+    return this.pxFx;
+  }
+
+  // 立直、鸣牌、和牌的大字：2.5D 放带立绘的切入，3D、2D 还是原来的大字特效。像素皮肤、像素牌桌放像素特效
   private bigFx(seat: number, word: string, kind: 'riichi' | 'call' | 'kan' | 'win'): void {
+    const px = this.pixelFx();
+    if (px) {
+      px.play(kind, POS[seat] as 'bottom', word, this.chars[seat]?.color ?? '#f4d35e');
+      return;
+    }
     if (this.flat) this.cutin(seat, word, kind);
     else this.toast(seat, word, true, kind);
   }
@@ -3002,6 +3027,14 @@ export class App {
     // 牌桌风格：下一局建牌桌时用（2D 牌桌马上换）；面板右边出预览
     if (el.dataset.ui === 'vis-table' && TABLE_STYLES.some((t) => t.id === el.dataset.v)) {
       setTableStyle(el.dataset.v as TableStyleId);
+      tablePreview.show();
+      this.renderPanel();
+      return;
+    }
+    // 像素颗粒：开着的牌桌（预览、对局里的）马上照新的颗粒画
+    if (el.dataset.ui === 'vis-grain' && (['fine', 'mid', 'coarse'] as const).some((g) => g === el.dataset.v)) {
+      setPixelGrain(el.dataset.v as PixelGrain);
+      this.table3d?.setPixelGrain(el.dataset.v as PixelGrain);
       tablePreview.show();
       this.renderPanel();
       return;
