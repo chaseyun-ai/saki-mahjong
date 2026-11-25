@@ -11,26 +11,6 @@
    仪表盘的形状也可以单独选（视觉设置里「仪表盘形状」，<html> 上挂 data-console），见文件最后一段
    ====================================================================== */
 
-/* 视觉设置里的小色样：桌布色上一块仪表盘色的小方块，方块底下一道字的颜色 */
-.set-table i {
-  position: relative;
-  width: 22px;
-  height: 16px;
-  background: var(--f);
-}
-
-.set-table i::after {
-  content: '';
-  position: absolute;
-  left: 6px;
-  top: 3.5px;
-  width: 8px;
-  height: 7px;
-  border-radius: 1.5px;
-  background: var(--c);
-  box-shadow: inset 0 -2.5px 0 var(--k);
-}
-
 /* 视觉设置里「仪表盘形状」按钮前的小图形：方盒、矮牌、圆盘、切角、软包 */
 .set-shape i {
   width: 16px;
@@ -380,7 +360,7 @@
 }
 
 /* 原木换局（2D，app.ts 的 shuffle2d）：上一局的样子（.shuf-old）盖在新的一局上面，底下垫一层一模一样的木桌面（.shuf-cover）
-   把新的一局遮住；上一局的牌扣过来（.shuf-back 是翻过来的竹子牌背）推到中间那块四周搓几圈，再往四边散出去，垫着的桌面跟着淡掉 */
+   把新的一局遮住；上一局的牌扣过来（.shuf-back 是翻过来的竹子牌背）推到中间那块四周摊开、被手一把一把推着洗，再往四边码出去，垫着的桌面跟着淡掉 */
 .stage .table > .shuf-cover {
   position: absolute;
   inset: 0;

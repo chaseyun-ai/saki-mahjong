@@ -2,26 +2,30 @@ import * as THREE from 'three';
 import type { Changeover, WallRect } from './changeover';
 import { TILE_T, TILE_W } from './tableLayout';
 
-// 翻牌屏（牌桌风格「翻牌屏」）的换局：像车站的翻牌屏换一屏。
+// 翻转（牌桌风格「翻转」，原来叫翻牌屏）的换局：像车站的翻牌屏换一屏。
 // 一局打完，桌上的牌从对面那一排起，一排排往自己这边翻下去，翻着翻着沉进桌面（像翻牌的叶片翻进槽里）；
+// 桌面本身也是一块块翻板拼的：牌翻下去紧跟着，脚下那块桌面绕中线整块翻个面（远的那条边先翘起来、翻过来拍平，弹一下），
+// 一波从对面翻到自己跟前，像整张翻牌屏换了一屏；
 // 然后四家的牌山一墩墩从桌面里翻上来：每家都从自己左手那头翻到右手那头，像一行字一个个翻出来，都翻好才掷骰子发牌。
 //
-// 这里管旧牌（替身牌）怎么翻下去、什么时候该响哪一声；新牌山的每一墩什么时候翻上来、翻到哪（wallPose、wallAxis）
+// 这里管旧牌（替身牌）怎么翻下去、桌面的翻板、什么时候该响哪一声；新牌山的每一墩什么时候翻上来、翻到哪（wallPose、wallAxis）
 // 由 table3d.ts 照着摆（changeover.ts）
 
-// 该响的声音：clatter 一排排翻下去（一阵哗啦啦的翻牌声，dur 秒），riffle 牌山一墩墩翻到位（一墩一下“嗒”，第一墩到最后一墩 dur 秒），latch 都翻好了（咔哒一声）
-export type FlipCue = 'clatter' | 'riffle' | 'latch';
+// 该响的声音：clatter 一排排翻下去（一阵哗啦啦的翻牌声，dur 秒），board 桌面的翻板一块块拍平（一块一下闷一点的“哐”，第一块到最后一块 dur 秒），
+// riffle 牌山一墩墩翻到位（一墩一下“嗒”，第一墩到最后一墩 dur 秒），latch 都翻好了（咔哒一声）
+export type FlipCue = 'clatter' | 'board' | 'riffle' | 'latch';
 
-// 时间（秒）：从对面那排翻到自己这排要多久；同一排从左到右晚多少；每张再随机晚一点；一张翻下去要多久
-const SWEEP = 0.55;
+// 时间（秒）：从对面那排翻到自己这排要多久（桌面的翻板也是这个速度，一次只有三四排在翻，看得出是一波）；
+// 同一排从左到右晚多少；每张再随机晚一点；一张翻下去要多久
+const SWEEP = 0.85;
 const ROW_SKEW = 0.12;
 const JITTER = 0.04;
 const FALL = 0.34;
 // 旧牌翻完沉到桌面下多深
 const SINK = 1.4;
-// 旧牌开始翻以后多久，新牌山开始翻上来（自己跟前那排旧牌差不多翻完了）；同一家相邻两墩隔多久；一墩翻上来要多久；
-// 都翻好以后停多久再掷骰子
-const RISE_AFTER = 0.75;
+// 旧牌开始翻以后多久，新牌山开始翻上来（自己跟前那圈牌山底下的翻板都拍平了，不然新牌山会从还在翻的板子里穿出来）；
+// 同一家相邻两墩隔多久；一墩翻上来要多久；都翻好以后停多久再掷骰子
+const RISE_AFTER = 1.4;
 const STEP = 0.05;
 const UP = 0.34;
 const SETTLE = 0.15;
@@ -35,6 +39,15 @@ const HIT = 0.78;
 const OVER = 0.16;
 // 每家牌山几墩
 const STACKS = 17;
+// 桌面的翻板：仪表盘外面每边切几块（仪表盘底下那四块不翻）；翻板多厚，翻板之间留多宽的缝；
+// 比脚下的牌晚多久开始翻（牌差不多沉下去了才翻，翻板不会从牌里穿过去），一块翻一面要多久；拍平以后弹回来多少（弧度）
+const CELLS_OUT = 4;
+const PLATE_T = 0.07;
+const PLATE_GAP = 0.035;
+const PLATE_LAG = 0.26;
+const PLATE_TIME = 0.32;
+const PLATE_HIT = 0.8;
+const PLATE_OVER = 0.22;
 // 一墩（两层）的中心有多高：翻的时候绕这一墩的中心转
 const MID = TILE_T;
 
@@ -58,6 +71,22 @@ interface Stack {
   at: number;
 }
 
+// 桌面的一块翻板：绕自己的中线（和一排牌平行）翻个面；翻的时候底下的槽露出来（slot，压暗的桌布）
+interface Plate {
+  mesh: THREE.Mesh;
+  slot: THREE.Mesh;
+  x: number;
+  z: number;
+  t0: number;
+}
+
+// 翻板翻一面的角度：像翻牌屏的叶片掉下来，越翻越快，拍到底（π）弹回来一点再落定
+function plateAngle(k: number): number {
+  if (k < PLATE_HIT) return Math.PI * (k / PLATE_HIT) ** 2;
+  const u = (k - PLATE_HIT) / (1 - PLATE_HIT);
+  return Math.PI - PLATE_OVER * Math.sin(Math.PI * u) * (1 - u) ** 0.6;
+}
+
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const X_BACK = new THREE.Vector3(-1, 0, 0);
 const FACE = new THREE.Vector3(0, 0, 1);
@@ -79,9 +108,82 @@ export class Flip implements Changeover<FlipCue> {
   private cues: { at: number; cue: FlipCue; dur: number }[] = [];
   private tmpQ = new THREE.Quaternion();
   private tmpV = new THREE.Vector3();
+  // 桌面的翻板（有桌布材质才有）：平时整组藏着，换局时一块块翻
+  private board = new THREE.Group();
+  private plates: Plate[] = [];
+  private boardEnd = -Infinity;
+  private edgeMat: THREE.MeshStandardMaterial;
+  // 翻板底下的槽：还是那张桌布，压暗成阴影里的样子（纯黑的话一排排翻起来像一道道黑条）
+  private slotMat: THREE.MeshBasicMaterial;
 
-  build(half: number): void {
+  // felt：桌布的材质（翻板两面贴同一张桌布，翻完和原来的桌面接得上）；edge：翻板侧边的颜色（铝）
+  constructor(
+    private felt: THREE.Material | null = null,
+    edge = '#dfe3e7',
+  ) {
+    this.edgeMat = new THREE.MeshStandardMaterial({ color: edge, roughness: 0.45, metalness: 0.35 });
+    this.slotMat = new THREE.MeshBasicMaterial({ color: '#8a9099', map: (felt as THREE.MeshStandardMaterial | null)?.map ?? null });
+    this.board.visible = false;
+    this.group.add(this.board);
+  }
+
+  build(half: number, consoleHalf = 2.9): void {
     this.half = half;
+    this.buildBoard(half, consoleHalf);
+  }
+
+  // 桌面切成翻板：仪表盘那一块的边线对齐（仪表盘底下的四块不要），外面每边 CELLS_OUT 块。
+  // 每块是一块薄板，上下两面都贴桌布：上面照它平放时在桌上的位置贴，下面照翻过来以后的位置贴，所以翻完和翻之前一模一样
+  private buildBoard(half: number, ch: number): void {
+    for (const p of this.plates) {
+      p.mesh.geometry.dispose();
+      p.slot.geometry.dispose();
+    }
+    this.board.clear();
+    this.plates = [];
+    if (!this.felt || half <= ch) return;
+    const s = (half - ch) / CELLS_OUT;
+    const lines: number[] = [];
+    for (let i = 0; i < CELLS_OUT; i++) lines.push(-half + i * s);
+    lines.push(-ch, 0, ch);
+    for (let i = 1; i <= CELLS_OUT; i++) lines.push(ch + i * s);
+    const uv = (x: number, z: number): [number, number] => [(x + half) / (2 * half), (half - z) / (2 * half)];
+    const mats = [this.edgeMat, this.edgeMat, this.felt, this.felt, this.edgeMat, this.edgeMat];
+    for (let i = 0; i + 1 < lines.length; i++) {
+      for (let j = 0; j + 1 < lines.length; j++) {
+        const x = (lines[i] + lines[i + 1]) / 2;
+        const z = (lines[j] + lines[j + 1]) / 2;
+        // 仪表盘底下
+        if (Math.abs(x) < ch && Math.abs(z) < ch) continue;
+        const w = lines[i + 1] - lines[i];
+        const d = lines[j + 1] - lines[j];
+        const geo = new THREE.BoxGeometry(w - PLATE_GAP, PLATE_T, d - PLATE_GAP);
+        // BoxGeometry 每面 4 个顶点，顺序是 +x、-x、+y、-y、+z、-z：+y（上面）照原位置贴，-y（下面）照绕 x 轴翻半圈以后的位置贴
+        const pos = geo.getAttribute('position');
+        const uvs = geo.getAttribute('uv');
+        for (let v = 8; v < 16; v++) {
+          const px = pos.getX(v);
+          const pz = pos.getZ(v);
+          const [u, w2] = v < 12 ? uv(x + px, z + pz) : uv(x + px, z - pz);
+          uvs.setXY(v, u, w2);
+        }
+        const mesh = new THREE.Mesh(geo, mats);
+        // 上面和桌面齐平（高出一丝，盖住底下的桌布），绕板子自己的中心翻
+        mesh.position.set(x, -PLATE_T / 2 + 0.004, z);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.visible = false;
+        const slotGeo = new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2);
+        const sp = slotGeo.getAttribute('position');
+        const su = slotGeo.getAttribute('uv');
+        for (let v = 0; v < sp.count; v++) su.setXY(v, ...uv(x + sp.getX(v), z + sp.getZ(v)));
+        const slot = new THREE.Mesh(slotGeo, this.slotMat);
+        slot.position.set(x, 0.002, z);
+        slot.visible = false;
+        this.board.add(mesh, slot);
+        this.plates.push({ mesh, slot, x, z, t0: Infinity });
+      }
+    }
   }
 
   setScale(): void {}
@@ -110,6 +212,19 @@ export class Flip implements Changeover<FlipCue> {
       this.group.add(obj);
     }
     this.cue(now, 'clatter', SWEEP + ROW_SKEW + FALL);
+    // 桌面的翻板跟在牌后面，一样从对面那排翻到自己这排
+    if (this.plates.length) {
+      let first = Infinity;
+      let last = -Infinity;
+      for (const p of this.plates) {
+        p.t0 = now + clamp01((p.z + h) / (2 * h)) * SWEEP + clamp01((p.x + h) / (2 * h)) * ROW_SKEW + PLATE_LAG;
+        first = Math.min(first, p.t0);
+        last = Math.max(last, p.t0);
+      }
+      this.boardEnd = last + PLATE_TIME;
+      this.board.visible = true;
+      this.cue(first + PLATE_TIME * PLATE_HIT, 'board', last - first);
+    }
   }
 
   // 新牌山：四家一起，各从自己左手那头一墩墩翻上来。返回从 now 起多久以后可以掷骰子
@@ -191,7 +306,7 @@ export class Flip implements Changeover<FlipCue> {
   }
 
   get busy(): boolean {
-    return (this.forming && this.now < this.formEnd + SETTLE) || this.pieces.length > 0 || this.cues.length > 0;
+    return (this.forming && this.now < this.formEnd + SETTLE) || this.pieces.length > 0 || this.cues.length > 0 || this.now < this.boardEnd;
   }
 
   update(now: number): { cue: FlipCue; dur: number }[] {
@@ -210,10 +325,23 @@ export class Flip implements Changeover<FlipCue> {
     this.cues = [];
     this.forming = false;
     this.formEnd = -Infinity;
+    this.boardEnd = -Infinity;
+    for (const p of this.plates) {
+      p.t0 = Infinity;
+      p.mesh.visible = p.slot.visible = false;
+    }
+    this.board.visible = false;
   }
 
   dispose(): void {
     this.finish();
+    for (const p of this.plates) {
+      p.mesh.geometry.dispose();
+      p.slot.geometry.dispose();
+    }
+    this.plates = [];
+    this.edgeMat.dispose();
+    this.slotMat.dispose();
   }
 
   private cue(at: number, cue: FlipCue, dur: number): void {
@@ -235,5 +363,14 @@ export class Flip implements Changeover<FlipCue> {
       p.obj.position.y -= SINK * e * e * e;
       return true;
     });
+    // 桌面的翻板：轮到哪块，哪块绕中线翻个面，底下的槽露出来；翻完和桌面一模一样，藏起来
+    if (!this.board.visible) return;
+    for (const p of this.plates) {
+      const k = (now - p.t0) / PLATE_TIME;
+      const on = k > 0 && k < 1;
+      p.mesh.visible = p.slot.visible = on;
+      if (on) p.mesh.rotation.x = plateAngle(k);
+    }
+    if (now >= this.boardEnd) this.board.visible = false;
   }
 }

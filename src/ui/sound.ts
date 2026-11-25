@@ -1,6 +1,7 @@
 // 用 WebAudio 合成的简单音效，不需要音频文件。全部接在音效总线上（audioBus.ts），音量归声音设置里的「音效」管
 import { audio, bus } from './audioBus';
 import { vary } from './vary';
+import { playCustomSfx } from './customSfx';
 
 export { audio };
 
@@ -44,6 +45,8 @@ function clickHit(a: AudioContext, freq: number, q: number, vol: number, seconds
 // 打牌落桌的“啪”。pan 是左右声道（-1 左到 1 右，下家在右、上家在左）；varied 为 true 时随机微变化；
 // weight 是出牌的样子定的轻重（不给就是平常的一声，三种音色轮着来）
 export function playClick(opts: { pan?: number; varied?: boolean; weight?: ClickWeight } = {}): void {
+  // 素材导入换了落桌声：放换上的（轻放小声、重拍大声一点）
+  if (playCustomSfx('click', { pan: opts.varied && vary.on ? opts.pan : 0, vol: opts.weight === 'slap' ? 1.3 : opts.weight === 'soft' ? 0.6 : 1 })) return;
   const a = audio();
   if (!a) return;
   const on = !!opts.varied && vary.on;
@@ -90,6 +93,7 @@ export function playScrape(pan = 0, seconds = 0.2): void {
 
 // 能力发动的提示音。vol：角色同时说了台词时压低一点（下面吃碰杠、立直、和牌的也一样）
 export function playChime(vol = 1): void {
+  if (playCustomSfx('chime', { vol })) return;
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
@@ -122,6 +126,7 @@ function tone(a: AudioContext, f: number, start: number, dur: number, vol: numbe
 
 // 吃碰杠：短促有力的两声
 export function playCall(vol = 1): void {
+  if (playCustomSfx('call', { vol })) return;
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
@@ -132,6 +137,7 @@ export function playCall(vol = 1): void {
 
 // 立直：低音加上扬的滑音
 export function playRiichi(vol = 1): void {
+  if (playCustomSfx('riichi', { vol })) return;
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
@@ -151,6 +157,7 @@ export function playRiichi(vol = 1): void {
 
 // 和牌：上行琶音
 export function playWin(vol = 1): void {
+  if (playCustomSfx('win', { vol })) return;
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
@@ -760,7 +767,7 @@ export function playShuffle(cue: 'pour' | 'scoop' | 'shuffle' | 'build' | 'push'
     for (let i = 0; i < 30; i++) clack(a, now + Math.random() * dur, 0.05 + Math.random() * 0.07, 1400 + Math.random() * 2000);
     surf(a, now, dur + 0.15, 0.06, 300, 700, dur * 0.4, 0.8);
   } else if (cue === 'shuffle') {
-    // 手掌按着牌一圈一圈地搓：一阵密一阵疏（大约一秒三下），一直有一层低低的摩擦声
+    // 手掌按着牌一把一把地推：一阵密一阵疏（大约一秒三下），一直有一层低低的摩擦声
     const n = Math.round(dur * 75);
     for (let i = 0; i < n; i++) {
       const t = Math.random() * dur;
@@ -812,7 +819,7 @@ export function playStamp(at = 0): void {
   clack(a, now + 0.002, 0.08, 1650);
 }
 
-// ---------- 翻牌屏（牌桌风格「翻牌屏」，flip.ts）：像车站的翻牌屏换一屏 ----------
+// ---------- 翻转（牌桌风格「翻转」，原来叫翻牌屏，flip.ts）：像车站的翻牌屏换一屏 ----------
 
 // 一片翻牌拍到挡片上的“嗒”：很短很干的一下塑料声（比骨头牌的 clack 轻、薄），底下带一点点闷的
 function flapTick(a: AudioContext, at: number, vol: number): void {
@@ -820,9 +827,26 @@ function flapTick(a: AudioContext, at: number, vol: number): void {
   noiseHit(a, at + 0.001, 0.014, vol * 0.45, 'bandpass', 950 + Math.random() * 250, undefined, 1.6);
 }
 
-// 翻牌屏的几声：clatter 桌上的牌一排排翻下去（一阵哗啦啦的翻牌声，前面密后面疏，dur 秒），
+// 桌面的一块翻板拍平：比牌的“嗒”大、闷，一块铝板拍在框上的“哐”，底下一声很短的低音
+function plateClunk(a: AudioContext, at: number, vol: number): void {
+  noiseHit(a, at, 0.018 + Math.random() * 0.01, vol, 'bandpass', 1500 + Math.random() * 700, undefined, 1.8);
+  const osc = a.createOscillator();
+  const gain = a.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(150 + Math.random() * 40, at);
+  osc.frequency.exponentialRampToValueAtTime(80, at + 0.06);
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(vol * 0.9, at + 0.004);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.08);
+  osc.connect(gain).connect(bus('sfx', a));
+  osc.start(at);
+  osc.stop(at + 0.1);
+}
+
+// 翻转的几声：clatter 桌上的牌一排排翻下去（一阵哗啦啦的翻牌声，前面密后面疏，dur 秒），
+// board 桌面的翻板一波拍平（从对面到自己跟前，dur 秒里一阵“哐哐”，同一排的几块挤在一起），
 // riffle 牌山一墩墩翻上来（四家一起，一墩一下“嗒”，dur 秒里均匀排开），latch 都翻好了（“咔哒”一声卡住）
-export function playFlip(cue: 'clatter' | 'riffle' | 'latch', dur = 0.5): void {
+export function playFlip(cue: 'clatter' | 'board' | 'riffle' | 'latch', dur = 0.5): void {
   const a = audio();
   if (!a) return;
   const now = a.currentTime;
@@ -832,6 +856,13 @@ export function playFlip(cue: 'clatter' | 'riffle' | 'latch', dur = 0.5): void {
       const t = dur * Math.random() ** 1.15;
       const fade = Math.min(1, t / 0.06, (dur - t) / 0.3);
       flapTick(a, now + t, (0.05 + Math.random() * 0.06) * Math.max(0.25, fade));
+    }
+  } else if (cue === 'board') {
+    // 一排一排拍下来：十排，每排几块差一点点
+    const rows = 10;
+    for (let r = 0; r < rows; r++) {
+      const t = (dur * r) / (rows - 1);
+      for (let k = 0; k < 3; k++) plateClunk(a, now + t + Math.random() * 0.05, 0.05 + Math.random() * 0.03);
     }
   } else if (cue === 'riffle') {
     const n = 17;
@@ -940,7 +971,7 @@ export function playLamp(cue: 'off' | 'collect' | 'stack' | 'flicker', dur = 0.5
   }
 }
 
-// 换局的声音（table3d.ts 的 onShift）：沙滩那几声给 playTide，草甸那几声给 playGust，原木那几声给 playShuffle，翻牌屏那几声给 playFlip，
+// 换局的声音（table3d.ts 的 onShift）：沙滩那几声给 playTide，草甸那几声给 playGust，原木那几声给 playShuffle，翻转那几声给 playFlip，
 // 深夜那几声给 playLamp
 export function playShift(
   cue:
@@ -959,6 +990,7 @@ export function playShift(
     | 'build'
     | 'push'
     | 'clatter'
+    | 'board'
     | 'riffle'
     | 'latch'
     | 'off'
@@ -969,7 +1001,7 @@ export function playShift(
 ): void {
   if (cue === 'gust' || cue === 'scatter' || cue === 'breeze' || cue === 'land') playGust(cue, dur);
   else if (cue === 'pour' || cue === 'scoop' || cue === 'shuffle' || cue === 'build' || cue === 'push') playShuffle(cue, dur);
-  else if (cue === 'clatter' || cue === 'riffle' || cue === 'latch') playFlip(cue, dur);
+  else if (cue === 'clatter' || cue === 'board' || cue === 'riffle' || cue === 'latch') playFlip(cue, dur);
   else if (cue === 'off' || cue === 'collect' || cue === 'stack' || cue === 'flicker') playLamp(cue, dur);
   else playTide(cue, dur);
 }

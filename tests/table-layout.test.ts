@@ -7,12 +7,14 @@ import {
   POND_COLS,
   POND_GAP,
   POND_ROWS,
+  REF_SIT_HEIGHT,
   TILE_H,
   TILE_T,
   TILE_W,
   TableLayout,
   WALL_Z,
   clampLayout,
+  fitScale,
   tableDims,
 } from '../src/ui3d/tableLayout';
 
@@ -27,18 +29,21 @@ function combos(): TableLayout[] {
 }
 
 describe('牌桌尺寸', () => {
-  it('默认参数就是原来写死的位置', () => {
-    expect(tableDims(DEFAULT_LAYOUT)).toEqual({
-      scale: 23,
-      handZ: 11,
-      meldZ: 11.6,
-      pondZ: 3.6,
-      tableHalf: 14,
-      frame: 1.4,
-      bodyHalf: 15.4,
-      seatZ: 20.9,
-      seatY: -5.52,
-    });
+  it('默认参数：桌上的位置就是原来写死的；人物放大两成、坐近一点、桌面齐腰', () => {
+    const d = tableDims(DEFAULT_LAYOUT);
+    expect(d).toMatchObject({ handZ: 11, meldZ: 11.6, pondZ: 3.6, tableHalf: 14, frame: 1.4, bodyHalf: 15.4 });
+    expect(d.scale).toBeCloseTo(27.6, 6);
+    expect(d.seatZ).toBeCloseTo(15.4 + 0.19 * 27.6, 6);
+    expect(d.seatY).toBeCloseTo(-0.19 * 27.6, 6);
+  });
+
+  it('高矮不一的模型按坐高缩放到一样高，太离谱的只放大缩小到上下限', () => {
+    expect(fitScale(REF_SIT_HEIGHT)).toBe(1);
+    // 咲的底模坐高 0.415，放大到和别人一样
+    expect(fitScale(0.415) * 0.415).toBeCloseTo(REF_SIT_HEIGHT, 6);
+    expect(fitScale(0.6) * 0.6).toBeCloseTo(REF_SIT_HEIGHT, 6);
+    expect(fitScale(0.1)).toBe(1.3);
+    expect(fitScale(2)).toBe(0.8);
   });
 
   it('默认值落在可调范围里', () => {

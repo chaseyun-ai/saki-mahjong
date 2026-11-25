@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import type { Changeover, WallRect } from './changeover';
-import { TILE_H, TILE_T, TILE_W, WALL_Z } from './tableLayout';
+import { TILE_T, TILE_W, WALL_Z } from './tableLayout';
+import { type WashArea, type Washed, keepIn, randomSpot, spread, wash } from './wash';
 
 // 原木（牌桌风格「原木」）的换局：手搓洗牌。自动麻将机是机器洗牌，原木就是家里木桌上手洗：
-// 一局打完，桌上的牌全扣过来推到中间，绕着仪表盘哗啦哗啦搓几圈；然后四家各自从牌堆里两张两张拿出来，
-// 在自己跟前码成一排两层的牌山，码好往前一推，推到位才掷骰子发牌。第一局桌上没牌，就是把一副牌倒在桌上再搓。
+// 一局打完，桌上的牌全扣过来往中间一推，摊成乱糟糟的一桌；四家八只手一把一把地推（怎么推在 wash.ts）：
+// 这一把往中间推，下一把往回带、往旁边抹，手边的一片牌跟着手走，撞得东倒西歪、转了向，有的还骑到别的牌上。
+// 不是整堆绕着仪表盘转圈。洗几把以后四家各自从跟前的牌里两张两张拿出来，
+// 在自己跟前码成一排两层的牌山，码好往前一推，推到位才掷骰子发牌。第一局桌上没牌，就是把一副牌倒在桌上再洗。
 //
-// 这里只管牌堆里那些替身牌（扣过来、搓、被拿走）和什么时候该响哪一声；
+// 这里只管牌堆里那些替身牌（扣过来、洗、被拿走）和什么时候该响哪一声；
 // 新牌山的每一墩从牌堆哪里拿出来、码在哪、什么时候往前推（wallPose）由 table3d.ts 照着摆（changeover.ts）
 
 // 该响的声音：pour 一副牌倒在桌上，scoop 牌扣过来推到中间，shuffle 搓牌（哗啦哗啦，dur 秒），build 码牌山（一墩一墩，dur 秒），push 牌山往前一推
@@ -16,10 +19,10 @@ export type ShuffleCue = 'pour' | 'scoop' | 'shuffle' | 'build' | 'push';
 const GATHER = 0.42;
 const GATHER_JITTER = 0.12;
 const POUR = 0.5;
-// 收牌以后多久开始搓、多久开始码牌山；牌堆放了一阵（发牌前选技能）再开局时，先再搓多久
-const SWIRL_FROM = 0.2;
-const BUILD_AT = 1.2;
-const RESWIRL = 0.5;
+// 收牌以后多久开始洗、多久开始码牌山；牌堆放了一阵（发牌前选技能）再开局时，先再洗多久
+const SWIRL_FROM = 0.3;
+const BUILD_AT = 1.6;
+const RESWIRL = 0.6;
 // 同一家相邻两墩隔多久拿出来；四家各自晚一点开始；一墩从牌堆滑到跟前要多久
 const STEP = 0.042;
 const WALL_JITTER = 0.1;
@@ -28,9 +31,6 @@ const SLIDE = 0.2;
 const PUSH_AFTER = 0.08;
 const PUSH = 0.2;
 const SETTLE = 0.1;
-// 搓牌的快慢：开始搓时多久到最快，停下来时用多久慢下来
-const RAMP_UP = 0.18;
-const RAMP_DOWN = 0.5;
 // 码在跟前比最后的位置往外多少（往前推的那一截）
 const PUSH_D = 0.6;
 // 每家牌山几墩
@@ -44,9 +44,9 @@ const clamp01 = (k: number) => Math.min(1, Math.max(0, k));
 const smooth = (k: number) => k * k * (3 - 2 * k);
 const easeOut = (k: number) => 1 - (1 - k) ** 2.4;
 
-// 牌堆里的一张替身牌：先从原来的样子扣过来推到牌堆里（第一局是从半空倒下来），然后跟着搓。
-// 搓的时候绕着仪表盘转（r、a 是起始的半径和角度，越靠里转得越快），自己还在打小圈、慢慢转身
-interface Piece {
+// 牌堆里的一张替身牌：先从原来的样子扣过来推到牌堆里（第一局是从半空倒下来），落在 (x, z)、朝 yaw，
+// 然后被手一把一把推着走（Washed 的 pushes、ex、ez、m，见 wash.ts）
+interface Piece extends Washed {
   obj: THREE.Object3D;
   from: THREE.Vector3;
   fromQuat: THREE.Quaternion;
@@ -54,13 +54,9 @@ interface Piece {
   t0: number;
   dur: number;
   fresh: boolean;
-  r: number;
-  a: number;
-  w: number;
+  x: number;
+  z: number;
   yaw: number;
-  spin: number;
-  loop: number;
-  breathe: number;
   y: number;
 }
 
@@ -84,12 +80,13 @@ export class Shuffle implements Changeover<ShuffleCue> {
   readonly tiltAxis = new THREE.Vector3(0, 1, 0);
   private now = 0;
   private half = 14;
-  // 牌堆在哪一圈：里圈不压到仪表盘，外圈不压到牌山
-  private rIn = 4.8;
-  private rOut = 8;
+  // 牌摊在哪：仪表盘外面、一直摊到码牌山的那条线（洗的时候桌上还没有牌山）的一圈方形的地方
+  // （离桌子中心横竖最远的那个方向上，至少 cIn、至多 cOut）
+  private cIn = 3.7;
+  private cOut = 9.1;
   private pieces: Piece[] = [];
-  // 搓牌的几段（开始、结束）：转了多少照这几段的快慢积出来（不按一帧一帧加，跳着看也对）
-  private swirls: { s: number; e: number }[] = [];
+  // 最近一次洗牌从什么时候洗到什么时候（每一把怎么推在洗之前就排好，记在每张牌的 pushes 里，跳着看也对）
+  private washed: { s: number; e: number } | null = null;
   private rects: WallRect[] = [];
   private stacks: Stack[] = [];
   private forming = false;
@@ -98,12 +95,21 @@ export class Shuffle implements Changeover<ShuffleCue> {
   private tmpQ = new THREE.Quaternion();
   private tmpV = new THREE.Vector3();
 
-  // 桌子尺寸变了：牌堆的内外圈照仪表盘和牌山算（牌山的位置等 rise 给了再细算）
-  build(half: number, consoleHalf: number, disc: boolean): void {
+  // 桌子尺寸变了：牌摊的地方照仪表盘和牌山算（牌山的位置等 rise 给了再细算）
+  build(half: number, consoleHalf: number): void {
     this.half = half;
-    // 方的仪表盘四个角伸得远：牌转到斜角上也不能压上去
-    this.rIn = disc ? consoleHalf + 0.95 : consoleHalf * Math.SQRT2 + 0.7;
-    this.rOut = Math.max(this.rIn + 1.5, WALL_Z - TILE_H / 2 - 0.75);
+    this.cIn = consoleHalf + 0.75;
+    this.cOut = Math.max(this.cIn + 1.5, WALL_Z - 0.35);
+  }
+
+  private get area(): WashArea {
+    return { inX: this.cIn, inZ: this.cIn, outX: this.cOut, outZ: this.cOut };
+  }
+
+  // 排一段洗牌（s 到 e）
+  private wash(s: number, e: number): void {
+    this.washed = { s, e };
+    wash(this.pieces, this.area, s, e);
   }
 
   setScale(): void {}
@@ -118,8 +124,16 @@ export class Shuffle implements Changeover<ShuffleCue> {
     this.now = now;
     if (!objs.length) return;
     const fresh = objs.some((o) => o.userData.fresh);
+    const area = this.area;
+    const added: Piece[] = [];
     objs.forEach((obj, i) => {
-      const r = this.rIn + Math.sqrt(Math.random()) * (this.rOut - this.rIn);
+      // 落在哪：摊开的那一圈里随便一处和它原来的地方（收进圈里）之间，各家的牌大致还在各家跟前，又不是原样一排
+      const spot = randomSpot(area);
+      if (!obj.userData.fresh) {
+        spot.x = (spot.x + obj.position.x) / 2 + (Math.random() - 0.5) * 2;
+        spot.y = (spot.y + obj.position.z) / 2 + (Math.random() - 0.5) * 2;
+      }
+      keepIn(spot, area);
       const p: Piece = {
         obj,
         from: obj.position.clone(),
@@ -128,26 +142,32 @@ export class Shuffle implements Changeover<ShuffleCue> {
         t0: now + Math.random() * (fresh ? 0.15 : GATHER_JITTER),
         dur: fresh ? POUR * (0.8 + Math.random() * 0.25) : GATHER * (0.85 + Math.random() * 0.3),
         fresh: !!obj.userData.fresh,
-        r,
-        a: Math.random() * Math.PI * 2,
-        // 越靠里转得越快
-        w: 1.8 * Math.sqrt(6 / r) * (0.8 + Math.random() * 0.4),
+        x: spot.x,
+        z: spot.y,
         yaw: Math.random() * Math.PI * 2,
-        spin: (Math.random() - 0.5) * 1.6,
-        loop: Math.random() * Math.PI * 2,
-        breathe: Math.random() * Math.PI * 2,
         // 牌堆不是平的：一张张高低差一点（叠在一起的地方不闪）
         y: TILE_T / 2 + (i % 7) * 0.012,
+        pushes: [],
+        ex: spot.x,
+        ez: spot.y,
+        m: Math.random() * 0.9,
       };
-      if (p.fresh) {
-        // 从半空随便什么姿势落下来
-        p.from.set(Math.cos(p.a) * p.r * 0.85, 2 + Math.random() * 1.6, Math.sin(p.a) * p.r * 0.85);
-        p.fromQuat.setFromEuler(new THREE.Euler(Math.random() * 6.3, Math.random() * 6.3, Math.random() * 6.3));
-      }
+      added.push(p);
       this.pieces.push(p);
       this.group.add(obj);
     });
-    this.swirls.push({ s: now + SWIRL_FROM, e: now + BUILD_AT + 0.9 });
+    // 落下来不叠成一堆：互相让开
+    spread(this.pieces, area, 6);
+    for (const p of added) {
+      p.x = p.ex;
+      p.z = p.ez;
+      if (p.fresh) {
+        // 从半空随便什么姿势落下来
+        p.from.set(p.x * 0.85, 2 + Math.random() * 1.6, p.z * 0.85);
+        p.fromQuat.setFromEuler(new THREE.Euler(Math.random() * 6.3, Math.random() * 6.3, Math.random() * 6.3));
+      }
+    }
+    this.wash(now + SWIRL_FROM, now + BUILD_AT + 0.1);
     if (fresh) this.cue(now, 'pour', POUR + 0.15);
     else this.cue(now, 'scoop', GATHER + GATHER_JITTER);
     this.cue(now + SWIRL_FROM, 'shuffle', BUILD_AT - SWIRL_FROM + 0.4);
@@ -157,17 +177,17 @@ export class Shuffle implements Changeover<ShuffleCue> {
   rise(now: number, rects: WallRect[]): number {
     this.now = now;
     this.rects = rects;
-    // 牌山内沿：牌堆的外圈不能压上去
-    const inner = Math.min(...rects.map((r) => (r.hx > r.hz ? Math.abs(r.z) - r.hz : Math.abs(r.x) - r.hx)));
-    if (Number.isFinite(inner)) this.rOut = Math.max(this.rIn + 1.5, inner - 0.75);
-    // 这一次收牌搓到什么时候：搓完已经放了一阵（发牌前选技能那一段收过牌），开局先再搓几下
-    const last = this.swirls[this.swirls.length - 1];
+    // 牌一直摊到码牌山的那条线
+    const line = Math.min(...rects.map((r) => (r.hx > r.hz ? Math.abs(r.z) : Math.abs(r.x))));
+    if (Number.isFinite(line)) this.cOut = Math.max(this.cIn + 1.5, line - 0.35);
+    // 这一次收牌洗到什么时候：洗完已经放了一阵（发牌前选技能那一段收过牌），开局先再洗几把
+    const last = this.washed;
     let start: number;
     if (last && now < last.s + BUILD_AT - SWIRL_FROM + 0.05) start = Math.max(now, last.s - SWIRL_FROM + BUILD_AT);
     else {
       start = now + RESWIRL;
       if (this.pieces.length) {
-        this.swirls.push({ s: now, e: start + 0.9 });
+        this.wash(now, start + 0.1);
         this.cue(now, 'shuffle', RESWIRL + 0.4);
       }
     }
@@ -264,7 +284,7 @@ export class Shuffle implements Changeover<ShuffleCue> {
   finish(): void {
     for (const p of this.pieces) this.group.remove(p.obj);
     this.pieces = [];
-    this.swirls = [];
+    this.washed = null;
     this.stacks = [];
     this.cues = [];
     this.forming = false;
@@ -279,44 +299,35 @@ export class Shuffle implements Changeover<ShuffleCue> {
     this.cues.push({ at, cue, dur });
   }
 
-  // 搓到 t 时一共“转”了多少（每段先加速、匀速，最后慢下来停住；几段加起来）
-  private travel(t: number): number {
-    let sum = 0;
-    for (const { s, e } of this.swirls) {
-      if (t <= s) continue;
-      const L = e - s;
-      const up = Math.min(RAMP_UP, L / 2);
-      const down = Math.min(RAMP_DOWN, L - up);
-      const u = Math.min(t, e) - s;
-      if (u <= up) sum += (u * u) / (2 * up);
-      else if (u <= L - down) sum += up / 2 + (u - up);
-      else sum += up / 2 + (L - down - up) + down / 2 - (L - u) ** 2 / (2 * down);
+  // 一张牌 t 时在牌堆里该在哪、朝哪：落下的地方，加上到这时候为止被推的每一下（刚推出去快，滑一下停住）
+  private pilePose(p: Piece, t: number, pos: THREE.Vector3): number {
+    let x = p.x;
+    let z = p.z;
+    let y = p.y;
+    let yaw = p.yaw;
+    for (const u of p.pushes) {
+      const k = (t - u.t) / u.dur;
+      if (k <= 0) continue;
+      const e = k >= 1 ? 1 : easeOut(k);
+      x += u.dx * e;
+      z += u.dz * e;
+      yaw += u.dyaw * e;
+      if (k < 1) y += u.hop * TILE_T * 0.75 * Math.sin(Math.PI * k);
     }
-    return sum;
-  }
-
-  // 一张牌在牌堆里该在哪、朝哪（S 是搓到现在转了多少）
-  private pilePose(p: Piece, S: number, pos: THREE.Vector3): number {
-    const a = p.a + p.w * S;
-    const r = Math.min(this.rOut, Math.max(this.rIn, p.r + 0.3 * Math.sin(1.7 * S + p.breathe)));
-    // 手掌按着牌打小圈
-    const lx = 0.5 * Math.cos(2.8 * S + p.loop);
-    const lz = 0.5 * Math.sin(2.8 * S + p.loop);
-    pos.set(Math.cos(a) * r + lx, p.y, Math.sin(a) * r + lz);
-    // 顺着转的方向躺着，自己再慢慢转身
-    return -a + p.yaw + p.spin * S;
+    pos.set(x, y, z);
+    return yaw;
   }
 
   private apply(): void {
     const now = this.now;
-    // 该从牌堆里拿牌的那几墩：拿离牌堆外圈那一点最近的两张（牌堆里那两张就没了），从那里滑出来
+    // 该从牌堆里拿牌的那几墩：拿跟前（这一墩往桌子中间收一点的地方）最近的两张（牌堆里那两张就没了），从那里滑出来
     if (this.forming) {
       for (const s of this.stacks) {
         if (s.from || now < s.at) continue;
-        const len = Math.hypot(s.x, s.z) || 1;
-        const pick = new THREE.Vector2((s.x / len) * (this.rOut - 0.3), (s.z / len) * (this.rOut - 0.3));
+        const lim = this.cOut - 0.3;
+        const pick = new THREE.Vector2(Math.min(lim, Math.max(-lim, s.x)), Math.min(lim, Math.max(-lim, s.z)));
         const got: Piece[] = [];
-        const S = this.travel(s.at);
+        const S = s.at;
         for (let n = 0; n < 2; n++) {
           let best = -1;
           let bd = Infinity;
@@ -354,11 +365,10 @@ export class Shuffle implements Changeover<ShuffleCue> {
       }
       if (now > this.formEnd + SETTLE) this.forming = false;
     }
-    const S = this.travel(now);
     const pos = this.tmpV;
     for (const p of this.pieces) {
       const o = p.obj;
-      const yaw = this.pilePose(p, S, pos);
+      const yaw = this.pilePose(p, now, pos);
       const down = this.tmpQ.setFromAxisAngle(UP, yaw).multiply(FACE_DOWN);
       const k = clamp01((now - p.t0) / p.dur);
       if (k >= 1) {

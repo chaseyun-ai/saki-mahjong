@@ -65,6 +65,7 @@ import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, p
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { closeSoundPanel, onSoundTab, openSoundPanel, soundButtonHtml, soundPanelOpen } from './soundPanel';
+import { tablePreview } from './tablePreview';
 import { entryFormHtml, rosterPageHtml, rosterTabsHtml, savePick, savedPick, selectBoardHtml } from './selectPage';
 import { Scene, gameMusic, menuMusic, promptCue, resultMusic, soundtrackEvent, tallyCue } from './soundtrack';
 import { homeGo, homeHtml, mountHome } from './home';
@@ -79,7 +80,8 @@ import { hash01, paceOf, pickDiscardStyle, pondJitter, pondStyleOf, vary } from 
 import { type DiscardStyle, isPush, landWeight, pushDistFor, pushSeconds } from '../ui3d/discardMotion';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
 import { preloadModels } from '../ui3d/avatar';
-import { FACES, Face, MODEL_URLS, cutinArt, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
+import { FACES, Face, cutinArt, modelUrls, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
+import { type WashArea, type Washed, keepIn, randomSpot, spread, wash } from '../ui3d/wash';
 import { TileSize, backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
 import { FlowPage, PointSeat, ResultFlow, animatePoints, drawBannerHtml, pointsPageHtml, ranksOf } from './resultFlow';
 import { meldLayout } from './meldLayout';
@@ -87,6 +89,8 @@ import { WaitInfo, drawWaits, hanLabel, waitInfo, waitStatus } from './waitInfo'
 import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
+import { AssetImporter } from '../assets/importer';
+import { onCustomAssets } from '../assets/layers';
 import { preloadVoices, sayVoice, stopVoices } from './voice';
 import { VoiceCue, cueKeys } from './voiceLines';
 import { TeamFlow } from './teamFlow';
@@ -95,7 +99,7 @@ import { lastDeltas, lastWinners, winCounts } from './winTally';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
 import { POSITIONS, TEAM_START, TeamRun } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
-import { DEFAULT_SETTINGS, MatchSettings, TABLE_MODES, TableMode, loadSettings, loadTableMode, matchPanelHtml, parseTarget, pickOpponents, rulesOf, saveSettings, saveTableMode, setOption, visualPanelHtml } from './matchSetup';
+import { DEFAULT_SETTINGS, MatchSettings, TABLE_MODES, TOP_HAND_ALPHA, TOP_HAND_SCALE, TOP_HAND_TILT, TableMode, loadSettings, loadTableMode, matchPanelHtml, panelHtml, parseTarget, pickOpponents, rowHtml, rulesOf, saveSettings, saveTableMode, setOption, settingRows, visualPanelHtml } from './matchSetup';
 import { ForecastCache } from '../ai/forecast';
 import { himekoKeySeat } from '../abilities/himeko';
 import type { BindKey } from '../abilities/types';
@@ -245,8 +249,13 @@ export class App {
   // 桃子：这一局已经隐身的座位；正在淡掉的座位（开始的时刻）
   private gone = new Set<number>();
   private vanishAt = new Map<number, number>();
-  // 25d：3D 牌桌、不坐人物，从上往下看（默认）；3d：坐着人物的实验版；2d：网页画的平面牌桌
+  // 25d：3D 牌桌、不坐人物，从上往下看（默认）；3d：坐着人物的实验版；2d：网页画的平面牌桌；
+  // top：俯视 2D（试做），还是 2.5D 那张牌桌，镜头转到正上方，像 2D 一样平铺但牌和牌山带点立体
   private mode: TableMode = loadTableMode();
+  // 2.5D 和俯视 2D 是同一张牌桌（只是镜头不同）：头像框、切入、结算立绘、节奏都照 2.5D
+  private get flat(): boolean {
+    return this.mode === '25d' || this.mode === 'top';
+  }
   // 单人对局的规则、动画开关（matchSetup.ts）；panel 是选人页上开着的设置面板
   private settings: MatchSettings = loadSettings();
   private panel: 'match' | 'visual' | 'rii' | 'riiTest' | 'sakiTest' | 'slamTest' | null = null;
@@ -256,6 +265,8 @@ export class App {
   private canSkins = false;
   // 牌桌右边的四个开关：理（自动理牌）、和（自动和牌）、鸣（不吃碰杠）、切（自动摸切）
   private assist = { sort: true, win: false, call: false, cut: false };
+  // 俯视 2D 的局内牌桌设置开着没有
+  private topPop = false;
   // 不自动理牌时自己手牌的摆法（不含刚摸的那张）；null 是照顺序排
   private handOrder: TileId[] | null = null;
   private table3d: Table3D | null = null;
@@ -284,7 +295,7 @@ export class App {
   // 原村和变成天使和：牌桌换成她脑子里的网络麻将（2D 网麻牌桌，三种视角都一样）。
   // netFrom 是换过去之前的视角（2.5D、3D 时临时把 mode 改成 2d，变回来或离开牌桌时还原）
   private netView = false;
-  private netFrom: '25d' | '3d' | '2d' | null = null;
+  private netFrom: TableMode | null = null;
   private gale2dFx: Gale2D | null = null; // 2D 牌桌上初美的紫色旋风
   private stars2dFx: Stars2D | null = null; // 2D 牌桌上大星淡的星空
   private starHold2d = 0; // 双立直宣言的光圈放出来之前，夜空先不铺
@@ -381,6 +392,11 @@ export class App {
     onSoundTab((v) => this.openPanel(v));
     // 素材页里换了图：牌局里重画头像框，选人页重画一遍
     onSkinsChange(() => {
+      if (this.game) this.render();
+      else if (this.root.querySelector('.sel-board, .select-screen')) this.renderSelect();
+    });
+    // 素材导入换了素材（或者拨了“用我导入的素材”）：一样重画
+    onCustomAssets(() => {
       if (this.game) this.render();
       else if (this.root.querySelector('.sel-board, .select-screen')) this.renderSelect();
     });
@@ -530,7 +546,7 @@ export class App {
     this.teamFlow = null;
     this.auto = false;
     // 3D 牌桌要用的人物模型现在就开始在后台下载
-    if (this.mode === '3d') preloadModels(MODEL_URLS);
+    if (this.mode === '3d') preloadModels(modelUrls());
     // 部室白板上的名册 + 报名表（selectPage.ts）。右上角便签是设置（对局、视觉、声音三页），蓝磁铁「…」里放动作调试
     const more = `<details class="sel-more sb-more"><summary aria-label="更多" title="动作调试">${MORE_SVG}</summary><div class="sel-more-menu"><button data-ui="lab">动作调试</button></div></details>`;
     this.root.innerHTML = selectBoardHtml({ ...this.selectParts(), more }) + '<div id="setup"></div>';
@@ -674,6 +690,8 @@ export class App {
     const panel = slot.querySelector<HTMLElement>('.set-panel');
     if (panel) panel.scrollTop = top;
     if (key) slot.querySelector<HTMLElement>(key)?.focus();
+    // 牌桌预览（点过牌桌风格、仪表盘形状才有）：挂回重画好的面板上，换到别的页、关了面板就收掉
+    tablePreview.mount(slot);
   }
 
   // 报名表上的规则一行、对手下拉：对局设置里改了跟着变
@@ -916,19 +934,26 @@ export class App {
   // resume：牌局打到一半换视角（天使和的网络麻将），不再补开局动画
   private buildTable(resume = false): void {
     this.tableBuilt = true;
+    if (!resume) this.topPop = false;
     if (this.mode !== '2d') {
       // 2.5D 竖屏时桌子只占中间一块，和 2D 一样提示横过来
-      const tip = this.mode === '25d' ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
+      const tip = this.flat ? '<div class="rotate-tip">手机横过来玩，牌会更大</div>' : '';
       // 2.5D 改良布局（试做）：牌桌上加 v2，样式和镜头都只在 v2 里改，原版不动
       const v2 = this.mode === '25d' && this.settings.layout === 'improved';
-      this.root.innerHTML = `<div class="stage3d${this.mode === '25d' ? ' flat' : ''}${v2 ? ' v2' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div><div class="rf-layer" id="rf"></div>${tip}</div>`;
+      const top = this.mode === 'top';
+      this.root.innerHTML = `<div class="stage3d${this.flat ? ' flat' : ''}${v2 ? ' v2' : ''}${top ? ' top' : ''}"><div class="three" id="three"></div><div class="hud" id="hud"></div><div class="hud" id="toasts"></div><div class="hud" id="banner"></div><div class="hud" id="cutins"></div><div class="rf-layer" id="rf"></div>${tip}</div>`;
       // 切入演出只在 2.5D 放；3D、2D 只放素材页换上的技能动画
       this.cutins = new Cutins(document.getElementById('cutins')!);
       this.cutinSeen.clear();
-      this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.mode === '25d' ? '25d' : '3d', v2);
+      this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.flat ? '25d' : '3d', v2, top);
       // 改良布局的手牌画法：照视觉设置（B / C）；网址后面加 ?hand=A 到 F 可以临时换成别的几种看
       const handStyle = HAND_STYLES_V2[new URLSearchParams(location.search).get('hand')?.toUpperCase() ?? ''] ?? HAND_STYLES_V2[this.settings.hand];
       if (v2 && handStyle) this.table3d.setView25(handStyle);
+      // 俯视 2D：自己手牌的大小照视觉设置
+      if (top) {
+        this.table3d.setView25(this.topView());
+        this.table3d.setHandAlpha(TOP_HAND_ALPHA[this.settings.topAlpha]);
+      }
       this.table3d.onHover = (id) => this.hoverTile(id);
       // 爱丽丝的手绘板摆在手牌上方：照手牌在画面上实际的上沿往上让（见 style.css 的 --hand-clear）
       this.table3d.onHandClear = (px) => {
@@ -937,7 +962,7 @@ export class App {
         else hud?.style.setProperty('--hand-clear', `${Math.round(px + 8)}px`);
       };
       // 2.5D 的副露摆到画面边上，但别压着头像框和能力说明
-      if (this.mode === '25d') {
+      if (this.flat) {
         this.table3d.keepOut = () => [...this.root.querySelectorAll('.seat-frame, .ability-panel')].map((el) => el.getBoundingClientRect());
       }
       // 3D 牌桌上牌真正落到牌河时才响
@@ -1043,7 +1068,7 @@ export class App {
       const staged = g.phase === 'roundEnd' && this.staged();
       if (staged && !wins) this.drawBanner(g);
       const base =
-        this.mode === '2d' ? Math.max(0, this.riiHold - Date.now()) : Math.max(this.riiHold - Date.now(), this.mode === '25d' && wins ? Math.max(3400, this.busyMs() + 900) : (wins ? 2400 : 1400) + this.busyMs());
+        this.mode === '2d' ? Math.max(0, this.riiHold - Date.now()) : Math.max(this.riiHold - Date.now(), this.flat && wins ? Math.max(3400, this.busyMs() + 900) : (wins ? 2400 : 1400) + this.busyMs());
       const wait = staged && !wins ? Math.max(base, 3000) : base;
       this.timer = window.setTimeout(() => {
         this.showResult = true;
@@ -1097,7 +1122,7 @@ export class App {
       this.timer = window.setTimeout(() => {
         g.act(g.turn, chooseAction(g, g.turn, this.chars[g.turn].ai));
         this.step();
-      }, this.thinkMs(g, g.turn, this.mode === '25d' ? AI_TURN_DELAY_25D : this.mode === '3d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
+      }, this.thinkMs(g, g.turn, this.flat ? AI_TURN_DELAY_25D : this.mode === '3d' ? AI_TURN_DELAY_3D : AI_TURN_DELAY) + this.busyMs());
       return;
     }
     if (!this.auto && !v && this.runAssist(g)) return;
@@ -1150,7 +1175,99 @@ export class App {
     const html = btns
       .map(([k, ch, tip]) => `<button class="${this.assist[k] ? 'on' : ''}" aria-pressed="${this.assist[k]}" title="${tip}" aria-label="${tip}" data-ui="assist" data-k="${k}">${ch}</button>`)
       .join('');
-    return `<div class="assist-bar">${html}${soundButtonHtml()}</div>`;
+    // 喇叭旁边一个齿轮：点开局内的牌桌设置（换视角、俯视 2D 的手牌、公开手牌）
+    const gear = `<button class="tbl-btn${this.topPop ? ' on' : ''}" aria-haspopup="dialog" title="牌桌设置" aria-label="牌桌设置" data-ui="top-pop">${GEAR_SVG}</button>`;
+    return `<div class="assist-bar">${html}${gear}${soundButtonHtml()}</div>`;
+  }
+
+  // 局内的牌桌设置：样子和声音设置一样的纸面板，背景不压暗、面板靠上，改的时候看得见下面的牌桌
+  private tablePanelHtml(): string {
+    const net = this.netView;
+    const modes = TABLE_MODES.map((m) => {
+      const on = m.id === this.mode;
+      return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="tbl-view" data-v="${m.id}"${net ? ' disabled' : ''}>${m.name}</button>`;
+    }).join('');
+    const view = rowHtml('视角', modes, net ? '网络麻将开着的时候换不了' : '2.5D 和俯视 2D 之间镜头直接转过去，其他的过一下场再换');
+    const keys: (keyof MatchSettings)[] = [];
+    if (this.mode === '25d' && !net) keys.push('layout');
+    if (this.mode === 'top') keys.push('topHand', 'topTilt', 'topAlpha');
+    // 公开手牌：团体战、个人赛照规则不公开，那里不给改
+    if (!this.team && !this.soloMatch) keys.push('open');
+    return panelHtml('table', '牌桌设置', '改了马上生效，下一局也照这个', view + settingRows(this.settings, keys, 'top-set'), '', false)
+      .replace('class="modal setup-modal set-modal"', 'class="modal setup-modal set-modal tbl-modal"')
+      .replaceAll('data-ui="panel-close"', 'data-ui="top-pop"');
+  }
+
+  // 牌桌设置挂在 root 最上层（2D 的牌桌整个缩放过，放在里面位置不对）；换牌桌时 root 整个换掉，画的时候补回来
+  private tablePanelShown = '';
+  private syncTablePanel(): void {
+    const html = this.topPop && this.game ? this.tablePanelHtml() : '';
+    let host = this.root.querySelector<HTMLElement>(':scope > .tbl-host');
+    if (!html) {
+      host?.remove();
+      this.tablePanelShown = '';
+      return;
+    }
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'tbl-host';
+      this.root.appendChild(host);
+      this.tablePanelShown = '';
+    }
+    if (html !== this.tablePanelShown) {
+      host.innerHTML = html;
+      this.tablePanelShown = html;
+    }
+  }
+
+  // 局内改牌桌设置：存进设置（视觉设置、对局设置里的同一项），马上照着摆
+  private setTopOption(k: string, v: string): void {
+    setOption(this.settings, k, v);
+    saveSettings(this.settings);
+    // 2.5D 原版 ⇄ 改良：牌桌得重建
+    if (k === 'layout' && this.mode === '25d') {
+      this.rebuildView();
+      return;
+    }
+    const t = this.table3d;
+    // 俯视 2D 的手牌大小、倾斜、透明度：慢慢变过去
+    if (t && this.mode === 'top') t.morphTop(true, this.topView(), TOP_HAND_ALPHA[this.settings.topAlpha], 0.35);
+    this.render();
+  }
+
+  // 俯视 2D 照设置要改的那几个数
+  private topView(): { hand: number; tilt: number } {
+    return { hand: TOP_HAND_SCALE[this.settings.topHand], tilt: TOP_HAND_TILT[this.settings.topTilt] };
+  }
+
+  // 牌局中途换视角：2.5D 原版 ⇄ 俯视 2D 同一张牌桌，镜头直接转过去；别的组合过一下场，拆了照牌局重建
+  private switchView(to: TableMode): void {
+    if (!this.game || this.netView || inTransition() || to === this.mode || !TABLE_MODES.some((m) => m.id === to)) return;
+    const from = this.mode;
+    // 换了的视角下一局也照这个（和视觉设置里选的是同一个）
+    saveTableMode(to);
+    const t = this.table3d;
+    const classic = this.settings.layout !== 'improved';
+    if (t && classic && ((from === '25d' && to === 'top') || (from === 'top' && to === '25d'))) {
+      this.mode = to;
+      const top = to === 'top';
+      this.root.querySelector('.stage3d')?.classList.toggle('top', top);
+      t.morphTop(top, top ? this.topView() : {}, TOP_HAND_ALPHA[this.settings.topAlpha]);
+      this.render();
+      return;
+    }
+    transition(() => {
+      this.mode = to;
+      this.rebuildView();
+    });
+  }
+
+  // 拆了牌桌照牌局重建（和天使和换网麻一样，不补开局动画）
+  private rebuildView(): void {
+    this.cutins?.clear();
+    this.table3d?.dispose();
+    this.table3d = null;
+    this.buildTable(true);
   }
 
   private toggleAssist(k: keyof App['assist']): void {
@@ -1564,7 +1681,7 @@ export class App {
   }
 
   // 2D 换局（牌桌风格沙滩、草甸、原木、翻牌屏、深夜）：换了局就把换局前那一刻 #table 里的东西复制一份（结算框不要）盖在新的一局上面，
-  // 沙滩一个浪打过来把它冲掉（wash2d），草甸一阵风把它吹散（gust2d），原木的牌扣过来绕着中间搓几圈再码出去（shuffle2d），
+  // 沙滩一个浪打过来把它冲掉（wash2d），草甸一阵风把它吹散（gust2d），原木的牌扣过来摊在中间四周用手推着洗、再码出去（shuffle2d），
   // 翻牌屏的牌一排排翻成牌背、中间那块的字一页页翻到新的一局（flip2d），深夜熄灯，黑里扫一圈换成新的一局（lamp2d）。
   // 3D、2.5D 的在 tide.ts、gust.ts、shuffle.ts、flip.ts、lamp.ts；这里只是一层画面，不挡发牌、出牌
   private shift2d(g: Game, table: HTMLElement, off: boolean): void {
@@ -1822,8 +1939,9 @@ export class App {
     }, fadeAt + FADE + 400);
   }
 
-  // 原木：上一局的牌一张张扣过来（翻成竹子牌背），推到中间那块四周，绕着它搓几圈；然后往四边散出去、淡掉，
-  // 垫着的那层木桌面（.shuf-cover）跟着淡掉，露出码好牌山的新一局。中间那块（宝牌指示牌）不动
+  // 原木：上一局的牌一张张扣过来（翻成竹子牌背），推到中间那块四周摊开，四家用手一把一把地推着洗
+  // （这一把往中间推、下一把往回带，手边的一片牌跟着走，和 3D 牌桌一样照 wash.ts 排，不是绕着中间转圈）；
+  // 然后往四边码出去、淡掉，垫着的那层木桌面（.shuf-cover）跟着淡掉，露出码好牌山的新一局。中间那块（宝牌指示牌）不动
   private shuffle2d(host: HTMLElement, old: HTMLElement, winners: number[]): void {
     old.className = 'shuf-old';
     const cover = document.createElement('div');
@@ -1831,13 +1949,16 @@ export class App {
     host.append(cover, old);
     const box = host.getBoundingClientRect();
     const panel = old.querySelector('.center')?.getBoundingClientRect();
-    // 牌堆绕着中间那块：圈的中心、里圈半径（中间那块外面一点）、外圈半径（不出桌子）
     const cx = panel ? panel.left + panel.width / 2 - box.left : box.width / 2;
     const cy = panel ? panel.top + panel.height / 2 - box.top : box.height / 2;
-    const inner = (panel ? Math.max(panel.width, panel.height) / 2 : 70) + 16;
-    const outer = Math.max(inner + 20, Math.min(inner + 80, cx - 24, box.width - cx - 24, cy - 24, box.height - cy - 24));
-    // 扣过来推进去 0.45 秒，搓到 1.3 秒，然后 0.55 秒散出去（新的一局同时露出来）
-    const [SCOOP, SWIRL_END, OUT] = [450, 1300, 550];
+    // 牌摊在中间那块外面的一圈（不出桌子）。wash.ts 里以一张牌的宽度为 1，这里一张牌 24px
+    const U = 24;
+    const inX = (panel ? panel.width / 2 : 70) + 14;
+    const inZ = (panel ? panel.height / 2 : 70) + 14;
+    const room = (inner: number, a: number, b: number) => Math.max(inner + 40, Math.min(inner + 150, a - 22, b - 22));
+    const area: WashArea = { inX: inX / U, inZ: inZ / U, outX: room(inX, cx, box.width - cx) / U, outZ: room(inZ, cy, box.height - cy) / U };
+    // 扣过来推进去 0.45 秒，洗到 1.45 秒，然后 0.55 秒码出去（新的一局同时露出来）
+    const [SCOOP, SWIRL_END, OUT] = [450, 1450, 550];
     const all = SWIRL_END + OUT;
     // 每张牌外面那几层的旋转（左右两家的牌河是转过 90 度的）：屏幕上的位移换成这张牌自己那层的方向（和 gust2d 一样）
     const frames = new Map<Element, DOMMatrix>();
@@ -1852,48 +1973,68 @@ export class App {
       return m;
     };
     const tiles = [...old.querySelectorAll<HTMLElement>('.tile')].filter((el) => !el.closest('.center'));
-    for (const el of tiles) {
+    // 每张牌推进去落在哪：那一圈里随便一处和它原来的地方之间（各家的牌大致还在各家跟前），挤在一起的互相让开
+    const laid = tiles.map((el) => {
       const r = el.getBoundingClientRect();
       const x0 = r.left + r.width / 2 - box.left;
       const y0 = r.top + r.height / 2 - box.top;
+      const spot = randomSpot(area);
+      spot.x = (spot.x + (x0 - cx) / U) / 2 + (Math.random() - 0.5) * 2;
+      spot.y = (spot.y + (y0 - cy) / U) / 2 + (Math.random() - 0.5) * 2;
+      keepIn(spot, area);
+      const piece: Washed = { ex: spot.x, ez: spot.y, m: Math.random() * 0.9, pushes: [] };
+      return { el, x0, y0, piece };
+    });
+    const pieces = laid.map((l) => l.piece);
+    spread(pieces, area, 6);
+    const spots = pieces.map((p) => [p.ex, p.ez]);
+    wash(pieces, area, SCOOP / 1000 + 0.02, SWIRL_END / 1000 - 0.1);
+    laid.forEach(({ el, x0, y0, piece }, n) => {
       const inv = frameOf(el.parentElement).inverse();
       const local = (x: number, y: number) => {
         const p = inv.transformPoint(new DOMPoint(x - x0, y - y0, 0, 0));
         return `${p.x.toFixed(1)}px ${p.y.toFixed(1)}px`;
       };
-      // 推到圈上离它最近的地方，然后逆时针搓；每张转多少、离中心多远都不一样
-      const a0 = Math.atan2(y0 - cy, x0 - cx) + (Math.random() - 0.5) * 0.5;
-      const rad = inner + Math.random() * (outer - inner);
-      const turn = 1.4 + Math.random() * 0.9;
-      const spin = (Math.random() - 0.5) * 120;
+      const at = (x: number, z: number) => local(cx + x * U, cy + z * U);
+      let [x, z] = spots[n];
+      let rot = (Math.random() - 0.5) * 120;
       // 大小统一成牌河那么大，别家手牌那种只看得到顶边的扁条拉成整张
       const w = Math.max(1, el.offsetWidth);
       const h = Math.max(1, el.offsetHeight);
       const sc = `${(24 / w).toFixed(3)} ${(33 / h).toFixed(3)}`;
-      const at = (k: number, dr = 0) => {
-        const a = a0 - turn * k;
-        return local(cx + Math.cos(a) * (rad + dr), cy + Math.sin(a) * (rad + dr));
-      };
       const lag = Math.random() * 80;
       const kf: Keyframe[] = [
         { offset: 0, translate: '0px 0px', rotate: '0deg', scale: '1 1', opacity: 1, easing: 'ease-in' },
         // 翻身：先压扁成一条（侧面），翻过来是牌背
-        { offset: (SCOOP * 0.25) / all, translate: local(x0 + (cx - x0) * 0.12, y0 + (cy - y0) * 0.12), rotate: `${(spin * 0.2).toFixed(0)}deg`, scale: `0.08 ${(33 / h).toFixed(3)}`, opacity: 1, easing: 'ease-out' },
-        { offset: SCOOP / all, translate: at(0), rotate: `${spin.toFixed(0)}deg`, scale: sc, opacity: 1, easing: 'linear' },
+        { offset: (SCOOP * 0.25) / all, translate: local(x0 + (cx - x0) * 0.12, y0 + (cy - y0) * 0.12), rotate: `${(rot * 0.2).toFixed(0)}deg`, scale: `0.08 ${(33 / h).toFixed(3)}`, opacity: 1, easing: 'ease-out' },
+        { offset: SCOOP / all, translate: at(x, z), rotate: `${rot.toFixed(0)}deg`, scale: sc, opacity: 1, easing: 'linear' },
       ];
-      for (let i = 1; i <= 4; i++) {
-        const k = i / 4;
-        kf.push({ offset: (SCOOP + (SWIRL_END - SCOOP) * k) / all, translate: at(k, Math.sin(k * 5 + a0) * 7), rotate: `${(spin + k * 160).toFixed(0)}deg`, scale: sc, opacity: 1, easing: i === 4 ? 'ease-in' : 'linear' });
+      // 被推的每一下：刚推出去快，滑一下停住，停到下一把
+      let free = SCOOP;
+      for (const u of piece.pushes) {
+        const t0 = Math.max(free, u.t * 1000);
+        const t1 = Math.min(SWIRL_END, t0 + u.dur * 1000);
+        if (t1 - t0 < 60) continue;
+        kf.push({ offset: t0 / all, translate: at(x, z), rotate: `${rot.toFixed(0)}deg`, scale: sc, opacity: 1, easing: 'cubic-bezier(.2,.7,.3,1)' });
+        x += u.dx;
+        z += u.dz;
+        rot += (u.dyaw * 180) / Math.PI;
+        kf.push({ offset: t1 / all, translate: at(x, z), rotate: `${rot.toFixed(0)}deg`, scale: sc, opacity: 1, easing: 'linear' });
+        free = t1;
       }
-      // 码牌：往外散到牌山那边，淡掉
-      kf.push({ offset: 1, translate: at(1.15, outer - rad + 60), rotate: `${(spin + 200).toFixed(0)}deg`, scale: sc, opacity: 0 });
+      kf.push({ offset: SWIRL_END / all, translate: at(x, z), rotate: `${rot.toFixed(0)}deg`, scale: sc, opacity: 1, easing: 'ease-in' });
+      // 码牌：摆正了往离得近的那一边的牌山那里去，淡掉
+      const sideways = Math.abs(x) / area.outX >= Math.abs(z) / area.outZ;
+      const ox = sideways ? Math.sign(x) * (area.outX + 2.5) : x * 1.06;
+      const oz = sideways ? z * 1.06 : Math.sign(z) * (area.outZ + 2.5);
+      kf.push({ offset: 1, translate: at(ox, oz), rotate: `${(Math.round(rot / 180) * 180 + (sideways ? 90 : 0)).toFixed(0)}deg`, scale: sc, opacity: 0 });
       el.animate(kf, { duration: all, delay: lag, fill: 'both' });
       // 牌背：翻到侧面那一下换成竹子牌背
       const back = document.createElement('b');
       back.className = 'shuf-back';
       el.append(back);
       back.animate([{ opacity: 0 }, { opacity: 0, offset: 0.24 }, { opacity: 1, offset: 0.25 }, { opacity: 1 }], { duration: SCOOP, delay: lag, fill: 'both' });
-    }
+    });
     // 上一局和了的那家：点数旁边新的小朱印从上面按下来，“嗒”地盖上，四周一圈印泥的红晕散开（结算框挡着的时候没看到）
     const [STAMP_AT, DROP] = [140, 220];
     const scores = old.querySelectorAll('.center > .score');
@@ -2647,7 +2788,7 @@ export class App {
     const fan = huiyuWinGb(this.game!, w.seat)?.total ?? 0;
     const color = fan >= GB_GOLD_FAN ? GB_GOLD : c.color;
     const art = skillArt(c.id, 'sik');
-    if (this.mode === '25d' && this.cutins?.show({ pos: POS[w.seat], id: c.id, color, word: '食糊', kind: 'win', art, glyph: c.name.slice(-1) })) return true;
+    if (this.flat && this.cutins?.show({ pos: POS[w.seat], id: c.id, color, word: '食糊', kind: 'win', art, glyph: c.name.slice(-1) })) return true;
     this.toast(w.seat, '食糊', true, 'win', color);
     return true;
   }
@@ -2705,12 +2846,12 @@ export class App {
 
   // 立直、鸣牌、和牌的大字：2.5D 放带立绘的切入，3D、2D 还是原来的大字特效
   private bigFx(seat: number, word: string, kind: 'riichi' | 'call' | 'kan' | 'win'): void {
-    if (this.mode === '25d') this.cutin(seat, word, kind);
+    if (this.flat) this.cutin(seat, word, kind);
     else this.toast(seat, word, true, kind);
   }
 
   private cutin(seat: number, word: string, kind: CutinKind): boolean {
-    if (this.mode !== '25d') return false;
+    if (!this.flat) return false;
     const c = this.chars[seat];
     return !!this.cutins?.show({ pos: POS[seat], id: c.id, color: c.color, word, kind, glyph: c.name.slice(-1) });
   }
@@ -2751,6 +2892,12 @@ export class App {
   // ---------- 点击 ----------
 
   private onClick(e: MouseEvent): void {
+    // 局内牌桌设置：点面板外面关上
+    if ((e.target as HTMLElement).classList?.contains('tbl-modal')) {
+      this.topPop = false;
+      this.render();
+      return;
+    }
     // 点设置面板外面的暗处：关上
     if ((e.target as HTMLElement).classList?.contains('set-modal')) {
       this.closePanel();
@@ -2840,8 +2987,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、咲的标准 / 加强、动画开关是别处的设置，留着
-      const { chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, slam, slamOrder, slamStyle, xfade } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, slam, slamOrder, slamStyle, xfade };
+      const { chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, topHand, topTilt, topAlpha, slam, slamOrder, slamStyle, xfade } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, layout, hand, topHand, topTilt, topAlpha, slam, slamOrder, slamStyle, xfade };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -2852,22 +2999,24 @@ export class App {
       else this.renderSelect();
       return;
     }
-    // 牌桌风格：下一局建牌桌时用（2D 牌桌马上换）
+    // 牌桌风格：下一局建牌桌时用（2D 牌桌马上换）；面板右边出预览
     if (el.dataset.ui === 'vis-table' && TABLE_STYLES.some((t) => t.id === el.dataset.v)) {
       setTableStyle(el.dataset.v as TableStyleId);
+      tablePreview.show();
       this.renderPanel();
       return;
     }
-    // 仪表盘形状：下一局建牌桌时用（2D 牌桌中间那块马上换）
+    // 仪表盘形状：下一局建牌桌时用（2D 牌桌中间那块马上换）；面板右边的预览跟着换
     if (el.dataset.ui === 'vis-shape' && CONSOLE_SHAPES.some((t) => t.id === el.dataset.v)) {
       setConsoleShape(el.dataset.v as ConsoleShapeId);
+      tablePreview.show();
       this.renderPanel();
       return;
     }
     if (el.dataset.ui === 'vis-mode' && TABLE_MODES.some((m) => m.id === el.dataset.v)) {
       this.mode = el.dataset.v as TableMode;
       saveTableMode(this.mode);
-      if (this.mode === '3d') preloadModels(MODEL_URLS);
+      if (this.mode === '3d') preloadModels(modelUrls());
       this.renderPanel();
       return;
     }
@@ -2973,6 +3122,14 @@ export class App {
       new SkinEditor(this.root, () => this.renderSelect());
       return;
     }
+    // 素材导入：主页的拉门、设置里的「素材导入」。从主页（包括主页上开的设置）进来的，返回回主页
+    if (el.dataset.ui === 'assets') {
+      const fromHome = !!el.closest('.home-room');
+      this.panel = null;
+      if (fromHome) transition(() => new AssetImporter(this.root, () => transition(() => this.renderTitle())));
+      else new AssetImporter(this.root, () => this.renderSelect());
+      return;
+    }
     if (el.dataset.ui === 'school' && el.dataset.school) {
       this.showSchool(el.dataset.school);
       return;
@@ -2989,6 +3146,19 @@ export class App {
     }
     if (el.dataset.ui === 'auto') {
       this.toggleAuto();
+      return;
+    }
+    if (el.dataset.ui === 'top-pop') {
+      this.topPop = !this.topPop;
+      this.render();
+      return;
+    }
+    if (el.dataset.ui === 'tbl-view' && el.dataset.v) {
+      this.switchView(el.dataset.v as TableMode);
+      return;
+    }
+    if (el.dataset.ui === 'top-set' && el.dataset.k && el.dataset.v) {
+      this.setTopOption(el.dataset.k, el.dataset.v);
       return;
     }
     if (el.dataset.ui === 'assist' && el.dataset.k && el.dataset.k in this.assist) {
@@ -3171,6 +3341,7 @@ export class App {
   // ---------- 画面 ----------
 
   private render(): void {
+    this.syncTablePanel();
     // 天使和：该换成网络麻将（或者被平行宇宙打回原形、该换回来）时排上换牌桌
     this.syncNet(NET_CATCHUP);
     // 美穗子睁开右眼：画面罩一层蓝色
@@ -4673,7 +4844,7 @@ export class App {
     const title = r.kind === 'win' ? '' : r.kind === 'exhaustive' ? '<h2>荒牌流局</h2>' : `<h2>途中流局：${r.reason}</h2>`;
     const wins = r.wins.map((w) => this.winHtml(w)).join('');
     // 2.5D 的和牌结算左边放和牌的人的立绘（雀魂那样）
-    const art = this.mode === '25d' && r.wins.length > 0;
+    const art = this.flat && r.wins.length > 0;
     // 荒牌流局：每家听什么写在下面点数那一行里（见 deltasHtml）
     return `
       <div class="modal"><div class="result${art ? ' with-art' : ''}">
@@ -4713,7 +4884,7 @@ export class App {
     const ura = w.uraIndicators.length ? `<div class="ura">里宝牌指示牌 ${w.uraIndicators.map(uraTile).join('')}</div>` : '';
     const url = cutinArt(this.chars[w.seat].id, 'result').url;
     const art =
-      this.mode === '25d'
+      this.flat
         ? `<div class="win-art">${url ? `<img src="${url}" alt="" onerror="this.remove()" />` : `<span class="win-glyph">${this.chars[w.seat].name.slice(-1)}</span>`}</div>`
         : '';
     return `

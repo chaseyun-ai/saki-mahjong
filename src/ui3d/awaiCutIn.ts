@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { TileId } from '../engine/tiles';
 import { FaceAtlas, faceIndex } from './faces';
+import { handOverride } from './looks';
 import { TILE_H, TILE_T, TILE_W } from './tableLayout';
 
 // 大星淡连招自摸的特写（试做）：牌桌上逆回旋的同时，画面一角切进来一个漫画式的三角窗，
@@ -72,6 +73,9 @@ let atlas: FaceAtlas | null = null;
 let atlasReady: Promise<void> | null = null;
 
 export const HAND_URL = 'models/hand-awai.glb';
+// 素材导入换了手模就用换上的
+export const handUrl = (): string => handOverride() ?? HAND_URL;
+let handFor = '';
 
 // 发布页不能直接提供 .glb，那里的模型是 base64 文本（.glb.txt，和人物模型一样，见 avatar.ts），自己解码
 export async function loadHand(url: string): Promise<THREE.Group> {
@@ -89,7 +93,11 @@ export async function loadHand(url: string): Promise<THREE.Group> {
 
 // 先把手模、牌面贴图备好（有淡的对局一开始就调），特写切进来时不用等
 export function preloadAwaiCutIn(): Promise<unknown> {
-  handSource ??= loadHand(HAND_URL);
+  // 换了手模（网址变了）就重新读
+  if (!handSource || handFor !== handUrl()) {
+    handFor = handUrl();
+    handSource = loadHand(handFor);
+  }
   if (!atlas) {
     atlas = new FaceAtlas();
     atlasReady = atlas.draw();

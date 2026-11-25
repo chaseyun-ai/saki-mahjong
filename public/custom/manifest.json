@@ -1,0 +1,16 @@
+{
+  "format": "saki-mahjong-assets",
+  "version": 1,
+  "assets": {
+    "awai": {
+      "model": {
+        "file": "awai/model.vrm",
+        "mime": "model/gltf-binary",
+        "media": "model",
+        "size": 2910964,
+        "vrm": 1,
+        "name": "Golden-Sailor-TableFit.vrm"
+      }
+    }
+  }
+}

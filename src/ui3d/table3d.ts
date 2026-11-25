@@ -8,7 +8,7 @@ import { meldLayout } from '../ui/meldLayout';
 import { FACE_TOTAL, FaceAtlas, faceIndex } from './faces';
 import { sketchFaceSvg } from '../ui/sketchArt';
 import { Avatar, modelProgress } from './avatar';
-import { LOOKS, RestPose, applyLook } from './looks';
+import { LOOKS, RestPose, applyLook, modelOf } from './looks';
 import { Dice } from './dice';
 import { Machine, type MachineCue, type MachineRect } from './machine';
 import type { Changeover } from './changeover';
@@ -33,9 +33,9 @@ import { TileBeam } from './tileBeam';
 import { tileSurface } from './tileLooks';
 import { winCounts } from '../ui/winTally';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
-import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, POND_ROWS, TILE_H, TILE_T, TILE_W, TableDims, TableLayout, WALL_Z, clampLayout, tableDims } from './tableLayout';
+import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, POND_ROWS, TILE_H, TILE_T, TILE_W, REF_SIT_HEIGHT, TableDims, TableLayout, WALL_Z, clampLayout, fitScale, tableDims } from './tableLayout';
 import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
-import { CueKind, DEFAULT_DISCARD, DiscardMotion, DiscardParams, DiscardPath, DiscardPose, DiscardStyle, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, afterTime, declareDelay, dueCues, dueMarkers, isPush, pushDistFor, sampleDiscard, scrapeTime, styleParams, totalTime } from './discardMotion';
+import { CueKind, DEFAULT_DISCARD, DiscardMotion, DiscardParams, DiscardPath, DiscardPose, DiscardStyle, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, afterTime, declareDelay, dueCues, dueMarkers, gripAt, isPush, pushDistFor, sampleDiscard, scrapeTime, styleParams, totalTime } from './discardMotion';
 import { CONSOLE_SCALE, type FeltPattern, TableColors, tableColors } from '../ui/theme';
 import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, outline, sealSpot, skinSignColors } from './consoleLooks';
 import { type DiscardFx, POND_LOOKS, type PondFx, type PondStyle, type RiichiFx, hash01, pickDiscardStyle, pondStyleOf, varyDiscard, vary } from '../ui/vary';
@@ -61,6 +61,14 @@ import { DORA_FLIP_TIME, DORA_TURN_TIME, doraFlipPose } from './doraFlip';
 import { WHIRL_TIME, whirlPose } from './whirlFlip';
 import { TEST_HAND_SCALE, TestHand } from './testHand';
 
+// 3D 视角：镜头的视野（度）；对家的脸要露到头骨根部往上多少米（人物放大时视野跟着拉开，露出来的还是这么多）
+const FOV_3D = 38;
+const FACE_SHOW_3D = 0.108;
+// 伸到桌子上方的胳膊肘至少比桌面高这么多（世界单位）：牌山两层高 1.56，再留一点
+const ELBOW_CLEAR = 2.3;
+// 第一人称时自己的人物比别家坐低多少（米，按人物身材）
+const OWN_SINK = 0.12;
+
 // 3D 牌桌。规则状态全部来自 Game，这里只负责把每张牌摆到该在的位置，并做平滑移动。
 //
 // 坐标：桌面是 y = 0 的平面，桌子中心在原点。自己坐在 +z 一侧朝 -z 看，
@@ -72,6 +80,12 @@ export { TILE_H, TILE_T, TILE_W };
 const GAP = 0.04;
 // 鼠标指着能打的那张手牌时抬起来多高
 const HOVER_LIFT = 0.4;
+// 俯视 2D：指着的那张往桌子中间推出去的距离是抬起来的几倍（从上面看推得少了不明显）
+const TOP_LIFT = 1.6;
+// 俯视 2D 时自己手牌下沿离画面底边留的一点空（桌面上的长度）
+const TOP_MARGIN = 0.25;
+// 2.5D ⇄ 俯视 2D 中途换的时候镜头转多久（秒）
+const TOP_MORPH = 0.9;
 const MY_HAND_SCALE = 1.25;
 
 // 牌桌的两种样子：3d 有坐着的人物；25d 不请人物，镜头从高处往下看，牌桌占满画面（像雀魂）
@@ -98,6 +112,9 @@ export interface View25 {
   ortho?: boolean;
 }
 export const DEFAULT_VIEW_25D: View25 = { pitch: 0.72, portraitPitch: 1.2, fov: 34, lookZ: 1.5, hand: 1.15, tilt: 15, fan: 0 };
+// 俯视 2D（试做）：原版 2.5D 的牌桌，镜头差不多到正上方（俯角 pitch 弧度，竖屏一样）；
+// 自己的手牌往后仰到快躺平（tilt 度），从上面看下去牌面朝着镜头
+export const DEFAULT_VIEW_TOP: View25 = { pitch: 1.45, portraitPitch: 1.45, fov: 30, lookZ: 1.5, hand: 1.3, tilt: 70, fan: 0 };
 // 改良布局（试做，参考雀魂）：镜头更俯视、视野窄一点，桌子不那么往后倒；自己的手牌大一点。
 // 手牌往后仰的角度跟着镜头俯角（tilt 不用，看 lean）：lean 0 时每张牌面都和画面平行，
 // 再每张转过来正对镜头（face），像雀魂那样张张正对着人，两头的牌不会因为透视往里歪、一排牌像一道弧
@@ -584,6 +601,12 @@ export class Table3D {
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2(-9, -9);
   private hovered: TileId | null = null;
+  // 俯视 2D 的手牌透明度（1 = 不透明）；myHand 是这一刻自己手里的牌，alphaTiles 是现在被调过透明的牌
+  private handAlpha = 1;
+  // 2.5D ⇄ 俯视 2D 正在换（见 morphTop）
+  private viewTween: { from: View25; to: View25; a0: number; a1: number; t: number; dur: number; top: boolean } | null = null;
+  private myHand = new Set<TileId>();
+  private alphaTiles = new Set<TileId>();
   // 副露的间距：组与组之间多留多少、手牌和副露之间至少留多少（调试面板和截图比较方案时会改）
   meldSpacing = { group: 0.1, hand: 0.25 };
   // 抬起来的那张牌原本的位置：鼠标还在这里就算还指着它（不然指着牌下沿时，牌一抬就指不到、一落又指到，来回抽搐）
@@ -646,8 +669,10 @@ export class Table3D {
   private shake = 0;
   // 调试截图时手动摆镜头，不让动画覆盖
   debugCamera = false;
-  // 2.5D 镜头平时的位置（按画面比例算好），和自己手牌往后仰的角度
-  private rest = { pos: new THREE.Vector3(0, 18, 28.5), look: new THREE.Vector3(0, 0.5, -1.5) };
+  // 自己座位的人是不是第一人称（藏起头、坐低一截）；调试场景换到侧面、俯视机位时是第三人称
+  private firstPerson = true;
+  // 镜头平时的位置（2.5D 按画面比例算好，3D 跟着手牌和人物大小走），和自己手牌往后仰的角度
+  private rest ={ pos: new THREE.Vector3(0, 18, 28.5), look: new THREE.Vector3(0, 0.5, -1.5) };
   private handTilt = -0.32;
   // 2.5D：画面上不能让副露压住的地方（头像框、能力说明），由外面给出，相对页面的矩形
   keepOut: (() => DOMRect[]) | null = null;
@@ -789,8 +814,12 @@ export class Table3D {
     readonly style: TableStyle = '3d',
     // 2.5D 的改良布局（试做）：只在 style 是 25d 时有用
     readonly improved = false,
+    // 俯视 2D（试做）：还是 2.5D 原版的牌桌，镜头转到正上方（只在 style 是 25d、不是改良布局时有用）。
+    // 牌局中途能换（morphTop），所以不是只读的
+    public top = false,
   ) {
     if (this.v2) this.view25 = { ...DEFAULT_VIEW_25D_V2 };
+    else if (this.topView) this.view25 = { ...DEFAULT_VIEW_TOP };
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
@@ -913,7 +942,7 @@ export class Table3D {
     if (this.colors.changeover === 'tide') this.shift = new Tide([body, this.colors.back]);
     else if (this.colors.changeover === 'gust') this.shift = new Gust([body, '#f6e7a6', '#f4d3da', this.colors.back, '#8db06c'], '#eef3d2');
     else if (this.colors.changeover === 'shuffle') this.shift = new Shuffle();
-    else if (this.colors.changeover === 'flip') this.shift = new Flip();
+    else if (this.colors.changeover === 'flip') this.shift = new Flip(this.feltMat, this.colors.trim);
     else if (this.colors.changeover === 'lamp') this.shift = new Lamp();
     if (this.shift) this.scene.add(this.shift.group);
     if (this.colors.seals) {
@@ -1120,16 +1149,17 @@ export class Table3D {
       const holder = rel === 0 ? null : placeholder(colors[s]);
       if (holder) seatRoot.add(holder);
       this.scene.add(seatRoot);
-      // 自己的手平时放在腿上，免得挡住手牌
-      const ch: Character = { seat: s, seatRoot, avatar: null, pose: rel === 0 ? 'offscreen' : look.pose ?? 'edge' };
+      // 平时都是正坐、双手放在腿上，出牌时才伸右手。自己的手放在桌沿外侧刚好在镜头外，伸出来近一点
+      const ch: Character = { seat: s, seatRoot, avatar: null, pose: rel === 0 ? 'offscreen' : look.pose ?? 'lap' };
       this.characters.push(ch);
       this.seatCharacter(ch, me);
-      const url = look.model;
+      // 素材导入换了这个角色的模型就用换上的，不再染色
+      const { url, custom } = modelOf(view.ids[s]);
       this.modelUrls.push(url);
       Avatar.load(url)
         .then((av) => {
           if (gen !== this.characterGen) return;
-          applyLook(av.vrm, look);
+          if (!custom) applyLook(av.vrm, look);
           if (holder) seatRoot.remove(holder);
           ch.avatar = av;
           this.seatCharacter(ch, me);
@@ -1151,10 +1181,14 @@ export class Table3D {
     ch.seatRoot.rotation.y = this.seatAngle(s, me);
     const av = ch.avatar;
     if (!av) return;
-    av.root.scale.setScalar(d.scale);
-    av.root.position.y = d.seatY - av.hipHeight * d.scale;
+    // 高矮不一的模型按坐高缩放到一样高（矮的底模、玩家导入的模型胳膊才够得着牌）
+    const k = d.scale * fitScale(av.sitHeight);
+    av.root.scale.setScalar(k);
+    // 自己（第一人称）：镜头在头顶后上方，只该看到伸出去的手臂。人往下沉一截，俯身伸手时肩和背才不会从画面底边冒出来挡住手牌
+    const seatY = d.seatY - (s === me && this.firstPerson ? OWN_SINK * k : 0);
+    av.root.position.y = seatY - av.hipHeight * k;
     // 桌面和桌沿换算到模型自身坐标
-    av.setRestPose(av.hipHeight - d.seatY / d.scale, (d.tableHalf - d.seatZ) / d.scale, ch.pose);
+    av.setRestPose(av.hipHeight - seatY / k, (d.tableHalf - d.seatZ) / k, ch.pose, ELBOW_CLEAR / k, d.frame / k);
     av.home = this.seatPoint(s, 0, 0, d.handZ);
     // 偶尔瞟一眼别家的脸或者桌子中间
     av.glances = [0, 1, 2, 3]
@@ -1247,7 +1281,13 @@ export class Table3D {
 
   // 自己座位的人：第一人称时藏起头（正常打牌），第三人称时整个人都画出来（调试场景换机位时）
   setFirstPerson(on: boolean): void {
-    this.avatarAt(this.lastSync?.view.me ?? 0)?.setFirstPerson(this.camera, on);
+    const me = this.lastSync?.view.me ?? 0;
+    this.avatarAt(me)?.setFirstPerson(this.camera, on);
+    if (on === this.firstPerson) return;
+    // 第一人称时自己坐得低一截（见 seatCharacter），换了要重新入座
+    this.firstPerson = on;
+    const ch = this.characterAt(me);
+    if (ch) this.seatCharacter(ch, me);
   }
 
   // 四个人的模型都加载好了
@@ -1512,6 +1552,11 @@ export class Table3D {
   // 2.5D 改良布局（试做）
   private get v2(): boolean {
     return this.style === '25d' && this.improved;
+  }
+
+  // 俯视 2D（试做）
+  private get topView(): boolean {
+    return this.style === '25d' && this.top && !this.improved;
   }
 
   // 这一边（相对座位，0 是自己）的牌山离中心多远。2.5D 对家的牌山往中间收，好让后面的手牌露出来；改良布局上家、下家的往外挪
@@ -4230,13 +4275,17 @@ export class Table3D {
     // 2.5D 时自己的手牌两头往中间转一点
     const fan = mine && this.style === '25d' && !tilting ? this.view25.fan : 0;
     const cover = mine && !tilting && !!this.lastSync?.view.riiCover;
-    if (mine) this.ghostAt.clear();
+    if (mine) {
+      this.ghostAt.clear();
+      this.myHand.clear();
+    }
     const place = (t: TileId | null) => {
       const lift = mine && t !== null && t === this.hovered && this.clickable.has(t) ? HOVER_LIFT : 0;
       const yaw = (fan ? (-fan * (x + shift)) / (width / 2) : 0) + (facing ? Math.PI : 0);
       // 改良布局：自己的手牌每张转过来正对镜头
       const [r, k] = mine && this.v2 && !tilting && !this.view25.ortho ? this.faceOn(s, me, x, y, hz, rot) : [rot, 1];
       if (lift && t !== null) this.hoverRest = { id: t, at: this.toWorld(s, me, x, y, hz, r, yaw, hs * k) };
+      if (mine && t !== null && p.hand.includes(t)) this.myHand.add(t);
       if (t !== null && p.hand.includes(t)) {
         if (cover) {
           // 番缚：和配牌理牌那一下一样，整排牌往前一倒扣下去（只绕着横轴转，不翻面不打转），上方浮起一排投影牌面
@@ -4245,6 +4294,9 @@ export class Table3D {
           this.ghostAt.set(t, this.toWorld(s, me, x, y, hz, r, yaw, hs * k));
           const lie = this.v2 ? -(TILE_H / 2) * hs * V2_COVER_IN : (TILE_H / 2) * hs;
           out.set(t, this.toWorld(s, me, x, (TILE_T / 2) * hs, hz + lie, COVER_TILT, 0, hs));
+        } else if (this.topView && mine) {
+          // 俯视 2D：从上面看往上抬看不出来，顺着牌面往上（往桌子中间）推出去一截
+          out.set(t, this.toWorld(s, me, x, y + lift * Math.cos(this.handTilt), hz + lift * Math.sin(this.handTilt) * TOP_LIFT, r, yaw, hs * k));
         } else out.set(t, this.toWorld(s, me, x, y + lift, hz, r, yaw, hs * k));
       }
       x += step;
@@ -4812,12 +4864,25 @@ export class Table3D {
       this.fitCamera();
       return;
     }
+    // 镜头跟着自己的手牌走，手牌挪远挪近都还在画面里同一个地方附近
+    const d = this.dim;
+    const pos = new THREE.Vector3(0, 18, d.handZ + 17.5);
+    const look = new THREE.Vector3(0, 0.5, -1.5);
+    // 人物放大以后对家的头会顶出画面：视野往上拉开一点（下沿不动，自己的手牌还在原处），
+    // 对家的脸露出来的和人物 100% 时一样多（到眉毛上面一点，再往上是名牌）
+    const down = (y: number, z: number) => Math.atan2(pos.y - y, pos.z - z);
+    const centre = down(look.y, look.z);
+    const brow = d.seatY + (REF_SIT_HEIGHT + FACE_SHOW_3D) * d.scale;
+    const extra = Math.max(0, centre - THREE.MathUtils.degToRad(FOV_3D / 2) - down(brow, -d.seatZ));
+    const fov = FOV_3D + THREE.MathUtils.radToDeg(extra);
+    const reach = pos.distanceTo(look);
+    look.set(0, pos.y - Math.sin(centre - extra / 2) * reach, pos.z - Math.cos(centre - extra / 2) * reach);
+    this.rest = { pos, look };
     // 竖屏时把视野拉宽，保证整张桌子都在画面里
-    this.camera.fov = w / h < 1.2 ? 38 * Math.min(1.9, 1.2 / (w / h)) : 38;
+    this.camera.fov = w / h < 1.2 ? fov * Math.min(1.9, 1.2 / (w / h)) : fov;
     if (!this.debugCamera) {
-      // 镜头跟着自己的手牌走，手牌挪远挪近都还在画面里同一个地方附近
-      this.camera.position.set(0, 18, this.dim.handZ + 17.5);
-      this.camera.lookAt(0, 0.5, -1.5);
+      this.camera.position.copy(pos);
+      this.camera.lookAt(look);
     }
     this.camera.updateProjectionMatrix();
   };
@@ -4848,6 +4913,13 @@ export class Table3D {
       new THREE.Vector3(farSide, 0, side),
       // 自己的手牌，下沿（改良布局让下沿出画面一点：取牌身上靠下的一条线）
       ...[-myHalf, myHalf].map((x) => {
+        // 俯视 2D：牌往后躺得多，离镜头最近的是躺下去的牌的下沿（牌放大了伸得更远），按这个角算，再留一点边
+        if (this.topView) {
+          const a = -THREE.MathUtils.degToRad(v.tilt);
+          const h = TILE_H / 2;
+          const t = TILE_T / 2;
+          return new THREE.Vector3(x, v.hand * (h - h * Math.cos(a) - t * Math.sin(a)), myZ + v.hand * (-h * Math.sin(a) + t * Math.cos(a)) + TOP_MARGIN);
+        }
         if (!this.v2) return new THREE.Vector3(x, 0, myZ + TILE_T);
         const t = pitch - THREE.MathUtils.degToRad(v.lean ?? 0);
         const up = TILE_H * v.hand * (v.clip ?? V2_HAND_CLIP);
@@ -4963,6 +5035,65 @@ export class Table3D {
     this.view25 = { ...this.view25, ...v };
     this.resize();
     if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
+  }
+
+  // 牌局中途 2.5D 原版 ⇄ 俯视 2D：同一张牌桌、同一套摆法，只是镜头和手牌的几个数不同。
+  // dur 秒里把这几个数插过去，每帧重算镜头、重摆一次，牌、牌山、牌河一直连着。
+  // to 是俯视那套（或 2.5D 那套）上要另外改的数（手牌大小、倾斜），alpha 是到了俯视以后手牌的透明度
+  morphTop(on: boolean, to: Partial<View25> = {}, alpha = 1, dur = TOP_MORPH): void {
+    if (this.style !== '25d' || this.improved) return;
+    const a0 = this.topView ? this.handAlpha : 1;
+    // 去俯视：一开始就按俯视算（手牌下沿按躺着取景、透明度从 1 慢慢变）；回 2.5D：到了才关
+    if (on) this.top = true;
+    this.viewTween = { from: { ...this.view25 }, to: { ...(on ? DEFAULT_VIEW_TOP : DEFAULT_VIEW_25D), ...to }, a0, a1: on ? alpha : 1, t: 0, dur, top: on };
+    this.stepViewTween(0);
+  }
+
+  private stepViewTween(dt: number): void {
+    const tw = this.viewTween;
+    if (!tw) return;
+    tw.t = Math.min(tw.dur, tw.t + dt);
+    const k = tw.dur > 0 ? tw.t / tw.dur : 1;
+    const e = k * k * (3 - 2 * k);
+    const v: View25 = { ...tw.to };
+    for (const key of ['pitch', 'portraitPitch', 'fov', 'lookZ', 'hand', 'tilt', 'fan'] as const) v[key] = tw.from[key] + (tw.to[key] - tw.from[key]) * e;
+    this.view25 = v;
+    this.handAlpha = tw.a0 + (tw.a1 - tw.a0) * e;
+    if (k >= 1) {
+      this.viewTween = null;
+      this.top = tw.top;
+      if (!tw.top) this.handAlpha = 1;
+    }
+    this.fitCamera();
+    if (this.lastSync) this.sync(this.lastSync.g, this.lastSync.view);
+  }
+
+  // 俯视 2D：自己的手牌半透明，能看见压在下面的牌桌（1 = 不透明）
+  setHandAlpha(a: number): void {
+    this.handAlpha = Math.min(1, Math.max(0.1, a));
+  }
+
+  // 这张牌现在该有的透明度：俯视 2D 时自己手里的牌照设置，鼠标指着的那张不透明
+  private alphaOf(id: TileId): number {
+    if (!this.topView || this.handAlpha >= 1 || !this.myHand.has(id) || id === this.hovered) return 1;
+    return this.handAlpha;
+  }
+
+  // 每帧给自己的手牌套上透明度；打出去、换走的牌恢复不透明（正在淡入淡出的摸牌由 animateFlights 管）
+  private applyHandAlpha(): void {
+    const fading = (id: TileId) => this.flights.some((f) => f.fade && f.tile === id);
+    for (const id of this.alphaTiles) {
+      if (this.alphaOf(id) < 1) continue;
+      this.alphaTiles.delete(id);
+      if (!fading(id)) this.setTileOpacity(this.tiles[id], 1);
+    }
+    if (!this.topView || this.handAlpha >= 1) return;
+    for (const id of this.myHand) {
+      const a = this.alphaOf(id);
+      if (a >= 1 || fading(id)) continue;
+      this.setTileOpacity(this.tiles[id], a);
+      this.alphaTiles.add(id);
+    }
   }
 
   private onPointerMove = (e: PointerEvent): void => {
@@ -5133,7 +5264,7 @@ export class Table3D {
       const dest = tile.target;
       if (f.fade) {
         if (!dest || f.t >= DRAW_FADE_OUT + DRAW_FADE_IN) {
-          this.setTileOpacity(tile, 1);
+          this.setTileOpacity(tile, this.alphaOf(f.tile));
           return false;
         }
         const out = f.t < DRAW_FADE_OUT;
@@ -5144,7 +5275,7 @@ export class Table3D {
         }
         // 淡入先快后慢：一开始就显出大半，实体牌露出来的时间长一点
         const k = (f.t - DRAW_FADE_OUT) / DRAW_FADE_IN;
-        this.setTileOpacity(tile, out ? 1 - f.t / DRAW_FADE_OUT : 1 - (1 - k) ** 3);
+        this.setTileOpacity(tile, out ? 1 - f.t / DRAW_FADE_OUT : (1 - (1 - k) ** 3) * this.alphaOf(f.tile));
         this.held.add(f.tile);
         return true;
       }
@@ -5171,8 +5302,8 @@ export class Table3D {
   // 镜头：特效时轻微震动；有人和牌时往那边推近一点再回来
   private updateCamera(dt: number): void {
     if (this.debugCamera) return;
-    const base = this.style === '25d' ? this.rest.pos.clone() : new THREE.Vector3(0, 18, 28.5);
-    const look = this.style === '25d' ? this.rest.look.clone() : new THREE.Vector3(0, 0.5, -1.5);
+    const base = this.rest.pos.clone();
+    const look = this.rest.look.clone();
     if (this.zoom.t >= 0) {
       this.zoom.t += dt;
       const k = this.zoom.t < 0.5 ? this.zoom.t / 0.5 : this.zoom.t < 2.2 ? 1 : Math.max(0, 1 - (this.zoom.t - 2.2) / 0.8);
@@ -5266,6 +5397,9 @@ export class Table3D {
       if (av) {
         av.reachTarget = wrist;
         av.reachWeight = weight;
+        av.reachHold = a.kind === 'gesture' ? null : grip(new THREE.Vector3(), 0);
+        // 手型：拿立直棒的那一段捏着，伸手去拿和放下以后张开；举手示意是张开的
+        av.grip = a.kind === 'stick' && a.t >= reach * 0.6 && a.t < reach + carry + 0.06 ? 1 : -0.6;
       }
       return true;
     });
@@ -5290,6 +5424,8 @@ export class Table3D {
       hold: a.hold,
       style: a.style,
       spin: a.spin,
+      // 有人拿着牌（3D）：手牌和牌河之间隔着自己面前的牌山，牌要从上面越过去。两面各让出牌自己的厚度（竖着时半个牌厚，放平时半个牌长）再留一点
+      wall: this.style === '3d' ? { near: WALL_Z - TILE_H - 0.1, far: WALL_Z + TILE_H / 2 + TILE_T / 2 + 0.15, top: 2 * TILE_T } : undefined,
       // 落点靠出牌的人这一侧空着多宽：照落点离桌子中心多远看它在第几行
       room: this.pondRoom(a.seat, target.pos.dot(toward) > this.dim.pondZ + 2 * (TILE_H + GAP) ? 2 : 0),
     };
@@ -5328,6 +5464,8 @@ export class Table3D {
       av.reachTarget = pose.wrist;
       av.reachWeight = pose.weight;
       av.tuning = p;
+      av.grip = gripAt(p, a.t, a.hold, a.style);
+      av.reachHold = pose.wrist.clone().sub(pose.contact);
     }
     // 试用的手模：跟着手指捏住牌的点走；人物的手臂就不伸了
     if (this.testHand?.ready && !a.lost) {
@@ -5753,6 +5891,7 @@ export class Table3D {
       }
     }
     this.now += dt;
+    this.stepViewTween(dt);
     this.checkWallHover();
     this.checkConsoleHover();
     const hover = this.pick();
@@ -5770,6 +5909,7 @@ export class Table3D {
     this.dice.update(dt);
     this.animateHands(dt);
     this.animateFlights(dt);
+    this.applyHandAlpha();
     this.updateHimeko();
     this.animateVanish();
     // 到了倒牌的时间重新摆一次

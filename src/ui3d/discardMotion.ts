@@ -28,20 +28,20 @@ export interface DiscardMotion extends DiscardParams {
 }
 
 export const DEFAULT_DISCARD: DiscardParams = {
-  reach: 0.3,
-  carry: 0.34,
+  reach: 0.35,
+  carry: 0.46,
   settle: 0.22,
   back: 0.4,
   lift: 2.2,
   gripBack: 0.08,
   gripUp: 0.06,
-  arcMax: 0.1,
+  arcMax: 0.12,
   leanMax: 0.62,
   wristBend: 0.35,
 };
 
 // 立直宣言牌：抬得更高，拍下去更快，停得更久
-export const RIICHI_DISCARD: DiscardParams = { ...DEFAULT_DISCARD, reach: 0.28, carry: 0.26, settle: 0.3, lift: 3.4 };
+export const RIICHI_DISCARD: DiscardParams = { ...DEFAULT_DISCARD, reach: 0.34, carry: 0.38, settle: 0.3, lift: 3.4 };
 
 // 2.5D 没有人物：牌直接从手里滑进牌河，不伸手也不收手，0.35 秒落桌（雀魂从点下去到落桌的节奏）
 export const SLIDE_DISCARD: DiscardParams = { ...DEFAULT_DISCARD, reach: 0, carry: 0.35, settle: 0, back: 0, lift: 0.8 };
@@ -298,6 +298,10 @@ export interface DiscardPath {
   style?: DiscardStyle; // 出牌的样子，不给是 place
   room?: number; // 落点靠出牌的人这一侧空着多宽（牌宽）；滑着放的要用，不给当作够宽
   spin?: number; // 这一次往哪边转：1 或 -1，不给是 1
+  // 手牌和落点之间隔着的牌山（3D 有人拿着牌时牌桌给）：靠桌子中心的一面、靠出牌人的一面各离中心多远（沿 toward 量，
+  // 已经算上牌自己的厚度和余量），顶有多高。给了，搬牌就先竖着提起来、越过牌山、过了牌山再边落边放平；
+  // 不给是原来那条低弧线（2.5D 没有人，牌自己飞）
+  wall?: { near: number; far: number; top: number };
 }
 
 export interface DiscardPose {
@@ -370,6 +374,78 @@ export function phaseAt(p: DiscardMotion, t: number, hold = 0, style: DiscardSty
   return 'done';
 }
 
+// 越过牌山时牌底比牌山顶至少高多少（牌宽）
+const WALL_CLEAR = 0.3;
+// 手拿着牌搬到 to，中间隔着牌山：k 是搬运过了几成时间，返回牌在哪、往落桌的姿势转了几成。
+// 路线在“往前走了几成、多高”的平面里过四个点：起点、牌山靠自己这面的上方（到这里牌是竖着直提上来的，牌底已经比牌山高）、
+// 牌山靠中心那面的上方（抬得最高）、落点；用 Catmull-Rom 连成一条顺的线，三段各占的时间照路程分。
+// 牌一路竖着，过了牌山顶才开始放平，落桌时正好转完。用不着越（没给牌山、落点不在牌山里侧）返回 null
+function carryOver(p: DiscardMotion, path: DiscardPath, to: THREE.Vector3, k: number): { pos: THREE.Vector3; turn: number } | null {
+  const w = path.wall;
+  if (!w) return null;
+  const zf = path.from.dot(path.toward);
+  const zt = to.dot(path.toward);
+  const span = zf - zt;
+  if (span < 0.5 || zt >= w.near || zf <= w.far) return null;
+  const sa = Math.min(0.7, Math.max(0.02, (zf - w.far) / span));
+  const sb = Math.min(0.97, Math.max(sa + 0.05, (zf - w.near) / span));
+  const y0 = path.from.y;
+  const over = w.top + TILE_H / 2 + WALL_CLEAR;
+  const P: [number, number][] = [
+    [0, y0],
+    [sa, Math.max(over, y0)],
+    [sb, Math.max(over, y0 + p.lift * 0.85)],
+    [1, to.y],
+  ];
+  const len = (i: number) => Math.hypot((P[i + 1][0] - P[i][0]) * span, P[i + 1][1] - P[i][1]);
+  const total = len(0) + len(1) + len(2);
+  const ka = len(0) / total;
+  const kb = (len(0) + len(1)) / total;
+  const q = smooth(clamp01(k));
+  const u = q < ka ? q / ka : q < kb ? 1 + (q - ka) / (kb - ka) : 2 + (q - kb) / (1 - kb);
+  const i = Math.min(2, Math.floor(u));
+  const t = u - i;
+  const at = (j: number) => P[Math.min(3, Math.max(0, j))];
+  const spline = (c: 0 | 1) => {
+    const [a, b, d, e] = [at(i - 1)[c], at(i)[c], at(i + 1)[c], at(i + 2)[c]];
+    return 0.5 * (2 * b + (d - a) * t + (2 * a - 5 * b + 4 * d - e) * t * t + (3 * b - a - 3 * d + e) * t * t * t);
+  };
+  const pos = path.from.clone().lerp(to, clamp01(spline(0)));
+  pos.y = spline(1);
+  return { pos, turn: smooth(clamp01((u - 1.6) / 1.4)) };
+}
+
+// 手型：-1 张开，0 放松，1 捏着牌。伸手的路上从放松慢慢合拢、到牌上正好捏住（不先张开：手牌前面紧挨着牌山，
+// 张着的手指会扫进牌山里）；一直捏到松手那一刻（落桌；半路抛出去的是抛的那一刻；落桌后还按着牌转、推的是按完），
+// 很快张开；收手的路上回到放松
+const GRIP_OPEN = -0.7;
+const GRIP_RELEASE = 0.12;
+// 伸手伸到几成时间开始合拢
+const GRIP_FROM = 0.3;
+export function gripAt(p: DiscardMotion, t: number, hold = 0, style: DiscardStyle = 'place'): number {
+  if (t <= 0) return 0;
+  if (t < p.reach) {
+    return smooth(clamp01((t / p.reach - GRIP_FROM) / (1 - GRIP_FROM)));
+  }
+  const spec = specOf(style, p);
+  const letGo = p.reach + (spec.grip <= 1 ? spec.grip * p.carry : p.carry + (spec.grip - 1));
+  if (t < letGo) return 1;
+  const u = (t - letGo) / GRIP_RELEASE;
+  if (u < 1) return 1 + (GRIP_OPEN - 1) * smooth(u);
+  const end = totalTime(p, hold, style);
+  if (t >= end) return 0;
+  const from = Math.max(letGo + GRIP_RELEASE, end - p.back);
+  return t < from ? GRIP_OPEN : GRIP_OPEN * (1 - smooth((t - from) / Math.max(1e-3, end - from)));
+}
+
+// 手指捏在牌的哪里：立着的牌捏上半截（手牌前面紧挨着牌山，手指伸不到牌的半腰，真人也是捏着牌顶拿的），
+// 放平了的捏中间；牌从立着转到放平，捏点跟着从上半截挪回中间
+const HOLD_HIGH = 0.27;
+function holdAt(pos: THREE.Vector3, quat: THREE.Quaternion): THREE.Vector3 {
+  const upright = Math.max(0, new THREE.Vector3(0, 1, 0).applyQuaternion(quat).y);
+  return pos.clone().addScaledVector(UP, TILE_H * HOLD_HIGH * upright);
+}
+
 // 手腕在接触点的后上方，手指正好捏住牌
 function grip(p: DiscardMotion, path: DiscardPath, at: THREE.Vector3, raise: number): THREE.Vector3 {
   return at
@@ -390,8 +466,8 @@ export function sampleDiscard(p: DiscardMotion, path: DiscardPath, t: number): D
     return {
       phase,
       weight: k,
-      wrist: grip(p, path, path.from, (1 - k) * REACH_RAISE),
-      contact: path.from.clone(),
+      wrist: grip(p, path, holdAt(path.from, path.fromQuat), (1 - k) * REACH_RAISE),
+      contact: holdAt(path.from, path.fromQuat),
       holding: true,
       tilePos: path.from.clone(),
       tileQuat: path.fromQuat.clone(),
@@ -400,10 +476,17 @@ export function sampleDiscard(p: DiscardMotion, path: DiscardPath, t: number): D
   if (phase === 'carry') {
     // 拿起来沿弧线移过去，同时转成牌河里的朝向
     const tc = t - p.reach;
+    const over = carryOver(p, path, path.to, tc / p.carry);
+    if (over) {
+      const quat = path.fromQuat.clone().slerp(path.toQuat, over.turn);
+      const at = holdAt(over.pos, quat);
+      return { phase, weight: 1, wrist: grip(p, path, at, 0), contact: at, holding: true, tilePos: over.pos, tileQuat: quat };
+    }
     const k = smooth(tc / p.carry);
     const pos = path.from.clone().lerp(path.to, k).addScaledVector(UP, Math.sin(k * Math.PI) * p.lift);
     const quat = path.fromQuat.clone().slerp(path.toQuat, 1 - Math.exp(-TURN_RATE * tc));
-    return { phase, weight: 1, wrist: grip(p, path, pos, 0), contact: pos.clone(), holding: true, tilePos: pos, tileQuat: quat };
+    const at = holdAt(pos, quat);
+    return { phase, weight: 1, wrist: grip(p, path, at, 0), contact: at, holding: true, tilePos: pos, tileQuat: quat };
   }
   if (phase === 'settle') {
     return {
@@ -488,8 +571,10 @@ function tileAt(p: DiscardMotion, path: DiscardPath, style: DiscardStyle, tc: nu
   const k = clamp01(tc / p.carry);
   const ta = tc - p.carry;
   // 搬运途中转向落桌姿势：和原来一样先快后慢，但落桌那一刻正好转完（后面还要接着动，不能差一点点）
-  const turn = (q: THREE.Quaternion) => path.fromQuat.clone().slerp(q, (1 - Math.exp(-TURN_RATE * Math.min(tc, p.carry))) / (1 - Math.exp(-TURN_RATE * p.carry)));
-  const arc = (to: THREE.Vector3, lift: number) => path.from.clone().lerp(to, smooth(k)).addScaledVector(UP, Math.sin(k * Math.PI) * lift);
+  // 隔着牌山的（3D，手拿着）：先竖着提起来越过牌山再落，过了牌山才转
+  const over = carryOver(p, path, end, k);
+  const turn = (q: THREE.Quaternion) => path.fromQuat.clone().slerp(q, over ? over.turn : (1 - Math.exp(-TURN_RATE * Math.min(tc, p.carry))) / (1 - Math.exp(-TURN_RATE * p.carry)));
+  const arc = (to: THREE.Vector3, lift: number) => carryOver(p, path, to, k)?.pos ?? path.from.clone().lerp(to, smooth(k)).addScaledVector(UP, Math.sin(k * Math.PI) * lift);
 
   if (style === 'snap') {
     // 拍：先往前送到落点上方，再直着拍下去，越落越快
@@ -610,11 +695,12 @@ function sampleStyled(p: DiscardMotion, path: DiscardPath, t: number, style: Dis
   const phase = phaseAt(p, t, hold, style);
   if (phase === 'reach') {
     const k = easeOut(Math.max(0, t) / p.reach);
+    const at = holdAt(path.from, path.fromQuat);
     return {
       phase,
       weight: k,
-      wrist: grip(p, path, path.from, (1 - k) * REACH_RAISE),
-      contact: path.from.clone(),
+      wrist: grip(p, path, at, (1 - k) * REACH_RAISE),
+      contact: at,
       holding: true,
       tilePos: path.from.clone(),
       tileQuat: path.fromQuat.clone(),
@@ -629,7 +715,7 @@ function sampleStyled(p: DiscardMotion, path: DiscardPath, t: number, style: Dis
   // 松手的时刻（从抓起来算）
   const letGo = spec.grip <= 1 ? spec.grip * p.carry : p.carry + (spec.grip - 1);
   const held = tc <= letGo ? tile : tileAt(p, path, style, letGo, letGo >= p.carry ? end : path.to);
-  const rest = held.pos;
+  const rest = holdAt(held.pos, held.quat);
   // 半路松手的（抛、旋）：手送出去顿一下就收，不用等牌落桌
   const backAt = (spec.grip < 1 ? Math.min(letGo + FOLLOW, p.carry + p.settle) : p.carry + p.settle) + hold;
   const k = tc <= backAt ? 0 : phase === 'done' || p.back <= 0 ? 1 : smooth(clamp01((tc - backAt) / p.back));

@@ -386,7 +386,7 @@ export class DiscardLab {
     const cm = (world: number) => Math.round((world / TILE_W) * REAL_TILE_MM) / 10;
     const name = CHARACTERS.find((c) => c.id === this.state.char)?.name ?? '';
     const av = this.table?.avatarAt(this.seat);
-    const height = av ? `${name}约 ${Math.round(cm(av.stature * d.scale))} 厘米高（真人约 155）` : `${name}的身高等人物加载好再算`;
+    const height = av ? `${name}约 ${Math.round(cm(av.stature * av.root.scale.x))} 厘米高（真人约 155）` : `${name}的身高等人物加载好再算`;
     return `按比赛用牌（宽 ${REAL_TILE_MM} 毫米）换算：桌子外框 ${Math.round(cm(d.bodyHalf * 2))} 厘米（真实 89–98），${height}。`;
   }
 

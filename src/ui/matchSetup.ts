@@ -4,7 +4,7 @@ import type { Rules } from '../engine/game';
 import type { Rng } from '../engine/rng';
 import { SCHOOLS, membersOf } from './schools';
 import type { DiscardFx, PondFx, RiichiFx } from './vary';
-import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, type ThemeId, consoleShapeOf, skinTableColors, tableColors } from './theme';
+import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, type ThemeId, consoleShapeOf, skinTableColors } from './theme';
 
 // 选人页右上角的两个设置面板：对局设置（规则、对手）和视觉设置（皮肤、牌桌视角、动画）。
 // 改了马上记在浏览器里，点头像、按出场都照这里的设置开局
@@ -49,6 +49,10 @@ export interface MatchSettings {
   layout: 'classic' | 'improved';
   // 改良布局里自己手牌的画法：B 没有透视、单独一层（雀魂那样）；C 同 B，牌往前倾、牌顶露得多
   hand: 'B' | 'C';
+  // 俯视 2D（试做）自己手牌的大小：small / mid / large，倍数见 TOP_HAND_SCALE
+  topHand: 'small' | 'mid' | 'large';
+  topAlpha: 'solid' | 'light' | 'half' | 'clear';
+  topTilt: 'up' | 'mid' | 'flat';
   // 一局结束以后的画面：classic 原版结算弹窗；staged 新结算（试做，照雀魂分几页：和牌、点数移动），只在 3D、2.5D 牌桌上
   result: 'classic' | 'staged';
   // 改良布局的自摸拍牌：hand 一只手夹着牌斜着举起来、牌面朝上拍在桌上；tile 不带手，牌自己跳起来拍下去
@@ -87,6 +91,9 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   nellyClassic: false,
   layout: 'classic',
   hand: 'B',
+  topHand: 'mid',
+  topAlpha: 'solid',
+  topTilt: 'mid',
   result: 'classic',
   slam: 'hand',
   slamOrder: 'first',
@@ -241,6 +248,37 @@ const ROWS: Row[] = [
     ],
   },
   {
+    key: 'topHand',
+    name: '俯视 2D 的手牌',
+    note: '自己手牌的大小（牌大了镜头会退远一点，整张桌子跟着小一点）',
+    options: [
+      { label: '小', value: 'small' },
+      { label: '中', value: 'mid' },
+      { label: '大', value: 'large' },
+    ],
+  },
+  {
+    key: 'topTilt',
+    name: '俯视 2D 手牌倾斜',
+    note: '自己的手牌往后躺多少：竖一点看得到牌的厚度，躺平最像 2D',
+    options: [
+      { label: '竖一点', value: 'up' },
+      { label: '斜着', value: 'mid' },
+      { label: '躺平', value: 'flat' },
+    ],
+  },
+  {
+    key: 'topAlpha',
+    name: '俯视 2D 手牌透明度',
+    note: '手牌透一点，能看见压在下面的牌桌；鼠标指着的那张不透明',
+    options: [
+      { label: '不透明', value: 'solid' },
+      { label: '稍透', value: 'light' },
+      { label: '半透', value: 'half' },
+      { label: '很透', value: 'clear' },
+    ],
+  },
+  {
     key: 'slam',
     name: '自摸动作',
     note: '改良布局自摸时：带手是一只手夹着牌斜着举起来、牌面朝上拍在桌上；不带手是牌自己跳起来拍下去',
@@ -278,6 +316,20 @@ const ROWS: Row[] = [
     ],
   },
 ];
+
+// 俯视 2D 自己手牌放大几倍（table3d 的 View25.hand）
+export const TOP_HAND_SCALE: Record<MatchSettings['topHand'], number> = { small: 1.2, mid: 1.45, large: 1.7 };
+export const TOP_HAND_TILT: Record<MatchSettings['topTilt'], number> = { up: 50, mid: 70, flat: 86 };
+export const TOP_HAND_ALPHA: Record<MatchSettings['topAlpha'], number> = { solid: 1, light: 0.8, half: 0.6, clear: 0.4 };
+
+// 视觉设置里跟着牌桌视角走的几项：只列这个视角用得上的，免得选了没反应。
+// 2.5D：布局（改良时再加改良专属的手牌、自摸几项）；俯视 2D：手牌大小；3D、2.5D、俯视 2D 都有新结算；2D 都没有
+export function viewKeys(mode: TableMode, s: MatchSettings): (keyof MatchSettings)[] {
+  if (mode === '25d') return s.layout === 'improved' ? ['layout', 'hand', 'slam', 'slamStyle', 'slamOrder', 'result'] : ['layout', 'result'];
+  if (mode === 'top') return ['topHand', 'topTilt', 'topAlpha', 'result'];
+  if (mode === '3d') return ['result'];
+  return [];
+}
 
 // 两个面板各管哪几项（存在同一份设置里）
 const MATCH_KEYS: (keyof MatchSettings)[] = ['length', 'start', 'target', 'tobi', 'red', 'kuitan', 'minHan', 'open'];
@@ -354,7 +406,7 @@ export function rowHtml(name: string, body: string, note?: string, cls = ''): st
   return `<div class="setup-row${cls ? ` ${cls}` : ''}"><span class="setup-name">${name}${note ? `<small>${note}</small>` : ''}</span><div class="setup-opts">${body}</div></div>`;
 }
 
-export function settingRows(s: MatchSettings, keys: (keyof MatchSettings)[]): string {
+export function settingRows(s: MatchSettings, keys: (keyof MatchSettings)[], ui = 'setup-opt'): string {
   return keys
     .map((k) => {
       const r = ROWS.find((x) => x.key === k);
@@ -363,7 +415,7 @@ export function settingRows(s: MatchSettings, keys: (keyof MatchSettings)[]): st
       const body =
         r.key === 'target'
           ? `<input class="setup-input" id="setup-target" type="text" inputmode="numeric" value="${s.target}" aria-label="一位必要点数" /><span class="setup-unit">点</span>`
-          : optsHtml('setup-opt', r.key, r.options, String(s[r.key]));
+          : optsHtml(ui, r.key, r.options, String(s[r.key]));
       return rowHtml(r.name, body, r.note);
     })
     .join('');
@@ -377,7 +429,8 @@ export const SETTING_TABS = [
   { id: 'sound', name: '声音' },
 ];
 
-export function panelHtml(kind: string, title: string, sub: string, body: string, actions: string, tabs = kind === 'match' || kind === 'visual'): string {
+// side：面板旁边另放的东西（视觉设置右边的牌桌预览）
+export function panelHtml(kind: string, title: string, sub: string, body: string, actions: string, tabs = kind === 'match' || kind === 'visual', side = ''): string {
   const nav = tabs
     ? `<nav class="set-tabs" role="tablist" aria-label="设置分页">${SETTING_TABS.map((t) => `<button role="tab" aria-selected="${t.id === kind}" class="${t.id === kind ? 'on' : ''}" data-ui="set-tab" data-v="${t.id}">${t.name}</button>`).join('')}</nav>`
     : '';
@@ -388,7 +441,7 @@ export function panelHtml(kind: string, title: string, sub: string, body: string
         ${nav}
         ${body}
         <div class="setup-actions">${actions}<button class="primary" data-ui="panel-close">完成</button></div>
-      </div>
+      </div>${side}
     </div>`;
 }
 
@@ -408,11 +461,12 @@ export function matchPanelHtml(s: MatchSettings): string {
   return panelHtml('match', '对局设置', '个人对局照这里开局，团体赛按比赛规则', body, '<button data-ui="match-reset">恢复默认</button>');
 }
 
-export type TableMode = '25d' | '3d' | '2d';
+export type TableMode = '25d' | '3d' | '2d' | 'top';
 export const TABLE_MODES: { id: TableMode; name: string; note: string }[] = [
   { id: '25d', name: '2.5D', note: '从上往下看的 3D 牌桌' },
   { id: '3d', name: '3D 实验', note: '坐着人物，要先下载模型' },
   { id: '2d', name: '2D', note: '平面牌桌，最省电' },
+  { id: 'top', name: '俯视 2D', note: '试做：2.5D 的牌桌从正上方看，像 2D 一样平铺，牌和牌山还带点立体' },
 ];
 
 const MODE_KEY = 'saki-table-mode';
@@ -447,12 +501,10 @@ export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMod
     const on = m.id === mode;
     return `<button class="${on ? 'on' : ''}" aria-pressed="${on}" data-ui="vis-mode" data-v="${m.id}">${m.name}</button>`;
   }).join('');
-  // 牌桌风格的小色样：桌布色上放一块仪表盘色的小方块，方块里一道字的颜色
-  const tableNote = TABLE_STYLES.find((t) => t.id === table)?.note;
+  // 牌桌风格：只写名字（原来名字前的小色样看不出是什么样子，还容易看岔）；点了以后右边出一张预览（tablePreview.ts），说明写在预览底下
   const tables = TABLE_STYLES.map((t) => {
-    const c = tableColors(theme, t.id);
     const on = t.id === table;
-    return `<button class="set-theme set-table${on ? ' on' : ''}" aria-pressed="${on}" data-ui="vis-table" data-v="${t.id}" style="--f:${c.felt[1]};--b:${c.back};--c:${c.console.bg[0]};--k:${c.console.ink === c.console.bg[0] ? c.console.accent : c.console.ink};--a:${c.console.line}"><i aria-hidden="true"></i>${t.name}</button>`;
+    return `<button class="set-table${on ? ' on' : ''}" aria-pressed="${on}" data-ui="vis-table" data-v="${t.id}">${t.name}</button>`;
   }).join('');
   // 仪表盘形状：每个按钮前画一个小图形（「跟牌桌走」画现在这套牌桌自己的形状）
   const shapeNote = CONSOLE_SHAPES.find((t) => t.id === shape)?.note;
@@ -461,7 +513,11 @@ export function visualPanelHtml(s: MatchSettings, theme: ThemeId, mode: TableMod
     const f = t.id === 'auto' ? consoleShapeOf(table, 'auto') : t.id;
     return `<button class="set-theme set-shape${on ? ' on' : ''}" aria-pressed="${on}" data-ui="vis-shape" data-v="${t.id}"><i class="sh-${f}" aria-hidden="true"></i>${t.name}</button>`;
   }).join('');
-  const art = skins ? section('素材') + rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图、语音 ›</button>', '只有页面主人看得到') : '';
-  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌风格', tables, tableNote, 'set-themes set-tables') + rowHtml('仪表盘形状', shapes, shapeNote, 'set-themes set-shapes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, s.layout === 'improved' ? ['layout', 'hand', 'slam', 'slamStyle', 'slamOrder', 'result'] : ['layout', 'result']) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
-  return panelHtml('visual', '视觉设置', '改了马上生效', body, '');
+  // 素材导入人人都有（存在自己的浏览器里，用不用随你）；试玩页的角色素材只有页面主人有
+  const art =
+    section('素材') +
+    rowHtml('素材导入', '<button class="set-link" data-ui="assets">换头像、模型、语音、音乐 ›</button>', '存在这个浏览器里，只影响自己；能导出成素材包带走') +
+    (skins ? rowHtml('角色素材', '<button class="set-link" data-ui="skins">换头像、切入图、语音 ›</button>', '试玩页，只有页面主人看得到') : '');
+  const body = section('界面') + rowHtml('界面皮肤', themes, undefined, 'set-themes') + rowHtml('牌桌风格', tables, '点一下看预览', 'set-themes set-tables') + '<div class="tp-inline"></div>' + rowHtml('仪表盘形状', shapes, shapeNote, 'set-themes set-shapes') + rowHtml('牌桌视角', modes, modeNote) + settingRows(s, viewKeys(mode, s)) + section('动画') + settingRows(s, VISUAL_KEYS) + art;
+  return panelHtml('visual', '视觉设置', '改了马上生效', body, '', true, '<aside class="tp-side" aria-label="牌桌预览"></aside>');
 }

@@ -27,7 +27,7 @@ describe('出牌动作', () => {
     const p = DEFAULT_DISCARD;
     const m = markers(p);
     expect(m.map((x) => x.name)).toEqual(['depart', 'grab', 'land', 'release', 'done']);
-    expect(m.map((x) => x.t)).toEqual([0, 0.3, 0.3 + 0.34, 0.3 + 0.34 + 0.22, totalTime(p)]);
+    expect(m.map((x) => x.t)).toEqual([0, p.reach, p.reach + p.carry, p.reach + p.carry + p.settle, totalTime(p)]);
     for (let i = 1; i < m.length; i++) expect(m[i].t).toBeGreaterThanOrEqual(m[i - 1].t);
     // 放铳时手停住：松手和收回往后推，落桌不变
     const held = markers(p, 1.5);
@@ -99,7 +99,10 @@ describe('出牌动作', () => {
   it('一帧帧累加出来的时间差一点浮点零头，也算到了标记', () => {
     const p = DEFAULT_DISCARD;
     let t = 0;
-    for (let i = 0; i < 18; i++) t += 1 / 60; // 0.3 附近，可能差一点点
+    // 伸手的时长正好是整数帧：一帧帧加到那里，可能差一点点
+    const frames = Math.round(p.reach * 60);
+    expect(frames / 60).toBeCloseTo(p.reach, 9);
+    for (let i = 0; i < frames; i++) t += 1 / 60;
     expect(dueMarkers(p, 0, 1, t).map((m) => m.name)).toEqual(['grab']);
     expect(dueMarkers(p, 0, 1, p.reach - 1e-6)).toEqual([]);
   });

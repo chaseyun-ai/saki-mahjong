@@ -9,19 +9,23 @@ import { IndividualFlow } from './story/individual';
 import { applyTheme } from './ui/theme';
 import { installSoundPanel } from './ui/soundPanel';
 import { installSoundtrack, stopMusic } from './ui/soundtrack';
+import { startCustomAssets } from './assets/layers';
+import { AssetImporter } from './assets/importer';
 
 applyTheme();
 // 声音设置面板：选人页顶栏和对局里的喇叭按钮都开它
 installSoundPanel();
 // 背景音乐、按钮的点击声：等玩家第一次点了才出声
 installSoundtrack();
+// 素材导入换上的素材（项目里 public/custom 的、玩家存在浏览器里的）：都没有就什么都不做
+void startCustomAssets();
 
 let root = document.getElementById('app')!;
 
 // 游戏和出牌动作调试场景来回切换：换一个新的 #app，旧的连同上面的点击监听一起扔掉，两边互不干扰。
 // 不靠改网址再刷新页面，嵌在别的页面里（比如试玩页）也能切
-type Page = 'game' | 'lab' | 'bracket' | 'solo';
-const pageOf = (hash: string): Page => (hash === '#lab' ? 'lab' : hash === '#bracket' ? 'bracket' : hash === '#solo' ? 'solo' : 'game');
+type Page = 'game' | 'lab' | 'bracket' | 'solo' | 'assets';
+const pageOf = (hash: string): Page => (hash === '#lab' ? 'lab' : hash === '#bracket' ? 'bracket' : hash === '#solo' ? 'solo' : hash === '#assets' ? 'assets' : 'game');
 
 function show(page: Page): void {
   const fresh = root.cloneNode(false) as HTMLElement;
@@ -39,6 +43,8 @@ function show(page: Page): void {
   // 全国大赛单独看（网址加 #bracket 是团体赛、#solo 是个人赛）：没有牌桌，玩家那桌只能交给电脑打
   else if (page === 'bracket') new NationalFlow(root, { exit: () => show('game'), switchTab: () => show('solo') });
   else if (page === 'solo') new IndividualFlow(root, { exit: () => show('game'), switchTab: () => show('bracket') });
+  // 素材导入单独打开（网址加 #assets，素材导入.bat 就开这里）
+  else if (page === 'assets') new AssetImporter(root, () => show('game'));
   else new App(root, () => show('lab'));
 }
 

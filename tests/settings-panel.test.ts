@@ -13,10 +13,29 @@ describe('设置面板', () => {
   });
 
   it('改良布局多出来的几项也画得出来', () => {
-    const html = visualPanelHtml({ ...DEFAULT_SETTINGS, layout: 'improved' }, 'classic', '3d', true, 'wood');
+    const html = visualPanelHtml({ ...DEFAULT_SETTINGS, layout: 'improved' }, 'classic', '25d', true, 'wood');
     for (const name of ['2.5D 布局', '改良布局的手牌', '自摸动作', '通用自摸', '自摸顺序', '结算画面']) {
       expect(html).toContain(`<span class="setup-name">${name}`);
     }
+  });
+
+  // 只在 2.5D（改良）有用的几项，换到别的视角就不列出来，免得选了没反应
+  it('别的视角不列 2.5D 改良专属的几项', () => {
+    const only25 = ['2.5D 布局', '改良布局的手牌', '自摸动作', '通用自摸', '自摸顺序'];
+    const top = ['俯视 2D 的手牌', '俯视 2D 手牌倾斜', '俯视 2D 手牌透明度'];
+    const s = { ...DEFAULT_SETTINGS, layout: 'improved' as const };
+    const has = (html: string, name: string) => html.includes(`<span class="setup-name">${name}`);
+    const in3d = visualPanelHtml(s, 'classic', '3d', true, 'wood');
+    expect(only25.concat(top).filter((n) => has(in3d, n))).toEqual([]);
+    expect(has(in3d, '结算画面')).toBe(true);
+    const inTop = visualPanelHtml(s, 'classic', 'top', true, 'wood');
+    expect(only25.filter((n) => has(inTop, n))).toEqual([]);
+    expect(top.filter((n) => !has(inTop, n))).toEqual([]);
+    const in2d = visualPanelHtml(s, 'classic', '2d', true, 'wood');
+    expect(only25.concat(top, ['结算画面']).filter((n) => has(in2d, n))).toEqual([]);
+    const plain25 = visualPanelHtml({ ...DEFAULT_SETTINGS, layout: 'classic' as never }, 'classic', '25d', true, 'wood');
+    expect(has(plain25, '2.5D 布局')).toBe(true);
+    expect(has(plain25, '改良布局的手牌')).toBe(false);
   });
 
   it('对局页画得出来', () => {

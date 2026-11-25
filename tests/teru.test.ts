@@ -38,7 +38,7 @@ const LINEUPS = [
 const POINTS = { ...TERU };
 
 describe('宫永照（按打点递增的连和）', () => {
-  it('每次和了的点数比上一次高就接上；和小了、别人和了、流局都断', () => {
+  it('每次和了的点数比上一次高就接上；和小了、别人和了、流局都断', async () => {
     const n = { up: 0, restart: 0, broke: 0, max: 0 };
     for (let seed = 1; seed <= 30; seed++) {
       play(seed, LINEUPS[seed % 4], {
@@ -76,6 +76,8 @@ describe('宫永照（按打点递增的连和）', () => {
           });
         },
       });
+      // 一个种子打完歇一下，让测试进程能回应主进程（一口气跑一分钟以上会被当成卡死，见 brawl.test.ts）
+      await new Promise((r) => setTimeout(r, 0));
     }
     expect(n.up).toBeGreaterThan(40);
     expect(n.max).toBeGreaterThanOrEqual(4);
