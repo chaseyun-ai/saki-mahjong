@@ -563,6 +563,30 @@
     0 1px 1.5px rgba(0, 0, 0, 0.6);
 }
 
+/* 立体感：圆棒子，上面一道高光、下面暗下去，两头收一点 */
+.tb {
+  position: relative;
+}
+
+.tb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(255, 255, 255, 0.75) 16%,
+      rgba(255, 255, 255, 0.12) 34%,
+      rgba(255, 255, 255, 0) 52%,
+      rgba(0, 0, 0, 0.12) 72%,
+      rgba(0, 0, 0, 0.45) 100%
+    ),
+    linear-gradient(to right, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0) 3%, rgba(0, 0, 0, 0) 97%, rgba(0, 0, 0, 0.3));
+  pointer-events: none;
+}
+
 .tb-10000 {
   --b: #d8403a;
   background-image:
@@ -649,16 +673,28 @@
 }
 
 /* 沿弧线一根根走的棒：比卡片上的大一点，带影子 */
+.rf-points {
+  --rw: 112px;
+}
+
+/* 沿弧线排队走的棒：一直横着放，外层管位置和落在下面的影子 */
 .rf-run {
-  --tw: 52px;
-  --th: 10px;
   position: absolute;
   left: 0;
   top: 0;
   z-index: 5;
   pointer-events: none;
   opacity: 0;
-  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.55));
+  filter: drop-shadow(0 6px 4px rgba(0, 0, 0, 0.5));
+}
+
+.rf-run .tb {
+  --tw: var(--rw);
+  --th: calc(var(--rw) * 0.11);
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: -50% -50%;
 }
 
 /* 路中间写这一笔多少点（找零是蓝的） */
@@ -722,6 +758,10 @@
 /* 像素皮肤：棒、盒子、牌子都是直角，深色描边 */
 :root[data-theme='pixel'] :is(.tb, .rf-amt, .rf-legend) {
   border-radius: 0;
+}
+
+:root[data-theme='pixel'] .tb::after {
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.45) 0 25%, rgba(255, 255, 255, 0) 25% 68%, rgba(0, 0, 0, 0.35) 68%);
 }
 
 :root[data-theme='pixel'] .tb {
@@ -843,9 +883,8 @@
     padding-top: 4px;
   }
 
-  .rf-run {
-    --tw: 34px;
-    --th: 7px;
+  .rf-points {
+    --rw: 76px;
   }
 
   .rf-amt {
@@ -961,9 +1000,8 @@
     top: 50%;
   }
 
-  .rf-run {
-    --tw: 34px;
-    --th: 7px;
+  .rf-points {
+    --rw: 76px;
   }
 
   .rf-amt {

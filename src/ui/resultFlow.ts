@@ -185,23 +185,30 @@ export function queueOf(h: Sticks): number[] {
 }
 
 // 点棒怎么走的时间表（毫秒，从这一页放进去算）：每一笔隔一会儿开始，几笔可以同时走；
-// 一笔里先是付的人的棒一根接一根沿弧线走过去，最后一根到了，找零的棒再一根接一根沿原路走回来
-export const STICK_T = { first: 700, apart: 520, step: 110, gap: 160, fly: 950 };
+// 一笔里先是付的人的棒一根接一根沿弧线走过去，最后一根到了，找零的棒再一根接一根沿原路走回来。
+// fly：一根走完这条路要多久；step：一根接一根隔多久（横着的棒顺着路走时要隔开一根的长度，不然叠在一起）
+export const STICK_T = { first: 700, apart: 520, step: 80, gap: 160, fly: 1000 };
 export interface StickRun {
   move: number;
   give: { start: number; arrive: number }; // 第一根出发、最后一根到
   back: { start: number; arrive: number } | null;
+  step: number; // 一根接一根隔多久出发
 }
-export function stickTimeline(moves: StickMove[], fly: (move: number) => number = () => STICK_T.fly): { runs: StickRun[]; end: number } {
+export function stickTimeline(
+  moves: StickMove[],
+  fly: (move: number) => number = () => STICK_T.fly,
+  step: (move: number) => number = () => STICK_T.step,
+): { runs: StickRun[]; end: number } {
   let end = STICK_T.first;
   const runs = moves.map((m, i) => {
     const f = fly(i);
+    const st = step(i);
     const g0 = STICK_T.first + i * STICK_T.apart;
-    const give = { start: g0, arrive: g0 + (queueOf(m.give).length - 1) * STICK_T.step + f };
+    const give = { start: g0, arrive: g0 + (queueOf(m.give).length - 1) * st + f };
     const nb = queueOf(m.back).length;
-    const back = nb ? { start: give.arrive + STICK_T.gap, arrive: give.arrive + STICK_T.gap + (nb - 1) * STICK_T.step + f } : null;
+    const back = nb ? { start: give.arrive + STICK_T.gap, arrive: give.arrive + STICK_T.gap + (nb - 1) * st + f } : null;
     end = Math.max(end, (back ?? give).arrive);
-    return { move: i, give, back };
+    return { move: i, give, back, step: st };
   });
   return { runs, end };
 }
@@ -300,33 +307,47 @@ export function animatePoints(el: HTMLElement, seats: PointSeat[], sticks?: Stic
     for (let k = 1; k <= 20; k++) len += Math.hypot(at(k / 20).x - at((k - 1) / 20).x, at(k / 20).y - at((k - 1) / 20).y);
     return { at, dir, len };
   });
-  // 走多久跟着路有多长（一秒走 750 像素左右）
-  const flyOf = (i: number) => Math.min(1150, Math.max(650, (paths[i]?.len ?? 600) / 0.75));
-  const { runs, end } = stickTimeline(sticks.moves, flyOf);
+  // 走的棒半根多长（手机上短一点，CSS 里定的 --rw）
+  const runHalf = () => (parseFloat(getComputedStyle(el).getPropertyValue('--rw')) || 112) / 2;
+  // 走多久跟着路有多长（一秒走 650 像素左右）
+  const flyOf = (i: number) => Math.min(1300, Math.max(750, (paths[i]?.len ?? 600) / 0.65));
+  // 一根接一根隔多久：横着的棒沿路往前走，前后两根在走的方向上要让开「棒在这个方向上占的长度」再空一点
+  const stepOf = (i: number) => {
+    const path = paths[i];
+    if (!path) return STICK_T.step;
+    const w = runHalf() * 2;
+    const h = w * 0.11;
+    let need = 0;
+    for (let k = 0; k <= 10; k++) {
+      const v = path.dir(k / 10);
+      const len = Math.hypot(v.x, v.y) || 1;
+      need = Math.max(need, (Math.abs(v.x) / len) * w + (Math.abs(v.y) / len) * h);
+    }
+    const speed = path.len / flyOf(i);
+    return Math.max(STICK_T.step, (need + Math.max(10, h * 1.6)) / speed);
+  };
+  const { runs, end } = stickTimeline(sticks.moves, flyOf, stepOf);
 
-  // 一根棒沿路走一趟（reverse：找零，从收的人走回付的人）
+  // 一根棒沿路走一趟（reverse：找零，从收的人走回付的人）。棒一直横着放（像摆在桌上那样），一根根排成队往前走；
+  // 落在下面的影子在外层，所以不管往哪走影子都往下
   const runStick = (d: number, path: NonNullable<(typeof paths)[number]>, ms: number, reverse: boolean) => {
-    const node = document.createElement('i');
-    node.className = `tb tb-${DENOMS[d]} rf-run`;
+    const node = document.createElement('span');
+    node.className = 'rf-run';
+    node.innerHTML = `<i class="tb tb-${DENOMS[d]}"></i>`;
     el.appendChild(node);
-    const frames: Keyframe[] = [];
+    const move: Keyframe[] = [];
     const N = 24;
     for (let k = 0; k <= N; k++) {
-      const u = reverse ? 1 - k / N : k / N;
-      const p = path.at(u);
-      const v = path.dir(u);
-      const ang = (Math.atan2(v.y, v.x) * 180) / Math.PI;
-      // 棒头朝前，走回来时掉个头
-      const a = reverse ? ang + 180 : ang;
-      frames.push({ transform: `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -50%) rotate(${a.toFixed(1)}deg)`, opacity: k === 0 || k === N ? 0 : 1, offset: k / N });
+      const p = path.at(reverse ? 1 - k / N : k / N);
+      move.push({ transform: `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px)`, opacity: k === 0 || k === N ? 0 : 1, offset: k / N });
     }
-    // 头尾两帧之间不透明：出发、到达那一下淡入淡出
-    frames[1].opacity = 1;
-    anims.push(node.animate(frames, { duration: ms, easing: 'cubic-bezier(0.35, 0, 0.45, 1)', fill: 'forwards' }));
+    // 匀速走，排的队间隔一样
+    anims.push(node.animate(move, { duration: ms, easing: 'linear', fill: 'forwards' }));
     later(ms + 20, () => node.remove());
   };
   // 路中间的点数牌子（往外让开一点，不压着走过的棒）
   const label = (path: NonNullable<(typeof paths)[number]>, text: string, change: boolean, from: number, to: number) => {
+    const half = runHalf();
     const node = document.createElement('div');
     node.className = `rf-amt${change ? ' change' : ''}`;
     node.textContent = text;
@@ -340,7 +361,8 @@ export function animatePoints(el: HTMLElement, seats: PointSeat[], sticks?: Stic
       nx = -nx;
       ny = -ny;
     }
-    const off = change ? -22 : 22;
+    // 牌子让到横着的棒外面：法线方向上棒占多宽，再空一点
+    const off = (change ? -1 : 1) * (Math.abs(nx) * half + Math.abs(ny) * half * 0.11 + 18);
     node.style.left = `${(p.x + nx * off).toFixed(1)}px`;
     node.style.top = `${(p.y + ny * off).toFixed(1)}px`;
     el.appendChild(node);
@@ -357,7 +379,7 @@ export function animatePoints(el: HTMLElement, seats: PointSeat[], sticks?: Stic
       const owe = m.short ? `（欠 ${fmt(m.short)}）` : '';
       label(path, m.from < 0 ? `供托 ${fmt(m.pts)}` : `${fmt(m.pts)}${owe}`, false, run.give.start, (run.back ?? run.give).arrive + 500);
       queueOf(m.give).forEach((d, k) =>
-        later(run.give.start + k * STICK_T.step, () => {
+        later(run.give.start + k * run.step, () => {
           // 供托：桌子中间少一根
           if (m.from < 0 && pot) {
             potN--;
@@ -369,7 +391,7 @@ export function animatePoints(el: HTMLElement, seats: PointSeat[], sticks?: Stic
       );
       if (run.back) {
         label(path, `找零 ${fmt(total(m.back))}`, true, run.back.start, run.back.arrive + 500);
-        queueOf(m.back).forEach((d, k) => later(run.back!.start + k * STICK_T.step, () => runStick(d, path, fly, true)));
+        queueOf(m.back).forEach((d, k) => later(run.back!.start + k * run.step, () => runStick(d, path, fly, true)));
       }
     }
     // 最后一根递到的时候两家点数滚过去（找零不改点数）
