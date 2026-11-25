@@ -29,7 +29,8 @@ export function timeOfDay(hour = new Date().getHours()): HomeTod {
   return 'night';
 }
 const TOD_KEY = 'saki-home-tod';
-function currentTod(): HomeTod {
+// 现在主页是哪个时间（牌桌的部室跟着用）
+export function currentTod(): HomeTod {
   try {
     const v = sessionStorage.getItem(TOD_KEY) as HomeTod | null;
     if (v && TODS.includes(v)) return v;

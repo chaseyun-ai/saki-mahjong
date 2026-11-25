@@ -35,8 +35,9 @@ import { tabsHtml } from './tabs';
 // 点击用 data-story，只在自己的画面（.national-screen）上才管
 
 export interface NationalHooks {
-  // 打玩家那一桌：App 用团体赛画面打完后调 done(四所学校按桌上顺序的点数)；中途退出就不调
-  playTable?(run: TeamRun, done: (points: number[]) => void): void;
+  // 打玩家那一桌：App 用团体赛画面打完后调 done(四所学校按桌上顺序的点数)；中途退出就不调。
+  // where：第几轮（ROUNDS 里的名字）、哪一桌、是不是总决赛（牌桌四周摆哪种场地、牌子上写什么）
+  playTable?(run: TeamRun, done: (points: number[]) => void, where?: { round: string; table: string; final: boolean }): void;
   // 切到个人赛页签
   switchTab?(): void;
   exit(): void;
@@ -227,13 +228,17 @@ export class NationalFlow {
     const teams = t.schools.map((s) => ({ name: b.entrants[s].short, color: b.entrants[s].color, lineup: lineupOf(b, s) }));
     const run = TeamRun.preset(Math.floor(Math.random() * 2 ** 31), teams, t.schools.indexOf(b.mine));
     const round = b.round;
-    this.hooks.playTable?.(run, (points) => {
-      // 打完回来时已经不是这一届、这一轮（中途重新报名之类）：不算
-      if (this.b !== b || b.round !== round || t.result) return;
-      reportMine(b, points);
-      this.fresh.add(t.name);
-      saveBracket(b);
-    });
+    this.hooks.playTable?.(
+      run,
+      (points) => {
+        // 打完回来时已经不是这一届、这一轮（中途重新报名之类）：不算
+        if (this.b !== b || b.round !== round || t.result) return;
+        reportMine(b, points);
+        this.fresh.add(t.name);
+        saveBracket(b);
+      },
+      { round: ROUNDS[round], table: t.name, final: round === ROUNDS.length - 1 },
+    );
   }
 
   // 交给电脑打：玩家那桌也在后台真打

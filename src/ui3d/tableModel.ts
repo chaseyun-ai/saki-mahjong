@@ -218,6 +218,8 @@ export function buildTableModel(d: TableDims, frameTop: number, mats: TableMater
   group.add(band(apron + 0.02, shape.apronY + 0.06), band(shape.footHalf + PLINTH_OUT + 0.02, plinthTop - 0.06));
 
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), mats.floor);
+  // 有场地（venue.ts）时牌桌把这块无边的地面收起来，按名字找
+  floor.name = 'floor';
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = shape.floorY;
   floor.receiveShadow = true;

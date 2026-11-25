@@ -68,7 +68,7 @@ import { closeSoundPanel, onSoundTab, openSoundPanel, soundButtonHtml, soundPane
 import { tablePreview } from './tablePreview';
 import { entryFormHtml, rosterPageHtml, rosterTabsHtml, savePick, savedPick, selectBoardHtml } from './selectPage';
 import { Scene, gameMusic, menuMusic, promptCue, resultMusic, soundtrackEvent, tallyCue } from './soundtrack';
-import { homeGo, homeHtml, mountHome } from './home';
+import { currentTod, homeGo, homeHtml, mountHome } from './home';
 import { mountCodex } from './codex';
 import { NationalFlow } from '../story/national';
 import { IndividualFlow } from '../story/individual';
@@ -79,6 +79,7 @@ import { type NationalTab, saveTab, savedTab } from '../story/tabs';
 import { hash01, paceOf, pickDiscardStyle, pondJitter, pondStyleOf, vary } from './vary';
 import { type DiscardStyle, isPush, landWeight, pushDistFor, pushSeconds } from '../ui3d/discardMotion';
 import { HAND_STYLES_V2, Table3D } from '../ui3d/table3d';
+import { chooseVenue, type VenueSpec, type VenueTod, type VenueWhere } from '../ui3d/venue';
 import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, cutinArt, modelUrls, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
 import { type WashArea, type Washed, keepIn, randomSpot, spread, wash } from '../ui3d/wash';
@@ -448,7 +449,11 @@ export class App {
   private national: NationalFlow | null = null;
   private solo: IndividualFlow | null = null;
   // 个人赛里玩家正在打的那一场：order[座位] 是这一桌第几个人（玩家坐 0 号位），打完把点数按桌上的顺序交回去
-  private soloMatch: { order: number[]; label: string; finale: boolean; hands: HandEvent[]; done: (scores: number[], hands: HandEvent[]) => void } | null = null;
+  private soloMatch: { order: number[]; label: string; finale: boolean; final: boolean; hands: HandEvent[]; done: (scores: number[], hands: HandEvent[]) => void } | null = null;
+  // 全国大赛团体赛里玩家这一桌是哪一轮、哪一桌（牌桌四周的场地用）；run 对得上才算，别的团体赛不用它
+  private nationalWhere: { run: TeamRun; round: string; table: string; final: boolean } | null = null;
+  // 部室的时间（清晨、白天、黄昏、夜里）：开局时照主页定下来，打到一半不跟着钟点变
+  private venueTod: VenueTod = 'day';
 
   private openBracket(tab: NationalTab = savedTab()): void {
     this.teardown();
@@ -479,7 +484,7 @@ export class App {
       return;
     }
     this.national = new NationalFlow(this.root, {
-      playTable: (run, done) => transition(() => this.openNationalTable(run, done)),
+      playTable: (run, done, where) => transition(() => this.openNationalTable(run, done, where)),
       switchTab: () => transition(() => this.openBracket('solo')),
       exit,
     });
@@ -487,7 +492,7 @@ export class App {
 
   // 个人赛里玩家那一场：规则固定（半庄、25000 点起……见 SOLO_RULES），玩家坐 0 号位，其余三人照桌上的顺序往下坐；
   // 起家随机。焦点桌、决赛桌放决战的音乐；每一局的和牌记下来（赛事快报用）。打完结算窗的按钮是「回到积分榜」
-  private startSoloMatch(chars: Character[], me: number, info: { label: string; finale: boolean }, done: (scores: number[], hands: HandEvent[]) => void): void {
+  private startSoloMatch(chars: Character[], me: number, info: { label: string; finale: boolean; final?: boolean }, done: (scores: number[], hands: HandEvent[]) => void): void {
     const order = [0, 1, 2, 3].map((i) => (me + i) % 4);
     const players = order.map((k) => chars[k]);
     this.teardown();
@@ -496,12 +501,13 @@ export class App {
     this.auto = false;
     const seed = Math.floor(Math.random() * 2 ** 31);
     const game = new Game({ seed, format: 'south', startScore: SOLO_START, rules: SOLO_RULES, firstDealer: Math.floor(Math.random() * 4), players: players.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me })) });
-    this.soloMatch = { order, label: info.label, finale: info.finale, hands: recordHands(game, order), done };
+    this.soloMatch = { order, label: info.label, finale: info.finale, final: !!info.final, hands: recordHands(game, order), done };
     this.beginGame(players, game);
   }
 
   // 全国大赛里玩家那一桌：团体赛的布阵、点数板、上场 / 托管；打完把四校点数交回晋级表，中途退出就不算
-  private openNationalTable(run: TeamRun, done: (points: number[]) => void): void {
+  private openNationalTable(run: TeamRun, done: (points: number[]) => void, where?: { round: string; table: string; final: boolean }): void {
+    this.nationalWhere = where ? { run, ...where } : null;
     const back = (): void => {
       this.teardown();
       menuMusic();
@@ -883,6 +889,7 @@ export class App {
   }
 
   private beginGame(chars: Character[], game: Game): void {
+    this.venueTod = currentTod();
     this.riiTest = this.pendingRiiTest;
     this.pendingRiiTest = false;
     this.quietTable = this.pendingQuiet;
@@ -956,6 +963,8 @@ export class App {
       this.eyeShots = new EyeShots(document.getElementById('cutins')!);
       this.cutinSeen.clear();
       this.table3d = new Table3D(document.getElementById('three')!, (id) => this.onTileClick(id), this.flat ? '25d' : '3d', v2, top);
+      // 牌桌四周的场地：第一帧就摆好（之后每次刷新画面再对一遍，设置里换了马上换）
+      this.table3d.setVenue(this.venueSpec());
       // 改良布局的手牌画法：照视觉设置（B / C）；网址后面加 ?hand=A 到 F 可以临时换成别的几种看
       const handStyle = HAND_STYLES_V2[new URLSearchParams(location.search).get('hand')?.toUpperCase() ?? ''] ?? HAND_STYLES_V2[this.settings.hand];
       if (v2 && handStyle) this.table3d.setView25(handStyle);
@@ -1191,6 +1200,21 @@ export class App {
     return `<div class="assist-bar">${html}${gear}${soundButtonHtml()}</div>`;
   }
 
+  // 牌桌四周的场地（ui3d/venue.ts 的 chooseVenue）：照视觉设置里的「牌桌环境」和这一场是什么比赛
+  private venueSpec(): VenueSpec | null {
+    const team = this.team;
+    const pos = team ? `${POSITIONS[Math.min(team.run.pos, POSITIONS.length - 1)]}战` : '';
+    const nat = team && this.nationalWhere?.run === team.run ? this.nationalWhere : null;
+    const where: VenueWhere = nat
+      ? { kind: 'national', round: nat.round, table: nat.table, final: nat.final, pos }
+      : this.soloMatch
+        ? { kind: 'solo', label: this.soloMatch.label, final: this.soloMatch.final }
+        : team
+          ? { kind: 'team', pos }
+          : { kind: 'single' };
+    return chooseVenue(this.settings.venue, where, this.venueTod);
+  }
+
   // 局内的牌桌设置：样子和声音设置一样的纸面板，背景不压暗、面板靠上，改的时候看得见下面的牌桌
   private tablePanelHtml(): string {
     const net = this.netView;
@@ -1200,6 +1224,7 @@ export class App {
     }).join('');
     const view = rowHtml('视角', modes, net ? '网络麻将开着的时候换不了' : '2.5D 和俯视 2D 之间镜头直接转过去，其他的过一下场再换');
     const keys: (keyof MatchSettings)[] = [];
+    if (this.mode !== '2d') keys.push('venue');
     if (this.mode === '25d' && !net) keys.push('layout');
     if (this.mode === 'top') keys.push('topHand', 'topTilt', 'topAlpha');
     // 公开手牌：团体战、个人赛照规则不公开，那里不给改
@@ -3010,8 +3035,8 @@ export class App {
     }
     if (el.dataset.ui === 'match-reset') {
       // 只换规则和对手；透华的常态 / 治水、咲的标准 / 加强、动画开关是别处的设置，留着
-      const { chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, eyeShot, layout, hand, topHand, topTilt, topAlpha, slam, slamOrder, slamStyle, xfade } = this.settings;
-      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, eyeShot, layout, hand, topHand, topTilt, topAlpha, slam, slamOrder, slamStyle, xfade };
+      const { chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, eyeShot, layout, hand, topHand, topTilt, topAlpha, slam, slamOrder, slamStyle, xfade, venue } = this.settings;
+      this.settings = { ...DEFAULT_SETTINGS, opponents: [...DEFAULT_SETTINGS.opponents], chisui, sakiStrong, awaiClassic, nellyClassic, drawPath, vary, discardFx, riichiFx, pondFx, spotlight, winZoom, awaiCutIn, eyeShot, layout, hand, topHand, topTilt, topAlpha, slam, slamOrder, slamStyle, xfade, venue };
       saveSettings(this.settings);
       this.renderPanel();
       return;
@@ -3435,6 +3460,7 @@ export class App {
     // 看下一巡时视野变绿
     hud.parentElement?.classList.toggle('deep', !!this.vision);
     this.renderToasts();
+    this.table3d.setVenue(this.venueSpec());
     this.table3d.sync(g, {
       me: this.me,
       clickable: g.phase === 'turn' && g.turn === this.me && !this.showResult ? this.discardable() : new Set(),

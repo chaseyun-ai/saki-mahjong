@@ -9,6 +9,7 @@ import {
   advance,
   charOf,
   createLeague,
+  FINAL_TABLE,
   FINALISTS,
   inFinal,
   isSeed,
@@ -44,9 +45,9 @@ import { tabsHtml } from './tabs';
 
 export interface SoloHooks {
   // 打玩家那一场：chars 是这一桌四个人（按 seats 的顺序），me 是玩家坐第几个；
-  // info.label 是「第 3 轮 · A 桌」之类，info.finale：焦点桌、决赛桌（放决战的音乐）。
+  // info.label 是「第 3 轮 · A 桌」之类，info.finale：焦点桌、决赛桌（放决战的音乐），info.final：决赛桌（牌桌四周换成决赛舞台）。
   // App 打完后调 done(四个人按同样顺序的终局点数, 这一场的和牌)；中途离开就不调
-  playHanchan?(chars: Character[], me: number, info: { label: string; finale: boolean }, done: (scores: number[], hands: HandEvent[]) => void): void;
+  playHanchan?(chars: Character[], me: number, info: { label: string; finale: boolean; final?: boolean }, done: (scores: number[], hands: HandEvent[]) => void): void;
   // 切到团体赛页签
   switchTab?(): void;
   exit(): void;
@@ -246,7 +247,7 @@ export class IndividualFlow {
     this.hooks.playHanchan?.(
       t.seats.map((p) => charOf(l, p)),
       t.seats.indexOf(l.mine),
-      { label, finale: isFocus(t) },
+      { label, finale: isFocus(t), final: t.name === FINAL_TABLE },
       (scores, hands) => {
         // 打完回来时已经不是这一届、这一场（中途重新报名之类）：不算
         if (this.l !== l || l.round !== round || t.scores) return;

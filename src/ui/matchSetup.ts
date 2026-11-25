@@ -65,6 +65,9 @@ export interface MatchSettings {
   slamStyle: 'slap' | 'edge';
   // 换页面、上牌桌时的过场（transition.ts）：random 一筒和牌背随机轮着来；pin 只用一筒；tiles 只用牌背
   xfade: 'random' | 'pin' | 'tiles';
+  // 牌桌四周的场地（3D、2.5D、俯视 2D 牌桌，ui3d/venue.ts）：auto 照这一场是什么比赛摆（单局在部室，团体赛、全国大赛在比赛会场，
+  // 全国大赛的决赛上决赛舞台）；club / match / final 不管哪一场都摆这一种；off 是原来那样，桌子四周一片纯色
+  venue: 'auto' | 'club' | 'match' | 'final' | 'off';
 }
 
 export const SEAT_NAMES = ['下家', '对家', '上家'];
@@ -102,6 +105,7 @@ export const DEFAULT_SETTINGS: MatchSettings = {
   slamOrder: 'first',
   slamStyle: 'slap',
   xfade: 'random',
+  venue: 'auto',
 };
 
 const KEY = 'saki-match-settings';
@@ -234,6 +238,18 @@ const ROWS: Row[] = [
   { key: 'awaiCutIn', name: '淡的连招特写', options: onOff, note: '试做：大星淡连招自摸（双立直、转角暗杠、杠里）时，画面一角切进来漫画式的三角窗，特写她的手把整排牌逆着翻起来' },
   { key: 'eyeShot', name: '能力发动睁眼特写', options: onOff, note: '发动能力时斜着切进来一格眼睛特写，几个人一起发动就一人一格；关了照旧放立绘切入（2.5D）或出字' },
   {
+    key: 'venue',
+    name: '牌桌环境',
+    note: '牌桌四周摆什么。自动：平时在部室，团体赛、全国大赛在比赛会场，全国大赛的决赛上决赛舞台；关闭是原来的纯色背景',
+    options: [
+      { label: '自动', value: 'auto' },
+      { label: '部室', value: 'club' },
+      { label: '比赛会场', value: 'match' },
+      { label: '决赛舞台', value: 'final' },
+      { label: '关闭', value: 'off' },
+    ],
+  },
+  {
     key: 'layout',
     name: '2.5D 布局',
     note: '改良是参考雀魂的试做版，随时可以换回原版',
@@ -327,11 +343,11 @@ export const TOP_HAND_TILT: Record<MatchSettings['topTilt'], number> = { up: 50,
 export const TOP_HAND_ALPHA: Record<MatchSettings['topAlpha'], number> = { solid: 1, light: 0.8, half: 0.6, clear: 0.4 };
 
 // 视觉设置里跟着牌桌视角走的几项：只列这个视角用得上的，免得选了没反应。
-// 2.5D：布局（改良时再加改良专属的手牌、自摸几项）；俯视 2D：手牌大小；3D、2.5D、俯视 2D 都有新结算；2D 都没有
+// 2.5D：布局（改良时再加改良专属的手牌、自摸几项）；俯视 2D：手牌大小；3D、2.5D、俯视 2D 都有牌桌环境、新结算；2D 都没有
 export function viewKeys(mode: TableMode, s: MatchSettings): (keyof MatchSettings)[] {
-  if (mode === '25d') return s.layout === 'improved' ? ['layout', 'hand', 'slam', 'slamStyle', 'slamOrder', 'result'] : ['layout', 'result'];
-  if (mode === 'top') return ['topHand', 'topTilt', 'topAlpha', 'result'];
-  if (mode === '3d') return ['result'];
+  if (mode === '25d') return s.layout === 'improved' ? ['venue', 'layout', 'hand', 'slam', 'slamStyle', 'slamOrder', 'result'] : ['venue', 'layout', 'result'];
+  if (mode === 'top') return ['venue', 'topHand', 'topTilt', 'topAlpha', 'result'];
+  if (mode === '3d') return ['venue', 'result'];
   return [];
 }
 

@@ -34,7 +34,8 @@ import { tileSurface } from './tileLooks';
 import { winCounts } from '../ui/winTally';
 import { WallSlot, dealIndex, drawSlot, wallSlots } from './wallLayout';
 import { BASE_AVATAR_SCALE, CONSOLE_HALF, DEFAULT_LAYOUT, POND_COLS, POND_ROWS, TILE_H, TILE_T, TILE_W, REF_SIT_HEIGHT, TableDims, TableLayout, WALL_Z, clampLayout, fitScale, tableDims } from './tableLayout';
-import { TableMaterials, buildTableModel, chamferShape, roundedRectShape } from './tableModel';
+import { TableMaterials, buildTableModel, chamferShape, roundedRectShape, tableShape } from './tableModel';
+import { Venue, type VenueSpec } from './venue';
 import { CueKind, DEFAULT_DISCARD, DiscardMotion, DiscardParams, DiscardPath, DiscardPose, DiscardStyle, MarkerName, RIICHI_DISCARD, SLIDE_DISCARD, SLIDE_RIICHI, afterTime, declareDelay, dueCues, dueMarkers, gripAt, isPush, pushDistFor, sampleDiscard, scrapeTime, styleParams, totalTime } from './discardMotion';
 import { CONSOLE_SCALE, type FeltPattern, TableColors, tableColors } from '../ui/theme';
 import { CONSOLE_CUSHION_BEVEL, CONSOLE_CUSHION_R, CONSOLE_CUT, CONSOLE_TOP, TOP_CUSHION_R, TOP_CUT, diffText, drawConsoleLook, outline, sealSpot, skinSignColors } from './consoleLooks';
@@ -765,6 +766,9 @@ export class Table3D {
   airPose: AirPose = { ...AIR_POSE };
   private dim: TableDims = tableDims(this.tableLayout);
   private tableGroup: THREE.Group | null = null;
+  // 牌桌四周的场地（部室、比赛会场、决赛会场，venue.ts）；没有时是原来的纯色背景
+  private venue: Venue | null = null;
+  private venueSpec: VenueSpec | null = null;
   private tableMats: TableMaterials | null = null;
   private feltMat: THREE.Material | null = null;
   private keyLight: THREE.DirectionalLight | null = null;
@@ -888,6 +892,7 @@ export class Table3D {
     this.stamps?.dispose();
     this.awaiFx?.dispose();
     this.moonLift?.dispose();
+    this.venue?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.loadingEl?.remove();
@@ -1086,6 +1091,49 @@ export class Table3D {
     sc.top = half;
     sc.bottom = -half;
     sc.updateProjectionMatrix();
+    // 场地跟着桌子尺寸（地面高度、人物大小）摆
+    this.placeVenue();
+  }
+
+  // ---------- 场地（venue.ts） ----------
+
+  // 换场地：部室、比赛会场、决赛会场，null 是原来的纯色背景。建好牌桌马上调，第一帧就有场地；
+  // 跟现在的一样就不动（每次刷新画面都可以调）
+  setVenue(spec: VenueSpec | null): void {
+    if (JSON.stringify(spec) === JSON.stringify(this.venueSpec)) return;
+    this.venueSpec = spec;
+    this.placeVenue();
+  }
+
+  private placeVenue(): void {
+    this.venue?.dispose();
+    this.venue = null;
+    const spec = this.venueSpec;
+    if (spec) {
+      const floorY = tableShape(this.dim, FRAME_TOP).floorY;
+      this.venue = new Venue(spec, { scale: this.dim.scale, floorY }, Math.min(4, this.renderer.capabilities.getMaxAnisotropy()));
+      this.scene.add(this.venue.group);
+    }
+    this.showVenue();
+  }
+
+  // 有场地时收起原来那块无边的地面，背景、雾换成场地远处的颜色；手绘板开着时场地收起来，照样是一张白纸
+  private showVenue(): void {
+    const sketch = this.sketch?.on ?? false;
+    const v = this.venue;
+    if (v) v.group.visible = !sketch;
+    const floor = this.tableGroup?.getObjectByName('floor');
+    if (floor) floor.visible = !v || sketch;
+    if (!sketch) {
+      this.roomBase.copy(v ? v.background : new THREE.Color(this.colors.room));
+      this.applyRoom();
+    }
+    // 看台、远处的墙比原来的视距远：镜头的远裁剪面跟着拉远（镜头离桌子中心最远一百来个单位）
+    const far = v && !sketch ? Math.max(200, v.far + 120) : 200;
+    if (this.camera.far !== far) {
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   private buildTiles(): void {
@@ -1738,6 +1786,8 @@ export class Table3D {
     const night = 1 - SEA_NIGHT * (this.water?.night ?? 0) - SCOOP_NIGHT * this.scoopDim;
     if (this.hemi) this.hemi.intensity = HEMI_BASE * (1 - STAGE_DIM * lvl) * night;
     if (this.keyLight) this.keyLight.intensity = KEY_BASE * (1 - STAGE_DIM * 1.15 * lvl) * night;
+    // 场地不受灯光，跟着一起暗：和牌聚光灯、衣的夜里；初美的风、淡的星空让四周暗成一片
+    this.venue?.update(this.now, (1 - STAGE_DIM * lvl) * night, this.roomDark);
     // 深夜熄灯：整个画面一起暗下去（曝光，角色身上不靠灯的那几层颜色也跟着暗）；
     // 牌背的夜光月牙灯越暗越亮，仪表盘的光不跟着暗（都除掉曝光）
     const lamp = this.shift?.lightAt?.(this.now) ?? 1;
@@ -4070,6 +4120,7 @@ export class Table3D {
     (this.tableMats!.trim as THREE.MeshStandardMaterial).color.copy(on ? new THREE.Color('#2a2a30') : sk.normal.trim);
     this.roomBase.copy(on ? new THREE.Color('#e4e1d8') : sk.normal.room);
     this.applyRoom();
+    this.showVenue();
     for (const e of sk.edges) e.visible = on;
   }
 
