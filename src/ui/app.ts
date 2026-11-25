@@ -83,7 +83,8 @@ import { preloadModels } from '../ui3d/avatar';
 import { FACES, Face, cutinArt, modelUrls, portraitUrl, powerPortraitUrl, skillArt } from '../ui3d/looks';
 import { type WashArea, type Washed, keepIn, randomSpot, spread, wash } from '../ui3d/wash';
 import { TileSize, backHtml, setSketchTiles, tileHtml, tintOf } from './tile';
-import { FlowPage, PointSeat, ResultFlow, animatePoints, drawBannerHtml, pointsPageHtml, ranksOf } from './resultFlow';
+import { FlowPage, PointSeat, ResultFlow, StickPlay, animatePoints, drawBannerHtml, pointsPageHtml, ranksOf, stickTimeline } from './resultFlow';
+import { Sticks, natural, reconcile, settle } from './tenbou';
 import { meldLayout } from './meldLayout';
 import { WaitInfo, drawWaits, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
@@ -286,6 +287,8 @@ export class App {
   // 新结算（视觉设置「结算画面：新」）：正在放的几页；流局大字之后挂「听牌 / 不听」的计时器
   private flow: ResultFlow | null = null;
   private flowTimer: number | null = null;
+  // 新结算点数页用的点棒账：每家手里每种棒几根，跟着这一盘走
+  private sticks: { game: Game; hold: Sticks[] } | null = null;
   private cutinSeen = new Set<string>();
   // 这一局已经说过台词的能力（同一个能力一局只说第一次）
   private voiceSeen = new Set<string>();
@@ -892,6 +895,8 @@ export class App {
     useRiiLook(this.riiTest ? 'test' : 'main');
     this.chars = chars;
     this.game = game;
+    // 每家手里的点棒（新结算的点数页用）：开局照真实配法发
+    this.sticks = { game, hold: game.players.map((p) => natural(p.score)) };
     // 桌上四个人的语音先解码好（第一局在这里取，之后每局开始再看一眼有没有新放的）
     this.voiceSeen.clear();
     preloadVoices(chars.map((c) => c?.id));
@@ -5034,7 +5039,11 @@ export class App {
     const pages: FlowPage[] = r.wins.map((w, i) => ({ html: this.flowWinHtml(w, i === r.wins.length - 1), secs: this.auto ? 4 : 10 }));
     const seats = this.pointSeats(r);
     const trace = r.wins.length ? '' : this.flowTraceHtml();
-    pages.push({ html: pointsPageHtml(g.roundLabel(), seats, trace), secs: this.auto ? 3 : 6, after: (el) => (tallyCue(), animatePoints(el, seats)) });
+    const sticks = this.stickPlay(g, r, seats);
+    // 点棒一笔笔飞完再多停一会儿
+    const fly = stickTimeline(sticks.moves).end / 1000;
+    const secs = Math.ceil(Math.max(this.auto ? 3 : 6, fly + (this.auto ? 1 : 2.5)));
+    pages.push({ html: pointsPageHtml(g.roundLabel(), seats, trace, sticks), secs, after: (el) => (tallyCue(), animatePoints(el, seats, sticks)) });
     this.flow = new ResultFlow(layer, pages, () => {
       this.flow = null;
       this.advance();
@@ -5084,6 +5093,17 @@ export class App {
       </div>
       <button class="rf-next" data-ui="rf-next">继续 <i></i></button>
     </div>`;
+  }
+
+  // 这一局的点棒怎么走：手里的棒先对上这一局结算前的点数（立直扣掉的 1000 拿掉一根），
+  // 再按 deltas 一笔笔付、找零；走完对上结算后的点数存起来给下一局
+  private stickPlay(g: Game, r: RoundResult, seats: PointSeat[]): StickPlay {
+    const kept = this.sticks?.game === g ? this.sticks.hold : null;
+    const start = seats.map((p) => reconcile(kept?.[p.seat] ?? natural(p.before), p.before));
+    const potSeat = r.kind === 'win' && r.wins.length ? r.wins[0].seat : null;
+    const { moves, after } = settle(start, r.deltas, potSeat);
+    this.sticks = { game: g, hold: seats.map((p) => reconcile(after[p.seat], p.after)) };
+    return { start, moves, potLeft: r.kind === 'win' ? 0 : g.riichiSticks };
   }
 
   // 点数移动页的四张卡：这一局之前、之后的点数和名次

@@ -385,26 +385,6 @@
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
-.rf-arrows {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.rf-arrows path {
-  fill: none;
-  stroke: #eaf4ff;
-  stroke-width: 5;
-  stroke-linecap: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  filter: drop-shadow(0 0 6px rgba(140, 200, 255, 0.9));
-  animation: rf-arrow 0.55s ease-out var(--d) forwards;
-}
-
 .rf-card {
   --w: clamp(220px, 22vw, 320px);
   position: absolute;
@@ -562,6 +542,268 @@
   gap: 3px;
 }
 
+/* ---------- 点棒 ----------
+   颜色照自动麻将桌那套：10000 红、5000 黄、1000 蓝、500 绿、100 白；
+   上面的点照真实点棒的花样：10000 中间五个点、两头各两个黑点，5000 中间五个红点，1000 一个红点，500 一红两黑，100 两头各四个黑点 */
+
+.tb {
+  --tw: 30px;
+  --th: 6px;
+  --dr: calc(var(--th) * 0.19);
+  --b: #ccc;
+  display: block;
+  flex: none;
+  width: var(--tw);
+  height: var(--th);
+  border-radius: calc(var(--th) / 2);
+  background-color: var(--b);
+  box-shadow:
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 1px 1.5px rgba(0, 0, 0, 0.6);
+}
+
+.tb-10000 {
+  --b: #d8403a;
+  background-image:
+    radial-gradient(circle at 50% 50%, #fff4e8 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 45% 22%, #fff4e8 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 55% 22%, #fff4e8 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 45% 78%, #fff4e8 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 55% 78%, #fff4e8 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 9% 50%, #3a0d0b 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 15% 50%, #3a0d0b 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 85% 50%, #3a0d0b 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 91% 50%, #3a0d0b 0 var(--dr), #0000 calc(var(--dr) + 0.7px));
+}
+
+.tb-5000 {
+  --b: #f0c23b;
+  background-image:
+    radial-gradient(circle at 50% 50%, #b8241f 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 45% 22%, #b8241f 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 55% 22%, #b8241f 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 45% 78%, #b8241f 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 55% 78%, #b8241f 0 var(--dr), #0000 calc(var(--dr) + 0.7px));
+}
+
+.tb-1000 {
+  --b: #3b7fd9;
+  --dr: calc(var(--th) * 0.24);
+  background-image: radial-gradient(circle at 50% 50%, #e3342c 0 var(--dr), #0000 calc(var(--dr) + 0.7px));
+}
+
+.tb-500 {
+  --b: #36a56a;
+  background-image:
+    radial-gradient(circle at 50% 50%, #e3342c 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 36% 50%, #14301f 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 64% 50%, #14301f 0 var(--dr), #0000 calc(var(--dr) + 0.7px));
+}
+
+.tb-100 {
+  --b: #f3efe3;
+  --dr: calc(var(--th) * 0.15);
+  background-image:
+    radial-gradient(circle at 10% 28%, #1d1d1d 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 10% 72%, #1d1d1d 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 17% 28%, #1d1d1d 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 17% 72%, #1d1d1d 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 83% 28%, #1d1d1d 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 83% 72%, #1d1d1d 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 90% 28%, #1d1d1d 0 var(--dr), #0000 calc(var(--dr) + 0.7px)),
+    radial-gradient(circle at 90% 72%, #1d1d1d 0 var(--dr), #0000 calc(var(--dr) + 0.7px));
+}
+
+/* 卡片下面的点棒盒：五格，每格摞着这种棒，下面写几根 */
+.rf-sticks {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 5px 8px 3px;
+  border-radius: 4px;
+  background: rgba(4, 8, 20, 0.42);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.tb-g {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tb-g.empty {
+  opacity: 0.32;
+}
+
+.tb-pile {
+  --off: 3px;
+  display: flex;
+  flex-direction: column-reverse;
+  height: calc(6px + 9 * var(--off));
+}
+
+.tb-pile .tb + .tb {
+  margin-bottom: calc(var(--off) - var(--th));
+}
+
+.tb-g small {
+  font: 700 12px/1 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  color: #c9d4e6;
+}
+
+.tb-g.in .tb-pile {
+  animation: tb-in 0.4s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+}
+
+.tb-g.in small {
+  color: #8ff0a8;
+}
+
+.tb-g.out .tb-pile {
+  animation: tb-out 0.35s ease-out both;
+}
+
+.tb-g.out small {
+  color: #ff8f86;
+}
+
+/* 桌子中间的立直棒（供托） */
+.rf-pot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  min-width: 60px;
+  min-height: 30px;
+  transition: opacity 0.2s;
+}
+
+.rf-pot.empty {
+  opacity: 0;
+}
+
+.rf-pot .tb {
+  --tw: 52px;
+  --th: 10px;
+  margin-top: -6px;
+}
+
+.rf-pot b {
+  margin-top: 6px;
+  font: 700 14px/1 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  letter-spacing: 1px;
+  color: #dfe5ee;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+/* 飞过去的一把棒，带着点数（找零那把是蓝的字） */
+.rf-fly {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  opacity: 0;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.6));
+}
+
+.rf-fly-sticks {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.rf-fly-sticks .tb {
+  --tw: 74px;
+  --th: 13px;
+  rotate: calc((var(--k) - (var(--n) - 1) / 2) * 3deg);
+}
+
+.rf-fly-sticks .tb + .tb {
+  margin-bottom: -7px;
+}
+
+.rf-fly b {
+  padding: 3px 9px;
+  border: 1px solid #ffd36b;
+  border-radius: 3px;
+  background: rgba(10, 16, 34, 0.94);
+  font: 700 19px/1 'Barlow Condensed', 'Noto Sans SC', sans-serif;
+  color: #ffe9a8;
+  white-space: nowrap;
+}
+
+.rf-fly.change b {
+  border-color: #8cc8ff;
+  font-size: 16px;
+  color: #cdeaff;
+}
+
+/* 最下面的图例：颜色对点数 */
+.rf-legend {
+  position: absolute;
+  left: 50%;
+  bottom: 4%;
+  translate: -50% 0;
+  display: flex;
+  gap: 14px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  background: rgba(4, 8, 20, 0.5);
+  font: 600 13px/1 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  color: #c9d4e6;
+  white-space: nowrap;
+  animation: rf-fade 0.3s ease-out 0.3s both;
+}
+
+.rf-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.rf-legend .tb {
+  --tw: 26px;
+}
+
+/* 像素皮肤：棒、盒子、牌子都是直角，深色描边 */
+:root[data-theme='pixel'] :is(.tb, .rf-sticks, .rf-fly b, .rf-legend) {
+  border-radius: 0;
+}
+
+:root[data-theme='pixel'] .tb {
+  box-shadow:
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
+    0 0 0 1px #120d22;
+}
+
+:root[data-theme='pixel'] .rf-fly b {
+  border: 2px solid var(--px-gold, #f4d35e);
+  background: var(--px-0, #120d22);
+  color: var(--px-gold, #f4d35e);
+}
+
+:root[data-theme='pixel'] .rf-fly.change b {
+  border-color: var(--px-quiet, #bcaee0);
+  color: var(--px-text, #fdf6e3);
+}
+
+:root[data-theme='pixel'] .rf-sticks {
+  background: rgba(18, 13, 34, 0.7);
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+
 /* ---------- 横过来的手机 ---------- */
 
 @media (max-height: 500px) {
@@ -664,6 +906,39 @@
     padding-top: 4px;
   }
 
+  .rf-sticks {
+    margin-top: 4px;
+    padding: 3px 6px 2px;
+  }
+
+  .rf-sticks .tb {
+    --tw: 24px;
+    --th: 5px;
+  }
+
+  .tb-pile {
+    --off: 2px;
+    height: calc(5px + 9 * var(--off));
+  }
+
+  .tb-g small {
+    font-size: 10px;
+  }
+
+  .rf-legend {
+    bottom: 3%;
+    left: 12px;
+    translate: 0 0;
+    gap: 9px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .rf-legend .tb {
+    --tw: 18px;
+    --th: 5px;
+  }
+
   .rf-card .draw-wait b {
     font-size: 12px;
   }
@@ -753,6 +1028,41 @@
   .rf-card.right {
     top: 50%;
   }
+
+  .rf-sticks {
+    margin-top: 4px;
+    padding: 3px 5px 2px;
+  }
+
+  .rf-sticks .tb {
+    --tw: 20px;
+    --th: 5px;
+  }
+
+  .tb-pile {
+    --off: 2px;
+    height: calc(5px + 9 * var(--off));
+  }
+
+  .tb-g small {
+    font-size: 10px;
+  }
+
+  .rf-legend {
+    left: 10px;
+    bottom: 2.5%;
+    translate: 0 0;
+    flex-wrap: wrap;
+    max-width: 230px;
+    gap: 6px 10px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .rf-legend .tb {
+    --tw: 18px;
+    --th: 5px;
+  }
 }
 
 @keyframes rf-fade {
@@ -804,16 +1114,17 @@
   }
 }
 
-@keyframes rf-arrow {
+@keyframes tb-in {
   from {
-    opacity: 0;
+    translate: 0 -7px;
+    filter: brightness(1.8);
   }
-  20% {
-    opacity: 1;
-  }
-  to {
-    opacity: 1;
-    stroke-dashoffset: 0;
+}
+
+@keyframes tb-out {
+  from {
+    filter: brightness(0.4);
+    scale: 0.9;
   }
 }
 
