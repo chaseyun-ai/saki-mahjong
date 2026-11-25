@@ -615,62 +615,6 @@
     radial-gradient(circle at 90% 72%, #1d1d1d 0 var(--dr), #0000 calc(var(--dr) + 0.7px));
 }
 
-/* 卡片下面的点棒盒：五格，每格摞着这种棒，下面写几根 */
-.rf-sticks {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: space-between;
-  gap: 4px;
-  margin-top: 8px;
-  padding: 5px 8px 3px;
-  border-radius: 4px;
-  background: rgba(4, 8, 20, 0.42);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
-}
-
-.tb-g {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.tb-g.empty {
-  opacity: 0.32;
-}
-
-.tb-pile {
-  --off: 3px;
-  display: flex;
-  flex-direction: column-reverse;
-  height: calc(6px + 9 * var(--off));
-}
-
-.tb-pile .tb + .tb {
-  margin-bottom: calc(var(--off) - var(--th));
-}
-
-.tb-g small {
-  font: 700 12px/1 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  color: #c9d4e6;
-}
-
-.tb-g.in .tb-pile {
-  animation: tb-in 0.4s cubic-bezier(0.3, 1.5, 0.5, 1) both;
-}
-
-.tb-g.in small {
-  color: #8ff0a8;
-}
-
-.tb-g.out .tb-pile {
-  animation: tb-out 0.35s ease-out both;
-}
-
-.tb-g.out small {
-  color: #ff8f86;
-}
-
 /* 桌子中间的立直棒（供托） */
 .rf-pot {
   position: absolute;
@@ -704,49 +648,47 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
-/* 飞过去的一把棒，带着点数（找零那把是蓝的字） */
-.rf-fly {
+/* 沿弧线一根根走的棒：比卡片上的大一点，带影子 */
+.rf-run {
+  --tw: 52px;
+  --th: 10px;
   position: absolute;
   left: 0;
   top: 0;
   z-index: 5;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
   pointer-events: none;
   opacity: 0;
-  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.6));
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.55));
 }
 
-.rf-fly-sticks {
-  display: flex;
-  flex-direction: column-reverse;
-}
-
-.rf-fly-sticks .tb {
-  --tw: 74px;
-  --th: 13px;
-  rotate: calc((var(--k) - (var(--n) - 1) / 2) * 3deg);
-}
-
-.rf-fly-sticks .tb + .tb {
-  margin-bottom: -7px;
-}
-
-.rf-fly b {
+/* 路中间写这一笔多少点（找零是蓝的） */
+.rf-amt {
+  position: absolute;
+  z-index: 6;
+  translate: -50% -50%;
   padding: 3px 9px;
   border: 1px solid #ffd36b;
   border-radius: 3px;
-  background: rgba(10, 16, 34, 0.94);
-  font: 700 19px/1 'Barlow Condensed', 'Noto Sans SC', sans-serif;
+  background: rgba(10, 16, 34, 0.92);
+  font: 700 18px/1 'Barlow Condensed', 'Noto Sans SC', sans-serif;
   color: #ffe9a8;
   white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  scale: 0.8;
+  transition:
+    opacity 0.2s,
+    scale 0.2s;
 }
 
-.rf-fly.change b {
+.rf-amt.on {
+  opacity: 1;
+  scale: 1;
+}
+
+.rf-amt.change {
   border-color: #8cc8ff;
-  font-size: 16px;
+  font-size: 15px;
   color: #cdeaff;
 }
 
@@ -778,7 +720,7 @@
 }
 
 /* 像素皮肤：棒、盒子、牌子都是直角，深色描边 */
-:root[data-theme='pixel'] :is(.tb, .rf-sticks, .rf-fly b, .rf-legend) {
+:root[data-theme='pixel'] :is(.tb, .rf-amt, .rf-legend) {
   border-radius: 0;
 }
 
@@ -788,20 +730,15 @@
     0 0 0 1px #120d22;
 }
 
-:root[data-theme='pixel'] .rf-fly b {
+:root[data-theme='pixel'] .rf-amt {
   border: 2px solid var(--px-gold, #f4d35e);
   background: var(--px-0, #120d22);
   color: var(--px-gold, #f4d35e);
 }
 
-:root[data-theme='pixel'] .rf-fly.change b {
+:root[data-theme='pixel'] .rf-amt.change {
   border-color: var(--px-quiet, #bcaee0);
   color: var(--px-text, #fdf6e3);
-}
-
-:root[data-theme='pixel'] .rf-sticks {
-  background: rgba(18, 13, 34, 0.7);
-  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.5);
 }
 
 /* ---------- 横过来的手机 ---------- */
@@ -906,23 +843,18 @@
     padding-top: 4px;
   }
 
-  .rf-sticks {
-    margin-top: 4px;
-    padding: 3px 6px 2px;
+  .rf-run {
+    --tw: 34px;
+    --th: 7px;
   }
 
-  .rf-sticks .tb {
-    --tw: 24px;
-    --th: 5px;
+  .rf-amt {
+    padding: 2px 6px;
+    font-size: 14px;
   }
 
-  .tb-pile {
-    --off: 2px;
-    height: calc(5px + 9 * var(--off));
-  }
-
-  .tb-g small {
-    font-size: 10px;
+  .rf-amt.change {
+    font-size: 12px;
   }
 
   .rf-legend {
@@ -1029,23 +961,18 @@
     top: 50%;
   }
 
-  .rf-sticks {
-    margin-top: 4px;
-    padding: 3px 5px 2px;
+  .rf-run {
+    --tw: 34px;
+    --th: 7px;
   }
 
-  .rf-sticks .tb {
-    --tw: 20px;
-    --th: 5px;
+  .rf-amt {
+    padding: 2px 6px;
+    font-size: 14px;
   }
 
-  .tb-pile {
-    --off: 2px;
-    height: calc(5px + 9 * var(--off));
-  }
-
-  .tb-g small {
-    font-size: 10px;
+  .rf-amt.change {
+    font-size: 12px;
   }
 
   .rf-legend {
@@ -1111,20 +1038,6 @@
   from {
     opacity: 0;
     scale: 2.4;
-  }
-}
-
-@keyframes tb-in {
-  from {
-    translate: 0 -7px;
-    filter: brightness(1.8);
-  }
-}
-
-@keyframes tb-out {
-  from {
-    filter: brightness(0.4);
-    scale: 0.9;
   }
 }
 

@@ -4,8 +4,8 @@ import { DENOMS, StickMove, Sticks, count, total } from './tenbou';
 // 新结算（试做，视觉设置「结算画面：新」）：一局结束以后照雀魂的节奏分几页放，盖在 3D / 2.5D 牌桌上面。
 //   荒牌流局、途中流局：牌桌中间先出大字，每家手牌上挂「听牌 / 未听」，听牌的带上听哪几张
 //   和牌：每个和牌的人一页（全屏立绘、手牌、宝牌里宝牌、役一条条出来、最后盖番符章），再进点数移动
-//   点数移动：四家的点数卡摆在各自那一边，卡片下面是各家手里的点棒；点棒从付的人那里飞到收的人面前，
-//     多给的那边找零飞回来，数字跟着变，名次重排（点棒怎么配、怎么找零在 tenbou.ts）
+//   点数移动：四家的点数卡摆在各自那一边；点棒排着队一根根沿弧线从付的人走到收的人，
+//     多给的那边找零的棒再沿原路走回来，数字跟着变，名次重排（点棒怎么配、怎么找零在 tenbou.ts）
 // 每页右下角「继续」带倒数，数到 0 自己翻页；最后一页翻完交回 app 进下一局。
 // 原版的结算弹窗不动（app.ts 的 resultHtml），这里只管新结算的几页。
 
@@ -13,7 +13,7 @@ export interface FlowPage {
   html: string;
   // 这一页倒数几秒自己翻页
   secs: number;
-  // 页面放进去以后要做的事（点棒飞、点数滚动）；返回收尾函数
+  // 页面放进去以后要做的事（点棒走、点数滚动）；返回收尾函数
   after?: (el: HTMLElement) => (() => void) | void;
 }
 
@@ -123,7 +123,8 @@ export interface PointSeat {
   wait?: string;
 }
 
-// 点棒这一页要的东西：每家结算前手里的棒、一笔笔怎么走、桌上留着的立直棒（荒牌流局没人拿走）
+// 点棒这一页要的东西：每家结算前手里的棒（只用来算怎么付、怎么找零，不画出来）、一笔笔怎么走、
+// 桌上留着的立直棒（荒牌流局没人拿走）
 export interface StickPlay {
   start: Sticks[];
   moves: StickMove[];
@@ -136,27 +137,9 @@ const fmt = (n: number) => n.toLocaleString('en-US');
 // 一根点棒（颜色、点的花样在 CSS 里按面额画）
 const stick = (i: number) => `<i class="tb tb-${DENOMS[i]}"></i>`;
 
-// 卡片下面的点棒盒：五格，从大到小，每格摞着这种棒，右下角写几根
-export function trayHtml(h: Sticks): string {
-  return DENOMS.map((_, i) => {
-    const n = h[i];
-    const shown = Math.min(n, 10);
-    return `<span class="tb-g${n ? '' : ' empty'}" data-d="${i}"><span class="tb-pile" style="--n:${shown}">${Array.from({ length: shown }, () => stick(i)).join('')}</span><small>${n}</small></span>`;
-  }).join('');
-}
-
-// 一把递过去的棒：大的在下面，一根根错开摞着
-function bundleHtml(h: Sticks): string {
-  const out: string[] = [];
-  h.forEach((n, i) => {
-    for (let k = 0; k < n; k++) out.push(stick(i));
-  });
-  return out.map((s, k) => s.replace('<i class', `<i style="--k:${k}" class`)).join('');
-}
-
 // 中间的立直棒（供托）
 function potHtml(n: number): string {
-  return `${Array.from({ length: Math.min(n, 8) }, (_, k) => `<i style="--k:${k}" class="tb tb-1000"></i>`).join('')}<b>供托 ×${n}</b>`;
+  return `${Array.from({ length: Math.min(n, 8) }, () => stick(2)).join('')}<b>供托 ×${n}</b>`;
 }
 
 // 页面最下面的图例：颜色对点数
@@ -169,7 +152,6 @@ export function pointsPageHtml(round: string, seats: PointSeat[], extra = '', st
       const d = p.after - p.before;
       const cls = d > 0 ? 'plus' : d < 0 ? 'minus' : 'zero';
       const img = p.portrait ? `<img src="${p.portrait}" alt="" onerror="this.remove()" />` : '';
-      const tray = sticks ? `<span class="rf-sticks" data-seat="${p.seat}">${trayHtml(sticks.start[p.seat])}</span>` : '';
       return `<div class="rf-card ${POS[p.rel]}${p.mine ? ' mine' : ''}" data-seat="${p.seat}" style="--c:${p.color}">
         <span class="rf-rank" data-to="${p.rankAfter}"><b>${p.rankBefore}</b>位</span>
         <span class="rf-face"><span>${p.glyph}</span>${img}</span>
@@ -177,7 +159,6 @@ export function pointsPageHtml(round: string, seats: PointSeat[], extra = '', st
           <span class="rf-line"><span class="rf-cname">${p.name}</span><span class="rf-delta ${cls}">${d > 0 ? '+' : ''}${d ? fmt(d) : '±0'}</span></span>
           <span class="rf-score" data-from="${p.before}" data-to="${p.after}">${fmt(p.before)}</span>
         </span>
-        ${tray}
         ${p.wait ?? ''}
       </div>`;
     })
@@ -194,31 +175,40 @@ export function pointsPageHtml(round: string, seats: PointSeat[], extra = '', st
   </div>`;
 }
 
-// 点棒怎么飞的时间表（毫秒，从这一页放进去算）：一笔一笔来，有找零的等找零飞回去再走下一笔
-export interface StickBeat {
-  move: number;
-  back: boolean; // 找零那一趟
-  start: number;
-  land: number;
-}
-export const STICK_T = { first: 700, fly: 850, backFly: 700, gap: 160 };
-export function stickTimeline(moves: StickMove[]): { beats: StickBeat[]; end: number } {
-  const beats: StickBeat[] = [];
-  let t = STICK_T.first;
-  moves.forEach((m, i) => {
-    const fly = m.from < 0 ? STICK_T.fly - 80 : STICK_T.fly;
-    beats.push({ move: i, back: false, start: t, land: t + fly });
-    t += fly + STICK_T.gap;
-    if (count(m.back)) {
-      beats.push({ move: i, back: true, start: t - 40, land: t - 40 + STICK_T.backFly });
-      t += STICK_T.backFly + STICK_T.gap - 40;
-    }
+// 一笔里的棒从大到小排成队（递过去、找回来都是这个顺序）
+export function queueOf(h: Sticks): number[] {
+  const out: number[] = [];
+  h.forEach((n, i) => {
+    for (let k = 0; k < n; k++) out.push(i);
   });
-  return { beats, end: moves.length ? t : STICK_T.first };
+  return out;
 }
 
-// 点数页放进去以后：点棒一把把从付的人那里飞到收的人面前，多给的那边找零飞回来；
-// 落下来的时候两边的点棒盒、点数跟着变，最后名次换成新的。没有点棒（老的调用）就只滚数字
+// 点棒怎么走的时间表（毫秒，从这一页放进去算）：每一笔隔一会儿开始，几笔可以同时走；
+// 一笔里先是付的人的棒一根接一根沿弧线走过去，最后一根到了，找零的棒再一根接一根沿原路走回来
+export const STICK_T = { first: 700, apart: 520, step: 110, gap: 160, fly: 950 };
+export interface StickRun {
+  move: number;
+  give: { start: number; arrive: number }; // 第一根出发、最后一根到
+  back: { start: number; arrive: number } | null;
+}
+export function stickTimeline(moves: StickMove[], fly: (move: number) => number = () => STICK_T.fly): { runs: StickRun[]; end: number } {
+  let end = STICK_T.first;
+  const runs = moves.map((m, i) => {
+    const f = fly(i);
+    const g0 = STICK_T.first + i * STICK_T.apart;
+    const give = { start: g0, arrive: g0 + (queueOf(m.give).length - 1) * STICK_T.step + f };
+    const nb = queueOf(m.back).length;
+    const back = nb ? { start: give.arrive + STICK_T.gap, arrive: give.arrive + STICK_T.gap + (nb - 1) * STICK_T.step + f } : null;
+    end = Math.max(end, (back ?? give).arrive);
+    return { move: i, give, back };
+  });
+  return { runs, end };
+}
+
+// 点数页放进去以后：点棒排着队，一根一根从付的人沿弧线走到收的人那里，路中间写着这一笔多少点；
+// 有找零的，找零的棒再一根根沿原路走回来。最后一根走到的时候两家的点数滚过去，全部走完换名次。
+// 没有点棒（老的调用）就只滚数字
 export function animatePoints(el: HTMLElement, seats: PointSeat[], sticks?: StickPlay): () => void {
   const timers: number[] = [];
   const rafs = new Set<number>();
@@ -242,10 +232,7 @@ export function animatePoints(el: HTMLElement, seats: PointSeat[], sticks?: Stic
       const k = Math.min(1, (now - t0) / dur);
       const e = 1 - (1 - k) ** 3;
       node.textContent = fmt(Math.round(from + (to - from) * e));
-      if (k < 1) {
-        const id = requestAnimationFrame(step);
-        rafs.add(id);
-      }
+      if (k < 1) rafs.add(requestAnimationFrame(step));
     };
     rafs.add(requestAnimationFrame(step));
   };
@@ -263,112 +250,137 @@ export function animatePoints(el: HTMLElement, seats: PointSeat[], sticks?: Stic
     anims.forEach((a) => a.cancel());
   };
 
-  if (!sticks) {
+  if (!sticks || still) {
+    if (still) {
+      el.querySelector('.rf-pot')?.classList.toggle('empty', !sticks?.potLeft);
+      seats.forEach((p) => roll(p.seat, p.after, 0));
+      swapRanks();
+      return done;
+    }
     later(550, () => seats.forEach((p) => roll(p.seat, p.after, 1100)));
     later(550 + 1100 + 120, swapRanks);
     return done;
   }
 
-  const hold = sticks.start.map((h) => h.slice());
-  const trayOf = (s: number) => el.querySelector<HTMLElement>(`.rf-sticks[data-seat="${s}"]`);
-  const pot = el.querySelector<HTMLElement>('.rf-pot');
-  let potN = sticks.moves.filter((m) => m.from < 0).reduce((a, m) => a + count(m.give), 0) + sticks.potLeft;
-  // 点棒盒换成新的数，变了的那几格闪一下（多了往上跳，少了往下沉）
-  const setTray = (s: number, next: Sticks) => {
-    const tray = trayOf(s);
-    const prev = hold[s];
-    hold[s] = next;
-    if (!tray || next.every((n, i) => n === prev[i])) return;
-    tray.innerHTML = trayHtml(next);
-    if (still) return;
-    next.forEach((n, i) => {
-      if (n === prev[i]) return;
-      tray.querySelector(`.tb-g[data-d="${i}"]`)?.classList.add(n > prev[i] ? 'in' : 'out');
-    });
-  };
-  const plus = (a: Sticks, b: Sticks) => a.map((n, i) => n + b[i]);
-  const minus = (a: Sticks, b: Sticks) => a.map((n, i) => Math.max(0, n - b[i]));
-
-  const { beats, end } = stickTimeline(sticks.moves);
-  if (still) {
-    sticks.moves.forEach((m) => {
-      if (m.from >= 0) setTray(m.from, m.post[0]);
-      setTray(m.to, m.post[1]);
-    });
-    if (pot && !sticks.potLeft) pot.classList.add('empty');
-    seats.forEach((p) => roll(p.seat, p.after, 0));
-    swapRanks();
-    return done;
-  }
-
   const box = el.getBoundingClientRect();
-  // 点棒盒的中心（相对这一页）；中间的供托用它自己的位置
-  const at = (node: Element | null) => {
-    const r = node?.getBoundingClientRect();
-    return r ? { x: r.left + r.width / 2 - box.left, y: r.top + r.height / 2 - box.top } : { x: box.width / 2, y: box.height / 2 };
+  const rectOf = (s: number) => el.querySelector<HTMLElement>(`.rf-card[data-seat="${s}"]`)?.getBoundingClientRect() ?? null;
+  const center = (r: DOMRect) => ({ x: r.left + r.width / 2 - box.left, y: r.top + r.height / 2 - box.top });
+  // 从矩形中心朝 to 走，走到矩形边上再空一点
+  const edge = (r: DOMRect, to: { x: number; y: number }, pad: number) => {
+    const c = center(r);
+    const dx = to.x - c.x;
+    const dy = to.y - c.y;
+    const k = Math.min(Math.abs(r.width / 2 / (dx || 1e-6)), Math.abs(r.height / 2 / (dy || 1e-6)));
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: c.x + dx * k + (dx / len) * pad, y: c.y + dy * k + (dy / len) * pad };
   };
-  // 一把棒沿弧线飞过去（往牌桌中间弯一点），落地时做 onLand
-  const fly = (give: Sticks, label: string, from: Element | null, to: Element | null, ms: number, change: boolean) => {
-    const a = at(from);
-    const b = at(to);
-    const node = document.createElement('div');
-    node.className = `rf-fly${change ? ' change' : ''}`;
-    node.innerHTML = `<span class="rf-fly-sticks" style="--n:${count(give)}">${bundleHtml(give)}</span><b>${label}</b>`;
-    el.appendChild(node);
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2;
-    const cx = mx + (box.width / 2 - mx) * 0.4;
-    const cy = my + (box.height / 2 - my) * 0.4 - Math.hypot(b.x - a.x, b.y - a.y) * 0.08;
-    const frames: Keyframe[] = [];
-    for (let k = 0; k <= 16; k++) {
-      const t = k / 16;
-      const x = (1 - t) ** 2 * a.x + 2 * (1 - t) * t * cx + t * t * b.x;
-      const y = (1 - t) ** 2 * a.y + 2 * (1 - t) * t * cy + t * t * b.y;
-      const s = 0.75 + 0.3 * Math.sin(Math.PI * t);
-      frames.push({ transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) scale(${s.toFixed(3)})`, opacity: k === 0 ? 0 : k === 16 ? 0.15 : 1, offset: t });
+  const pot = el.querySelector<HTMLElement>('.rf-pot');
+  const potRect = pot?.getBoundingClientRect();
+  const potAt = potRect && potRect.width ? center(potRect) : { x: box.width / 2, y: box.height / 2 };
+
+  // 每一笔的路：和最早的箭头一样，从付的人卡边出发、往牌桌中间弯一点、到收的人卡边（供托从桌子中间出发）
+  type Pt = { x: number; y: number };
+  const paths = sticks.moves.map((m) => {
+    const rb = rectOf(m.to);
+    if (!rb) return null;
+    let s: Pt;
+    if (m.from < 0) s = potAt;
+    else {
+      const ra = rectOf(m.from);
+      if (!ra) return null;
+      s = edge(ra, center(rb), 4);
     }
-    const anim = node.animate(frames, { duration: ms, easing: 'cubic-bezier(0.45, 0, 0.3, 1)', fill: 'forwards' });
-    anims.push(anim);
-    later(ms + 30, () => node.remove());
+    const t = edge(rb, m.from < 0 ? potAt : center(rectOf(m.from)!), 6);
+    const mx = (s.x + t.x) / 2;
+    const my = (s.y + t.y) / 2;
+    const c = m.from < 0 ? { x: mx, y: my } : { x: mx + (box.width / 2 - mx) * 0.35, y: my + (box.height / 2 - my) * 0.35 };
+    const at = (u: number): Pt => ({ x: (1 - u) ** 2 * s.x + 2 * (1 - u) * u * c.x + u * u * t.x, y: (1 - u) ** 2 * s.y + 2 * (1 - u) * u * c.y + u * u * t.y });
+    const dir = (u: number): Pt => ({ x: 2 * (1 - u) * (c.x - s.x) + 2 * u * (t.x - c.x), y: 2 * (1 - u) * (c.y - s.y) + 2 * u * (t.y - c.y) });
+    let len = 0;
+    for (let k = 1; k <= 20; k++) len += Math.hypot(at(k / 20).x - at((k - 1) / 20).x, at(k / 20).y - at((k - 1) / 20).y);
+    return { at, dir, len };
+  });
+  // 走多久跟着路有多长（一秒走 750 像素左右）
+  const flyOf = (i: number) => Math.min(1150, Math.max(650, (paths[i]?.len ?? 600) / 0.75));
+  const { runs, end } = stickTimeline(sticks.moves, flyOf);
+
+  // 一根棒沿路走一趟（reverse：找零，从收的人走回付的人）
+  const runStick = (d: number, path: NonNullable<(typeof paths)[number]>, ms: number, reverse: boolean) => {
+    const node = document.createElement('i');
+    node.className = `tb tb-${DENOMS[d]} rf-run`;
+    el.appendChild(node);
+    const frames: Keyframe[] = [];
+    const N = 24;
+    for (let k = 0; k <= N; k++) {
+      const u = reverse ? 1 - k / N : k / N;
+      const p = path.at(u);
+      const v = path.dir(u);
+      const ang = (Math.atan2(v.y, v.x) * 180) / Math.PI;
+      // 棒头朝前，走回来时掉个头
+      const a = reverse ? ang + 180 : ang;
+      frames.push({ transform: `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -50%) rotate(${a.toFixed(1)}deg)`, opacity: k === 0 || k === N ? 0 : 1, offset: k / N });
+    }
+    // 头尾两帧之间不透明：出发、到达那一下淡入淡出
+    frames[1].opacity = 1;
+    anims.push(node.animate(frames, { duration: ms, easing: 'cubic-bezier(0.35, 0, 0.45, 1)', fill: 'forwards' }));
+    later(ms + 20, () => node.remove());
+  };
+  // 路中间的点数牌子（往外让开一点，不压着走过的棒）
+  const label = (path: NonNullable<(typeof paths)[number]>, text: string, change: boolean, from: number, to: number) => {
+    const node = document.createElement('div');
+    node.className = `rf-amt${change ? ' change' : ''}`;
+    node.textContent = text;
+    const p = path.at(0.5);
+    const v = path.dir(0.5);
+    const len = Math.hypot(v.x, v.y) || 1;
+    let nx = -v.y / len;
+    let ny = v.x / len;
+    // 朝离牌桌中间远的那边让
+    if (nx * (box.width / 2 - p.x) + ny * (box.height / 2 - p.y) > 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    const off = change ? -22 : 22;
+    node.style.left = `${(p.x + nx * off).toFixed(1)}px`;
+    node.style.top = `${(p.y + ny * off).toFixed(1)}px`;
+    el.appendChild(node);
+    later(from, () => node.classList.add('on'));
+    later(to, () => node.classList.remove('on'));
   };
 
-  for (const beat of beats) {
-    const m = sticks.moves[beat.move];
-    const ms = beat.land - beat.start;
-    later(beat.start, () => {
-      if (!beat.back) {
-        // 付的人手里少了这几根（供托从桌子中间拿）
-        const src = m.from < 0 ? pot : trayOf(m.from);
-        if (m.from < 0) {
-          potN -= count(m.give);
-          if (pot) {
+  let potN = sticks.moves.filter((m) => m.from < 0).reduce((a, m) => a + count(m.give), 0) + sticks.potLeft;
+  runs.forEach((run) => {
+    const m = sticks.moves[run.move];
+    const path = paths[run.move];
+    const fly = flyOf(run.move);
+    if (path) {
+      const owe = m.short ? `（欠 ${fmt(m.short)}）` : '';
+      label(path, m.from < 0 ? `供托 ${fmt(m.pts)}` : `${fmt(m.pts)}${owe}`, false, run.give.start, (run.back ?? run.give).arrive + 500);
+      queueOf(m.give).forEach((d, k) =>
+        later(run.give.start + k * STICK_T.step, () => {
+          // 供托：桌子中间少一根
+          if (m.from < 0 && pot) {
+            potN--;
             pot.innerHTML = potN ? potHtml(potN) : '';
             pot.classList.toggle('empty', !potN);
           }
-        } else setTray(m.from, minus(m.pre[0], m.give));
-        const owe = m.short ? `（欠 ${fmt(m.short)}）` : '';
-        fly(m.give, m.from < 0 ? `供托 ${fmt(m.pts)}` : `${fmt(m.pts)}${owe}`, src, trayOf(m.to), ms, false);
-      } else {
-        setTray(m.to, minus(plus(m.pre[1], m.give), m.back));
-        fly(m.back, `找零 ${fmt(total(m.back))}`, trayOf(m.to), trayOf(m.from), ms, true);
+          runStick(d, path, fly, false);
+        }),
+      );
+      if (run.back) {
+        label(path, `找零 ${fmt(total(m.back))}`, true, run.back.start, run.back.arrive + 500);
+        queueOf(m.back).forEach((d, k) => later(run.back!.start + k * STICK_T.step, () => runStick(d, path, fly, true)));
       }
+    }
+    // 最后一根递到的时候两家点数滚过去（找零不改点数）
+    later(run.give.arrive, () => {
+      if (m.from >= 0) roll(m.from, shown[m.from] - m.pts, 420);
+      roll(m.to, shown[m.to] + m.pts, 420);
     });
-    later(beat.land, () => {
-      if (!beat.back) {
-        setTray(m.to, count(m.back) ? plus(m.pre[1], m.give) : m.post[1]);
-        if (m.from >= 0) roll(m.from, shown[m.from] - m.pts, 380);
-        roll(m.to, shown[m.to] + m.pts, 380);
-      }
-      // 这一笔走完：两家的盒子对上账（找不开跟桌外换过的也在这里对上）
-      if (beat.back || !count(m.back)) {
-        if (m.from >= 0) setTray(m.from, m.post[0]);
-        setTray(m.to, m.post[1]);
-      }
-    });
-  }
+  });
   // 最后对一下：点数按 Game 算的为准（欠的、算不进棒里的零头）
   later(end, () => seats.forEach((p) => shown[p.seat] !== p.after && roll(p.seat, p.after, 300)));
-  later(end + 120, swapRanks);
+  later(end + 150, swapRanks);
   return done;
 }
 

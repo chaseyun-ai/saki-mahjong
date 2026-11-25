@@ -10,8 +10,7 @@ const U = [100, 50, 10, 5, 1]; // 按 100 点一份算
 const units = (pts: number) => Math.round(pts / 100);
 
 export const none = (): Sticks => [0, 0, 0, 0, 0];
-export const total = (h: Sticks): number =>
-  h.reduce((a, n, i) => a + n * DENOMS[i], 0);
+export const total = (h: Sticks): number => h.reduce((a, n, i) => a + n * DENOMS[i], 0);
 export const count = (h: Sticks): number => h.reduce((a, n) => a + n, 0);
 const add = (a: Sticks, b: Sticks): Sticks => a.map((n, i) => n + b[i]);
 const sub = (a: Sticks, b: Sticks): Sticks => a.map((n, i) => n - b[i]);
@@ -41,10 +40,7 @@ export function natural(score: number): Sticks {
   const scale = score / 25000;
   let n1000 = Math.min(u / 10, Math.min(9, Math.max(4, Math.round(4 * scale))));
   u -= n1000 * 10;
-  let n5000 = Math.min(
-    Math.floor(u / 50),
-    Math.min(4, Math.max(1, Math.round(2 * scale))),
-  );
+  let n5000 = Math.min(Math.floor(u / 50), Math.min(4, Math.max(1, Math.round(2 * scale))));
   u -= n5000 * 50;
   const n10000 = Math.floor(u / 100);
   u -= n10000 * 100;
@@ -96,12 +92,10 @@ export function pay(payer: Sticks, recv: Sticks, pts: number): Payment {
   const need = units(pts);
   if (need <= 0) return { give: none(), back: none(), short: 0 };
   const have = units(total(payer));
-  if (have <= need)
-    return { give: payer.slice(), back: none(), short: (need - have) * 100 };
+  if (have <= need) return { give: payer.slice(), back: none(), short: (need - have) * 100 };
   // 找零最多不到最小那根，先把收的人 0..99 份怎么找都算好
   const change: (Sticks | null)[] = [];
-  const changeOf = (v: number) =>
-    change[v] === undefined ? (change[v] = exact(recv, v)) : change[v];
+  const changeOf = (v: number) => (change[v] === undefined ? (change[v] = exact(recv, v)) : change[v]);
   const lim = U.map((v, i) => Math.min(payer[i], Math.ceil(need / v)));
   let best: {
     give: Sticks;
@@ -130,13 +124,7 @@ export function pay(payer: Sticks, recv: Sticks, pts: number): Payment {
       if (payer[2] > 0 && payer[2] - g[2] === 0) cost += 1.5;
       if (recv[2] > 0 && recv[2] - back[2] + g[2] === 0) cost += 1.5;
       const n = count(g);
-      if (
-        !best ||
-        cost < best.cost ||
-        (cost === best.cost &&
-          (n < best.n || (n === best.n && over < best.over)))
-      )
-        best = { give: g.slice(), back, cost, n, over };
+      if (!best || cost < best.cost || (cost === best.cost && (n < best.n || (n === best.n && over < best.over)))) best = { give: g.slice(), back, cost, n, over };
       return;
     }
     for (let k = 0; k <= lim[i]; k++) {
@@ -174,9 +162,7 @@ export function reconcile(h: Sticks, score: number): Sticks {
   }
   const p = pay(h, [99, 99, 99, 99, 99], diff * 100);
   const left = add(sub(h, p.give), p.back);
-  return units(total(left)) === target && left.every((n) => n >= 0)
-    ? left
-    : natural(score);
+  return units(total(left)) === target && left.every((n) => n >= 0) ? left : natural(score);
 }
 
 export interface Transfer {
@@ -187,10 +173,7 @@ export interface Transfer {
 
 // 谁付给谁多少：四家加起来多出来的是桌上的立直棒，归 potSeat（头跳那家）；
 // 剩下的付的人按自己下家、对家、上家的顺序付给收的人（荒牌流局两家听两家没听：各付给离自己近的那家 1500）
-export function transfers(
-  deltas: number[],
-  potSeat: number | null,
-): Transfer[] {
+export function transfers(deltas: number[], potSeat: number | null): Transfer[] {
   const d = deltas.slice();
   const out: Transfer[] = [];
   const pot = d.reduce((a, b) => a + b, 0);
@@ -220,20 +203,13 @@ export interface StickMove extends Transfer, Payment {
 }
 
 // 这一局的点棒一笔笔怎么走：start 是每家这一局结算前手里的棒，返回每一笔和结算后每家手里的棒
-export function settle(
-  start: Sticks[],
-  deltas: number[],
-  potSeat: number | null,
-): { moves: StickMove[]; after: Sticks[] } {
+export function settle(start: Sticks[], deltas: number[], potSeat: number | null): { moves: StickMove[]; after: Sticks[] } {
   const h = start.map((x) => x.slice());
   const moves: StickMove[] = [];
   // 供托一笔先走（从桌子中间来，不用找零），付点的按顺序一笔笔走
   for (const t of transfers(deltas, potSeat)) {
     if (t.from < 0) {
-      const give =
-        units(t.pts) % 10 === 0
-          ? [0, 0, units(t.pts) / 10, 0, 0]
-          : greedy(t.pts);
+      const give = units(t.pts) % 10 === 0 ? [0, 0, units(t.pts) / 10, 0, 0] : greedy(t.pts);
       const pre = h[t.to].slice();
       h[t.to] = add(h[t.to], give);
       moves.push({
