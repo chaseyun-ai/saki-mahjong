@@ -35,7 +35,7 @@ export const PORTRAIT_SLOTS: SlotDef[] = [
 
 export const CUTIN_SLOTS: SlotDef[] = [
   { slot: 'riichi', label: '立直切入', hint: '立直时滑进来的图，透明背景最好', media: ['image'], group: 'cutin', words: RIICHI },
-  { slot: 'call', label: '鸣牌切入', hint: '吃碰杠时滑进来的图，不换就用“和牌切入”', media: ['image'], group: 'cutin', words: [...CALL, 'pon', 'chi', 'kan', '碰', '吃', '杠', '槓'] },
+  { slot: 'call', label: '鸣牌切入', hint: '吃碰杠时滑进来的图，透明背景最好', media: ['image'], group: 'cutin', words: [...CALL, 'pon', 'chi', 'kan', '碰', '吃', '杠', '槓'] },
   { slot: 'win', label: '和牌切入', hint: '荣和、自摸时滑进来的图', media: ['image'], group: 'cutin', words: [...WIN, 'ron', 'tsumo', 'cutin', 'cut-in', '荣和', '榮和', '自摸', 'ツモ', 'ロン', '切入'] },
   { slot: 'ability', label: '能力发动切入', hint: '发动能力时滑进来的图（比如岭上开花、宝牌聚集、一巡先见）。设置里关了“睁眼特写”才放', media: ['image'], group: 'cutin', words: ABILITY },
   {

@@ -35,7 +35,7 @@ export const SLOTS: { slot: SkinSlot; label: string; hint: string }[] = [
   { slot: 'blank', label: '懵逼', hint: '放铳、终局没拿第一时的头像，竖图' },
   { slot: 'power', label: '能力发动头像', hint: '发动能力时的头像（比如怜演算时眼睛发光），竖图' },
   { slot: 'riichi', label: '立直切入', hint: '立直时滑进来的图，透明背景最好' },
-  { slot: 'call', label: '鸣牌切入', hint: '吃碰杠时滑进来的图，不换就用“和牌切入”' },
+  { slot: 'call', label: '鸣牌切入', hint: '吃碰杠时滑进来的图' },
   { slot: 'win', label: '和牌切入', hint: '荣和、自摸时滑进来的图' },
   { slot: 'ability', label: '能力发动切入', hint: '发动能力时滑进来的图（比如岭上开花、宝牌聚集、一巡先见）' },
   { slot: 'result', label: '结算图', hint: '结算画面左边的图，不换就用“和牌切入”' },

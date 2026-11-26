@@ -1,7 +1,7 @@
 import './importer.css';
 import { CHARACTERS } from '../abilities/characters';
 import { SCHOOLS, membersOf } from '../ui/schools';
-import { defaultCutinArt, defaultPortraitUrl, defaultPowerPortraitUrl, portraitUrl } from '../ui3d/looks';
+import { defaultCutinArt, defaultPortraitUrl, defaultPowerPortraitUrl, portraitUrl, skinOf } from '../ui3d/looks';
 import { audio } from '../ui/audioBus';
 import { VOICE_MAX_SECONDS, previewVoiceBytes, stopVoices } from '../ui/voice';
 import { clearCustomTrack, customTrack, setCustomTrack, slotMeta } from '../ui/musicStore';
@@ -427,6 +427,31 @@ export class AssetImporter {
     if (this.busy) return;
     const done = await importEyes(owner, this.target, (slot, bytes, name) => this.putBytes(owner, slot, bytes, name));
     if (done.length > 1) this.say(`${ownerName(owner)}的睁眼特写和头像都换上了。`);
+  }
+
+  // 鸣牌切入「直接用和牌切入」：换上的和牌切入（先看现在存的这一层，再看游戏里正在用的）
+  private winArt(owner: string, map: Map<string, Placed>): { url: string; name: string; size?: number } | null {
+    const p = map.get(keyOf(owner, 'win'));
+    if (p?.entry.media === 'image') return { url: p.url, name: p.entry.name ?? p.entry.file, size: p.entry.size };
+    const art = skinOf(owner, 'win');
+    return art && !art.video ? { url: art.url, name: `和牌切入.${art.url.split(/[?#]/)[0].split('.').pop() || 'png'}` } : null;
+  }
+
+  // 照样复制一份放进鸣牌切入（之后两格各管各的：再换和牌切入，鸣牌切入不跟着变，要跟就再点一下）
+  private async callFromWin(owner: string): Promise<void> {
+    if (this.busy) return;
+    const key = keyOf(owner, 'call');
+    const w = this.winArt(owner, this.placed());
+    if (!w) return this.tell(key, { level: 'bad', text: '和牌切入还没换，鸣牌切入本来就和它一样是原版' });
+    let bytes: Uint8Array;
+    try {
+      const res = await fetch(w.url);
+      if (!res.ok) throw new Error(String(res.status));
+      bytes = new Uint8Array(await res.arrayBuffer());
+    } catch {
+      return this.tell(key, { level: 'bad', text: '读不出和牌切入的图' });
+    }
+    if (await this.putBytes(owner, 'call', bytes, w.name)) this.say(`${ownerName(owner)}的鸣牌切入换成和牌切入的同一张图了（以后再换和牌切入，这里不跟着变）。`);
   }
 
   // 放进这一格（格子上放、裁好的都走这里）。返回存成了没有
@@ -856,7 +881,7 @@ export class AssetImporter {
     return '';
   }
 
-  // 没换的这一格游戏里实际放什么：同一个人换过的别的格子能顶上就用它（吃惊、能力头像用头像，鸣牌、结算用和牌切入，
+  // 没换的这一格游戏里实际放什么：同一个人换过的别的格子能顶上就用它（吃惊、能力头像用头像，结算用和牌切入，
   // 技能动画用能力发动切入），不然是原版的图
   private standIn(owner: string, d: SlotDef, map: Map<string, Placed>): { url: string; via: string } {
     const own = (slot: string) => map.get(keyOf(owner, slot));
@@ -864,7 +889,7 @@ export class AssetImporter {
     const hit =
       d.slot === 'blank' || d.slot === 'power'
         ? by('face', '用头像')
-        : d.slot === 'call' || d.slot === 'result'
+        : d.slot === 'result'
           ? by('win', '用和牌切入')
           : d.group === 'skill'
             ? d.slot.endsWith('-win')
@@ -898,6 +923,10 @@ export class AssetImporter {
     const cut = done && p?.entry.media === 'image' && canCrop(p.entry.mime) ? `<button class="skin-btn ghost" data-imp-recrop="${key}"${this.busy ? ' disabled' : ''} title="在换上的图上重新挑裁哪里">裁剪</button>` : '';
     const eyes = d.slot === 'eyes' ? `<button class="skin-btn" data-imp-eyes="${owner}"${this.busy ? ' disabled' : ''} title="拿这个人的头像、立绘（或者再选一张头像图）框住眼睛裁一条">导入头像图</button>` : '';
     const peek = d.slot === 'eyes' ? `<a class="imp-peek" href="#eyes" title="去睁眼特写预览页，点一下放一次">看效果 ›</a>` : '';
+    // 鸣牌切入：换过和牌切入时，一下用同一张（已经是同一张就不列）
+    const win = d.slot === 'call' ? this.winArt(owner, map) : null;
+    const already = !!win && done && p?.entry.size === win.size && (p?.entry.name ?? p?.entry.file) === win.name;
+    const sameWin = win && !already ? `<button class="skin-btn" data-imp-win="${owner}"${this.busy ? ' disabled' : ''} title="把换上的和牌切入复制一份放进鸣牌切入；以后再换和牌切入，这里不跟着变">直接用和牌切入</button>` : '';
     // 试听：换上的；没换的提示音放合成的；背景音乐放项目、网页自带的那首
     const playable = audioKind && (done || k === 'sfx' || (owner === MUSIC && musicDefault));
     const playing = this.player?.key === key;
@@ -931,7 +960,7 @@ export class AssetImporter {
           <p class="imp-what">${esc(what)}</p>
           <code class="imp-fname" title="照这个起名，拖进来会自动对上这一格">${esc(g.file)}</code>
           ${note}
-          <div class="imp-slot-acts">${eyes}${put}${cut}${del}${peek}</div>
+          <div class="imp-slot-acts">${eyes}${sameWin}${put}${cut}${del}${peek}</div>
         </div>
       </div>`;
   }
@@ -1013,7 +1042,7 @@ export class AssetImporter {
 
   private onClick(e: Event): void {
     const el = (e.target as HTMLElement).closest<HTMLElement>(
-      '[data-imp-back],[data-imp-go],[data-imp-cancel],[data-imp-drop-row],[data-imp-del],[data-imp-export],[data-imp-clear],[data-imp-kind],[data-imp-sel],[data-imp-listen],[data-imp-csv],[data-imp-jump],[data-imp-crop-row],[data-imp-recrop],[data-imp-eyes]',
+      '[data-imp-back],[data-imp-go],[data-imp-cancel],[data-imp-drop-row],[data-imp-del],[data-imp-export],[data-imp-clear],[data-imp-kind],[data-imp-sel],[data-imp-listen],[data-imp-csv],[data-imp-jump],[data-imp-crop-row],[data-imp-recrop],[data-imp-eyes],[data-imp-win]',
     );
     if (!el) return;
     const d = el.dataset;
@@ -1036,6 +1065,8 @@ export class AssetImporter {
       void this.recrop(owner, slot);
     } else if (d.impEyes) {
       void this.eyesFromAvatar(d.impEyes);
+    } else if (d.impWin) {
+      void this.callFromWin(d.impWin);
     } else if (d.impDel) {
       const [owner, slot] = d.impDel.split(':');
       void this.remove(owner, slot);

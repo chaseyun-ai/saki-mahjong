@@ -259,12 +259,12 @@ export function skillArt(id: string, skill: string): SkinArt | undefined {
 
 // 切入图：kind 是切入的种类（riichi、call、kan、win、ability），结算画面用 result
 export function cutinArt(id: string, kind: string): { url: string; wide: boolean } {
-  // 鸣牌没单独换就用和牌的，结算没单独换也用和牌的
+  // 结算没单独换就用和牌的；鸣牌和和牌各管各的（只换了和牌切入，吃碰杠照旧是原版）
   const own =
     kind === 'riichi'
       ? skinOf(id, 'riichi')
       : kind === 'call' || kind === 'kan'
-        ? (skinOf(id, 'call') ?? skinOf(id, 'win'))
+        ? skinOf(id, 'call')
         : kind === 'win'
           ? skinOf(id, 'win')
           : kind === 'ability'

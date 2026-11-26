@@ -40,7 +40,7 @@ export const KINDS: KindInfo[] = [
     where: '立直、吃碰杠、和牌、能力发动时从座位那边滑进来的大图，能力发动时的睁眼特写，和结算画面左边的图',
     spec: '竖图 3:4（横图 4:3 也行），建议 1200×1600（高至少 1000），透明背景的 PNG / WebP 最好；睁眼特写是横图 16:5，建议 1600×500',
     fallback: '自带立绘的只有几个人，其他人只有一条色带和名字的最后一个字；睁眼特写不换就用游戏现画的眼睛',
-    tip: '最值得换「和牌切入」：鸣牌、结算没换时都用它',
+    tip: '最值得换「和牌切入」：结算图没换时也用它',
     global: false,
     accept: 'image/*',
   },
@@ -182,12 +182,12 @@ function fallbackOf(owner: string, d: SlotDef, who: Who[]): string {
     case 'power':
       return art ? '换了「头像」就用它，没换用自带的认真表情' : `换了「头像」就用它，没换显示${glyph}`;
     case 'riichi':
+    case 'call':
     case 'ability':
     case 'win':
       return art ? '用自带的立绘' : `只有色带和${glyph}`;
     case 'eyes':
       return '用游戏现画的眼睛（这个人的瞳色、发色）';
-    case 'call':
     case 'result':
       return '用「和牌切入」';
     case 'model':

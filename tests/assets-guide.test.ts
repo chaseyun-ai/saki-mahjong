@@ -3,6 +3,7 @@ import { CHARACTERS } from '../src/abilities/characters';
 import { guessSlot } from '../src/assets/match';
 import { GLOBAL, MUSIC, slotsFor } from '../src/assets/slots';
 import { KINDS, checklistCsv, kindAmount, kindCount, kindOf, ownersOfKind, slotGuide, suggestedFile } from '../src/assets/guide';
+import { cutinArt, defaultCutinArt, setSkinLayer } from '../src/ui3d/looks';
 
 const OWNERS = [GLOBAL, MUSIC, ...CHARACTERS.map((c) => c.id)];
 const mediaOf = (file: string) => (/\.(png|gif)$/.test(file) ? 'image' : /\.(vrm|glb)$/.test(file) ? 'model' : 'audio');
@@ -56,7 +57,25 @@ describe('素材导入：说明和建议文件名', () => {
     const face = slotsFor('awai', CHARACTERS).find((d) => d.slot === 'face')!;
     expect(slotGuide('awai', face, CHARACTERS).fallback).toBe('用自带的头像');
     expect(slotGuide('saki', slotsFor('saki', CHARACTERS).find((d) => d.slot === 'face')!, CHARACTERS).fallback).toBe('头像框里显示「咲」字');
-    expect(slotGuide('saki', slotsFor('saki', CHARACTERS).find((d) => d.slot === 'call')!, CHARACTERS).fallback).toBe('用「和牌切入」');
+    // 鸣牌切入不再借和牌切入，结算图还借
+    expect(slotGuide('saki', slotsFor('saki', CHARACTERS).find((d) => d.slot === 'call')!, CHARACTERS).fallback).toBe('只有色带和「咲」字');
+    expect(slotGuide('awai', slotsFor('awai', CHARACTERS).find((d) => d.slot === 'call')!, CHARACTERS).fallback).toBe('用自带的立绘');
+    expect(slotGuide('saki', slotsFor('saki', CHARACTERS).find((d) => d.slot === 'result')!, CHARACTERS).fallback).toBe('用「和牌切入」');
+  });
+
+  it('只换了和牌切入：吃碰杠照旧放原版，结算图用换上的和牌切入', () => {
+    setSkinLayer('mine', { awai: { win: { url: 'mine/awai/win.png', w: 3, h: 4 } } });
+    try {
+      expect(cutinArt('awai', 'win').url).toBe('mine/awai/win.png');
+      expect(cutinArt('awai', 'call').url).toBe(defaultCutinArt('awai', 'call').url);
+      expect(cutinArt('awai', 'kan').url).toBe(defaultCutinArt('awai', 'kan').url);
+      expect(cutinArt('awai', 'result').url).toBe('mine/awai/win.png');
+      setSkinLayer('mine', { awai: { win: { url: 'mine/awai/win.png', w: 3, h: 4 }, call: { url: 'mine/awai/call.png', w: 3, h: 4 } } });
+      expect(cutinArt('awai', 'call').url).toBe('mine/awai/call.png');
+      expect(cutinArt('awai', 'win').url).toBe('mine/awai/win.png');
+    } finally {
+      setSkinLayer('mine', {});
+    }
   });
 
   it('完整清单：每格一行，带 BOM，换过的标出来', () => {
