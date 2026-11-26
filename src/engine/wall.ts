@@ -324,6 +324,15 @@ export function stackAt(dealer: number, diceSum: number, p: number): { wall: num
   return { wall, stack: (idx % STACKS_PER_WALL) + 1 };
 }
 
+// stackAt 反过来：谁面前、从他右端数第几墩（1..17）的那一墩，是从摸牌起点数的第几墩（0..67）。
+// 0 是最先摸的那一墩，60 是海底那一墩，61–67 是王牌（67 紧挨着分开处，最先摸的岭上牌）
+export function stackOrder(dealer: number, diceSum: number, wall: number, stack: number): number {
+  const owner = (dealer + diceSum - 1) % 4;
+  const turns = (((owner - wall) % 4) + 4) % 4;
+  const total = STACKS_PER_WALL * 4;
+  return (((turns * STACKS_PER_WALL + stack - 1 - diceSum) % total) + total) % total;
+}
+
 // 第 d 张摸到的牌（d 从 0 开始，包括配牌）是不是这一排牌山的最后一张：摸完它就要拐过牌山的转角
 export function isCornerDraw(dealer: number, diceSum: number, d: number): boolean {
   if (d % 2 === 0) return false;

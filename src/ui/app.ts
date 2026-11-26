@@ -15,7 +15,9 @@ import { sakiKanKinds, sakiKanTiles, sakiRinshan, sakiSeesThrough } from '../abi
 import { mihokoEyeOpen } from '../abilities/mihoko';
 import { shiromiRipple } from '../abilities/shiromi';
 import { MAYOIGA_FX } from '../ui3d/mayoigaFx';
-import { shizunoMist } from '../abilities/shizuno';
+import { shizunoMarks } from '../abilities/shizuno';
+import { Mist2D } from './mist2d';
+import { type MistLook, mistLook, mistTone } from './mistLook';
 import { hatsumiGale, hatsumiGlowMelds, hatsumiOpen } from '../abilities/hatsumi';
 import { MYEONGHWA, myeonghwaCut, myeonghwaSecondSong, myeonghwaSinging, myeonghwaSong, myeonghwaWinds } from '../abilities/myeonghwa';
 import { cutTagHtml, fuujinBreeze, fuujinCut, fuujinGust, songHtml } from './fuujin';
@@ -304,6 +306,8 @@ export class App {
   private netView = false;
   private netFrom: TableMode | null = null;
   private gale2dFx: Gale2D | null = null; // 2D 牌桌上初美的紫色旋风
+  private mist2dFx: Mist2D | null = null; // 2D 牌桌上稳乃的雾
+  private mistPreview = new URLSearchParams(location.search).get('mist'); // 网址上的 ?mist=N：直接看 N 个深山标记时的雾
   private stars2dFx: Stars2D | null = null; // 2D 牌桌上大星淡的星空
   private starHold2d = 0; // 双立直宣言的光圈放出来之前，夜空先不铺
   private fxHold2d = 0; // 2D：平行宇宙的动画放完之前牌局先等着（performance.now 的时刻）
@@ -3424,7 +3428,7 @@ export class App {
       ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
     this.himekoFx2d(g, table.parentElement ?? table);
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
-    table.dataset.mist = String(this.mistLevel());
+    this.mist2d(g, this.mistView());
     this.gale2d(this.galeView()?.level ?? 0);
     this.stars2d();
     this.awaiField2d();
@@ -3489,7 +3493,7 @@ export class App {
       slamHand: this.settings.slam !== 'tile',
       slamOrder: this.settings.slamOrder,
       slamStyle: this.settings.slamStyle,
-      mist: this.mistLevel(),
+      mist: this.mistView(),
       sketch: this.sketchShown(),
       gale: this.galeView(),
       glowTiles: this.glowTiles(),
@@ -3501,12 +3505,27 @@ export class App {
     hud.parentElement?.classList.toggle('sketch', this.sketchShown());
   }
 
-  // 高鸭稳乃的深山：牌山上的雾有几级（谁都看得见；被封印的那一局没有雾）。
-  // 发牌前（选技能的时候）牌山还没摆出来，不起雾；3D 牌桌还要等牌山真的摆好（table3d 的 mistFill）
-  private mistLevel(): number {
+  // 高鸭稳乃的深山：牌山上的雾什么样（谁都看得见；被封印的那一局没有雾）。跟着深山标记一个一个变：
+  // 从牌山最深处往前罩住多少、多浓（mistLook.ts），2D、2.5D、俯视、3D 都照这个画。
+  // 发牌前（选技能的时候）牌山还没摆出来，不起雾；3D 牌桌还要等牌山真的摆好（table3d 的 mistFill）。
+  // 网址后面加 ?mist=6 到 12：不管桌上是谁，直接看那么多个标记时的雾
+  private mistView(): MistLook | null {
     const g = this.game;
-    if (!g || g.phase === 'predeal' || g.phase === 'postdeal') return 0;
-    return Math.max(0, ...[0, 1, 2, 3].filter((s) => this.chars[s]?.id === 'shizuno' && g.active(s)).map((s) => shizunoMist(g, s)));
+    if (!g || g.phase === 'predeal' || g.phase === 'postdeal') return null;
+    if (this.mistPreview !== null) return mistLook(Number(this.mistPreview) || 0);
+    return mistLook(Math.max(0, ...[0, 1, 2, 3].filter((s) => this.chars[s]?.id === 'shizuno' && g.active(s)).map((s) => shizunoMarks(g, s))));
+  }
+
+  // 2D 牌桌：雾铺在牌底下的一层里（mist2d.ts，不跟着牌桌重画，动画不会断）。桌上没有雾就不建
+  private mist2d(g: Game, look: MistLook | null): void {
+    const host = document.querySelector('.stage .table');
+    if (!host) return;
+    if (!this.mist2dFx?.el.isConnected) {
+      if (!look) return;
+      this.mist2dFx = new Mist2D();
+      host.prepend(this.mist2dFx.el);
+    }
+    this.mist2dFx.set(look, g, this.me, mistTone(tableColors().felt[0]));
   }
 
   // 丰音的赤口：没公开的赤宝牌在哪（别人手里的、牌山里的）

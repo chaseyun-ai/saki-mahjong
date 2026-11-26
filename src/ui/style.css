@@ -666,7 +666,7 @@ button {
 
 /* 淡的巨引力源（2D）：引力圆像一块透镜压在桌子中间。隔着它看，圆里的东西发暗、偏紫；几道旋臂慢慢转，
    一圈圈波纹往圆心收，边上一圈亮线带着光晕。3D、2.5D 是真的把画面扭了（warpFx.ts）。
-   画在 ::after 上：::before 是稳乃的雾在用（#table[data-mist] .center::before） */
+   画在 ::after 上 */
 @property --awai-r {
   syntax: '<percentage>';
   inherits: false;
@@ -849,31 +849,55 @@ button {
   gap: 4px;
 }
 
-/* 高鸭稳乃的深山：2D 牌桌没有牌山，雾围着中间的牌山信息飘（几级就有多浓） */
-#table[data-mist] .center::before {
-  content: '';
+/* 高鸭稳乃的深山（2D 牌桌，mist2d.ts）：2D 不画牌山，雾起在牌山该在的那一圈（牌河外面、手牌里面），
+   铺在牌底下，从王牌那头往前漫，深山标记越多罩得越长、越浓。每团雾是一张小图，只改透明度、慢慢挪和转 */
+.mist2d {
   position: absolute;
-  inset: -46px;
-  border-radius: 50%;
+  inset: 0;
   pointer-events: none;
-  opacity: 0;
-  background:
-    radial-gradient(closest-side at 30% 40%, rgba(244, 247, 250, 0.7), transparent),
-    radial-gradient(closest-side at 70% 35%, rgba(244, 247, 250, 0.6), transparent),
-    radial-gradient(closest-side at 55% 70%, rgba(244, 247, 250, 0.65), transparent),
-    radial-gradient(closest-side at 22% 72%, rgba(244, 247, 250, 0.5), transparent),
-    radial-gradient(closest-side at 80% 70%, rgba(244, 247, 250, 0.5), transparent);
-  filter: blur(10px);
-  transition: opacity 2s ease;
-  animation: mist-drift 9s ease-in-out infinite alternate;
+  overflow: hidden;
+  z-index: 0;
 }
-#table[data-mist='1'] .center::before { opacity: 0.32; }
-#table[data-mist='2'] .center::before { opacity: 0.45; }
-#table[data-mist='3'] .center::before { opacity: 0.58; }
-#table[data-mist='4'] .center::before { opacity: 0.7; }
-@keyframes mist-drift {
-  from { transform: translateX(-8px) scale(1); }
-  to { transform: translateX(8px) scale(1.06); }
+.mist2d i {
+  position: absolute;
+  width: 170px;
+  height: 170px;
+  background: var(--mist-a) center / 100% 100% no-repeat;
+  opacity: var(--o, 0);
+  /* 没有雾的那几团：等淡出完了就藏起来、动画停住，不占合成层 */
+  visibility: hidden;
+  transition: opacity 1.4s ease var(--d, 0s), visibility 0s linear 1.5s;
+  animation: mist2d-roll var(--t, 12s) ease-in-out var(--p, 0s) infinite alternate paused;
+}
+.mist2d i.on {
+  visibility: visible;
+  transition: opacity 1.4s ease var(--d, 0s), visibility 0s;
+  animation-play-state: running;
+  will-change: transform, opacity;
+}
+.mist2d i.b {
+  background-image: var(--mist-b);
+}
+@keyframes mist2d-roll {
+  from { transform: translate(calc(var(--dx) * -1), calc(var(--dy) * -1)) rotate(var(--a0)) scale(var(--s)); }
+  to { transform: translate(var(--dx), var(--dy)) rotate(var(--a1)) scale(calc(var(--s) * 1.12)); }
+}
+/* 雾漫到手牌上面那行提示底下时，给提示垫一块深色的底，字照样看得清（白瓷、漫画的提示自带白底胶囊，不用） */
+:root:not([data-theme='porcelain'], [data-theme='manga']) .mist2d.on ~ #table .hint {
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: rgba(8, 16, 28, 0.5);
+  color: #eef2f6;
+}
+/* 天使和的网络麻将里没有超能力，不画雾 */
+.stage.net .mist2d {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mist2d i {
+    animation: none;
+    transform: rotate(var(--a0)) scale(var(--s));
+  }
 }
 
 .round {

@@ -21,7 +21,8 @@ import { SealStamps } from './sealStamp';
 import { Tide, type TideCue } from './tide';
 import { BOLT_LEADER, Effects } from './effects';
 import { type SpotRow, WinSpots } from './winSpots';
-import { STACKS as MIST_STACKS, WallMist } from './mist';
+import { STACKS as MIST_STACKS, STACK_FILLED, STACK_OPEN, WallMist } from './mist';
+import { type MistLook, mistTone } from '../ui/mistLook';
 import { Gale } from './gale';
 import { MoonLift } from './moonFx';
 import { SEA, Water, wet, wetLike } from './water';
@@ -521,7 +522,7 @@ export interface SyncView {
   discardFx?: DiscardFx; // 出牌的样子：varied 照各人的手风随机，其余是固定用那一种；不给是原来的平放
   riichiFx?: RiichiFx; // 立直宣言牌怎么放：同上；不给是原来的重拍
   pondFx?: PondFx; // 牌河摆得多齐：char 照各人的手风，其余是所有人都那样；不给是原来的样子（随手放的）
-  mist?: number; // 高鸭稳乃的深山：牌山上的雾有几级（0 没有）
+  mist?: MistLook | null; // 高鸭稳乃的深山：牌山上的雾从最深处往前罩住几墩、多浓（ui/mistLook.ts，没有雾是 null）
   sketch?: boolean; // 爱丽丝的手绘板：牌、桌布换成手绘风格
   gale?: { seat: number; level: number } | null; // 薄墨初美的里鬼门：紫色的风聚得多浓（0–1），和牌时那张牌上紫光往上冲
   glowTiles?: Set<TileId>; // 初美鸣出来的东、北中间那张：字发紫光，牌上一道淡淡的紫色光柱
@@ -663,6 +664,7 @@ export class Table3D {
   private mist = new WallMist();
   private mistFor = -1; // 雾按哪个座位的视角摆的
   private mistTops: THREE.Vector3[][] = []; // 每一墩牌山顶上的位置
+  private mistState = new Uint8Array(MIST_STACKS * 4); // 每一墩牌山现在摆好了没有（mistFill 每帧填）
   private riichiSticks: THREE.Mesh[] = [];
   // 立直棒：hidden 还在抽屉里，anim 正被手拿着，placed 已经放到桌上
   private stickState: ('hidden' | 'anim' | 'placed')[] = ['hidden', 'hidden', 'hidden', 'hidden'];
@@ -885,6 +887,7 @@ export class Table3D {
     cancelAnimationFrame(this.frame);
     this.resizer.disconnect();
     this.water?.dispose();
+    this.mist.dispose();
     this.machine?.dispose();
     this.warp?.dispose();
     this.mayoiga?.dispose();
@@ -2359,7 +2362,7 @@ export class Table3D {
     this.syncChains(g, view);
     this.showGravity(!!view.gravity);
     this.drawConsole(g, view);
-    this.syncMist(view);
+    this.syncMist(g, view);
     this.syncGale(view);
     this.syncStars(view);
     this.syncAwai(g, view);
@@ -4160,32 +4163,36 @@ export class Table3D {
     return this.renderer.domElement.toDataURL('image/jpeg', 0.85);
   }
 
-  // 深山的雾：沿着四排牌山铺（mist.ts），只罩在真的摆好了、还有牌的墩上
-  private syncMist(view: SyncView): void {
+  // 深山的雾：从牌山最深处顺着四排牌山往前漫（mist.ts），只罩在真的摆好了、还有牌的墩上
+  private syncMist(g: Game, view: SyncView): void {
+    const look = view.mist ?? null;
+    this.mist.setLook(look);
+    if (!this.mist.wanted()) return;
+    this.mist.setTone(mistTone(this.colors.felt[0]));
     if (this.mistFor !== view.me) {
       this.mistFor = view.me;
       this.mistTops = [0, 1, 2, 3].map((wall) =>
         Array.from({ length: MIST_STACKS }, (_, i) => this.wallPlacement({ wall, stack: i + 1, level: 0, faceUp: false }, view.me).pos.clone().setY(TILE_T * 2)),
       );
     }
-    this.mist.setLevel(view.mist ?? 0);
+    this.mist.setWall(this.mistTops, g.dealer, g.dice[0] + g.dice[1], g.round);
     this.mistFill();
   }
 
   // 每一帧：哪几墩牌山真的摆好了（牌看得见、已经落到牌山上的位置）。新牌山还在升降板上升、牌还在飞、
-  // 发牌前牌已经收走的时候都不算，雾等牌山成形了才起；摸空的墩雾散掉
+  // 发牌前牌已经收走的时候都不算，雾等牌山成形了才起；摸空的墩雾散掉。桌上没有雾的时候什么都不做
   private mistFill(): void {
-    if (!this.mistTops.length) return;
-    const filled = [0, 1, 2, 3].map(() => new Array<boolean>(MIST_STACKS).fill(false));
-    if (this.mist.wanted()) {
-      for (const [id, slot] of this.wallSlotOf) {
-        const t = this.tiles[id];
-        const to = t?.target;
-        if (!t.group.visible || !to || t.group.position.distanceToSquared(to.pos) > 0.04) continue;
-        filled[slot.wall][slot.stack - 1] = true;
-      }
+    if (!this.mistTops.length || !this.mist.wanted()) return;
+    const state = this.mistState.fill(0);
+    for (const [id, slot] of this.wallSlotOf) {
+      const t = this.tiles[id];
+      const to = t?.target;
+      if (!t.group.visible || !to || t.group.position.distanceToSquared(to.pos) > 0.04) continue;
+      const at = slot.wall * MIST_STACKS + slot.stack - 1;
+      if (slot.faceUp) state[at] = STACK_OPEN;
+      else if (state[at] !== STACK_OPEN) state[at] = STACK_FILLED;
     }
-    this.mist.setStacks(this.mistTops.map((row, w) => row.map((pos, i) => ({ pos, filled: filled[w][i] }))));
+    this.mist.setFilled(state);
   }
 
   // 巨引力源：引力圆和四边牌山的外沿相切，罩住每边中间的几墩（墩的中心在圆里的：引擎里是 awai.ts 的 sourceCovers，离正中 3 墩以内）。
