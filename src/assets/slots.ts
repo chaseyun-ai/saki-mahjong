@@ -89,7 +89,11 @@ export interface Who {
   name: string;
   skillArts?: SkillArt[];
   ability?: unknown;
+  powerHint?: string; // 「能力发动头像」这一格对这个人的说明（Character.powerHint）
 }
+
+// 头像三格：有第二形态的人（天使和、治水、美穗子睁眼）「能力发动头像」换成她自己的说明
+export const portraitSlots = (c: Who): SlotDef[] => PORTRAIT_SLOTS.map((d) => (d.slot === 'power' && c.powerHint ? { ...d, hint: c.powerHint } : d));
 
 export function skillSlots(arts: SkillArt[] | undefined): SlotDef[] {
   return (arts ?? []).map((k) => ({
@@ -131,7 +135,7 @@ export function slotsFor(owner: string, who: Who[]): SlotDef[] {
   if (owner === MUSIC) return MUSIC_DEFS;
   const c = who.find((x) => x.id === owner);
   if (!c) return [];
-  return [...PORTRAIT_SLOTS, ...CUTIN_SLOTS, ...skillSlots(c.skillArts), MODEL_SLOT, ...voiceSlots(c)];
+  return [...portraitSlots(c), ...CUTIN_SLOTS, ...skillSlots(c.skillArts), MODEL_SLOT, ...voiceSlots(c)];
 }
 
 export const slotDef = (owner: string, slot: string, who: Who[]): SlotDef | undefined => slotsFor(owner, who).find((d) => d.slot === slot);

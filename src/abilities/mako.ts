@@ -33,7 +33,7 @@ const inSuit = (suit: number) => (t: TileId) => kindOf(t) >= 27 || Math.floor(ki
 export function makoKnows(g: Game, target: number): boolean {
   // 还没变出第二形态的人（平常的原村和）也算没有能力
   const a = g.active(target);
-  return !a || (!!a.form && !a.form(g, target));
+  return !a || (!!a.latent && !a.form?.(g, target));
 }
 
 // 她读得出来的听牌（认得出的人里）

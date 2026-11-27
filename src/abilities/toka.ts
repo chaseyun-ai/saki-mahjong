@@ -171,6 +171,8 @@ export const tokaAbility: Ability = {
     if (st.at === undefined && st.moved > TOKA.threshold) st.at = g.round;
   },
 
+  // 治水以前算没有能力（真子认得出、恭子没东西可打断）
+  latent: true,
   form(g, seat) {
     return tokaChisuiOn(g, seat) ? 'chisui' : null;
   },

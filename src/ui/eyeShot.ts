@@ -1,7 +1,7 @@
 import './eyeShot.css';
 import { skinOf } from '../ui3d/looks';
-import { EYE_TIMES, drawEyeShot, drawFace, eyeStateAt } from './eyeDraw';
-import { type EyeLook, eyeLookOf } from './eyeLooks';
+import { EYE_TIMES, drawEyeShot, drawFace, eyeLayout, eyeStateAt } from './eyeDraw';
+import { EYE_PORTRAIT, type EyeLook, eyeLookOf } from './eyeLooks';
 
 // 能力发动时的睁眼特写：一格斜着的长条，里面是这个人的眼睛，闭着滑进来、猛地睁开、瞳孔一缩、眼尾拖出光。
 // 不是横贯整个画面的横幅；几个人差不多同时发动（一局开始时几个人的能力一起亮）就一人一格叠起来，最多四格。
@@ -252,6 +252,50 @@ export function eyeTemplateUrl(id: string, color: string): string {
     drawEyeShot(c.getContext('2d')!, w, h, look, { ...eyeStateAt(EYE_TIMES.settle + 0.4, look), flash: 0, ring: -1 }, face);
     url = c.toDataURL('image/webp', 0.9);
     templates.set(id, url);
+  }
+  return url;
+}
+
+// 能力发动头像的替身（EYE_PORTRAIT 里的人，比如美穗子）：现画的睁眼特写，围着睁开的那只眼裁一格 3:4 的竖图。
+// 没换「能力发动头像」也没换「头像」、又没有自带头像时用它；不在 EYE_PORTRAIT 里的人是空字符串
+const portraits = new Map<string, string>();
+export function eyePortraitUrl(id: string, color: string): string {
+  if (!EYE_PORTRAIT.has(id)) return '';
+  let url = portraits.get(id);
+  if (url === undefined) {
+    // 先画一条宽的特写（和睁眼特写一样的画法），再从里面裁
+    const w = 1280;
+    const h = 400;
+    const look = eyeLookOf(id, color);
+    const face = document.createElement('canvas');
+    face.width = w;
+    face.height = h;
+    drawFace(face.getContext('2d')!, w, h, look, id);
+    const strip = document.createElement('canvas');
+    strip.width = w;
+    strip.height = h;
+    drawEyeShot(strip.getContext('2d')!, w, h, look, { ...eyeStateAt(EYE_TIMES.settle + 0.4, look), flash: 0, ring: -1 }, face);
+    // 睁开的那只眼：只睁一只的人（美穗子的右眼在画面左边）对着它，不然对着画面左边那只
+    const lay = eyeLayout(w, h);
+    const eye = lay.eyes.find((e) => !look.only || e.side === look.only) ?? lay.eyes[0];
+    // 竖图 3:4，眼睛在中间偏上一点，往鼻梁那边多留一点
+    const ch = h;
+    const cw = Math.round((ch * 3) / 4);
+    const toward = eye.x < w / 2 ? 1 : -1;
+    const cx = Math.min(w - cw, Math.max(0, Math.round(eye.x + toward * eye.u * 0.35 - cw / 2)));
+    const out = document.createElement('canvas');
+    out.width = 300;
+    out.height = 400;
+    const ctx = out.getContext('2d')!;
+    ctx.drawImage(strip, cx, 0, cw, ch, 0, 0, out.width, out.height);
+    // 头像框下面压着名字：底下淡淡压暗一截，和别的头像一样
+    const fade = ctx.createLinearGradient(0, out.height * 0.7, 0, out.height);
+    fade.addColorStop(0, 'rgba(0,0,0,0)');
+    fade.addColorStop(1, 'rgba(0,0,0,0.28)');
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, 0, out.width, out.height);
+    url = out.toDataURL('image/webp', 0.9);
+    portraits.set(id, url);
   }
   return url;
 }

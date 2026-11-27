@@ -93,6 +93,8 @@ export interface Ability {
   onCall?(g: Game, seat: number, caller: number, call: string): void;
   // 一局结算完、点数已经算进去，roundEnd 事件发出之前（白水哩的番缚在这里结算成钥匙）。被封印也照样调用
   onRoundEnd?(g: Game, seat: number, result: RoundResult): void;
+  // 两局之间：上一局结算完、确定后面还有下一局，下一局发牌（和发牌前选技能）之前（照的照魔镜）。终局不调用；被封印也照样调用
+  betweenRounds?(g: Game, seat: number): void;
   // 头像框上的小标签（比如衣的月相、霞绝掉的花色），没有就是 null
   badge?(g: Game, seat: number): string | null;
   // 鼠标指着头像框上的小标签时弹出来的说明：标题、一排牌（种类）、几行字（尧深种下的牌）。没写就不弹
@@ -155,6 +157,9 @@ export interface Ability {
   powered?(g: Game, seat: number): boolean;
   // 现在是第二形态（天使和）：返回素材页里这个形态的动画 id。头像框换成能力发动头像，和牌放 `${id}-win` 的动画
   form?(g: Game, seat: number): string | null;
+  // 变出第二形态（form）以前算没有能力（平常的原村和、还没治水的透华）：真子认得出她的局面，恭子没东西可打断。
+  // 美穗子没睁眼时也有 form 但不是 latent，照样算有能力的人
+  latent?: boolean;
   // 隐身（东横桃子）：她打满几张牌起 viewer 就看不见她，null 是 viewer 看得见她。
   // 看不见她的整条牌河和手牌，荣和不了、鸣不了她打的牌，不知道她立没立直（Game.stealthed、Game.seesRiichi）
   stealth?(g: Game, seat: number, viewer: number): number | null;

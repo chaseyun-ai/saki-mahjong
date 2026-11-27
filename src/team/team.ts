@@ -6,11 +6,13 @@ import { Rng } from '../engine/rng';
 // 1. 选人：从 5 费档往下，每档每队选一人（正好 15 费）。顺序蛇形：5 费按开局抽的顺序，4 费倒过来，3 费再正过来……
 // 2. 布阵：60 秒把自己队的五个人排到先锋、次锋、中坚、副将、大将；电脑队的布阵开打才公布
 // 3. 比赛：每队带着 TEAM_START 点，五个位置依次各打一个半庄（Game 的 team 规则），点数接着走，立直棒留给下一个位置；
-//    有队点数小于 0 整场立刻结束。大将战打完按队伍点数排名
+//    有队点数小于 0 整场立刻结束。先锋到副将的南 4 局庄家和了以后可以宣布到此结束（dealerStopAt）。大将战打完按队伍点数排名
 
 export const TEAM_START = 100000;
 export const TIERS = [5, 4, 3, 2, 1];
 export const POSITIONS = ['先锋', '次锋', '中坚', '副将', '大将'];
+// 这个位置南 4 局庄家和了以后能不能宣布到此结束（Game 的 dealerStop）：大将战以外的四个位置能，大将战照常连庄
+export const dealerStopAt = (pos: number): boolean => pos < POSITIONS.length - 1;
 export const TEAMS = [
   { id: 'red', name: '红队', color: '#d64545' },
   { id: 'green', name: '绿队', color: '#3aa860' },

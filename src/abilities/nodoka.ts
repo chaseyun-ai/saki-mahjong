@@ -50,6 +50,8 @@ export const nodokaAbility: Ability = {
   id: 'nodoka',
   name: '天使和',
   description: '平时是不受场况影响的数字派。对局里遇到比自己强的人会越来越专注，到了某一局就变成天使和：别人对她配牌、摸牌的影响减半，封印不了，不再失误，看得出 8000 点以上的铳牌',
+  // 变成天使和以前是普通人（真子认得出、恭子没东西可打断）
+  latent: true,
   // 平行宇宙：计数回到开头，这一局也不算
   resetMarks(g, seat) {
     (g.abilityGameState[seat] as { since?: number }).since = g.phase === 'predeal' ? g.round + 1 : g.round;

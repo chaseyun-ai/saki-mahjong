@@ -1254,6 +1254,9 @@ function nellyHolds(g: Game, seat: number, tsumo: boolean): boolean {
   if (nellyRemade(g, seat) && nellyBig(g, seat)) {
     if (g.isSealed(seat)) return false;
     if (nellyDrawsToWin(g, seat) > 0) return true;
+    // 立直了手就定了：摸牌时能来三倍满的牌一定先来（drawRemake），来的不是三倍满就是牌山里已经没有了，
+    // 再等也等不来（以前在这里一直不和，听的牌被摸光就荒牌流局）。有什么自摸什么
+    if (tsumo && g.players[seat].riichi) return false;
     const tile = tsumo ? g.players[seat].drawn! : g.callKind === 'chankan' ? g.kakanInfo!.tile : g.lastDiscard!.tile;
     const r = g.winResult(seat, tile, tsumo);
     return !!r && nellyDrawsLeft(g, seat) > 0 && teruWinValue(r, tsumo, seat === g.dealer) < nellyTarget(g, seat);

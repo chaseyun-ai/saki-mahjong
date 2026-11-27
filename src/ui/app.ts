@@ -3,8 +3,8 @@ import { bulbLevel, dangerKinds, readTenpai } from '../abilities/hiroe';
 import { makoDanger, makoKnows } from '../abilities/mako';
 import { akoDistance, akoSense } from '../abilities/ako';
 import { HIROKO_NOTES } from '../abilities/hiroko';
-import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrored, teruNote, teruPoints, teruTwister, teruWallCounts, teruWinValue } from '../abilities/teru';
-import { teruMirrors } from './teruFx';
+import { TERU, TERU_TIERS, TERU_TOP, teruDanger, teruLadder, teruMirrorDue, teruMirrored, teruNote, teruPoints, teruTwister, teruWallCounts, teruWinValue } from '../abilities/teru';
+import { playMirrorCut } from './mirrorCut';
 import { tornado2d } from './tornado2d';
 import { flapPages } from '../ui3d/flapBoard';
 import { DARK, FLICK, FLICKER } from '../ui3d/lamp';
@@ -58,12 +58,13 @@ import { saeCanAim, saeAim, snipedBy } from '../abilities/sae';
 import { initLensDrag, lensMarkHtml, lensSlotsHtml, playLensShot } from './lensDrag';
 import type { PreDealOption } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
+import { dealerStops } from '../ai/dealerStop';
 import { Action, Game, GameEvent, RoundResult, Stage, WinInfo } from '../engine/game';
 import { riichiSideIndex } from '../engine/pond';
 import { Rng } from '../engine/rng';
 import { Meld } from '../engine/score';
 import { Kind, TileId, WIND_CN, isRed, kindLabel, kindOf } from '../engine/tiles';
-import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playBreeze, playDuelMiss, playDuelStart, playDuelStep, playGunshot, playIaiDraw, playIaiPush, playIaiSheath, playSong, playLamp, playLily, playMachine, playRiichi, playScrape, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin, playWindow } from './sound';
+import { playCall, playChime, playClick, playCrackle, playFlapTicks, playFlip, playGust, playBreeze, playDuelMiss, playDuelStart, playDuelStep, playGunshot, playIaiDraw, playIaiPush, playIaiSheath, playSong, playLamp, playLily, playMachine, playMirror, playRiichi, playScrape, playShift, playShuffle, playSlam, playStamp, playSplash, playTide, playWhirl, playWin, playWindow } from './sound';
 import { lilyGrand } from '../ui3d/lilyFx';
 import { playLockSlam, playRiiLock, playRiiOutcome, preloadRiiSound, previewRiiSound } from './riiSound';
 import { closeSoundPanel, onSoundTab, openSoundPanel, soundButtonHtml, soundPanelOpen } from './soundPanel';
@@ -92,7 +93,7 @@ import { meldLayout } from './meldLayout';
 import { WaitInfo, drawWaits, hanLabel, waitInfo, waitStatus } from './waitInfo';
 import { AbilityTrace, traceLine } from './abilityTrace';
 import { CutinKind, Cutins } from './cutin';
-import { EyeShots } from './eyeShot';
+import { EyeShots, eyePortraitUrl } from './eyeShot';
 import { SkinEditor, canEditSkins, onSkinsChange } from './skins';
 import { AssetImporter } from '../assets/importer';
 import { onCustomAssets } from '../assets/layers';
@@ -102,7 +103,7 @@ import { TeamFlow } from './teamFlow';
 import { CONSOLE_SHAPES, type ConsoleShapeId, TABLE_STYLES, THEMES, type TableStyleId, ThemeId, currentConsoleShape, currentTableStyle, currentTheme, setConsoleShape, setTableStyle, setTheme, tableColors } from './theme';
 import { lastDeltas, lastWinners, winCounts } from './winTally';
 import { SCHOOLS, membersOf, saveSchool, savedSchool } from './schools';
-import { POSITIONS, TEAM_START, TeamRun } from '../team/team';
+import { POSITIONS, TEAM_START, TeamRun, dealerStopAt } from '../team/team';
 import { CanRon, SeenStep, canRonNow, cloneGame, readSteps, rehearsalOver } from './foresee';
 import { DEFAULT_SETTINGS, MatchSettings, TABLE_MODES, TOP_HAND_ALPHA, TOP_HAND_SCALE, TOP_HAND_TILT, TableMode, loadSettings, loadTableMode, matchPanelHtml, panelHtml, parseTarget, pickOpponents, rowHtml, rulesOf, saveSettings, saveTableMode, setOption, settingRows, visualPanelHtml } from './matchSetup';
 import { ForecastCache } from '../ai/forecast';
@@ -244,6 +245,8 @@ export class App {
   private toastSeq = 0;
   private timer: number | null = null;
   private showResult = false;
+  // 团体赛南 4 局自己坐庄和了，结算看完正在问：到此结束还是连庄（见 stopAskHtml）
+  private stopAsk = false;
   // 刚打出的牌只在第一次画出来时播放落桌动画，之后重绘不再重播
   // 2D 牌桌刚打出来的那一张：哪一张（座位-第几张）、怎么放下去的、什么时候打的（动画没播完又重画时接着播）
   // （push：横推的那一张横着放在落点右边多远再推过来，牌宽）
@@ -422,6 +425,8 @@ export class App {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.closeFlow();
+    this.mirrorStop?.();
+    this.mirrorStop = null;
     this.game = null;
     stopVoices();
     this.cutins?.clear();
@@ -888,7 +893,8 @@ export class App {
     const allies = seats.map((t) => run.teams[t].lineup.map((c) => c.id));
     // 同队的哩在之前的位置拿到的钥匙
     const keys = seats.map((t) => run.keys[t]);
-    const game = new Game({ seed, format: 'team', firstDealer: Math.floor(Math.random() * 4), startScore: TEAM_START, scores: start, riichiSticks: run.riichiSticks, allies, keys, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
+    // 先锋到副将：南 4 局庄家和了以后可以宣布到此结束（大将战照常连庄）
+    const game = new Game({ seed, format: 'team', dealerStop: dealerStopAt(run.pos), firstDealer: Math.floor(Math.random() * 4), startScore: TEAM_START, scores: start, riichiSticks: run.riichiSticks, allies, keys, players: chars.map((c, i) => ({ name: c.name, ability: c.ability, manual: i === this.me && !auto })) });
     this.beginGame(chars, game);
   }
 
@@ -925,6 +931,7 @@ export class App {
     // 头像先下好，第一次换表情时不会空一下
     for (const c of this.chars) for (const f of FACES) if (portraitUrl(c.id, f)) new Image().src = portraitUrl(c.id, f);
     this.showResult = false;
+    this.stopAsk = false;
     this.pdPicks = null;
     this.pdValues = null;
     this.handOrder = null;
@@ -1045,9 +1052,6 @@ export class App {
       const g = this.game!;
       const chisui = g.events.find((e) => e.type === 'ability' && e.ability === 'toka' && e.text === '治水');
       if (chisui && g.round === 1) window.setTimeout(() => this.game === g && this.onGameEvent(chisui), Math.max(600, this.busyMs()));
-      // 照魔镜也是：第一局在牌桌建好之前就开始了，补放一次（切入、语音、对手头像上的镜子）
-      const mirror = g.events.find((e) => e.type === 'ability' && e.ability === 'teru' && e.text === '照魔镜');
-      if (mirror && g.round === 1) window.setTimeout(() => this.game === g && this.onGameEvent(mirror), Math.max(900, this.busyMs()));
     }
     this.step();
   }
@@ -1081,6 +1085,11 @@ export class App {
       return;
     }
     if (g.phase === 'postdeal') {
+      this.render();
+      return;
+    }
+    // 结算看完了，正等玩家（庄家）选到此结束还是连庄：停在弹窗上，不再弹一遍结算
+    if (this.stopAsk && g.phase === 'roundEnd') {
       this.render();
       return;
     }
@@ -1346,6 +1355,12 @@ export class App {
     g.manual[this.me] = !this.auto;
     this.riichiMode = false;
     if (this.auto && (g.phase === 'predeal' || g.phase === 'postdeal')) g.deal();
+    // 正在问要不要到此结束时托管：交给电脑决定
+    if (this.auto && this.stopAsk) {
+      this.stopAsk = false;
+      this.advance();
+      return;
+    }
     this.step();
   }
 
@@ -1353,11 +1368,42 @@ export class App {
   private advance(): void {
     const g = this.game;
     if (!g || g.phase !== 'roundEnd') return;
+    // 照魔镜正在放：放完它自己会接着走
+    if (this.mirrorStop) return;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.closeFlow();
     this.showResult = false;
-    g.nextRound();
+    // 照的照魔镜：第一局打完、第二局开始之前发动。先把演出放完，再发下一局的牌
+    if (this.mirrorCut(g)) return;
+    // 团体赛先锋到副将的南 4 局，庄家和了：庄家宣布到此结束还是连庄。
+    // 玩家坐庄（没托管）弹窗问（见 stopAskHtml）；电脑庄家照 ai/dealerStop.ts 自己定，在他座位上喊一声
+    if (g.mayStop()) {
+      const d = g.dealer;
+      if (d === this.me && !this.auto) {
+        this.stopAsk = true;
+        this.render();
+        return;
+      }
+      const stop = dealerStops(g, d, this.chars[d].ai);
+      this.toast(d, stop ? '到此结束' : '连庄', true);
+      this.nextRound(stop);
+      return;
+    }
+    this.nextRound(false);
+  }
+
+  // 庄家（玩家）在弹窗里选好了：stop 是到此结束，不然连庄
+  private answerStop(stop: boolean): void {
+    if (!this.game || !this.stopAsk) return;
+    this.stopAsk = false;
+    this.nextRound(stop);
+  }
+
+  // 进下一局或终局（stop：庄家宣布到此结束，见 Game.nextRound）
+  private nextRound(stop: boolean): void {
+    const g = this.game!;
+    g.nextRound(stop);
     // 下一局发牌前要选技能（爽的五色云等）：引擎已经把上一局的牌收走了，桌上的倒牌、锁链这些也收掉，停在空牌桌上选
     if ((g.phase as string) === 'predeal') {
       this.clearRoundFx();
@@ -1498,6 +1544,8 @@ export class App {
         if (e.ability === 'awai' && !this.table3d) this.awaiDeny2d(e.text, e.target);
         return;
       }
+      // 照的照魔镜：演出在两局之间已经放过了（见 advance 里的 mirrorCut），这里不再出字
+      if (e.ability === 'teru' && e.text === '照魔镜') return;
       // 姬子破碎的钥匙那一局换走自己摸到的宝牌：悄悄换
       if (e.ability === 'himeko' && e.text === '没有宝牌') return;
       // 爱丽丝自己的手绘板：画好、重画时放重组特效，碎了放破碎特效
@@ -1595,8 +1643,6 @@ export class App {
       playChime(this.sayAbility(e.seat, e.text) ? VOICED_CUE : 1);
       // 大星淡的技能：平行宇宙换牌桌时画面错开一下（三种视角都有）；2D 牌桌上的光圈、流星、北斗七星（3D、2.5D 画在牌桌里）
       if (e.ability === 'awai') this.awaiSkillFx2d(e.seat, e.text);
-      // 照魔镜：另外三家的头像上各罩一面镜子（等这一下重画完再找头像）
-      if (e.ability === 'teru' && e.text === '照魔镜') requestAnimationFrame(() => this.teruMirrorFx(e.seat));
       // 臼泽塞的镜片：狙击镜落到被盯上的人的头像上（等这一下重画完再找头像）
       if (e.ability === 'sae') {
         const t = this.game!.abilityState[e.seat].target as number | undefined;
@@ -2634,16 +2680,36 @@ export class App {
   // ---------- 辻垣内智叶的居合 ----------
 
   // 刀光、「斬」挂在哪一层：提示层的上一层，不跟着牌局重画
-  // 照魔镜：另外三家的头像上各罩一面镜子。隐身的桃子看不见她的人，镜子也不往她头上罩
-  private teruMirrorFx(seat: number): void {
-    const g = this.game;
-    if (!g) return;
-    const spots = [1, 2, 3]
+  // 照魔镜的演出（mirrorCut.ts）正在放：收掉它的函数。放的是哪一局记在 mirrorShown，放过了就不再放
+  private mirrorStop: (() => void) | null = null;
+  private mirrorShown = '';
+
+  // 照魔镜：第一局打完、第二局开始之前，全屏放一段（地面裂开露出镜子、碎裂、另外三家各站在一面镜子前）。
+  // 放了返回 true：等它放到淡出（或者被点掉）再回 advance 发下一局的牌，下一局的牌桌在它底下露出来。
+  // 隐身的桃子镜子照不到，不出现在镜子前
+  private mirrorCut(g: Game): boolean {
+    const seat = [0, 1, 2, 3].find((s) => teruMirrorDue(g, s));
+    const key = `${g.seed}-${g.round}`;
+    if (seat === undefined || this.vision || this.mirrorShown === key) return false;
+    this.mirrorShown = key;
+    this.render();
+    // 从左到右：她的上家、对家、下家（玩家操作她时正好是画面上的左、上、右）
+    const targets = [3, 2, 1]
       .map((d) => (seat + d) % 4)
       .filter((s) => !g.stealthed(s, this.me))
-      .map((s) => (document.querySelector(`[data-seat="${s}"] .portrait, [data-seat="${s}"] .avatar`) ?? document.querySelector(`[data-seat="${s}"]`))?.getBoundingClientRect())
-      .filter((r): r is DOMRect => !!r && r.width > 0);
-    teruMirrors(spots);
+      .map((s) => ({ name: this.chars[s].name, url: portraitUrl(this.chars[s].id, 'surprised'), glyph: this.chars[s].name.slice(-1) }));
+    if (!targets.length) return false;
+    // 配乐压一下、说一句台词（和别的能力发动时一样）
+    soundtrackEvent({ type: 'ability', seat, ability: 'teru', text: '照魔镜' }, g, this.scene());
+    this.sayAbility(seat, '照魔镜');
+    this.mirrorStop = playMirrorCut(targets, {
+      onBeat: (beat) => beat !== 'fade' && beat !== 'done' && playMirror(beat),
+      onDone: () => {
+        this.mirrorStop = null;
+        if (this.game === g) this.advance();
+      },
+    });
+    return true;
   }
 
   // 照的旋风自摸是不是这一手（自摸 12000 点以上）：是就给风多大（0–1，点数越大越大），不是 null
@@ -3192,6 +3258,10 @@ export class App {
       this.advance();
       return;
     }
+    if (el.dataset.ui === 'stop-go' || el.dataset.ui === 'stop-end') {
+      this.answerStop(el.dataset.ui === 'stop-end');
+      return;
+    }
     if (el.dataset.ui === 'restart') {
       transition(() => this.renderSelect());
       return;
@@ -3425,7 +3495,7 @@ export class App {
       ${this.myAreaHtml(true, false)}
       ${this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
-      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
+      ${this.showResult ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}${this.stopAskHtml()}`;
     this.himekoFx2d(g, table.parentElement ?? table);
     document.querySelector('.stage')?.classList.toggle('deep', !!this.vision);
     this.mist2d(g, this.mistView());
@@ -3460,7 +3530,7 @@ export class App {
       ${this.myAreaHtml(false, !flat)}
       ${flat ? this.foresightHtml() : this.abilityPanelHtml()}
       <div class="hiroe-say" data-r="say">${this.sayText()}</div>
-      ${this.showResult && !(g.phase === 'roundEnd' && this.staged()) ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}`;
+      ${this.showResult && !(g.phase === 'roundEnd' && this.staged()) ? this.resultHtml() : ''}${g.phase === 'predeal' || g.phase === 'postdeal' ? this.predealHtml() : ''}${this.stopAskHtml()}`;
     // 看下一巡时视野变绿
     hud.parentElement?.classList.toggle('deep', !!this.vision);
     this.renderToasts();
@@ -3576,7 +3646,8 @@ export class App {
     const power = (s === this.me && !!this.vision) || !!g.active(s)?.form?.(g, s);
     // 智叶鞘里听着牌的样子只有操作她的玩家看得见，别人看到的始终是平常头像
     const powered = !!g.active(s)?.powered?.(g, s) && (c.id !== 'satoha' || s === this.me);
-    const src = power || powered ? powerPortraitUrl(c.id) : portraitUrl(c.id, this.faceOf(s));
+    // 没有能力发动头像可用的人（美穗子）：用现画的睁眼裁的竖图
+    const src = power || powered ? powerPortraitUrl(c.id) || eyePortraitUrl(c.id, c.color) : portraitUrl(c.id, this.faceOf(s));
     return `
       <div class="seat-frame ${POS[s]} ${active} ${g.seesRiichi(s, this.me) ? 'riichi' : ''}${power ? ' power' : ''}" data-seat="${s}" style="--c:${c.color}">
         <div class="portrait"><span class="face">${c.name.slice(-1)}</span><img src="${src}" alt="" onerror="this.remove()" />${this.badgeHtml(s)}${this.bulbHtml(s)}${this.fjHtml(s)}${this.mgHtml(s)}${this.distHtml(s)}${this.mirrorHtml(s)}${this.lensMark(s)}${this.riiLockHtml(s, 'seat')}</div>
@@ -5206,6 +5277,33 @@ export class App {
         <button class="primary" data-ui="solo-done">回到积分榜</button>
       </div></div>`;
   }
+  // 团体赛先锋到副将的南 4 局，自己坐庄和了（Game.mayStop）：宣布到此结束，还是连庄接着打。
+  // 列出现在桌上的名次（每家带着自己队伍的点数）和这一场的得失，帮着拿主意
+  private stopAskHtml(): string {
+    const g = this.game;
+    if (!this.stopAsk || !g || !g.mayStop()) return '';
+    const team = this.team;
+    const rows = g
+      .ranking()
+      .map((s, i) => {
+        const d = team ? g.players[s].score - team.start[s] : 0;
+        const cls = d > 0 ? 'plus' : d < 0 ? 'minus' : '';
+        const delta = team ? `${d > 0 ? '+' : d < 0 ? '' : '±'}${d}` : '';
+        return `<div class="rank-row ${s === this.me ? 'mine' : ''}" style="--c:${this.teamOf(s)?.color ?? this.chars[s].color}"><span class="rank">${i + 1} 位</span><span>${this.nameHtml(s)}</span><span>${g.players[s].score}</span><span class="${cls}">${delta}</span></div>`;
+      })
+      .join('');
+    const pos = team ? `${POSITIONS[team.run.pos]}战` : '团体赛';
+    return `<div class="modal"><div class="result stop-ask">
+        <h2>${g.roundLabel()} · 庄家和了</h2>
+        <p class="pd-sub">${pos}你坐庄和了：可以宣布到此结束（按现在的点数算完），也可以连庄接着打 ${g.honba + 1} 本场</p>
+        ${rows}
+        <div class="stop-btns">
+          <button class="primary" data-ui="stop-go">连庄，接着打</button>
+          <button class="primary alt" data-ui="stop-end">到此结束</button>
+        </div>
+      </div></div>`;
+  }
+
   // 团体赛一场打完：每队这一场得失，点“继续”回到点数板
   private teamEndHtml(): string {
     const g = this.game!;
@@ -5220,10 +5318,11 @@ export class App {
       })
       .join('');
     const sticks = g.riichiSticks ? `<p class="pd-sub">剩下的立直棒 ${g.riichiSticks} 根留给下一个位置</p>` : '';
+    const stopped = g.stopped ? `<p class="pd-sub">南 4 局庄家${g.dealer === this.me ? '（你）' : ` ${this.chars[g.dealer].name} `}和了以后宣布到此结束</p>` : '';
     return `
       <div class="modal"><div class="result">
         <h2>${POSITIONS[run.pos]}战结束</h2>
-        ${rows}${sticks}
+        ${stopped}${rows}${sticks}
         <button class="primary" data-ui="team-next">继续</button>
       </div></div>`;
   }

@@ -11,7 +11,7 @@ import { playCall, playChime, playClick, playRiichi, playWin } from '../ui/sound
 import { type SfxName, withSynthSfx } from '../ui/customSfx';
 import { type Sniffed, sizeLabel, sniff } from './sniff';
 import { guessSlot } from './match';
-import { eyeTemplateUrl } from '../ui/eyeShot';
+import { eyePortraitUrl, eyeTemplateUrl } from '../ui/eyeShot';
 import { GLOBAL, MAX_BYTES, MAX_VOICE_BYTES, MEDIA_LABEL, MUSIC, type Entry, type SlotDef, fileOf, slotDef, slotsFor } from './slots';
 import { type PackFile, buildPack, downloadZip, isZip, packName, readPack } from './pack';
 import { clearMine, deleteMine, mineAvailable, mineEnabled, putMine, setMineEnabled } from './store';
@@ -874,7 +874,7 @@ export class AssetImporter {
   private defaultArt(owner: string, d: SlotDef): string {
     if (d.slot === 'face') return defaultPortraitUrl(owner, 'neutral');
     if (d.slot === 'blank') return defaultPortraitUrl(owner, 'surprised');
-    if (d.slot === 'power') return defaultPowerPortraitUrl(owner);
+    if (d.slot === 'power') return defaultPowerPortraitUrl(owner) || eyePortraitUrl(owner, CHARACTERS.find((c) => c.id === owner)?.color ?? '');
     if (d.slot === 'eyes') return eyeTemplateUrl(owner, CHARACTERS.find((c) => c.id === owner)?.color ?? '');
     if (d.group === 'cutin') return defaultCutinArt(owner, d.slot).url;
     if (d.group === 'skill') return defaultCutinArt(owner, d.slot.endsWith('-win') ? 'win' : 'ability').url;

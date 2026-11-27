@@ -129,6 +129,9 @@ export interface GameOptions {
   // team：团体赛的半庄，打满东南两场，南 4 局庄家没连庄就结束，谁到 30000 都不提前结束，有人小于 0 立刻结束，
   //   剩下的立直棒不给第一名，留给下一个位置
   format?: 'one' | 'east' | 'south' | 'team';
+  // 团体赛（大将战以外的四个位置）：南 4 局庄家和了以后，庄家可以宣布到此结束（和了止め），不宣布就照常连庄。
+  // 见 mayStop、nextRound(stop)。流局听牌的连庄不能喊停；大将战不给这个选择
+  dealerStop?: boolean;
   // 规则，不写的照 DEFAULT_RULES（30000 是 rules.target）
   rules?: Partial<Rules>;
   // 团体赛：每个座位自己队里的全部队员（角色 id，包括自己和不在这一桌的人）
@@ -171,6 +174,10 @@ export class Game {
   keys: BindKey[][] = [[], [], [], []];
   // 测试用的摆牌（见 Stage）
   stage: Stage | null = null;
+  // 南 4 局庄家和了以后能不能宣布到此结束（见 GameOptions.dealerStop）
+  dealerStop = false;
+  // 这一场是南 4 局庄家和了以后自己宣布结束的（结算窗写一句）
+  stopped = false;
 
   // 第几局（从 1 起，每开一局加一，连庄也算）；发牌前等玩家选技能时还是上一局的
   round = 0;
@@ -243,6 +250,7 @@ export class Game {
     if (opts.allies) this.allies = opts.allies.map((a) => [...a]);
     if (opts.keys) this.keys = opts.keys.map((k) => [...k]);
     if (opts.stage) this.stage = opts.stage;
+    this.dealerStop = this.format === 'team' && !!opts.dealerStop;
     this.riichiSticks = opts.riichiSticks ?? 0;
     this.startOrWait();
   }
@@ -1376,9 +1384,18 @@ export class Game {
     this.emit({ type: 'roundEnd', result });
   }
 
-  // 结算画面之后调用：进入下一局或结束对局
-  nextRound(): void {
-    if (this.phase !== 'roundEnd' || !this.roundResult) return;
+  // 这一局结算完，庄家能不能宣布到此结束：团体赛前四个位置的南 4 局（连庄的局也算），庄家和了（一炮多响里有庄家也算），
+  // 而且这一场没有因为击飞已经结束。能的话由庄家决定 nextRound(stop) 的 stop（电脑见 ai/dealerStop.ts）
+  mayStop(): boolean {
+    const r = this.roundResult;
+    if (!this.dealerStop || this.phase !== 'roundEnd' || r?.kind !== 'win') return false;
+    if (this.roundWind !== 1 || this.roundNumber !== 3 || !r.wins.some((w) => w.seat === this.dealer)) return false;
+    return !(this.rules.tobi && this.players.some((p) => p.score < 0));
+  }
+
+  // 这一局结算完以后怎么走：这场打完了没有、是不是连庄（nextRound 和 continues 都按它；庄家宣布到此结束不在这里算）
+  private verdict(): { end: boolean; renchan: boolean } | null {
+    if (this.phase !== 'roundEnd' || !this.roundResult) return null;
     const r = this.roundResult;
     let renchan: boolean;
     if (r.kind === 'win') renchan = r.wins.some((w) => w.seat === this.dealer);
@@ -1406,11 +1423,31 @@ export class Game {
       if (top >= target) end = true;
       if (isLast && !renchan) end = true;
     }
-    if (end) {
+    return { end, renchan };
+  }
+
+  // 结算完了：后面还有下一局（nextRound 会接着发牌，不是终局）
+  continues(): boolean {
+    return this.verdict()?.end === false;
+  }
+
+  // 结算画面之后调用：进入下一局或结束对局。stop：庄家宣布到此结束（只在 mayStop() 时算数，别的时候不管）
+  nextRound(stop = false): void {
+    const v = this.verdict();
+    if (!v) return;
+    if (stop && this.mayStop()) {
+      this.stopped = true;
       this.finishGame();
       return;
     }
-    if (renchan) {
+    const r = this.roundResult!;
+    if (v.end) {
+      this.finishGame();
+      return;
+    }
+    // 两局之间：上一局打完、下一局还没开始（照的照魔镜在这里发动）
+    for (let s = 0; s < 4; s++) this.abilities[s]?.betweenRounds?.(this, s);
+    if (v.renchan) {
       this.honba++;
     } else {
       this.honba = r.kind === 'win' ? 0 : this.honba + 1;

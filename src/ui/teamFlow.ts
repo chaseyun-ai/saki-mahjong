@@ -1,6 +1,6 @@
 import type { Character } from '../abilities/characters';
 import type { BindKey } from '../abilities/types';
-import { POSITIONS, TEAMS, TIERS, TeamRun, isSub } from '../team/team';
+import { POSITIONS, TEAMS, TIERS, TeamRun, dealerStopAt, isSub } from '../team/team';
 import { cutinArt, portraitUrl } from '../ui3d/looks';
 
 // 团体赛拟真的几个画面（选人、布阵、队伍点数板、最终结果）。牌局本身还是 App 来打：
@@ -289,7 +289,7 @@ export class TeamFlow {
     this.root.innerHTML = `
       <div class="select-screen team-screen">
         <div class="tm-head"><button class="lab-entry" data-team="exit">← 退出</button><h1>${POSITIONS[pos]}战</h1></div>
-        <p class="subtitle">${pos === 0 ? '各队开局 100000 点。' : ''}${POSITIONS[pos]}上场打一个半庄（东南战），点数算到队伍里。有队伍点数小于 0，整场立刻结束。</p>
+        <p class="subtitle">${pos === 0 ? '各队开局 100000 点。' : ''}${POSITIONS[pos]}上场打一个半庄（东南战），点数算到队伍里。有队伍点数小于 0，整场立刻结束。${dealerStopAt(pos) ? '南 4 局庄家和了可以宣布到此结束。' : '大将战南 4 局庄家和了照常连庄，不能喊停。'}</p>
         ${sticks}
         <div class="tm-board">${rows}</div>
         <div class="tm-go">

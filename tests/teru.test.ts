@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../src/abilities/characters';
-import { TERU, TERU_LADDER, TERU_TOP, teruAbility, teruAccepts, teruBuild, teruDanger, teruFitWall, teruImprovers, teruLadder, teruMirrored, teruOutlook, teruPace, teruReads, teruStreakWith, teruThin, teruTier, teruWallCounts, teruWallHas, teruWinValue } from '../src/abilities/teru';
+import { TERU, TERU_LADDER, TERU_TOP, teruAbility, teruAccepts, teruBuild, teruDanger, teruFitWall, teruImprovers, teruLadder, teruMirrorDue, teruMirrored, teruOutlook, teruPace, teruReads, teruStreakWith, teruThin, teruTier, teruWallCounts, teruWallHas, teruWinValue } from '../src/abilities/teru';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
 import type { WinResult } from '../src/engine/score';
@@ -411,6 +411,71 @@ describe('宫永照：电脑像高手一样听牌（不急着立直窄听、不�
     // 原来约一成（上一次 6000 点以上时两成多）
     expect(n.dead / n.tenpai).toBeLessThan(0.05);
   }, 240000);
+});
+
+describe('照魔镜的发动时机', () => {
+  it('第一局打完、第二局开始之前发动一次：第一局里不发动，之后也不再发动', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const { g, me } = play(seed, LINEUPS[seed % 4]);
+      const at = g.events.flatMap((e, i) => (e.type === 'ability' && e.ability === 'teru' && e.text === '照魔镜' ? [i] : []));
+      const ends = g.events.flatMap((e, i) => (e.type === 'roundEnd' ? [i] : []));
+      const starts = g.events.flatMap((e, i) => (e.type === 'roundStart' ? [i] : []));
+      // 只打了一局就结束的对局（有人被飞）不发动
+      if (starts.length < 2) {
+        expect(at).toEqual([]);
+        continue;
+      }
+      expect(at.length).toBe(1);
+      expect(at[0]).toBeGreaterThan(ends[0]);
+      expect(at[0]).toBeLessThan(starts[1]);
+      expect(g.events[at[0]]).toMatchObject({ seat: me });
+    }
+  });
+
+  it('teruMirrorDue：只在第一局结算完、后面还有下一局的时候是 true；continues 和 nextRound 走的是同一条路', () => {
+    const ids = LINEUPS[0];
+    const seats = ids.map(byId);
+    for (let seed = 1; seed <= 6; seed++) {
+      const g = new Game({ seed, players: seats.map((c) => ({ name: c.id, ability: c.ability })) });
+      let rounds = 0;
+      let steps = 0;
+      while (g.phase !== 'gameEnd' && ++steps < 20000) {
+        if (g.phase !== 'roundEnd') {
+          expect(teruMirrorDue(g, 0)).toBe(false);
+          expect(g.continues()).toBe(false);
+          const s = g.waitingSeats()[0];
+          g.act(s, chooseAction(g, s, seats[s].ai));
+          continue;
+        }
+        rounds++;
+        const goes = g.continues();
+        expect(teruMirrorDue(g, 0)).toBe(rounds === 1 && goes);
+        // 别的座位不是照
+        expect(teruMirrorDue(g, 1)).toBe(false);
+        expect(teruMirrored(g, 0)).toBe(rounds > 1);
+        g.nextRound();
+        expect((g.phase as string) !== 'gameEnd').toBe(goes);
+        if (goes) expect(teruMirrored(g, 0)).toBe(true);
+      }
+    }
+  });
+
+  it('只打一局的对局（format: one）：没有第二局，照魔镜不发动', () => {
+    const seats = LINEUPS[0].map(byId);
+    const g = new Game({ seed: 3, format: 'one', players: seats.map((c) => ({ name: c.id, ability: c.ability })) });
+    let steps = 0;
+    while (g.phase !== 'gameEnd' && ++steps < 5000) {
+      if (g.phase === 'roundEnd') {
+        expect(g.continues()).toBe(false);
+        expect(teruMirrorDue(g, 0)).toBe(false);
+        g.nextRound();
+        continue;
+      }
+      const s = g.waitingSeats()[0];
+      g.act(s, chooseAction(g, s, seats[s].ai));
+    }
+    expect(g.events.some((e) => e.type === 'ability' && e.text === '照魔镜')).toBe(false);
+  });
 });
 
 describe('宫永照（原来的天梯）', () => {

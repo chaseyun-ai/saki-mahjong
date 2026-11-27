@@ -83,7 +83,8 @@ describe('爱宕洋榎：读牌', () => {
       g.players[0].drawn = g.players[0].hand[13];
       g.phase = 'turn';
       g.turn = 0;
-      if (id === 'mihoko') (g.abilityState[0] as { open?: boolean }).open = true;
+      // 美穗子这一局睁着右眼（openAt：睁眼的那一局，东 1 局是 0）
+      if (id === 'mihoko') (g.abilityGameState[0] as { openAt?: number }).openAt = g.roundWind * 4 + g.roundNumber;
       const cheap = readTenpai(g, 2)!;
       expect(cheap.ron).toEqual([13]);
       expect(cheap.pay[0]).toBeLessThanOrEqual(SASHI.cheap);

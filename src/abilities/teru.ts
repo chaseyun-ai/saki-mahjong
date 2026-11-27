@@ -7,7 +7,7 @@ import { isDoraTile } from './kuro';
 import type { Ability } from './types';
 
 // 宫永照（白糸台）：
-// - 照魔镜：第一局只看不和（这一局她和不了牌），看过以后整场都看得穿别人：
+// - 照魔镜：第一局只看不和（这一局她和不了牌）；第一局打完、第二局开始之前照魔镜发动（betweenRounds），看过以后整场都看得穿别人：
 //   玩家操作她时，别人的头像旁边多一面镜子，点开能看到这家能力现在的状态（Ability.insight）；
 //   读得出立直的人听什么（teruDanger）：电脑的照不打给他们，玩家操作她时手里的这种铳牌标红；
 //   智叶藏在鞘里的默听也照得穿（TERU.sheathRead，原作里智叶的默听对她没用）
@@ -119,6 +119,7 @@ export const TERU_TOP = 9;
 
 interface TeruGameState {
   rounds?: number; // 开过几局
+  mirror?: boolean; // 照魔镜发动过了（第一局打完、第二局开始之前）
   seen?: number; // g.events 里看到哪了（上一局的结算从这里往后找）
   dealer?: boolean; // 这一局她是不是庄家
   level?: number; // 站在第几层（0 是塔底）
@@ -151,7 +152,13 @@ export function teruTier(r: WinResult): number {
 
 // 照魔镜看过了没有（第一局结束以后）
 export function teruMirrored(g: Game, seat: number): boolean {
-  return (gameStateOf(g, seat).rounds ?? 0) > 1;
+  const gs = gameStateOf(g, seat);
+  return (gs.rounds ?? 0) > 1 || !!gs.mirror;
+}
+
+// 这一局结算完，下一步照魔镜要发动（第一局打完、后面还有下一局）：界面先放照魔镜的演出，放完再发下一局的牌
+export function teruMirrorDue(g: Game, seat: number): boolean {
+  return g.abilities[seat]?.id === 'teru' && gameStateOf(g, seat).rounds === 1 && !gameStateOf(g, seat).mirror && g.continues();
 }
 
 // 牌山里（没被别人锁住的活牌）还有哪些牌：她的能力送得来的牌
@@ -653,7 +660,7 @@ export const teruAbility: Ability = {
     gs.broke = '平行宇宙';
   },
   description:
-    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局用照魔镜只看不和，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看），也读得出立直的人听什么（手里打出去会放铳的牌标红），智叶藏在鞘里的默听也照得穿。连续和了：每次和了拿到的点数比上一次高，连和就接得上（本场、立直棒不算，坐庄的 1.5 倍算），从多少点起胡都行；和小了、别人和了、流局都断。起胡前配牌多半带一对役牌或者偏断幺九，适合鸣牌和个 1000 点，摸牌也帮一点；起胡以后配牌和摸牌都帮她，要和的牌越大帮得越少、做得越慢；快听牌时先送“刚好比上一次高一档”的和了牌，宝牌多半不找她。压制：别人的进张常被换走。叽叽叽：一轮连和里自摸满八次，下一局必定九莲宝灯。',
+    '别人的能力动不了她（只有玄的宝牌她也得守）。第一局只看不和，这一局打完、第二局开始之前照魔镜发动，之后看得穿每家的能力（玩家能点开别人头像旁的镜子看），也读得出立直的人听什么（手里打出去会放铳的牌标红），智叶藏在鞘里的默听也照得穿。连续和了：每次和了拿到的点数比上一次高，连和就接得上（本场、立直棒不算，坐庄的 1.5 倍算），从多少点起胡都行；和小了、别人和了、流局都断。起胡前配牌多半带一对役牌或者偏断幺九，适合鸣牌和个 1000 点，摸牌也帮一点；起胡以后配牌和摸牌都帮她，要和的牌越大帮得越少、做得越慢；快听牌时先送“刚好比上一次高一档”的和了牌，宝牌多半不找她。压制：别人的进张常被换走。叽叽叽：一轮连和里自摸满八次，下一局必定九莲宝灯。',
 
   dealRules(g, seat) {
     const gs = gameStateOf(g, seat);
@@ -719,9 +726,15 @@ export const teruAbility: Ability = {
     }
   },
 
-  onRoundStart(g, seat) {
+  // 照魔镜：第一局打完、第二局开始之前发动
+  betweenRounds(g, seat) {
     const gs = gameStateOf(g, seat);
-    if (gs.rounds === 1) g.emit({ type: 'ability', seat, ability: 'teru', text: '照魔镜' });
+    if (gs.rounds !== 1 || gs.mirror) return;
+    gs.mirror = true;
+    g.emit({ type: 'ability', seat, ability: 'teru', text: '照魔镜' });
+  },
+
+  onRoundStart(g, seat) {
     if (stateOf(g, seat).chuuren !== undefined) g.emit({ type: 'ability', seat, ability: 'teru', text: '叽叽叽' });
   },
 
@@ -917,14 +930,14 @@ export const teruAbility: Ability = {
   },
 
   badge(g, seat) {
-    if (!teruMirrored(g, seat)) return '照魔镜';
+    if (!teruMirrored(g, seat)) return '只看不和';
     const { level, last } = teruLadder(g, seat);
     if (!teruPoints()) return level ? `天梯·${TERU_TIERS[level - 1]}` : null;
     return level ? `${level} 连和·${last}点` : null;
   },
 
   skill(g, seat) {
-    if (!teruMirrored(g, seat)) return { label: '照魔镜', note: '这一局只看不和；看过以后，点别人头像旁的镜子看他的能力', enabled: false };
+    if (!teruMirrored(g, seat)) return { label: '照魔镜', note: '这一局只看不和；这一局打完照魔镜发动，之后点别人头像旁的镜子看他的能力', enabled: false };
     const { level, next, broke, kiki } = teruLadder(g, seat);
     if (teruPoints()) return { label: '连续和了', note: `${teruNote(g, seat)}；叽叽叽 ${kiki}/${TERU.kiki}`, enabled: false, active: level > 0 };
     const head = level ? `站在${TERU_TIERS[level - 1]}，下一次要正好和${TERU_TIERS[next - 1]}` : broke ? `天梯断了（${broke}），从 1 番起胡` : '先和一个 1 番起胡';
@@ -932,7 +945,7 @@ export const teruAbility: Ability = {
   },
 
   insight(g, seat) {
-    if (!teruMirrored(g, seat)) return ['照魔镜：这一局只看不和'];
+    if (!teruMirrored(g, seat)) return ['照魔镜：第一局只看不和，这一局打完才发动'];
     const { level, next, kiki, last } = teruLadder(g, seat);
     if (teruPoints()) return [level ? `连和 ${level} 次，上一次 ${last} 点，这一局和出比它高的就接上` : '还没起胡（和多少点都算起胡）', `叽叽叽：这一轮连和里自摸 ${kiki}/${TERU.kiki}`];
     return [level ? `天梯站在${TERU_TIERS[level - 1]}，下一次要正好和${TERU_TIERS[next - 1]}` : '还没起胡（要先和 1 番）', `叽叽叽：自摸 ${kiki}/${TERU.kiki}`];

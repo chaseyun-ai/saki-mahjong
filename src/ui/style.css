@@ -2626,6 +2626,25 @@ button {
   font-weight: 700;
 }
 
+/* 团体赛先锋到副将的南 4 局自己坐庄和了：连庄还是到此结束，两个按钮一样大 */
+.stop-ask .stop-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.stop-ask .stop-btns .primary {
+  min-width: 180px;
+}
+
+.stop-ask .stop-btns .alt {
+  color: inherit;
+  background: none;
+  box-shadow: inset 0 0 0 2px var(--gold);
+}
+
 .primary {
   border: none;
   border-radius: 999px;

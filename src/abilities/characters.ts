@@ -117,6 +117,8 @@ export interface Character {
   // 素材页给这几个技能各留一个动画槽，发动时放这一段（name 和能力发动时出的字一样）
   // label、hint 是素材页上格子的名字和说明，不写按 name 来
   skillArts?: { id: string; name: string; label?: string; hint?: string }[];
+  // 素材页「能力发动头像」这一格对这个人说的什么时候用（有第二形态的人：天使和、治水、美穗子睁眼）。不写用通用的说明
+  powerHint?: string;
   // 没有能力的人的介绍（选人页、照魔镜里代替“无能力”的说明）
   note?: string;
 }
@@ -159,6 +161,7 @@ export const CHARACTERS: Character[] = [
     school: '清澄高中',
     color: '#9b7fc4',
     ability: nodokaAbility,
+    powerHint: '变成天使和以后头像框一直用这一张，框发光。竖图',
     skillArts: [
       { id: 'angel', name: '天使和', label: '天使形态动画', hint: '变身天使和的那一局开头放这一段。变身以后头像框换成“能力发动头像”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）' },
       { id: 'angel-win', name: '天使和和牌', label: '天使形态和牌动画', hint: '天使和荣和、自摸时放这一段，盖过“和牌切入”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）' },
@@ -219,6 +222,12 @@ export const CHARACTERS: Character[] = [
     school: '风越女子',
     color: '#3f9fb5',
     ability: mihokoAbility,
+    // 睁开右眼的那几局头像框换成“能力发动头像”，和原村和的天使和一样
+    powerHint: '睁开右眼的那几局（维持三局，连庄不算）头像框换成这一张，框发光。竖图，最好是睁着蓝色右眼的样子',
+    skillArts: [
+      { id: 'eye', name: '睁开右眼', label: '睁眼动画', hint: '睁开右眼的那一下放这一段，盖过“睁眼特写”。睁开以后的三局头像框换成“能力发动头像”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）' },
+      { id: 'eye-win', name: '睁眼和牌', label: '睁眼和牌动画', hint: '右眼睁着的那几局荣和、自摸时放这一段，盖过“和牌切入”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）' },
+    ],
     ai: { ...baseAi, mistakeRate: 0.02, defensive: true, eye: true },
   },
   {
@@ -629,6 +638,7 @@ export const CHARACTERS: Character[] = [
     school: '龙门渊高中',
     color: '#3f86c8',
     ability: tokaAbility,
+    powerHint: '治水以后头像框一直用这一张，框发光。竖图',
     // 治水一套素材：进入治水的动画、治水立直、治水和牌；治水以后头像框换成“能力发动头像”
     skillArts: [
       { id: 'chisui', name: '治水', label: '治水形态动画', hint: '进入治水的那一局开头放这一段。治水以后头像框换成“能力发动头像”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）' },

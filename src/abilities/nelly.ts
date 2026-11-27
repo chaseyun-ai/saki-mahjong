@@ -10,7 +10,7 @@ import { PRIORITY, type Ability, type PreDealOption } from './types';
 
 // 涅莉·薇萨拉兹（临海女子）：分配运势的人。家里穷，打得亮眼才拉得到赞助，所以她要和就和大牌。
 // - 运势开局排好（NELLY.plan，试验中）：东一局发牌前把 10 点运势分到这一场的各局（每局 0–3 点），之后不能改。
-//   连庄、流局重打的本场不再用那一局的运势；比赛提前结束，排在后面的就浪费了。电脑也在开局排好（nellyAiPlan）。
+//   连庄、荒牌流局重打的本场不再用那一局的运势（途中流局押的退回来，重打的本场照样押着）；比赛提前结束，排在后面的就浪费了。电脑也在开局排好（nellyAiPlan）。
 //   NELLY.plan 是 null 时用下面的攒运势：
 // - 运势是攒出来的：开场 0 点，每忍一局（没押运势的局，连庄、流局重打的也算）打完攒 1 点，最多攒 6 点（NELLY.charge）。
 //   原作里她前面趴在地上挨打、把浪头攒起来，最好的牌留到最后：忍三局才换得来一手三倍满，大牌自然落在后半场。
@@ -107,7 +107,7 @@ interface NellyGameState {
   sisters?: number; // 七姐妹还剩几次
   log?: number[]; // 每一局押了几点（照魔镜看得到）
   plan?: number[]; // 开局排好的：第几局（东 1 是 0）押几点
-  used?: number[]; // 已经用过运势的局（连庄、流局重打的本场不再用）
+  used?: number[]; // 已经用过运势的局（连庄、荒牌流局重打的本场不再用；途中流局退回来，重打的本场照样押）
 }
 interface NellyState {
   bet?: number; // 这一局押了几点
@@ -1318,13 +1318,13 @@ const planText = (plan: number[]) =>
 // 开局分运势的界面上那段说明
 export function nellyPlanNote(g: Game, seat: number): string {
   if (nellyRemade(g, seat))
-    return `把 ${NELLY_REMAKE.total} 点运势分到这一场的各局，开局排好就不能改：押了的局${dueText(1)}（前一巡立直）一发自摸三倍满，和牌挡不住；同一局叠着押，每多 1 点晚 ${NELLY_REMAKE.delay} 巡（2 点${dueText(2)}，3 点到她${dueText(3)}），七姐妹押几点封几家。连庄、流局重打的本场不再用；比赛提前结束，排在后面的就浪费了。先按电脑的排法填好了，可以改。`;
-  return `把运势分到这一场的各局（每局最多 ${NELLY.maxBet} 点），开局排好就不能改：1 点朝 3 番到满贯，2 点朝跳满，3 点朝三倍满、和牌挡不住。连庄、流局重打的本场不再用；比赛提前结束，排在后面的就浪费了。先按电脑的排法填好了，可以改。`;
+    return `把 ${NELLY_REMAKE.total} 点运势分到这一场的各局，开局排好就不能改：押了的局${dueText(1)}（前一巡立直）一发自摸三倍满，和牌挡不住；同一局叠着押，每多 1 点晚 ${NELLY_REMAKE.delay} 巡（2 点${dueText(2)}，3 点到她${dueText(3)}），七姐妹押几点封几家。连庄、荒牌流局重打的本场不再用（途中流局押的退回来，重打的本场照样押着）；比赛提前结束，排在后面的就浪费了。先按电脑的排法填好了，可以改。`;
+  return `把运势分到这一场的各局（每局最多 ${NELLY.maxBet} 点），开局排好就不能改：1 点朝 3 番到满贯，2 点朝跳满，3 点朝三倍满、和牌挡不住。连庄、荒牌流局重打的本场不再用（途中流局押的退回来，重打的本场照样押着）；比赛提前结束，排在后面的就浪费了。先按电脑的排法填好了，可以改。`;
 }
 
 // 选人页照选的版本显示：重做的说明、初版的说明
-export const NELLY_REMAKE_TEXT = `开场 ${NELLY_REMAKE.total} 点运势，东一局发牌前分到这一场的各局（每局最多 ${NELLY.maxBet} 点），之后不能改；连庄、流局重打的本场不再用。押了运势的局${dueText(1)}（前一巡立直）一发自摸三倍满，役种照配牌换着做（平和、断幺九、三色、一气通贯、全带幺九、三暗刻、役牌、七对子……），宝牌、里宝牌只补差的番数，这一局她的和牌别人挡不住；同一局叠着押，每多 1 点晚 ${NELLY_REMAKE.delay} 巡（2 点${dueText(2)}，3 点到她${dueText(3)}），七姐妹多封一家。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次给他上软封印，这一局他摸不到和了牌（自摸不了），别人打出来的照样能荣和；押几点最多封几家。押了运势的局别人一向听时也摸不到让她听牌的牌。`;
-export const NELLY_CLASSIC_TEXT = `${NELLY.plan ? `开场 ${NELLY.plan.total} 点运势，东一局发牌前分到这一场的各局（每局最多 ${NELLY.maxBet} 点），之后不能改；连庄、流局重打的本场不再用，比赛提前结束后面的就浪费了` : NELLY.charge ? `运势是攒出来的：开场 ${NELLY.charge.start} 点，每忍一局（没押运势的局）打完攒 ${NELLY.charge.gain} 点，最多攒 ${NELLY.charge.cap} 点` : `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点`}。押了运势的局（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次给他上软封印，这一局他摸不到和了牌（自摸不了），别人打出来的照样能荣和；押几点最多封几家。押了运势的局别人一向听时也摸不到让她听牌的牌，听牌慢一些。`;
+export const NELLY_REMAKE_TEXT = `开场 ${NELLY_REMAKE.total} 点运势，东一局发牌前分到这一场的各局（每局最多 ${NELLY.maxBet} 点），之后不能改；连庄、荒牌流局重打的本场不再用（途中流局押的退回来，重打的本场照样押着）。押了运势的局${dueText(1)}（前一巡立直）一发自摸三倍满，役种照配牌换着做（平和、断幺九、三色、一气通贯、全带幺九、三暗刻、役牌、七对子……），宝牌、里宝牌只补差的番数，这一局她的和牌别人挡不住；同一局叠着押，每多 1 点晚 ${NELLY_REMAKE.delay} 巡（2 点${dueText(2)}，3 点到她${dueText(3)}），七姐妹多封一家。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次给他上软封印，这一局他摸不到和了牌（自摸不了），别人打出来的照样能荣和；押几点最多封几家。押了运势的局别人一向听时也摸不到让她听牌的牌。`;
+export const NELLY_CLASSIC_TEXT = `${NELLY.plan ? `开场 ${NELLY.plan.total} 点运势，东一局发牌前分到这一场的各局（每局最多 ${NELLY.maxBet} 点），之后不能改；连庄、荒牌流局重打的本场不再用（途中流局押的退回来，重打的本场照样押着），比赛提前结束后面的就浪费了` : NELLY.charge ? `运势是攒出来的：开场 ${NELLY.charge.start} 点，每忍一局（没押运势的局）打完攒 ${NELLY.charge.gain} 点，最多攒 ${NELLY.charge.cap} 点` : `开场 ${NELLY.start} 点运势，每打满 ${NELLY.every} 局恢复 1 点`}。押了运势的局（配牌照常发）：1 点进张朝 3 番到满贯发展，第 ${NELLY.turn[1]} 巡左右和；2 点朝跳满，第 ${NELLY.turn[2]} 巡左右和；3 点朝三倍满（混一色加宝牌刻子，玄在场做清一色），第 ${NELLY.turn[3]} 巡左右立直一发自摸，这一局她的和牌别人挡不住。手里还有运势就看得出别人听没听牌。七姐妹一场 ${NELLY.sisters} 次、不恢复：押了运势的局自动开着，每有一家听牌用掉一次给他上软封印，这一局他摸不到和了牌（自摸不了），别人打出来的照样能荣和；押几点最多封几家。押了运势的局别人一向听时也摸不到让她听牌的牌，听牌慢一些。`;
 
 export const nellyAbility: Ability = {
   id: 'nelly',
@@ -1336,6 +1336,30 @@ export const nellyAbility: Ability = {
   shielded(g, seat) {
     if (between(g)) return false;
     return big(g, seat);
+  },
+
+  // 途中流局（别人九种九牌、四风连打、四家立直、四杠散了、三家和了）：这一局等于没打，押的运势退回来，
+  // 本场重打的这一局照样押着（荒牌流局、连庄不退）
+  onRoundEnd(g, seat, result) {
+    if (result.kind !== 'abortive' || !NELLY.plan) return;
+    const st = stateOf(g, seat);
+    const bet = st.bet ?? 0;
+    if (bet <= 0) return;
+    const gs = gameStateOf(g, seat);
+    const slot = g.roundWind * 4 + g.roundNumber;
+    gs.used = (gs.used ?? []).filter((i) => i !== slot);
+    gs.spent = Math.max(0, gs.spent! - bet);
+    gs.log![gs.log!.length - 1] = 0;
+    // 这一局定的三倍满没做成，不算做过（后面照样挑得到这些役）
+    if (st.logged !== undefined && gs.recipes && st.logged === gs.recipes.length - 1) gs.recipes.pop();
+  },
+
+  // 重做：立直以后到该和的那一次摸牌之间（一般就是一巡），谁都鸣不了牌：
+  // 一发不会被吃碰打断；叠着押要等她最后一次摸牌的，也不会被别人碰牌跳过她那一巡（以前这样会荒牌流局）
+  freezesCalls(g, seat, caller) {
+    if (caller === seat || between(g) || !nellyRemade(g, seat) || !big(g, seat)) return false;
+    const p = g.players[seat];
+    return (p.riichi || p.riichiPending) && nellyDrawsToWin(g, seat) === 1;
   },
 
   dealRules(g, seat) {

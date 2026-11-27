@@ -1,4 +1,5 @@
 import { LOOKS, defaultPortraitUrl } from '../ui3d/looks';
+import { EYE_PORTRAIT } from '../ui/eyeLooks';
 import { MUSIC_SLOTS } from '../ui/musicTracks';
 import { VOICE_MAX_SECONDS } from '../ui/voice';
 import { GLOBAL, MAX_BYTES, MAX_VOICE_BYTES, MUSIC, type SlotDef, type SlotGroup, type Who, slotsFor } from './slots';
@@ -180,7 +181,7 @@ function fallbackOf(owner: string, d: SlotDef, who: Who[]): string {
     case 'blank':
       return art ? '换了「头像」就用它，没换用自带的吃惊表情' : `换了「头像」就用它，没换显示${glyph}`;
     case 'power':
-      return art ? '换了「头像」就用它，没换用自带的认真表情' : `换了「头像」就用它，没换显示${glyph}`;
+      return art ? '换了「头像」就用它，没换用自带的认真表情' : EYE_PORTRAIT.has(owner) ? '换了「头像」就用它，没换用游戏现画的睁眼（这个人的瞳色）' : `换了「头像」就用它，没换显示${glyph}`;
     case 'riichi':
     case 'call':
     case 'ability':

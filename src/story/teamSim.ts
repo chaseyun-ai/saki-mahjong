@@ -2,12 +2,14 @@ import type { Character } from '../abilities/characters';
 import { riiKeys } from '../abilities/rii';
 import type { BindKey } from '../abilities/types';
 import { chooseAction } from '../ai/ai';
+import { dealerStops } from '../ai/dealerStop';
 import { Game } from '../engine/game';
 import { Rng } from '../engine/rng';
-import { POSITIONS, TEAM_START } from '../team/team';
+import { POSITIONS, TEAM_START, dealerStopAt } from '../team/team';
 
 // 后台真打一桌团体赛：四所学校，先锋到大将各打一个半庄（Game 的 team 规则），
 // 点数、剩下的立直棒、白水哩拿到的钥匙接着往下一个位置带；有队点数小于 0，整场立刻结束。
+// 先锋到副将的南 4 局庄家和了以后，庄家照 ai/dealerStop.ts 决定到此结束还是连庄（和玩家那桌一样）。
 // 一点一点打（step 给一个时间预算），可以塞进浏览器空闲的时候算，不卡画面；runAll 一口气打完（测试、node 里用）。
 // 种子固定：同一桌不管什么时候、分几次算，结果都一样（存档读回来重新算也一样）。
 // 一个半庄电脑上大约 0.25 秒（2026-11-19 实测），一桌五个半庄一秒多。
@@ -66,7 +68,7 @@ export class TeamSim {
     const g = this.game!;
     for (let i = 0; i < actions && g.phase !== 'gameEnd' && this.steps < MAX_STEPS; i++, this.steps++) {
       if (g.phase === 'roundEnd') {
-        g.nextRound();
+        g.nextRound(g.mayStop() && dealerStops(g, g.dealer, this.chars[g.dealer].ai));
         continue;
       }
       const s = g.waitingSeats()[0];
@@ -90,6 +92,7 @@ export class TeamSim {
       riichiSticks: this.sticks,
       allies: this.seats.map((t) => this.lineups[t].map((c) => c.id)),
       keys: this.seats.map((t) => this.keys[t]),
+      dealerStop: dealerStopAt(this.pos),
       players: this.chars.map((c) => ({ name: c.name, ability: c.ability })),
     });
   }

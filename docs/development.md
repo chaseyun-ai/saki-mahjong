@@ -55,7 +55,7 @@ git push origin v0.2
 
 能力大乱斗（`tests/brawl.test.ts`）每一步检查牌数、锁住的牌、控场规矩。能力记录器（`tests/trace/recorder.ts`、`tests/draw-trace.test.ts`）记下每次摸牌从能力处理到取牌的全过程，逐次核对牌守恒、公开牌不变、锁不动、每个钩子只调一次、换牌次数有上限、没有无意义的同种互换，以及同一种子重放逐字一致；`TRACE_GAMES=200` 可以多跑几场。还没做出来的控场角色先用 `tests/brawl/probes.ts` 里的探针顶替。
 
-发牌前选的技能（霞、爽，还有涅莉押运势）挂在 `Ability.preDeal` / `setPreDeal`，玩家操作时发牌前弹出来选（选数的选项带 `stepper`，合不合规矩由 `preDealCheck` 判断）；技能栏的状态挂在 `Ability.skill`。照的照魔镜那一局和不了牌用 `Ability.canWin`，涅莉七姐妹的软封印是 `beforeAnyDraw` 返回的摸牌规矩（换走被封的人的和了牌）；照的 `Ability.immune` 让别人的能力管不到她（`Game.binds`），玄的 `Ability.absolute` 连她也要守；照看到的别人的能力状态来自各能力的 `Ability.insight`。爽的霍亚乌用 `Ability.seals` 封印别人：被封印的座位 `Game.active(seat)` 是空的，规则引擎不再调它的任何钩子，界面和电脑也不再读牌、预知（`Game.isSealed`）。
+发牌前选的技能（霞、爽，还有涅莉押运势）挂在 `Ability.preDeal` / `setPreDeal`，玩家操作时发牌前弹出来选（选数的选项带 `stepper`，合不合规矩由 `preDealCheck` 判断）；技能栏的状态挂在 `Ability.skill`。照的照魔镜：第一局和不了牌用 `Ability.canWin`，第一局打完、确定后面还有下一局时在 `Ability.betweenRounds` 里发动（`Game.nextRound` 调，终局不调；界面用 `teruMirrorDue` 先放完 `src/ui/mirrorCut.ts` 的演出再发下一局的牌），涅莉七姐妹的软封印是 `beforeAnyDraw` 返回的摸牌规矩（换走被封的人的和了牌）；照的 `Ability.immune` 让别人的能力管不到她（`Game.binds`），玄的 `Ability.absolute` 连她也要守；照看到的别人的能力状态来自各能力的 `Ability.insight`。爽的霍亚乌用 `Ability.seals` 封印别人：被封印的座位 `Game.active(seat)` 是空的，规则引擎不再调它的任何钩子，界面和电脑也不再读牌、预知（`Game.isSealed`）。
 要玩家主动开的技能挂在 `Ability.skill` / `pressSkill`；玩家操作的座位在 `Game.manual` 里，能力看到这个标记就听玩家的，否则按电脑的规矩自己决定。
 
 能力的强度参数在各自文件顶部（比如 `src/abilities/saki.ts` 的 `RINSHAN_WIN_CHANCE`），改数字就能调平衡。

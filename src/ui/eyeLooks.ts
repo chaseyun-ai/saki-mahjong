@@ -93,6 +93,9 @@ const OVERRIDES: Record<string, Partial<EyeLook>> = {
   huiyu: { iris: '#3a2a26', hair: '#1c1a1e', shape: 'sharp', glow: '#ffcf5a' },
 };
 
+// 能力发动头像没换图、也没有自带头像时，用现画的睁眼裁一格竖图当头像（美穗子睁开右眼的那几局，eyeShot.ts 的 eyePortraitUrl）
+export const EYE_PORTRAIT = new Set(['mihoko']);
+
 const hexOk = (s: string | undefined): s is string => !!s && /^#[0-9a-f]{6}$/i.test(s);
 
 // 这个角色的眼睛。color 是角色的主题色：LOOKS 里没有的人拿它当瞳色

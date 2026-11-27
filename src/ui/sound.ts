@@ -595,6 +595,62 @@ export function playLily(big = 0): void {
   src.stop(now + dur + 0.05);
 }
 
+// ---------- 宫永照的照魔镜（mirrorCut.ts） ----------
+
+// 三拍各一声：crack 地面裂开（一阵低沉的隆隆声，上面叠几下石头崩裂的“喀啦”），
+// shatter 碎裂（一下闷响，接一把碎玻璃似的高音），reveal 镜子立起来（一声又冷又长的泛音，底下压一个低音）
+export function playMirror(cue: 'crack' | 'shatter' | 'reveal'): void {
+  const a = audio();
+  if (!a) return;
+  const now = a.currentTime;
+  if (cue === 'crack') {
+    noiseHit(a, now, 1.0, 0.5, 'lowpass', 260, 90, 0.9);
+    for (const [at, f] of [[0.12, 900], [0.3, 1300], [0.46, 760], [0.6, 1500], [0.74, 1100]] as const) {
+      noiseHit(a, now + at, 0.09, 0.26, 'bandpass', f, f * 0.5, 2.5);
+    }
+    return;
+  }
+  if (cue === 'shatter') {
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(42, now + 0.3);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.5, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+    osc.connect(gain).connect(bus('sfx', a));
+    osc.start(now);
+    osc.stop(now + 0.45);
+    noiseHit(a, now, 0.45, 0.34, 'highpass', 2600, 6500, 0.7);
+    // 碎片落下去的叮叮声：一串越来越轻的高音
+    [3520, 5274, 4186, 6272, 4699, 7040].forEach((f, i) => tone(a, f, now + 0.03 + i * 0.045, 0.16, 0.05 * (1 - i * 0.12), 'sine'));
+    return;
+  }
+  for (const [f, vol, at] of [[110, 0.16, 0], [880, 0.05, 0.02], [1318.5, 0.045, 0.1], [1760, 0.03, 0.2]] as const) {
+    const osc = a.createOscillator();
+    const gain = a.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = f;
+    // 高音上轻轻颤着，像镜面在响
+    if (f > 400) {
+      const lfo = a.createOscillator();
+      const depth = a.createGain();
+      lfo.frequency.value = 5.5;
+      depth.gain.value = f * 0.004;
+      lfo.connect(depth).connect(osc.frequency);
+      lfo.start(now + at);
+      lfo.stop(now + at + 1.7);
+    }
+    gain.gain.setValueAtTime(0.0001, now + at);
+    gain.gain.exponentialRampToValueAtTime(vol, now + at + 0.12);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + at + 1.6);
+    osc.connect(gain).connect(bus('sfx', a));
+    osc.start(now + at);
+    osc.stop(now + at + 1.7);
+  }
+}
+
 // ---------- 全自动麻将机（牌桌风格「自动麻将机」，machine.ts） ----------
 
 // 一截滤过的噪声：kind 带通/低通，从 f0 滑到 f1，at 起响 dur 秒，音量 vol（起音很快、慢慢收掉）

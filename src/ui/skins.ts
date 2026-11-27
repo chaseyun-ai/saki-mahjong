@@ -3,6 +3,7 @@ import { APPEARANCE, SCHOOLS, membersOf } from './schools';
 import { SkinSlot, cutinArt, defaultCutinArt, defaultPortraitUrl, defaultPowerPortraitUrl, portraitUrl, powerPortraitUrl, setSkins, skinOf } from '../ui3d/looks';
 import { VOICE_MAX_SECONDS, VoiceFileError, clipFromFile, forgetVoicePack, previewVoiceBytes, setVoiceRefs } from './voice';
 import { matchVoiceFile, voiceSlotsOf } from './voiceLines';
+import { eyePortraitUrl } from './eyeShot';
 import { VoicePack, VoiceRef, base64ToBytes, emptyPack, packLines, packText, parsePack, withClip } from './voicePack';
 import { sniff } from '../assets/sniff';
 import { fileOf } from '../assets/slots';
@@ -49,7 +50,8 @@ function slotsOf(c: Character): { slot: SkinSlot; label: string; hint: string; s
     hint: k.hint ?? `发动${k.name}时放这一段，盖过“能力发动切入”。可以用 GIF 或视频（MP4、WebM，最长放 6 秒）`,
     skill: true,
   }));
-  return [...SLOTS, ...skills];
+  const own = SLOTS.map((d) => (d.slot === 'power' && c.powerHint ? { ...d, hint: c.powerHint } : d));
+  return [...own, ...skills];
 }
 
 // 技能动画格子没换图时显示的默认图：和牌的动画（天使和的和牌）用和牌切入，别的用能力发动切入
@@ -365,7 +367,7 @@ export class SkinEditor {
   private current(id: string, slot: SkinSlot): string {
     if (slot === 'face') return portraitUrl(id, 'neutral');
     if (slot === 'blank') return portraitUrl(id, 'surprised');
-    if (slot === 'power') return powerPortraitUrl(id);
+    if (slot === 'power') return powerPortraitUrl(id) || eyePortraitUrl(id, CHARACTERS.find((c) => c.id === id)?.color ?? '');
     if (slot.startsWith('skill-')) return skinOf(id, slot)?.url ?? cutinArt(id, skillKind(slot)).url;
     return cutinArt(id, slot).url;
   }
@@ -373,7 +375,7 @@ export class SkinEditor {
   private fallback(id: string, slot: SkinSlot): string {
     if (slot === 'face') return defaultPortraitUrl(id, 'neutral');
     if (slot === 'blank') return defaultPortraitUrl(id, 'surprised');
-    if (slot === 'power') return defaultPowerPortraitUrl(id);
+    if (slot === 'power') return defaultPowerPortraitUrl(id) || eyePortraitUrl(id, CHARACTERS.find((c) => c.id === id)?.color ?? '');
     return defaultCutinArt(id, slot.startsWith('skill-') ? skillKind(slot) : slot).url;
   }
 

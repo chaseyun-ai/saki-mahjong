@@ -7,7 +7,7 @@ import { yuWarm } from '../src/abilities/yu';
 import { kuroLost } from '../src/abilities/kuro';
 import { chooseAction } from '../src/ai/ai';
 import { Game } from '../src/engine/game';
-import { shanten } from '../src/engine/shanten';
+import { shanten, waitingKinds } from '../src/engine/shanten';
 import { TileId, isRed, kindOf, toCounts } from '../src/engine/tiles';
 
 const byId = (id: string) => CHARACTERS.find((c) => c.id === id)!;
@@ -158,12 +158,18 @@ describe('亦野诚子', () => {
     for (let seed = 1; seed <= 30; seed++) {
       play(seed, ['seiko', 'nodoka', 'hiroe', 'mihoko'], (g) => {
         let since = -1; // 鸣满三次、听牌以后她摸了几次
+        let waits = ''; // 听的牌：换了听（原来的听牌和不了，比如没役）从换听那一次重新数
         g.onEvent((e) => {
           if (e.type === 'roundStart') since = -1;
           if (e.type === 'draw' && e.seat === 0) {
             const p = g.players[0];
-            const before = shanten(toCounts(p.hand.filter((t) => t !== p.drawn)), p.melds.length);
-            if (seikoFish(g, 0) >= 3 && before === 0) since++;
+            const counts = toCounts(p.hand.filter((t) => t !== p.drawn));
+            const before = shanten(counts, p.melds.length);
+            if (seikoFish(g, 0) >= 3 && before === 0) {
+              const now = waitingKinds(counts, p.melds.length).join(',');
+              since = since >= 0 && now === waits ? since + 1 : 0;
+              waits = now;
+            }
           }
           if (e.type === 'ability' && e.seat === 0 && e.text === '第四条鱼') fished++;
           if (e.type === 'roundEnd' && since >= 0 && e.result.wins.some((w) => w.seat === 0 && w.from === null)) expect(since).toBeLessThanOrEqual(1);
