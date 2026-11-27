@@ -32,10 +32,10 @@ interface PuffKind {
   near: number;
 }
 const KINDS: PuffKind[] = [
-  { every: 1, y: [1.7, 2.1], side: [-0.35, 0.35], r: [1.6, 2.05], rank: [0, 0], alpha: 0.44, lift: 0.2, near: 0.8 }, // 缠在牌山上
-  { every: 2, y: [2.3, 2.8], side: [-0.5, 0.5], r: [1.9, 2.5], rank: [0.3, 0.85], alpha: 0.27, lift: 0.7, near: 0.8 }, // 山顶堆起来的
-  { every: 3, y: [0.9, 1.2], side: [1.0, 1.9], r: [2.0, 2.7], rank: [0.4, 0.95], alpha: 0.2, lift: 0.1, near: 0 }, // 往桌子中间漫
-  { every: 3, y: [0.9, 1.2], side: [-1.9, -1.0], r: [2.0, 2.7], rank: [0.4, 0.95], alpha: 0.2, lift: 0.1, near: 0 }, // 往桌边漫
+  { every: 1, y: [1.5, 1.85], side: [-0.2, 0.2], r: [1.15, 1.45], rank: [0, 0], alpha: 0.5, lift: 0.15, near: 0.8 }, // 缠在牌山上
+  { every: 2, y: [2.0, 2.4], side: [-0.3, 0.3], r: [1.35, 1.75], rank: [0.3, 0.85], alpha: 0.28, lift: 0.5, near: 0.8 }, // 山顶堆起来的
+  { every: 3, y: [0.8, 1.05], side: [0.55, 1.0], r: [1.25, 1.65], rank: [0.45, 0.95], alpha: 0.18, lift: 0.1, near: 0 }, // 往桌子中间漫一点
+  { every: 3, y: [0.8, 1.05], side: [-1.0, -0.55], r: [1.25, 1.65], rank: [0.45, 0.95], alpha: 0.18, lift: 0.1, near: 0 }, // 往桌边漫一点
 ];
 
 const NOISE_SIZE = 128;
@@ -76,7 +76,7 @@ void main() {
     gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
     return;
   }
-  float size = aShape.x * (0.86 + 0.24 * uDensity) * (0.55 + 0.45 * front) * (0.82 + 0.18 * deep) * (1.0 + 0.15 * source);
+  float size = aShape.x * (0.86 + 0.24 * uDensity) * (0.55 + 0.45 * front) * (0.82 + 0.18 * deep) * (1.0 + 0.06 * source);
   float t = uTime * 0.23 + seed * 31.0;
   vec3 c = aCenter.xyz;
   c.xz += aLook.yz * sin(t) * 0.35 + vec2(-aLook.z, aLook.y) * sin(t * 0.71 + 1.3) * 0.18;
@@ -111,7 +111,7 @@ void main() {
   float fall = 1.0 - d;
   // 纹路按世界坐标取（叠着的雾团纹路连成一片），顺着牌山往前慢慢流
   // （雾团是斜着朝镜头的：高度从纵向里减掉，纹路才不会顺着镜头的方向被拉成一道道的）
-  vec2 p = vec2(vWorld.x, vWorld.z - vWorld.y) * 0.075 - vInfo.zw * uTime;
+  vec2 p = vec2(vWorld.x, vWorld.z - vWorld.y) * 0.095 - vInfo.zw * uTime;
   float n1 = texture2D(uNoise, p).r;
   float n2 = texture2D(uNoise, p * 2.6 + vec2(vInfo.y * 3.7, -uTime * 0.013)).g;
   // 噪声拉开对比：一缕一缕的，有浓有淡
@@ -119,7 +119,7 @@ void main() {
   // 雾团中间实、往外软着淡出去，边上被噪声啃得不圆；雾越浓啃得越少
   float bell = fall * fall;
   float cut = mix(0.34, 0.16, uDensity);
-  float a = smoothstep(cut, cut + 0.5, bell * (0.6 + 1.1 * wisp));
+  float a = smoothstep(cut, cut + 0.5, bell * (0.72 + 1.0 * wisp));
   // 贴到桌面的地方淡出去，不留一条切出来的硬边
   a *= vInfo.x * (0.55 + 0.45 * wisp) * smoothstep(uFloor, uFloor + 0.45, vWorld.y);
   if (a < 0.004) discard;

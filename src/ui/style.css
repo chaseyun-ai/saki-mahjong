@@ -860,8 +860,8 @@ button {
 }
 .mist2d i {
   position: absolute;
-  width: 170px;
-  height: 170px;
+  width: 118px;
+  height: 118px;
   background: var(--mist-a) center / 100% 100% no-repeat;
   opacity: var(--o, 0);
   /* 没有雾的那几团：等淡出完了就藏起来、动画停住，不占合成层 */

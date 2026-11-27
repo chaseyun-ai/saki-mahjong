@@ -21,7 +21,7 @@ const RING = [
 ];
 const PER_BLOB = 2; // 几墩一团
 const BLOBS = Math.ceil(STACKS_PER_WALL / PER_BLOB); // 每边 9 团
-const SIZE = 170; // 一团雾多大（像素）
+const SIZE = 118; // 一团雾多大（像素）
 const SPRITE = 128; // 雾的小图边长
 const SPREAD = 1.5; // 起雾时从最深处漫到前沿要几秒
 
@@ -101,7 +101,7 @@ export class Mist2D {
       if (n % 2) b.className = 'b';
       // 每团挪多远、转多少、多快都不一样
       const r = (k: number) => rand(n, k);
-      b.style.cssText = `--dx:${Math.round((r(1) - 0.5) * 36)}px;--dy:${Math.round((r(2) - 0.5) * 36)}px;--a0:${Math.round(r(3) * 360)}deg;--a1:${Math.round(r(3) * 360 + (r(4) - 0.5) * 70)}deg;--s:${(0.9 + r(5) * 0.35).toFixed(2)};--t:${(9 + r(6) * 8).toFixed(1)}s;--p:${(-r(7) * 12).toFixed(1)}s`;
+      b.style.cssText = `--dx:${Math.round((r(1) - 0.5) * 22)}px;--dy:${Math.round((r(2) - 0.5) * 22)}px;--a0:${Math.round(r(3) * 360)}deg;--a1:${Math.round(r(3) * 360 + (r(4) - 0.5) * 70)}deg;--s:${(0.9 + r(5) * 0.35).toFixed(2)};--t:${(9 + r(6) * 8).toFixed(1)}s;--p:${(-r(7) * 12).toFixed(1)}s`;
       this.el.append(b);
       this.blobs.push(b);
       this.shown.push(0);
